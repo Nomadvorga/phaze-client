@@ -1804,7 +1804,9 @@ public class InGameHudMixin {
             return 0.0f;
         }
 
-        float baseQuality = radius * 4.0f;
+        // Ease-in curve: lower blur strength on small values, near old behavior on high values.
+        float lowRadiusAttenuation = 0.55f + 0.45f * MathHelper.clamp(radius / 18.0f, 0.0f, 1.0f);
+        float baseQuality = radius * 4.0f * lowRadiusAttenuation;
         if (radius <= 20.0f) {
             return baseQuality * Theme.getInstance().getHudBlurQualityMultiplier();
         }

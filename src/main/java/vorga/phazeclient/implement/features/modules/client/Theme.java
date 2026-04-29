@@ -1,6 +1,5 @@
 package vorga.phazeclient.implement.features.modules.client;
 
-import net.minecraft.util.math.MathHelper;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
@@ -43,24 +42,14 @@ public final class Theme extends Module {
             .range(0, 32)
             .setValue(16);
 
-    public final SelectSetting hudBlurType = new SelectSetting("HUD Blur Type", "Select blur algorithm for HUD")
-            .value("Current", "Soup", "Kawase")
-            .selected("Soup");
-
-    public final ValueSetting hudBlurQuality = new ValueSetting("HUD Blur Quality", "Adjust HUD blur render quality")
-            .range(5, 100)
-            .setValue(100);
-
     public final SelectSetting hudFont = new SelectSetting("HUD Font", "Select HUD text font")
             .value("Vanilla", "MSDF Vanilla")
             .selected("Vanilla");
 
     private Theme() {
         super("themes", "Themes", ModuleCategory.CLIENT, false, false);
-        hudBlurType.setFullWidth(true);
-        hudBlurQuality.setFullWidth(true);
         hudFont.setFullWidth(true);
-        setup(menuTheme, blurRadius, hudBlurType, hudBlurQuality, hudFont);
+        setup(menuTheme, blurRadius, hudFont);
 
         applyTheme();
         applyMenuTheme();
@@ -89,31 +78,17 @@ public final class Theme extends Module {
     }
 
     public float getHudBlurQualityMultiplier() {
-        float t = MathHelper.clamp(hudBlurQuality.getValue() / 100.0f, 0.05f, 1.0f);
-        // Non-linear curve so low quality is visibly lighter/faster, high quality keeps detail.
-        return 0.03f + (t * t * 0.97f);
+        // Fixed quality = 70.0
+        return 0.03f + (0.70f * 0.70f * 0.97f);
     }
 
     public int getHudBlurMode() {
-        if (useKawaseHudBlur()) {
-            return 2;
-        }
-        return useSoupHudBlur() ? 1 : 0;
-    }
-
-    public boolean useSoupHudBlur() {
-        return "Soup".equalsIgnoreCase(hudBlurType.getSelected());
-    }
-
-    public boolean useKawaseHudBlur() {
-        return "Kawase".equalsIgnoreCase(hudBlurType.getSelected());
+        // Fixed blur type = Kawase
+        return 2;
     }
 
     public float getHudBlurRadiusMultiplier() {
-        if (useKawaseHudBlur()) {
-            return 1.25f;
-        }
-        return useSoupHudBlur() ? 1.75f : 1.0f;
+        return 1.25f;
     }
 
     public boolean useMsdfHudFont() {
