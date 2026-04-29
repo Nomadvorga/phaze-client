@@ -1,0 +1,36 @@
+
+{
+  "accessWidener": "phaze.accesswidener",
+  "schemaVersion": 1,
+  "id": "phaze",
+  "version": "${version}",
+  "name": "PhazeClient",
+  "description": "Minecraft Modification",
+  "icon": "assets/phaze/phaze.png",
+  "authors": [
+    "Nomadvorga"
+  ],
+  "contact": {
+    "website": "none",
+    "repo": "none"
+  },
+  "license": "All-Rights-Reserved",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "vorga.phazeclient.core.Main"
+    ],
+    "client": [
+      "vorga.phazeclient.core.client.ClientMain"
+    ]
+  },
+  "mixins": [
+    "phaze.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-resource-loader-v0": "*",
+    "fabric": "*",
+    "minecraft": "~${minecraft_version}"
+  }
+}

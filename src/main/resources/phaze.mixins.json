@@ -1,0 +1,23 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "vorga.phazeclient.mixins",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [],
+  "injectors": {
+    "defaultRequire": 0
+  },
+  "priority": 1500,
+  "overwrites": {
+    "conformVisibility": true
+  },
+  "client": [
+    "InGameHudMixin",
+    "PlayerListHudMixin",
+    "ClientPlayerInteractionManagerMixin",
+    "ClientWorldPropertiesMixin",
+    "WorldMixin",
+    "BiomeMixin",
+    "TridentItemMixin"
+  ]
+}

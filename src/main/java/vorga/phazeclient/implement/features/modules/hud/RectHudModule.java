@@ -1,0 +1,162 @@
+package vorga.phazeclient.implement.features.modules.hud;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.math.MathHelper;
+import vorga.phazeclient.api.feature.module.Module;
+import vorga.phazeclient.api.feature.module.ModuleCategory;
+import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
+import vorga.phazeclient.api.system.hud.HudBuffer;
+import vorga.phazeclient.implement.menu.MenuPalettes;
+
+public abstract class RectHudModule extends Module {
+    private static final float DEFAULT_HUD_X = 22.0f;
+    private static final float DEFAULT_HUD_Y = 22.0f;
+    private static final float DEFAULT_HUD_SCALE = 1.0f;
+    private static final float MIN_HUD_SCALE = 1.5f;
+    private static final float MAX_HUD_SCALE = 8.0f;
+    private final float defaultHudX;
+    private final float defaultHudY;
+    private final float defaultHudScale;
+
+    public final BooleanSetting textShadow = new BooleanSetting("Text Shadow", "Draw text with vanilla shadow").setValue(true);
+    public final BooleanSetting background = new BooleanSetting("Background", "Draw scoreboard-style background").setValue(true);
+    public final SelectSetting backgroundPreset = new SelectSetting("Background Preset", "Choose preset background style")
+            .value(
+                    "Vanilla",
+                    "Lunar Blue",
+                    "Mocha Gold",
+                    "Rose Quartz",
+                    "Emerald Frost",
+                    "Arctic Mint",
+                    "Crimson Silk",
+                    "Solar Ember",
+                    "Midnight Bloom",
+                    "Desert Mirage",
+                    "Sapphire Steel",
+                    "Velvet Plum",
+                    "Frosted Peach",
+                    "Moss Smoke",
+                    "Polar Night"
+            )
+            .selected("Vanilla")
+            .visible(() -> background.isValue());
+    public final ValueSetting colorBrightness = new ValueSetting("Color Brightness", "Adjust main color brightness")
+            .range(0, 200)
+            .setValue(100)
+            .visible(() -> background.isValue() && !isVanillaPreset());
+    public final ValueSetting backgroundOpacity = new ValueSetting("Background Opacity", "Custom background opacity")
+            .range(0, 100)
+            .setValue(30)
+            .visible(() -> background.isValue() && !isVanillaPreset());
+    public final ValueSetting backgroundBlurRadius = new ValueSetting("Background Blur Radius", "Blur radius for HUD background")
+            .range(0, 32)
+            .setValue(0)
+            .visible(() -> background.isValue());
+    public final SectionSetting colorSection = new SectionSetting("Color Settings");
+    public final SectionSetting batchingSection = new SectionSetting("Batching");
+
+    public final BooleanSetting hudBatching = new BooleanSetting("HUD Batching", "Throttle HUD data and animation updates for performance").setValue(false);
+    public final BooleanSetting forceHudUpdate = new BooleanSetting("Force HUD Update", "Disable FPS limit but keep batching optimizations")
+            .setValue(false)
+            .visible(() -> hudBatching.isValue());
+    public final ValueSetting hudFps = new ValueSetting("HUD FPS", "Limit HUD render rate to save performance")
+            .range(5, 120)
+            .setValue(60)
+            .visible(() -> hudBatching.isValue() && !forceHudUpdate.isValue());
+
+    private final HudBuffer hudBuffer = new HudBuffer();
+
+    private float hudX = DEFAULT_HUD_X;
+    private float hudY = DEFAULT_HUD_Y;
+    private float hudScale = DEFAULT_HUD_SCALE;
+
+    protected RectHudModule(String name, String visibleName) {
+        this(name, visibleName, DEFAULT_HUD_X, DEFAULT_HUD_Y, DEFAULT_HUD_SCALE);
+    }
+
+    protected RectHudModule(String name, String visibleName, float defaultHudX, float defaultHudY, float defaultHudScale) {
+        super(name, visibleName, ModuleCategory.HUD, true, false);
+        this.defaultHudX = defaultHudX;
+        this.defaultHudY = defaultHudY;
+        this.defaultHudScale = defaultHudScale;
+        this.hudX = defaultHudX;
+        this.hudY = defaultHudY;
+        this.hudScale = defaultHudScale;
+        textShadow.setFullWidth(true);
+        background.setFullWidth(true);
+        backgroundPreset.setFullWidth(true);
+        colorBrightness.setFullWidth(true);
+        backgroundOpacity.setFullWidth(true);
+        backgroundBlurRadius.setFullWidth(true);
+        hudBatching.setFullWidth(true);
+        forceHudUpdate.setFullWidth(true);
+        hudFps.setFullWidth(true);
+        setup(textShadow, colorSection, background, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, batchingSection, hudBatching, forceHudUpdate, hudFps);
+    }
+
+    public float getHudX() {
+        return hudX;
+    }
+
+    public void setHudX(float hudX) {
+        this.hudX = hudX;
+    }
+
+    public float getHudY() {
+        return hudY;
+    }
+
+    public void setHudY(float hudY) {
+        this.hudY = hudY;
+    }
+
+    public float getHudScale() {
+        return hudScale;
+    }
+
+    public void setHudScale(float hudScale) {
+        this.hudScale = MathHelper.clamp(hudScale, MIN_HUD_SCALE, MAX_HUD_SCALE);
+    }
+
+    public float getMinHudScale() {
+        return MIN_HUD_SCALE;
+    }
+
+    public float getMaxHudScale() {
+        return MAX_HUD_SCALE;
+    }
+
+    public HudBuffer getHudBuffer() {
+        return hudBuffer;
+    }
+
+    public void resetHudTransform() {
+        this.hudX = defaultHudX;
+        this.hudY = defaultHudY;
+        this.hudScale = defaultHudScale;
+    }
+
+    public int getResolvedBackgroundColor(MinecraftClient client) {
+        if (isVanillaPreset()) {
+            return client.options.getTextBackgroundColor(0.3F);
+        }
+        var palette = MenuPalettes.byName(backgroundPreset.getSelected());
+        int presetColor = adjustBrightness(palette.chipActive(), colorBrightness.getValue() / 100.0f);
+        int alpha = MathHelper.clamp(Math.round((backgroundOpacity.getValue() / 100.0f) * 255.0f), 0, 255);
+        return (alpha << 24) | (presetColor & 0x00FFFFFF);
+    }
+
+    protected boolean isVanillaPreset() {
+        return "Vanilla".equalsIgnoreCase(backgroundPreset.getSelected());
+    }
+
+    private static int adjustBrightness(int color, float multiplier) {
+        int r = MathHelper.clamp(Math.round(((color >>> 16) & 0xFF) * multiplier), 0, 255);
+        int g = MathHelper.clamp(Math.round(((color >>> 8) & 0xFF) * multiplier), 0, 255);
+        int b = MathHelper.clamp(Math.round((color & 0xFF) * multiplier), 0, 255);
+        return (r << 16) | (g << 8) | b;
+    }
+}
