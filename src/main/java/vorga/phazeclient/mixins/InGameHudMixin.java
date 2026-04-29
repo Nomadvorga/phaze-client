@@ -1199,13 +1199,18 @@ public class InGameHudMixin {
             float px = centerX + (delta / degreesPerPixel);
             if (px < 4.0f || px > baseWidth - 4.0f) continue;
 
+            int alpha = MathHelper.clamp(Math.round(255.0f * directionEdgeFade(px, baseWidth)), 0, 255);
+            if (alpha <= 2) {
+                continue;
+            }
+
             String label = directionLabel(deg, module.showIntermediate.isValue());
             if (label.isEmpty()) {
-                context.fill(Math.round(x + px), Math.round(y + 7.0f), Math.round(x + px + 1.0f), Math.round(y + 12.0f), 0x99FFFFFF);
+                context.fill(Math.round(x + px), Math.round(y + 7.0f), Math.round(x + px + 1.0f), Math.round(y + 12.0f), withAlpha(0xFFFFFF, Math.round(153.0f * alpha / 255.0f)));
             } else {
                 float tw = getHudTextWidth(client, label, RECT_HUD_MSDF_SIZE);
-                renderScaledHudText(context, client, label, x, y, px - tw * 0.5f, 10.0f, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
-                context.fill(Math.round(x + px), Math.round(y + 5.0f), Math.round(x + px + 1.0f), Math.round(y + 9.0f), 0xCCFFFFFF);
+                renderScaledHudTextWithAlpha(context, client, label, x, y, px - tw * 0.5f, 10.0f, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue(), alpha);
+                context.fill(Math.round(x + px), Math.round(y + 5.0f), Math.round(x + px + 1.0f), Math.round(y + 9.0f), withAlpha(0xFFFFFF, Math.round(204.0f * alpha / 255.0f)));
             }
         }
         if (module.showDegreeNumber.isValue()) {
@@ -1750,11 +1755,12 @@ public class InGameHudMixin {
             if (shadow) {
                 float shadowThickness = HUD_MSDF_THICKNESS + 0.0025f;
                 float shadowSmoothness = Math.max(0.008f, msdfSmoothness * 0.80f);
+                int shadowColor = withAlpha(MSDF_SHADOW_COLOR, MathHelper.clamp(alpha, 0, 255));
                 MsdfRenderer.renderText(
                         MsdfFonts.hud(),
                         text,
                         matchedMsdfSize,
-                        MSDF_SHADOW_COLOR,
+                        shadowColor,
                         context.getMatrices().peek().getPositionMatrix(),
                         x + HUD_MSDF_GLOBAL_X_OFFSET + MSDF_SHADOW_OFFSET,
                         y + HUD_MSDF_GLOBAL_Y_OFFSET + MSDF_SHADOW_OFFSET,
@@ -1851,6 +1857,30 @@ public class InGameHudMixin {
             context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
             context.getMatrices().scale(scale, scale, 1.0f);
             renderHudText(context, client, text, textX, textY, msdfSize, shadow);
+        }
+        context.getMatrices().pop();
+    }
+
+    private static void renderScaledHudTextWithAlpha(
+            DrawContext context,
+            MinecraftClient client,
+            String text,
+            float hudX,
+            float hudY,
+            float textX,
+            float textY,
+            float msdfSize,
+            float scale,
+            boolean shadow,
+            int alpha
+    ) {
+        context.getMatrices().push();
+        if (Theme.getInstance().useMsdfHudFont()) {
+            renderHudTextWithAlpha(context, client, text, hudX + textX * scale, hudY + textY * scale, msdfSize * scale, shadow, alpha);
+        } else {
+            context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
+            context.getMatrices().scale(scale, scale, 1.0f);
+            renderHudTextWithAlpha(context, client, text, textX, textY, msdfSize, shadow, alpha);
         }
         context.getMatrices().pop();
     }
@@ -1976,6 +2006,18 @@ public class InGameHudMixin {
     private static int withAlpha(int rgb, int alpha) {
         int a = MathHelper.clamp(alpha, 0, 255);
         return (a << 24) | (rgb & 0x00FFFFFF);
+    }
+
+    private static float directionEdgeFade(float x, float width) {
+        float fadeWidth = Math.max(18.0f, width * 0.16f);
+        float left = MathHelper.clamp((x - 4.0f) / fadeWidth, 0.0f, 1.0f);
+        float right = MathHelper.clamp((width - 4.0f - x) / fadeWidth, 0.0f, 1.0f);
+        return smoothStep(left) * smoothStep(right);
+    }
+
+    private static float smoothStep(float value) {
+        float t = MathHelper.clamp(value, 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
     }
 
     private static float approachExp(float current, float target, float speed, float dt) {

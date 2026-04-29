@@ -59,6 +59,7 @@ public class Blur implements Shape {
     private float lastPitch = Float.NaN;
     private final long[] hudStateKeys = new long[8];
     private final boolean[] hudStateInitialized = new boolean[8];
+    private static final float KAWASE_SOUP30_FACTOR = 0.30F;
 
     public void beginCachedFrame() {
         cachedFramePrepared = false;
@@ -146,6 +147,11 @@ public class Blur implements Shape {
         Theme theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
+        if (blurMode == 2) {
+            // "Kawase as Soup@30": keep separate selector, but use Soup kernel with lower strength.
+            blurMode = 1;
+            blurRadius *= KAWASE_SOUP30_FACTOR;
+        }
 
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
@@ -189,6 +195,11 @@ public class Blur implements Shape {
         Theme theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
+        if (blurMode == 2) {
+            // "Kawase as Soup@30": keep separate selector, but use Soup kernel with lower strength.
+            blurMode = 1;
+            blurRadius *= KAWASE_SOUP30_FACTOR;
+        }
 
         boolean useHudBatch = cacheFrame && hudBatchMode;
         if (useHudBatch) {
@@ -234,6 +245,11 @@ public class Blur implements Shape {
         Theme theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
+        if (blurMode == 2) {
+            // "Kawase as Soup@30": keep separate selector, but use Soup kernel with lower strength.
+            blurMode = 1;
+            blurRadius *= KAWASE_SOUP30_FACTOR;
+        }
 
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];

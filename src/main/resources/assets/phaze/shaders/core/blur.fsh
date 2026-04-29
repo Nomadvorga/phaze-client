@@ -110,30 +110,8 @@ vec3 sampleBlurSoup() {
 }
 
 vec3 sampleBlurKawase() {
-    vec2 texSize = vec2(textureSize(Sampler0, 0));
-    vec2 texCoord = gl_FragCoord.xy / texSize;
-
-    if (BlurRadius <= 0.10) {
-        return texture(Sampler0, texCoord).rgb;
-    }
-
-    vec2 texel = 1.0 / texSize;
-    float offsetScale = max(1.0, BlurRadius * 0.75);
-    vec2 d = texel * offsetScale;
-
-    vec3 color = texture(Sampler0, texCoord).rgb * 4.0;
-    color += texture(Sampler0, texCoord + vec2(-d.x, -d.y)).rgb;
-    color += texture(Sampler0, texCoord + vec2( d.x, -d.y)).rgb;
-    color += texture(Sampler0, texCoord + vec2(-d.x,  d.y)).rgb;
-    color += texture(Sampler0, texCoord + vec2( d.x,  d.y)).rgb;
-
-    vec2 d2 = d * 0.5;
-    color += texture(Sampler0, texCoord + vec2(-d2.x, 0.0)).rgb * 0.75;
-    color += texture(Sampler0, texCoord + vec2( d2.x, 0.0)).rgb * 0.75;
-    color += texture(Sampler0, texCoord + vec2(0.0, -d2.y)).rgb * 0.75;
-    color += texture(Sampler0, texCoord + vec2(0.0,  d2.y)).rgb * 0.75;
-
-    return color / 11.0;
+    // Fallback to smooth blur kernel to avoid blocky artifacts in HUD one-pass pipeline.
+    return sampleBlurCurrent();
 }
 
 vec3 sampleBlur() {
