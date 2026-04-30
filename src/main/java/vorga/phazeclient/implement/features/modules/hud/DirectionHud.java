@@ -9,8 +9,8 @@ public final class DirectionHud extends RectHudModule {
 
     public final SectionSetting directionSection = new SectionSetting("Direction");
     public final ValueSetting hudLength = new ValueSetting("HUD Length", "Length of direction strip")
-            .range(120, 320)
-            .setValue(220);
+            .range(180, 420)
+            .setValue(320);
     public final BooleanSetting showIntermediate = new BooleanSetting("Show Intermediate", "Show NE/SE/SW/NW marks").setValue(true);
     public final BooleanSetting showDegreeNumber = new BooleanSetting("Show Degree Number", "Show center degree value").setValue(true);
     public final ValueSetting smoothness = new ValueSetting("Smoothness", "Compass movement smoothness")
@@ -35,4 +35,3 @@ public final class DirectionHud extends RectHudModule {
         return "Shows animated cardinal direction strip";
     }
 }
-

@@ -98,6 +98,46 @@ public class Blur implements Shape {
         render(shape, true);
     }
 
+    public void renderWorldRect(Matrix4f matrix, float x, float y, float width, float height, float quality, int color) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
+            return;
+        }
+        if (!prepareFramebuffers(client, false)) {
+            return;
+        }
+
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
+        RenderSystem.disableDepthTest();
+
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        drawEngine.quad(matrix, buffer, x, y, width, height, color);
+
+        RenderSystem.setShaderTexture(0, input.getColorAttachment());
+        ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
+        if (shader != null) {
+            Theme theme = Theme.getInstance();
+            int blurMode = theme.getHudBlurMode();
+            if (blurMode == 2) {
+                blurMode = 1;
+            }
+            shader.getUniformOrDefault("Size").set(Math.max(1.0f, width), Math.max(1.0f, height));
+            shader.getUniformOrDefault("Radius").set(new Vector4f(0.0f));
+            shader.getUniformOrDefault("Smoothness").set(0.001f);
+            shader.getUniformOrDefault("BlurRadius").set(Math.max(0.0f, quality) * theme.getHudBlurRadiusMultiplier());
+            shader.getUniformOrDefault("BlurMode").set(blurMode);
+            BufferRenderer.drawWithGlobalProgram(buffer.end());
+        } else {
+            buffer.end();
+        }
+
+        client.getFramebuffer().beginWrite(false);
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
+    }
+
     public void renderCachedBatch(List<ShapeProperties> shapes) {
         if (shapes == null || shapes.isEmpty()) {
             return;

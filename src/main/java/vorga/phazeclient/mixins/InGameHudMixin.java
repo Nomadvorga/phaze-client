@@ -13,6 +13,7 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.Direction;
@@ -87,6 +88,7 @@ public class InGameHudMixin {
     private static final float GUIDE_FADE_SPEED = 14.0f;
     private static final int GUIDE_MAX_ALPHA = 140;
     private static final long HUD_TEXT_THROTTLE_MS = 50L;
+    private static final Identifier DIRECTION_TRIANGLE_TEXTURE = Identifier.of("phaze", "textures/down_triangle.png");
 
     private static final int HUD_FPS = 0;
     private static final int HUD_CPS = 1;
@@ -274,9 +276,7 @@ public class InGameHudMixin {
         renderBufferedHud(context, StatsHud.getInstance(), chatEditing, () ->
                 renderStatsHud(context, client, StatsHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(StatsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
-        renderBufferedHud(context, DirectionHud.getInstance(), chatEditing, () ->
-                renderDirectionHud(context, client, DirectionHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
-                        getHudDelta(DirectionHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+        // Direction HUD temporarily disabled by request.
         // TabHud/NametagHud now affect vanilla TAB list and world nametags directly via dedicated mixins.
         String timeText = getTimeHudText(TimeHud.getInstance());
         renderBufferedHud(context, TimeHud.getInstance(), chatEditing, () ->
@@ -1175,7 +1175,7 @@ public class InGameHudMixin {
         }
 
         float baseWidth = module.hudLength.getValue();
-        float baseHeight = 26.0f;
+        float baseHeight = 52.0f;
         renderRectHud(context, client, module, "", HUD_DIRECTION, chatEditing, mouseX, mouseY, mouseDown,
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight);
 
@@ -1190,34 +1190,115 @@ public class InGameHudMixin {
         float y = module.getHudY();
         float scale = module.getHudScale();
         float centerX = baseWidth * 0.5f;
-        float degreesPerPixel = 90.0f / Math.max(80.0f, baseWidth);
+        float leftPadding = 8.0f;
+        float rightPadding = 8.0f;
+        float visibleWidth = Math.max(64.0f, baseWidth - leftPadding - rightPadding);
+        float degreesPerPixel = 90.0f / visibleWidth;
+
+        // Final layout rows (relative to HUD Y):
+        float yawNumberY = 1.0f;
+        float triangleY = 11.0f;
+        float majorTickTop = 14.0f;
+        float majorTickBottom = 28.0f;
+        float minorTickTop = 17.0f;
+        float minorTickBottom = 26.0f;
+        float labelY = 30.0f;
+        float baselineY = 28.0f;
 
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
-        for (int deg = 0; deg < 360; deg += 15) {
-            float delta = shortestAngleDeg(deg, directionDisplayYaw);
-            float px = centerX + (delta / degreesPerPixel);
-            if (px < 4.0f || px > baseWidth - 4.0f) continue;
+        context.fill(Math.round(x + leftPadding), Math.round(y + baselineY), Math.round(x + baseWidth - rightPadding), Math.round(y + baselineY + 1.0f), withAlpha(0xFFFFFF, 30));
 
-            int alpha = MathHelper.clamp(Math.round(255.0f * directionEdgeFade(px, baseWidth)), 0, 255);
-            if (alpha <= 2) {
+        // Pass 1: ticks only on fixed world marks.
+        for (int deg = 0; deg < 360; deg += 15) {
+            float markYaw = deg;
+            float delta = shortestAngleDeg(markYaw, directionDisplayYaw);
+            float px = centerX + (delta / degreesPerPixel);
+            if (px < leftPadding || px > baseWidth - rightPadding) continue;
+
+            int alphaCenter = MathHelper.clamp(Math.round(255.0f * directionEdgeFade(px, baseWidth)), 0, 255);
+            if (alphaCenter <= 4) {
                 continue;
             }
 
             String label = directionLabel(deg, module.showIntermediate.isValue());
             if (label.isEmpty()) {
-                context.fill(Math.round(x + px), Math.round(y + 7.0f), Math.round(x + px + 1.0f), Math.round(y + 12.0f), withAlpha(0xFFFFFF, Math.round(153.0f * alpha / 255.0f)));
+                int minorHalf = 0;
+                context.fill(
+                        Math.round(x + px - minorHalf),
+                        Math.round(y + minorTickTop),
+                        Math.round(x + px + minorHalf + 1.0f),
+                        Math.round(y + minorTickBottom),
+                        withAlpha(0xFFFFFF, Math.round(130.0f * alphaCenter / 255.0f))
+                );
             } else {
-                float tw = getHudTextWidth(client, label, RECT_HUD_MSDF_SIZE);
-                renderScaledHudTextWithAlpha(context, client, label, x, y, px - tw * 0.5f, 10.0f, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue(), alpha);
-                context.fill(Math.round(x + px), Math.round(y + 5.0f), Math.round(x + px + 1.0f), Math.round(y + 9.0f), withAlpha(0xFFFFFF, Math.round(204.0f * alpha / 255.0f)));
+                int majorHalf = 0;
+                context.fill(
+                        Math.round(x + px - majorHalf),
+                        Math.round(y + majorTickTop),
+                        Math.round(x + px + majorHalf + 1.0f),
+                        Math.round(y + majorTickBottom),
+                        withAlpha(0xFFFFFF, Math.round(210.0f * alphaCenter / 255.0f))
+                );
             }
         }
+
+        // Pass 2: labels.
+        for (int deg = 0; deg < 360; deg += 15) {
+            float markYaw = deg;
+            float delta = shortestAngleDeg(markYaw, directionDisplayYaw);
+            float px = centerX + (delta / degreesPerPixel);
+            if (px < leftPadding || px > baseWidth - rightPadding) continue;
+
+            String label = directionLabel(deg, module.showIntermediate.isValue());
+            if (label.isEmpty()) {
+                continue;
+            }
+            int alphaCenter = MathHelper.clamp(Math.round(255.0f * directionEdgeFade(px, baseWidth)), 0, 255);
+            if (alphaCenter <= 4) {
+                continue;
+            }
+
+            float tw = getHudTextWidth(client, label, RECT_HUD_MSDF_SIZE);
+            float textLeft = px - tw * 0.5f;
+            float textRight = textLeft + tw;
+            int alphaLeft = MathHelper.clamp(Math.round(255.0f * directionEdgeFade(textLeft + 1.0f, baseWidth)), 0, 255);
+            int alphaRight = MathHelper.clamp(Math.round(255.0f * directionEdgeFade(textRight - 1.0f, baseWidth)), 0, 255);
+            int alpha = Math.min(alphaCenter, Math.min(alphaLeft, alphaRight));
+            if (alpha <= 4) {
+                continue;
+            }
+
+            if (textRight < leftPadding || textLeft > baseWidth - rightPadding) {
+                continue;
+            }
+            renderScaledHudTextWithAlpha(context, client, label, x, y, textLeft, labelY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue(), alpha);
+        }
+
         if (module.showDegreeNumber.isValue()) {
             String degree = String.valueOf(Math.round(directionDisplayYaw));
             float tw = getHudTextWidth(client, degree, RECT_HUD_MSDF_SIZE);
-            renderScaledHudText(context, client, degree, x, y, centerX - tw * 0.5f, 1.5f, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+            renderScaledHudText(context, client, degree, x, y, centerX - tw * 0.5f, yawNumberY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+            int triSize = 18;
+            renderScaledHudTexture(context, x, y, centerX - triSize * 0.5f, triangleY, triSize, triSize, scale);
         }
+        context.getMatrices().pop();
+    }
+
+    private static void renderScaledHudTexture(
+            DrawContext context,
+            float hudX,
+            float hudY,
+            float localX,
+            float localY,
+            int width,
+            int height,
+            float scale
+    ) {
+        context.getMatrices().push();
+        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
+        context.getMatrices().scale(scale, scale, 1.0f);
+        context.drawTexture(RenderLayer::getGuiTextured, DIRECTION_TRIANGLE_TEXTURE, Math.round(localX), Math.round(localY), 0.0f, 0.0f, width, height, width, height);
         context.getMatrices().pop();
     }
 
@@ -1949,7 +2030,6 @@ public class InGameHudMixin {
                 || PotionHud.getInstance().isEnabled()
                 || DayCounterHud.getInstance().isEnabled()
                 || StatsHud.getInstance().isEnabled()
-                || DirectionHud.getInstance().isEnabled()
                 || TabHud.getInstance().isEnabled()
                 || NametagHud.getInstance().isEnabled()
                 || TimeHud.getInstance().isEnabled()
@@ -1967,7 +2047,6 @@ public class InGameHudMixin {
                 || RECT_DRAGGING[HUD_POTION] || RECT_RESIZING[HUD_POTION]
                 || RECT_DRAGGING[HUD_DAY_COUNTER] || RECT_RESIZING[HUD_DAY_COUNTER]
                 || RECT_DRAGGING[HUD_STATS] || RECT_RESIZING[HUD_STATS]
-                || RECT_DRAGGING[HUD_DIRECTION] || RECT_RESIZING[HUD_DIRECTION]
                 || RECT_DRAGGING[HUD_TAB] || RECT_RESIZING[HUD_TAB]
                 || RECT_DRAGGING[HUD_NAMETAG] || RECT_RESIZING[HUD_NAMETAG]
                 || RECT_DRAGGING[HUD_TIME] || RECT_RESIZING[HUD_TIME]

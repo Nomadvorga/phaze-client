@@ -8,7 +8,6 @@ import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
 import vorga.phazeclient.implement.features.modules.hud.CoordinatesHud;
 import vorga.phazeclient.implement.features.modules.hud.CpsHud;
 import vorga.phazeclient.implement.features.modules.hud.DayCounterHud;
-import vorga.phazeclient.implement.features.modules.hud.DirectionHud;
 import vorga.phazeclient.implement.features.modules.hud.FastSettingsHud;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.implement.features.modules.hud.FpsHud;
@@ -96,9 +95,6 @@ public class Main implements ModInitializer {
         }
         if (moduleProvider.get(StatsHud.class) == null) {
             moduleProvider.getModules().add(StatsHud.getInstance());
-        }
-        if (moduleProvider.get(DirectionHud.class) == null) {
-            moduleProvider.getModules().add(DirectionHud.getInstance());
         }
         if (moduleProvider.get(TabHud.class) == null) {
             moduleProvider.getModules().add(TabHud.getInstance());
