@@ -100,6 +100,7 @@ public abstract class EntityRendererNametagMixin {
     private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
         int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, layerType, backgroundColor);
+        TextRenderer.TextLayerType forcedLayer = module.isEnabled() ? TextRenderer.TextLayerType.SEE_THROUGH : layerType;
         return textRenderer.draw(
                 text,
                 x,
@@ -108,7 +109,7 @@ public abstract class EntityRendererNametagMixin {
                 module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
                 matrix,
                 vertexConsumers,
-                layerType,
+                forcedLayer,
                 resolvedBackground,
                 light
         );
@@ -121,6 +122,7 @@ public abstract class EntityRendererNametagMixin {
     private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
         int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, layerType, backgroundColor);
+        TextRenderer.TextLayerType forcedLayer = module.isEnabled() ? TextRenderer.TextLayerType.SEE_THROUGH : layerType;
         return textRenderer.draw(
                 text,
                 x,
@@ -129,7 +131,7 @@ public abstract class EntityRendererNametagMixin {
                 module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
                 matrix,
                 vertexConsumers,
-                layerType,
+                forcedLayer,
                 resolvedBackground,
                 light
         );
@@ -171,7 +173,8 @@ public abstract class EntityRendererNametagMixin {
 
         float left = x - 1.0f;
         float top = y - 1.0f;
-        float width = textWidth + 2.0f;
+        float rightExtend = -1.0f;
+        float width = textWidth + 2.0f + rightExtend;
         float height = 10.0f;
         float quality = MathHelper.clamp(0.35f + blurRadius * 0.10f, 0.35f, 4.2f);
 
