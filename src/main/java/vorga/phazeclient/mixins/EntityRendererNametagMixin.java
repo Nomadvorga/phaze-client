@@ -22,9 +22,28 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererNametagMixin {
     private static boolean phaze$backgroundDrawnThisLabel = false;
+    private static final int NAMETAG_CACHE_MAX = 256;
+    private static final Map<String, Integer> TEXT_WIDTH_CACHE = new LinkedHashMap<>(NAMETAG_CACHE_MAX, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Integer> eldest) {
+            return size() > NAMETAG_CACHE_MAX;
+        }
+    };
+    private static final Map<Integer, Integer> TEXT_COLOR_CACHE = new LinkedHashMap<>(NAMETAG_CACHE_MAX, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Integer, Integer> eldest) {
+            return size() > NAMETAG_CACHE_MAX;
+        }
+    };
+    private static long lastBackgroundSettingsSignature = Long.MIN_VALUE;
+    private static int lastBackgroundInputColor = Integer.MIN_VALUE;
+    private static int lastBackgroundResolvedColor = 0;
 
     @Inject(method = "hasLabel(Lnet/minecraft/entity/Entity;D)Z", at = @At("HEAD"), cancellable = true)
     private void phaze$allowOwnNametagInFirstPerson(Entity entity, double squaredDistanceToCamera, CallbackInfoReturnable<Boolean> cir) {
@@ -99,7 +118,7 @@ public abstract class EntityRendererNametagMixin {
     )
     private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, layerType, backgroundColor);
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
         TextRenderer.TextLayerType forcedLayer = module.isEnabled() ? TextRenderer.TextLayerType.SEE_THROUGH : layerType;
         return textRenderer.draw(
                 text,
@@ -121,7 +140,7 @@ public abstract class EntityRendererNametagMixin {
     )
     private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, layerType, backgroundColor);
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
         TextRenderer.TextLayerType forcedLayer = module.isEnabled() ? TextRenderer.TextLayerType.SEE_THROUGH : layerType;
         return textRenderer.draw(
                 text,
@@ -138,7 +157,13 @@ public abstract class EntityRendererNametagMixin {
     }
 
     private static int phaze$resolvedTextColor(int originalColor) {
-        return 0xFF000000 | (originalColor & 0x00FFFFFF);
+        Integer cached = TEXT_COLOR_CACHE.get(originalColor);
+        if (cached != null) {
+            return cached;
+        }
+        int resolved = 0xFF000000 | (originalColor & 0x00FFFFFF);
+        TEXT_COLOR_CACHE.put(originalColor, resolved);
+        return resolved;
     }
 
     private static int phaze$resolvedBackgroundColor(int vanillaBackgroundColor) {
@@ -150,13 +175,23 @@ public abstract class EntityRendererNametagMixin {
             return 0;
         }
 
+        long settingsSignature = phaze$backgroundSettingsSignature(module);
+        if (settingsSignature == lastBackgroundSettingsSignature && vanillaBackgroundColor == lastBackgroundInputColor) {
+            return lastBackgroundResolvedColor;
+        }
+
         MinecraftClient client = MinecraftClient.getInstance();
         int resolved = client != null ? module.getResolvedBackgroundColor(client) : vanillaBackgroundColor;
         int vanillaAlpha = (vanillaBackgroundColor >>> 24) & 0xFF;
         int resolvedAlpha = (resolved >>> 24) & 0xFF;
         boolean vanillaPreset = "Vanilla".equalsIgnoreCase(module.backgroundPreset.getSelected());
         int baseAlpha = vanillaPreset ? vanillaAlpha : resolvedAlpha;
-        return (baseAlpha << 24) | (resolved & 0x00FFFFFF);
+        int out = (baseAlpha << 24) | (resolved & 0x00FFFFFF);
+
+        lastBackgroundSettingsSignature = settingsSignature;
+        lastBackgroundInputColor = vanillaBackgroundColor;
+        lastBackgroundResolvedColor = out;
+        return out;
     }
 
     private static int phaze$drawBlurBackgroundIfNeeded(float textWidth, Matrix4f matrix, float x, float y, TextRenderer.TextLayerType layerType, int vanillaBackgroundColor) {
@@ -183,6 +218,38 @@ public abstract class EntityRendererNametagMixin {
         phaze$backgroundDrawnThisLabel = true;
         // Keep vanilla backdrop in both passes and draw selected color on top.
         return vanillaBackgroundColor;
+    }
+
+    private static int phaze$getCachedTextWidth(TextRenderer textRenderer, Text text) {
+        String key = text.getString();
+        Integer cached = TEXT_WIDTH_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        int width = textRenderer.getWidth(text);
+        TEXT_WIDTH_CACHE.put(key, width);
+        return width;
+    }
+
+    private static int phaze$getCachedTextWidth(TextRenderer textRenderer, OrderedText text) {
+        String key = text.toString();
+        Integer cached = TEXT_WIDTH_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        int width = textRenderer.getWidth(text);
+        TEXT_WIDTH_CACHE.put(key, width);
+        return width;
+    }
+
+    private static long phaze$backgroundSettingsSignature(NametagHud module) {
+        long h = 0x9E3779B97F4A7C15L;
+        h = (h * 0x100000001B3L) ^ (module.background.isValue() ? 1 : 0);
+        String preset = module.backgroundPreset.getSelected();
+        h = (h * 0x100000001B3L) ^ (preset == null ? 0 : preset.hashCode());
+        h = (h * 0x100000001B3L) ^ Math.round(module.colorBrightness.getValue() * 100.0f);
+        h = (h * 0x100000001B3L) ^ Math.round(module.backgroundOpacity.getValue() * 100.0f);
+        return h;
     }
 
     private static void drawSolidRect3D(Matrix4f matrix, float x, float y, float width, float height, int argb) {

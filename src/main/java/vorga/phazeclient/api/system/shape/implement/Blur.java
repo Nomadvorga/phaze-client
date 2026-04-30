@@ -59,6 +59,11 @@ public class Blur implements Shape {
     private float lastPitch = Float.NaN;
     private final long[] hudStateKeys = new long[8];
     private final boolean[] hudStateInitialized = new boolean[8];
+    private static final long WORLD_BLUR_CAPTURE_INTERVAL_NS = 40_000_000L; // ~25 Hz
+    private long lastWorldCaptureNs = 0L;
+    private int lastWorldCaptureWidth = -1;
+    private int lastWorldCaptureHeight = -1;
+    private boolean worldCaptureInitialized = false;
 
     public void beginCachedFrame() {
         cachedFramePrepared = false;
@@ -103,8 +108,27 @@ public class Blur implements Shape {
         if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
             return;
         }
-        if (!prepareFramebuffers(client, false)) {
+        if (!prepareFramebuffers(client, false, false)) {
             return;
+        }
+
+        int framebufferWidth = Math.max(1, client.getWindow().getFramebufferWidth());
+        int framebufferHeight = Math.max(1, client.getWindow().getFramebufferHeight());
+        long now = System.nanoTime();
+        boolean guiActive = client.currentScreen != null;
+        boolean cameraMoved = hasCameraMoved(client);
+        boolean resized = framebufferWidth != lastWorldCaptureWidth || framebufferHeight != lastWorldCaptureHeight;
+        boolean shouldRefreshCapture = !worldCaptureInitialized
+                || resized
+                || guiActive
+                || cameraMoved
+                || now - lastWorldCaptureNs >= WORLD_BLUR_CAPTURE_INTERVAL_NS;
+        if (shouldRefreshCapture) {
+            captureWorldInput(client, framebufferWidth, framebufferHeight);
+            worldCaptureInitialized = true;
+            lastWorldCaptureNs = now;
+            lastWorldCaptureWidth = framebufferWidth;
+            lastWorldCaptureHeight = framebufferHeight;
         }
 
         RenderSystem.enableBlend();
@@ -146,7 +170,7 @@ public class Blur implements Shape {
         if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
             return;
         }
-        if (!prepareFramebuffers(client, true)) {
+        if (!prepareFramebuffers(client, true, true)) {
             return;
         }
 
@@ -225,7 +249,7 @@ public class Blur implements Shape {
             return;
         }
 
-        if (!prepareFramebuffers(client, cacheFrame)) {
+        if (!prepareFramebuffers(client, cacheFrame, true)) {
             return;
         }
 
@@ -320,7 +344,7 @@ public class Blur implements Shape {
         return true;
     }
 
-    private boolean prepareFramebuffers(MinecraftClient client, boolean cacheFrame) {
+    private boolean prepareFramebuffers(MinecraftClient client, boolean cacheFrame, boolean refreshNonCachedInput) {
         Framebuffer framebuffer = client.getFramebuffer();
         int framebufferWidth = Math.max(1, client.getWindow().getFramebufferWidth());
         int framebufferHeight = Math.max(1, client.getWindow().getFramebufferHeight());
@@ -348,51 +372,50 @@ public class Blur implements Shape {
             return false;
         }
 
-        boolean guiActive = client.currentScreen != null;
-        boolean cameraMoved = hasCameraMoved(client);
-        boolean shouldRefreshHudInput = !cacheFrame
-                || forceHudRefresh
-                || resized
-                || guiActive
-                || cameraMoved;
+        if (cacheFrame) {
+            boolean guiActive = client.currentScreen != null;
+            boolean cameraMoved = hasCameraMoved(client);
+            boolean shouldRefreshHudInput = forceHudRefresh || resized || guiActive || cameraMoved;
 
-        // Cached HUD path: refresh only once per frame (beginCachedFrame resets the flag).
-        if (cacheFrame && cachedFramePrepared) {
-            shouldRefreshHudInput = false;
-        }
+            // Cached HUD path: refresh only once per frame (beginCachedFrame resets the flag).
+            if (cachedFramePrepared) {
+                shouldRefreshHudInput = false;
+            }
 
-        if (cacheFrame && cachedFramePrepared && !shouldRefreshHudInput) {
+            if (!cachedFramePrepared && shouldRefreshHudInput) {
+                captureWorldInput(client, framebufferWidth, framebufferHeight);
+                forceHudRefresh = false;
+            }
+            cachedFramePrepared = true;
             return true;
         }
 
-        if (shouldRefreshHudInput) {
-            GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, framebuffer.fbo);
-            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, input.fbo);
-            GL30C.glBlitFramebuffer(
-                    0,
-                    0,
-                    framebufferWidth,
-                    framebufferHeight,
-                    0,
-                    0,
-                    framebufferWidth,
-                    framebufferHeight,
-                    GL30C.GL_COLOR_BUFFER_BIT,
-                    GL11C.GL_LINEAR
-            );
-            framebuffer.beginWrite(false);
-            if (HudBuffer.activeCaptureTarget >= 0) {
-                GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, HudBuffer.activeCaptureTarget);
-            }
-            if (cacheFrame) {
-                forceHudRefresh = false;
-            }
-        }
-
-        if (cacheFrame) {
-            cachedFramePrepared = true;
+        if (refreshNonCachedInput) {
+            captureWorldInput(client, framebufferWidth, framebufferHeight);
         }
         return true;
+    }
+
+    private void captureWorldInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
+        Framebuffer framebuffer = client.getFramebuffer();
+        GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, framebuffer.fbo);
+        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, input.fbo);
+        GL30C.glBlitFramebuffer(
+                0,
+                0,
+                framebufferWidth,
+                framebufferHeight,
+                0,
+                0,
+                framebufferWidth,
+                framebufferHeight,
+                GL30C.GL_COLOR_BUFFER_BIT,
+                GL11C.GL_LINEAR
+        );
+        framebuffer.beginWrite(false);
+        if (HudBuffer.activeCaptureTarget >= 0) {
+            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, HudBuffer.activeCaptureTarget);
+        }
     }
 
     private boolean hasCameraMoved(MinecraftClient client) {
