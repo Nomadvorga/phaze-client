@@ -75,7 +75,6 @@ public abstract class EntityRendererNametagMixin {
         }
         if (module.nametagOpacity.getValue() <= 0.0f) {
             ci.cancel();
-            return;
         }
         phaze$backgroundDrawnThisLabel = false;
     }
@@ -109,9 +108,20 @@ public abstract class EntityRendererNametagMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/Text;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
     )
     private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
-        return phaze$drawCommon(textRenderer, textRenderer.getWidth(text), () ->
-                textRenderer.draw(text, x, y, phaze$resolvedTextColor(color), NametagHud.getInstance().nametagTextShadow.isValue(), matrix, vertexConsumers, layerType, 0, light),
-                matrix, x, y);
+        NametagHud module = NametagHud.getInstance();
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, backgroundColor);
+        return textRenderer.draw(
+                text,
+                x,
+                y,
+                phaze$resolvedTextColor(color),
+                module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
+                matrix,
+                vertexConsumers,
+                layerType,
+                resolvedBackground,
+                light
+        );
     }
 
     @Redirect(
@@ -119,45 +129,77 @@ public abstract class EntityRendererNametagMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/OrderedText;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
     )
     private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
-        return phaze$drawCommon(textRenderer, textRenderer.getWidth(text), () ->
-                textRenderer.draw(text, x, y, phaze$resolvedTextColor(color), NametagHud.getInstance().nametagTextShadow.isValue(), matrix, vertexConsumers, layerType, 0, light),
-                matrix, x, y);
-    }
-
-    private int phaze$drawCommon(TextRenderer tr, float textWidth, DrawCall drawCall, Matrix4f matrix, float x, float y) {
         NametagHud module = NametagHud.getInstance();
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (module.isEnabled() && module.background.isValue() && client != null && !phaze$backgroundDrawnThisLabel) {
-            float opacity = MathHelper.clamp(module.nametagOpacity.getValue() / 100.0f, 0.0f, 1.0f);
-            int baseBg = module.getResolvedBackgroundColor(client);
-            int baseA = (baseBg >>> 24) & 0xFF;
-            int a = MathHelper.clamp(Math.round(baseA * opacity), 0, 255);
-            int bg = (a << 24) | (baseBg & 0x00FFFFFF);
-            drawNametagSoftBackground3D(matrix, x - 1.0f, y - 1.0f, textWidth + 2.0f, 10.0f, bg, module.backgroundBlurRadius.getValue());
-            phaze$backgroundDrawnThisLabel = true;
-        }
-        return drawCall.run();
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, backgroundColor);
+        return textRenderer.draw(
+                text,
+                x,
+                y,
+                phaze$resolvedTextColor(color),
+                module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
+                matrix,
+                vertexConsumers,
+                layerType,
+                resolvedBackground,
+                light
+        );
     }
 
     private static int phaze$resolvedTextColor(int originalColor) {
-        float opacity = MathHelper.clamp(NametagHud.getInstance().nametagOpacity.getValue() / 100.0f, 0.0f, 1.0f);
-        int alpha = MathHelper.clamp(Math.round(opacity * 255.0f), 0, 255);
+        NametagHud module = NametagHud.getInstance();
+        if (!module.isEnabled()) {
+            return originalColor;
+        }
+        float opacity = MathHelper.clamp(module.nametagOpacity.getValue() / 100.0f, 0.0f, 1.0f);
+        int originalAlpha = (originalColor >>> 24) & 0xFF;
+        if (originalAlpha == 0) {
+            originalAlpha = 255;
+        }
+        int alpha = MathHelper.clamp(Math.round(originalAlpha * opacity), 0, 255);
         return (alpha << 24) | (originalColor & 0x00FFFFFF);
     }
 
-    private static void drawNametagSoftBackground3D(Matrix4f matrix, float x, float y, float width, float height, int baseColor, float blurRadius) {
-        int alpha = (baseColor >>> 24) & 0xFF;
-        if (alpha <= 0) return;
-        int rgb = baseColor & 0x00FFFFFF;
-
-        if (blurRadius <= 0.0f) {
-            drawSolidRect3D(matrix, x, y, width, height, baseColor);
-            return;
+    private static int phaze$resolvedBackgroundColor(int vanillaBackgroundColor) {
+        NametagHud module = NametagHud.getInstance();
+        if (!module.isEnabled()) {
+            return vanillaBackgroundColor;
+        }
+        if (!module.background.isValue() || vanillaBackgroundColor == 0) {
+            return 0;
         }
 
-        float quality = MathHelper.clamp(0.45f + blurRadius * 0.16f, 0.45f, 5.6f);
-        Blur.INSTANCE.renderWorldRect(matrix, x, y, width, height, quality, 0xFFFFFFFF);
-        drawSolidRect3D(matrix, x, y, width, height, baseColor);
+        MinecraftClient client = MinecraftClient.getInstance();
+        int resolved = client != null ? module.getResolvedBackgroundColor(client) : vanillaBackgroundColor;
+        int vanillaAlpha = (vanillaBackgroundColor >>> 24) & 0xFF;
+        int resolvedAlpha = (resolved >>> 24) & 0xFF;
+        int baseAlpha = resolvedAlpha > 0 ? Math.min(resolvedAlpha, vanillaAlpha) : vanillaAlpha;
+        float opacity = MathHelper.clamp(module.nametagOpacity.getValue() / 100.0f, 0.0f, 1.0f);
+        int alpha = MathHelper.clamp(Math.round(baseAlpha * opacity), 0, 255);
+        return (alpha << 24) | (resolved & 0x00FFFFFF);
+    }
+
+    private static int phaze$drawBlurBackgroundIfNeeded(float textWidth, Matrix4f matrix, float x, float y, int vanillaBackgroundColor) {
+        NametagHud module = NametagHud.getInstance();
+        if (!module.isEnabled() || !module.background.isValue() || vanillaBackgroundColor == 0) {
+            return phaze$resolvedBackgroundColor(vanillaBackgroundColor);
+        }
+
+        float blurRadius = module.backgroundBlurRadius.getValue();
+        int background = phaze$resolvedBackgroundColor(vanillaBackgroundColor);
+        if (blurRadius <= 0.0f || phaze$backgroundDrawnThisLabel) {
+            return background;
+        }
+
+        float left = x - 1.0f;
+        float top = y - 1.0f;
+        float width = textWidth + 2.0f;
+        float height = 10.0f;
+        float quality = MathHelper.clamp(0.35f + blurRadius * 0.10f, 0.35f, 4.2f);
+
+        Blur.INSTANCE.renderWorldRect(matrix, left, top, width, height, quality, 0xFFFFFFFF);
+        drawSolidRect3D(matrix, left, top, width, height, background);
+        phaze$backgroundDrawnThisLabel = true;
+        return 0;
     }
 
     private static void drawSolidRect3D(Matrix4f matrix, float x, float y, float width, float height, int argb) {
@@ -169,6 +211,7 @@ public abstract class EntityRendererNametagMixin {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.disableDepthTest();
         RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         buffer.vertex(matrix, x, y, 0.0f).color(r, g, b, a);
@@ -176,9 +219,7 @@ public abstract class EntityRendererNametagMixin {
         buffer.vertex(matrix, x + width, y + height, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x + width, y, 0.0f).color(r, g, b, a);
         BufferRenderer.drawWithGlobalProgram(buffer.end());
+        RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
     }
-
-    @FunctionalInterface
-    private interface DrawCall { int run(); }
 }
