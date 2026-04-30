@@ -110,6 +110,5 @@ public class Main implements ModInitializer {
         }
 
         configManager.loadCurrentConfig();
-        FastSettingsHud.getInstance().applyToAllHudModules();
     }
 }

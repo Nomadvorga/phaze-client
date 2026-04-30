@@ -129,6 +129,10 @@ public final class FastSettingsHud extends Module {
     }
 
     public void applyToAllHudModulesIfDirty() {
+        if (!isEnabled()) {
+            lastAppliedSignature = Long.MIN_VALUE;
+            return;
+        }
         long signature = computeSignature();
         if (signature == lastAppliedSignature) {
             return;

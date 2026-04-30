@@ -1,15 +1,8 @@
 package vorga.phazeclient.mixins;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gl.ShaderProgramKeys;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
@@ -73,9 +66,6 @@ public abstract class EntityRendererNametagMixin {
             ci.cancel();
             return;
         }
-        if (module.nametagOpacity.getValue() <= 0.0f) {
-            ci.cancel();
-        }
         phaze$backgroundDrawnThisLabel = false;
     }
 
@@ -109,7 +99,7 @@ public abstract class EntityRendererNametagMixin {
     )
     private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, backgroundColor);
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, layerType, backgroundColor);
         return textRenderer.draw(
                 text,
                 x,
@@ -130,7 +120,7 @@ public abstract class EntityRendererNametagMixin {
     )
     private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, backgroundColor);
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(textRenderer.getWidth(text), matrix, x, y, layerType, backgroundColor);
         return textRenderer.draw(
                 text,
                 x,
@@ -146,17 +136,7 @@ public abstract class EntityRendererNametagMixin {
     }
 
     private static int phaze$resolvedTextColor(int originalColor) {
-        NametagHud module = NametagHud.getInstance();
-        if (!module.isEnabled()) {
-            return originalColor;
-        }
-        float opacity = MathHelper.clamp(module.nametagOpacity.getValue() / 100.0f, 0.0f, 1.0f);
-        int originalAlpha = (originalColor >>> 24) & 0xFF;
-        if (originalAlpha == 0) {
-            originalAlpha = 255;
-        }
-        int alpha = MathHelper.clamp(Math.round(originalAlpha * opacity), 0, 255);
-        return (alpha << 24) | (originalColor & 0x00FFFFFF);
+        return 0xFF000000 | (originalColor & 0x00FFFFFF);
     }
 
     private static int phaze$resolvedBackgroundColor(int vanillaBackgroundColor) {
@@ -172,13 +152,12 @@ public abstract class EntityRendererNametagMixin {
         int resolved = client != null ? module.getResolvedBackgroundColor(client) : vanillaBackgroundColor;
         int vanillaAlpha = (vanillaBackgroundColor >>> 24) & 0xFF;
         int resolvedAlpha = (resolved >>> 24) & 0xFF;
-        int baseAlpha = resolvedAlpha > 0 ? Math.min(resolvedAlpha, vanillaAlpha) : vanillaAlpha;
-        float opacity = MathHelper.clamp(module.nametagOpacity.getValue() / 100.0f, 0.0f, 1.0f);
-        int alpha = MathHelper.clamp(Math.round(baseAlpha * opacity), 0, 255);
-        return (alpha << 24) | (resolved & 0x00FFFFFF);
+        boolean vanillaPreset = "Vanilla".equalsIgnoreCase(module.backgroundPreset.getSelected());
+        int baseAlpha = vanillaPreset ? vanillaAlpha : resolvedAlpha;
+        return (baseAlpha << 24) | (resolved & 0x00FFFFFF);
     }
 
-    private static int phaze$drawBlurBackgroundIfNeeded(float textWidth, Matrix4f matrix, float x, float y, int vanillaBackgroundColor) {
+    private static int phaze$drawBlurBackgroundIfNeeded(float textWidth, Matrix4f matrix, float x, float y, TextRenderer.TextLayerType layerType, int vanillaBackgroundColor) {
         NametagHud module = NametagHud.getInstance();
         if (!module.isEnabled() || !module.background.isValue() || vanillaBackgroundColor == 0) {
             return phaze$resolvedBackgroundColor(vanillaBackgroundColor);
@@ -199,7 +178,8 @@ public abstract class EntityRendererNametagMixin {
         Blur.INSTANCE.renderWorldRect(matrix, left, top, width, height, quality, 0xFFFFFFFF);
         drawSolidRect3D(matrix, left, top, width, height, background);
         phaze$backgroundDrawnThisLabel = true;
-        return 0;
+        // Keep vanilla backdrop in both passes and draw selected color on top.
+        return vanillaBackgroundColor;
     }
 
     private static void drawSolidRect3D(Matrix4f matrix, float x, float y, float width, float height, int argb) {
@@ -209,17 +189,20 @@ public abstract class EntityRendererNametagMixin {
         float g = ((argb >>> 8) & 0xFF) / 255.0f;
         float b = (argb & 0xFF) / 255.0f;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableDepthTest();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
+        com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
+        com.mojang.blaze3d.systems.RenderSystem.depthMask(false);
+        com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.gl.ShaderProgramKeys.POSITION_COLOR);
+        net.minecraft.client.render.BufferBuilder buffer = net.minecraft.client.render.Tessellator.getInstance()
+                .begin(net.minecraft.client.render.VertexFormat.DrawMode.QUADS, net.minecraft.client.render.VertexFormats.POSITION_COLOR);
         buffer.vertex(matrix, x, y, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x, y + height, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x + width, y + height, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x + width, y, 0.0f).color(r, g, b, a);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
+        net.minecraft.client.render.BufferRenderer.drawWithGlobalProgram(buffer.end());
+        com.mojang.blaze3d.systems.RenderSystem.depthMask(true);
+        com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
+        com.mojang.blaze3d.systems.RenderSystem.disableBlend();
     }
 }
