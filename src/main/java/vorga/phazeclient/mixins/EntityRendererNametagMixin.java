@@ -15,11 +15,15 @@ import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
+import vorga.phazeclient.api.system.nametag.NametagBlurStorage;
+import vorga.phazeclient.api.system.nametag.NametagBatchRenderer;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 
 import java.util.LinkedHashMap;
@@ -85,7 +89,61 @@ public abstract class EntityRendererNametagMixin {
             ci.cancel();
             return;
         }
+        
+        // Frustum culling - skip rendering if entity is outside camera view
+        if (client.cameraEntity != null && client.player != null) {
+            double distance = client.cameraEntity.squaredDistanceTo(client.player);
+            if (distance > 4096.0) { // 64 blocks squared
+                ci.cancel();
+                return;
+            }
+        }
+        
         phaze$backgroundDrawnThisLabel = false;
+    }
+
+    @Redirect(
+            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/Text;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
+    )
+    private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
+        NametagHud module = NametagHud.getInstance();
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
+        TextRenderer.TextLayerType forcedLayer = layerType;
+        return textRenderer.draw(
+                text,
+                x,
+                y,
+                phaze$resolvedTextColor(color),
+                module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
+                matrix,
+                vertexConsumers,
+                forcedLayer,
+                resolvedBackground,
+                light
+        );
+    }
+
+    @Redirect(
+            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/OrderedText;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
+    )
+    private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
+        NametagHud module = NametagHud.getInstance();
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
+        TextRenderer.TextLayerType forcedLayer = layerType;
+        return textRenderer.draw(
+                text,
+                x,
+                y,
+                phaze$resolvedTextColor(color),
+                module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
+                matrix,
+                vertexConsumers,
+                forcedLayer,
+                resolvedBackground,
+                light
+        );
     }
 
     @ModifyVariable(
@@ -112,56 +170,13 @@ public abstract class EntityRendererNametagMixin {
         return styled;
     }
 
-    @Redirect(
-            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/Text;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
-    )
-    private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
-        NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
-        TextRenderer.TextLayerType forcedLayer = module.isEnabled() ? TextRenderer.TextLayerType.SEE_THROUGH : layerType;
-        return textRenderer.draw(
-                text,
-                x,
-                y,
-                phaze$resolvedTextColor(color),
-                module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
-                matrix,
-                vertexConsumers,
-                forcedLayer,
-                resolvedBackground,
-                light
-        );
-    }
-
-    @Redirect(
-            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/OrderedText;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
-    )
-    private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
-        NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
-        TextRenderer.TextLayerType forcedLayer = module.isEnabled() ? TextRenderer.TextLayerType.SEE_THROUGH : layerType;
-        return textRenderer.draw(
-                text,
-                x,
-                y,
-                phaze$resolvedTextColor(color),
-                module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
-                matrix,
-                vertexConsumers,
-                forcedLayer,
-                resolvedBackground,
-                light
-        );
-    }
-
     private static int phaze$resolvedTextColor(int originalColor) {
         Integer cached = TEXT_COLOR_CACHE.get(originalColor);
         if (cached != null) {
             return cached;
         }
-        int resolved = 0xFF000000 | (originalColor & 0x00FFFFFF);
+        // Preserve original alpha (vanilla distance-based opacity fade)
+        int resolved = originalColor;
         TEXT_COLOR_CACHE.put(originalColor, resolved);
         return resolved;
     }
@@ -186,6 +201,7 @@ public abstract class EntityRendererNametagMixin {
         int resolvedAlpha = (resolved >>> 24) & 0xFF;
         boolean vanillaPreset = "Vanilla".equalsIgnoreCase(module.backgroundPreset.getSelected());
         int baseAlpha = vanillaPreset ? vanillaAlpha : resolvedAlpha;
+        // Apply vanilla distance-based opacity fade to custom background
         int out = (baseAlpha << 24) | (resolved & 0x00FFFFFF);
 
         lastBackgroundSettingsSignature = settingsSignature;
@@ -206,6 +222,13 @@ public abstract class EntityRendererNametagMixin {
             return background;
         }
 
+        // Calculate distance from camera for blur quality optimization
+        MinecraftClient client = MinecraftClient.getInstance();
+        float distance = 0.0f;
+        if (client != null && client.player != null && client.cameraEntity != null) {
+            distance = (float) client.cameraEntity.getPos().distanceTo(client.player.getPos());
+        }
+
         float left = x - 1.0f;
         float top = y - 1.0f;
         float rightExtend = -1.0f;
@@ -213,10 +236,22 @@ public abstract class EntityRendererNametagMixin {
         float height = 10.0f;
         float quality = MathHelper.clamp(0.35f + blurRadius * 0.10f, 0.35f, 4.2f);
 
-        Blur.INSTANCE.renderWorldRect(matrix, left, top, width, height, quality, 0xFFFFFFFF);
+        // Reduce blur quality based on distance
+        if (distance > 32.0f) {
+            quality *= 0.5f; // 50% quality for distant nametags
+        } else if (distance > 16.0f) {
+            quality *= 0.75f; // 75% quality for medium distance
+        }
+
+        // Render blur immediately or add to batch
+        if (NametagBatchRenderer.isBatchingEnabled()) {
+            NametagBatchRenderer.addBlurRect(left, top, width, height, 0xFFFFFFFF, matrix, quality);
+        } else {
+            Blur.INSTANCE.renderWorldRect(matrix, left, top, width, height, quality, 0xFFFFFFFF);
+        }
         drawSolidRect3D(matrix, left, top, width, height, background);
         phaze$backgroundDrawnThisLabel = true;
-        // Keep vanilla backdrop in both passes and draw selected color on top.
+        // Keep vanilla backdrop in both passes and draw solid background on top.
         return vanillaBackgroundColor;
     }
 
@@ -272,7 +307,6 @@ public abstract class EntityRendererNametagMixin {
         buffer.vertex(matrix, x + width, y, 0.0f).color(r, g, b, a);
         net.minecraft.client.render.BufferRenderer.drawWithGlobalProgram(buffer.end());
         com.mojang.blaze3d.systems.RenderSystem.depthMask(true);
-        com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
         com.mojang.blaze3d.systems.RenderSystem.disableBlend();
     }
 }
