@@ -42,14 +42,9 @@ public final class Theme extends Module {
             .range(0, 32)
             .setValue(16);
 
-    public final SelectSetting hudFont = new SelectSetting("HUD Font", "Select HUD text font")
-            .value("Vanilla", "MSDF Vanilla")
-            .selected("Vanilla");
-
     private Theme() {
-        super("themes", "Themes", ModuleCategory.CLIENT, false, false);
-        hudFont.setFullWidth(true);
-        setup(menuTheme, blurRadius, hudFont);
+        super("themes", "Themes", ModuleCategory.OTHER, false, false);
+        setup(menuTheme, blurRadius);
 
         applyTheme();
         applyMenuTheme();
@@ -74,7 +69,10 @@ public final class Theme extends Module {
     }
 
     public float getMenuBlurRadius() {
-        return blurRadius.getValue();
+        float value = blurRadius.getValue();
+        // Use logarithmic scaling to reduce impact at high values
+        // value 0-32 -> effective blur 0-12 (non-linear)
+        return (float) (Math.log1p(value) * 2.5);
     }
 
     public float getHudBlurQualityMultiplier() {
@@ -89,10 +87,6 @@ public final class Theme extends Module {
 
     public float getHudBlurRadiusMultiplier() {
         return 1.25f;
-    }
-
-    public boolean useMsdfHudFont() {
-        return "MSDF Vanilla".equalsIgnoreCase(hudFont.getSelected());
     }
 
     @Override

@@ -6,6 +6,7 @@ import net.minecraft.client.util.math.MatrixStack;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
+import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 
 import java.awt.*;
@@ -25,7 +26,7 @@ public class HueComponent extends AbstractComponent {
         MatrixStack matrix = context.getMatrices();
 
         X = x + 6;
-        Y = y + 18.5F;
+        Y = y + 10.5F;
         W = 138;
         H = 50;
 
@@ -38,6 +39,8 @@ public class HueComponent extends AbstractComponent {
 
         rectangle.render(ShapeProperties.create(matrix, X, Y, W, H)
                 .round(2)
+                .thickness(2)
+                .outlineColor(MenuStyle.BORDER_LIGHT)
                 .color(color)
                 .build()
         );

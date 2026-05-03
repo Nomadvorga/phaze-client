@@ -31,4 +31,14 @@ public final class NametagHud extends RectHudModule {
     public String getDescription() {
         return "Nametag options HUD";
     }
+
+    @Override
+    public String getIcon() {
+        return "nametag_hud.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
 }

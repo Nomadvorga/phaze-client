@@ -4,15 +4,9 @@
   "package": "vorga.phazeclient.mixins",
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
-  "injectors": {
-    "defaultRequire": 0
-  },
-  "priority": 1500,
-  "overwrites": {
-    "conformVisibility": true
-  },
   "client": [
     "InGameHudMixin",
+    "InGameHudSaturationMixin",
     "EntityRendererNametagMixin",
     "LivingEntityRendererNametagMixin",
     "PlayerListHudMixin",
@@ -20,6 +14,17 @@
     "ClientWorldPropertiesMixin",
     "WorldMixin",
     "BiomeMixin",
-    "TridentItemMixin"
-  ]
+    "TridentItemMixin",
+    "OverlayTextureMixin",
+    "LivingEntityRendererMixin",
+    "ArmorFeatureRendererMixin",
+    "EquipmentRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  },
+  "priority": 1500,
+  "overwrites": {
+    "conformVisibility": true
+  }
 }

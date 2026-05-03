@@ -29,8 +29,7 @@ public final class StatsHud extends RectHudModule {
         sampleSmoothing.setFullWidth(true);
         setup(
                 textShadow, colorSection, background, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius,
-                statsSection, showPercent, showMs, topCount, sampleSmoothing,
-                batchingSection, hudBatching, forceHudUpdate, hudFps
+                statsSection, showPercent, showMs, topCount, sampleSmoothing
         );
     }
 

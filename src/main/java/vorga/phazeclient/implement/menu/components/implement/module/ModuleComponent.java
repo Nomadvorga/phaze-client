@@ -61,12 +61,14 @@ public class ModuleComponent extends AbstractComponent {
 
     private float visualX, visualY;
     private float prevX, prevY;
+    private boolean lastModuleState;
 
     public ModuleComponent(Module module) {
         this.module = module;
         new SettingComponentAdder().addSettingComponent(module.settings(), components);
         this.visualX = this.prevX = 0;
         this.visualY = this.prevY = 0;
+        this.lastModuleState = module.isState();
         this.hoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
         this.optionsHoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
         this.stateRowHoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
@@ -75,28 +77,20 @@ public class ModuleComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        if (prevX == 0 && prevY == 0) {
-            visualX = prevX = x;
-            visualY = prevY = y;
-        } else if (prevX != x || prevY != y) {
-            prevX = x;
-            prevY = y;
-        }
-
-        if (MenuScreen.INSTANCE.isMenuDragging()) {
-            visualX = x;
-            visualY = y;
-        } else {
-            visualX = MathUtil.interpolateSmooth(2, visualX, x);
-            visualY = MathUtil.interpolateSmooth(2, visualY, y);
-        }
+        visualX = x;
+        visualY = y;
 
         float offsetX = visualX - x;
         float offsetY = visualY - y;
 
         this.isHovered = isHover(mouseX, mouseY);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        outlineColorAnimation.setDirection(module.isState() ? Direction.FORWARDS : Direction.BACKWARDS);
+        
+        boolean currentModuleState = module.isState();
+        if (currentModuleState != lastModuleState) {
+            outlineColorAnimation.setDirection(currentModuleState ? Direction.FORWARDS : Direction.BACKWARDS);
+            lastModuleState = currentModuleState;
+        }
 
         float hoverProgress = hoverAnimation.getOutput().floatValue();
         float baseHeight = getBaseHeightFloat();
@@ -109,7 +103,7 @@ public class ModuleComponent extends AbstractComponent {
         context.getMatrices().translate(offsetX, offsetY, 0);
 
         int outlineColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, outlineColorAnimation.getOutput().floatValue() * 0.75f);
-        outlineColor = applyGlobalAlpha(MenuStyle.mix(outlineColor, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.10F));
+        outlineColor = MenuStyle.withAlpha(outlineColor, applyGlobalAlpha(0.96F));
         int cardColor = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.CARD_BG, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.035F), applyGlobalAlpha(0.85F));
         int innerCardColor = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.CARD_INNER, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.025F), applyGlobalAlpha(0.90F));
         rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height = getComponentHeight())

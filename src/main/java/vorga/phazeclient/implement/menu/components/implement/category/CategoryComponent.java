@@ -63,9 +63,9 @@ public class CategoryComponent extends AbstractComponent {
 
     public String getTabLabel() {
         return switch (category) {
-            case VISUALS -> "ALL";
+            case ALL -> "ALL";
+            case UTILITIES -> "UTILITIES";
             case HUD -> "HUD";
-            case WORLD -> "UTILITIES";
             case OTHER -> "OTHER";
             default -> category.name();
         };
@@ -319,6 +319,7 @@ public class CategoryComponent extends AbstractComponent {
     private boolean shouldRenderComponent(ModuleComponent component) {
         MenuScreen menuScreen = MenuScreen.INSTANCE;
         ModuleCategory moduleCategory = component.getModule().getCategory();
+        ModuleCategory secondaryCategory = component.getModule().getSecondaryCategory();
         ModuleCategory currentCategory = menuScreen.getCategory();
         String searchText = menuScreen.getSearchComponent().getText().toLowerCase();
 
@@ -341,8 +342,12 @@ public class CategoryComponent extends AbstractComponent {
             );
         }
 
+        if (currentCategory == ModuleCategory.ALL) {
+            return true; // Show all modules in ALL category
+        }
+
         return moduleCategory.equals(currentCategory) ||
-                (component.getModule().getSecondaryCategory() != null && component.getModule().getSecondaryCategory().equals(currentCategory));
+                (secondaryCategory != null && secondaryCategory.equals(currentCategory));
     }
 
     private void refreshVisibleCache(ModuleCategory currentCategory, String currentSearchText) {

@@ -4,12 +4,11 @@ import lombok.Getter;
 
 @Getter
 public enum ModuleCategory {
-    VISUALS("category.visuals"),
-    WORLD("category.world"),
-    CLIENT("category.client"),
     OTHER("category.other"),
+    UTILITIES("category.utilities"),
     HUD("category.hud"),
-    SEARCH("category.search");
+    SEARCH("category.search"),
+    ALL("category.all");
 
     private final String localizationKey;
 

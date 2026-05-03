@@ -114,7 +114,36 @@ vec3 sampleBlurKawase() {
     return sampleBlurCurrent();
 }
 
+vec3 sampleBlurBox() {
+    vec2 texSize = vec2(textureSize(Sampler0, 0));
+    vec2 texCoord = gl_FragCoord.xy / texSize;
+    vec2 texel = 1.0 / texSize;
+
+    if (BlurRadius <= 0.10) {
+        return texture(Sampler0, texCoord).rgb;
+    }
+
+    // Box blur - simple average of neighboring pixels
+    int radius = int(clamp(BlurRadius, 1.0, 8.0));
+    vec3 acc = vec3(0.0);
+    int sampleCount = 0;
+
+    // Sample in a box around the pixel
+    for (int x = -radius; x <= radius; x++) {
+        for (int y = -radius; y <= radius; y++) {
+            vec2 offset = vec2(float(x), float(y)) * texel;
+            acc += texture(Sampler0, texCoord + offset).rgb;
+            sampleCount++;
+        }
+    }
+
+    return acc / float(sampleCount);
+}
+
 vec3 sampleBlur() {
+    if (BlurMode == 3) {
+        return sampleBlurBox();
+    }
     if (BlurMode == 2) {
         return sampleBlurKawase();
     }

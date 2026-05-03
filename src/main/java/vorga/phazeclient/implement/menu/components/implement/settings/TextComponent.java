@@ -16,7 +16,7 @@ import vorga.phazeclient.implement.menu.MenuStyle;
 
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class TextComponent extends AbstractSettingComponent {
-    public static boolean typing;
+    private boolean typing;
     private final TextSetting setting;
     private float rectX, rectY, rectWidth, rectHeight;
     private boolean dragging;
@@ -30,6 +30,8 @@ public class TextComponent extends AbstractSettingComponent {
     public TextComponent(TextSetting setting) {
         super(setting);
         this.setting = setting;
+        this.text = setting.getText() != null ? setting.getText() : "";
+        this.cursorPosition = text.length();
     }
 
     @Override

@@ -21,8 +21,7 @@ public final class TimeChanger extends Module {
     public final ValueSetting timeValue = new ValueSetting("Time", "Set world time (0-24000 ticks)");
 
     private TimeChanger() {
-        super("time_changer", "Time Changer", ModuleCategory.VISUALS, true, false);
-        setSecondaryCategory(ModuleCategory.OTHER);
+        super("time_changer", "Time Changer", ModuleCategory.OTHER, true, false);
         timeValue.range(0, 24000).setValue(12000);
         setup(timeValue);
 

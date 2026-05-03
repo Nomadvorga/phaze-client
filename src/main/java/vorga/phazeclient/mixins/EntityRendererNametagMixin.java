@@ -201,6 +201,8 @@ public abstract class EntityRendererNametagMixin {
         int resolvedAlpha = (resolved >>> 24) & 0xFF;
         boolean vanillaPreset = "Vanilla".equalsIgnoreCase(module.backgroundPreset.getSelected());
         int baseAlpha = vanillaPreset ? vanillaAlpha : resolvedAlpha;
+        // Scale opacity: 100% setting looks like 30%
+        baseAlpha = Math.round(baseAlpha * 0.3f);
         // Apply vanilla distance-based opacity fade to custom background
         int out = (baseAlpha << 24) | (resolved & 0x00FFFFFF);
 

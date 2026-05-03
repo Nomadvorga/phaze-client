@@ -22,8 +22,7 @@ public final class WeatherChanger extends Module {
     public final ValueSetting snowDensity = new ValueSetting("Snow Density", "Set the density of snow (0-100%)");
 
     private WeatherChanger() {
-        super("weather_changer", "Weather Changer", ModuleCategory.VISUALS, true, false);
-        setSecondaryCategory(ModuleCategory.OTHER);
+        super("weather_changer", "Weather Changer", ModuleCategory.OTHER, true, false);
         rainDensity.range(0, 100).setValue(100).visible(() -> weatherType.isSelected("Rain"));
         thunderStrength.range(0, 100).setValue(100).visible(() -> weatherType.isSelected("Thunder"));
         snowDensity.range(0, 100).setValue(100).visible(() -> weatherType.isSelected("Snow"));

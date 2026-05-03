@@ -15,7 +15,7 @@ public final class AutoSprint extends Module {
     }
 
     private AutoSprint() {
-        super("auto_sprint", "AutoSprint", ModuleCategory.OTHER, true, false);
+        super("auto_sprint", "AutoSprint", ModuleCategory.UTILITIES, true, false);
         setup(showInSprintHud);
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -50,7 +50,7 @@ public final class AutoSprint extends Module {
 
     @Override
     public String getIcon() {
-        return null;
+        return "auto_sprint.png";
     }
 
     @Override

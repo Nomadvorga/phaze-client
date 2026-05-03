@@ -5,6 +5,7 @@ import lombok.Setter;
 import lombok.experimental.Accessors;
 import vorga.phazeclient.api.feature.module.setting.Setting;
 
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 @Getter
@@ -14,6 +15,7 @@ public class ValueSetting extends Setting {
     private float value, min, max;
     private boolean integer;
     private Float defaultValue;
+    private Consumer<Float> onChangeCallback;
 
     public ValueSetting(String name, String description) {
         super(name, description);
@@ -41,12 +43,21 @@ public class ValueSetting extends Setting {
         return this;
     }
 
+    public ValueSetting onChange(Consumer<Float> callback) {
+        this.onChangeCallback = callback;
+        return this;
+    }
+
     public ValueSetting setValue(float value) {
         if (defaultValue == null) {
             defaultValue = value;
         }
+        boolean changed = this.value != value;
         this.value = value;
         notifyChange();
+        if (changed && onChangeCallback != null) {
+            onChangeCallback.accept(value);
+        }
         return this;
     }
 

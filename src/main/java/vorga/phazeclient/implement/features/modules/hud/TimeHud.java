@@ -27,5 +27,15 @@ public final class TimeHud extends RectHudModule {
     public String getDescription() {
         return "Shows real local time";
     }
+
+    @Override
+    public String getIcon() {
+        return "time_hud.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
 }
 

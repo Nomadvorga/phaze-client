@@ -563,9 +563,7 @@ public class BackgroundComponent extends AbstractComponent {
                     MenuScreen.INSTANCE.openModuleDetail(Theme.getInstance());
                 } else {
                     MenuScreen.INSTANCE.closeModuleDetail();
-                    if (MenuScreen.INSTANCE.getCategory() == ModuleCategory.CLIENT) {
-                        MenuScreen.INSTANCE.setCategory(ModuleCategory.VISUALS);
-                    }
+                    MenuScreen.INSTANCE.setCategory(ModuleCategory.ALL);
                 }
                 return true;
             }

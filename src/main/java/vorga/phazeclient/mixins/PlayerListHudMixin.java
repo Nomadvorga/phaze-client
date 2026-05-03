@@ -10,8 +10,17 @@ import net.minecraft.util.Formatting;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.hud.TabHud;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
 
 @Mixin(PlayerListHud.class)
 public class PlayerListHudMixin {
@@ -59,8 +68,15 @@ public class PlayerListHudMixin {
             return;
         }
 
-        MutableText styled = cir.getReturnValue().copy().formatted(Formatting.AQUA, Formatting.BOLD);
+        Text original = cir.getReturnValue();
+        if (original == null) {
+            return;
+        }
+        MutableText styled = original.copy().formatted(Formatting.AQUA, Formatting.BOLD);
         cir.setReturnValue(styled);
     }
+
+
+
 }
 

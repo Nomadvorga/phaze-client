@@ -20,9 +20,9 @@ public class CategoryContainerComponent extends AbstractComponent {
     private static final float CHIP_HORIZONTAL_PADDING = 16.0F;
     private static final float CHIP_GAP = 4.0F;
     private static final List<ModuleCategory> CHIP_CATEGORIES = List.of(
-            ModuleCategory.VISUALS,
+            ModuleCategory.ALL,
             ModuleCategory.HUD,
-            ModuleCategory.WORLD,
+            ModuleCategory.UTILITIES,
             ModuleCategory.OTHER
     );
 

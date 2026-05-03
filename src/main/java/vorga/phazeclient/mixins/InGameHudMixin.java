@@ -23,8 +23,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
-import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.features.modules.client.Theme;
@@ -33,17 +31,19 @@ import vorga.phazeclient.implement.features.modules.hud.CoordinatesHud;
 import vorga.phazeclient.implement.features.modules.hud.CpsHud;
 import vorga.phazeclient.implement.features.modules.hud.DayCounterHud;
 import vorga.phazeclient.implement.features.modules.hud.DirectionHud;
-import vorga.phazeclient.implement.features.modules.hud.FastSettingsHud;
 import vorga.phazeclient.implement.features.modules.hud.FpsHud;
 import vorga.phazeclient.implement.features.modules.hud.KeystrokesHud;
 import vorga.phazeclient.implement.features.modules.hud.PingHud;
 import vorga.phazeclient.implement.features.modules.hud.PotionHud;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
+import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
 import vorga.phazeclient.implement.features.modules.hud.SessionTimeHud;
 import vorga.phazeclient.implement.features.modules.hud.StatsHud;
 import vorga.phazeclient.implement.features.modules.hud.SprintHud;
-import vorga.phazeclient.implement.features.modules.hud.TabHud;
+import vorga.phazeclient.implement.features.modules.hud.MemoryHud;
+import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
+import vorga.phazeclient.implement.features.modules.hud.ServerAddressHud;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
 import vorga.phazeclient.api.system.hud.HudBuffer;
@@ -63,25 +63,13 @@ import java.time.format.DateTimeFormatter;
 
 @Mixin(InGameHud.class)
 public class InGameHudMixin {
-    private static final int BASE_WIDTH = 64;
-    private static final int BASE_HEIGHT = 20;
+    private static final float BASE_WIDTH = 60.0f;
+    private static final float BASE_HEIGHT = 20.0f;
     private static final int HUD_TEXT_COLOR = 0xFFFFFFFF;
-    private static final float RECT_HUD_MSDF_SIZE = 8.13f;
-    private static final float ARMOR_HUD_MSDF_SIZE = 8.0f;
-    private static final float HUD_MSDF_SIZE_MATCH_MULTIPLIER = 1.28f;
-    private static final float MSDF_SHADOW_OFFSET = 1.0f;
-    private static final int MSDF_SHADOW_COLOR = 0xFF3F3E3E;
-    private static final float HUD_MSDF_THICKNESS = 0.021f;
-    private static final float HUD_MSDF_SMOOTHNESS = 0.01f;
-    private static final float HUD_MSDF_GLOBAL_X_OFFSET = -0.5f;
-    private static final float HUD_MSDF_GLOBAL_Y_OFFSET = -0.5f;
-    private static final float ARMOR_HUD_MSDF_EXTRA_Y_OFFSET = -2.0f;
+    private static final float HUD_TEXT_SIZE = 8.0f;
     private static final float HUD_TEXT_RENDER_Z = 1000.0f;
-    private static final float RECT_HUD_MSDF_Y_OFFSET = 1.20f;
-    private static final float ARMOR_HUD_MSDF_Y_OFFSET = 0.20f;
-    private static final float ARMOR_TEXT_VERTICAL_NUDGE = 1.5f;
     private static final int HANDLE_COLOR = 0xFF72F7D4;
-    private static final int BASE_HOVER_OUTLINE_THICKNESS = 5;
+    private static final float BASE_HOVER_OUTLINE_THICKNESS = 1.0f;
     private static final float HUD_RENDER_Z = 400.0f;
     private static final float HANDLE_RENDER_Z = 450.0f;
     private static final float GUIDE_SNAP_RADIUS = 3.0f;
@@ -105,7 +93,11 @@ public class InGameHudMixin {
     private static final int HUD_NAMETAG = 12;
     private static final int HUD_TIME = 13;
     private static final int HUD_SESSION = 14;
-    private static final int RECT_HUD_COUNT = 15;
+    private static final int HUD_SCOREBOARD = 15;
+    private static final int HUD_MEMORY = 16;
+    private static final int HUD_COMBO = 17;
+    private static final int HUD_SERVER_ADDRESS = 18;
+    private static final int RECT_HUD_COUNT = 19;
     private static final int HUD_ARMOR_BLUR_SLOT = 15;
     private static final int KEYSTROKE_W = 0;
     private static final int KEYSTROKE_A = 1;
@@ -163,9 +155,11 @@ public class InGameHudMixin {
     private static boolean armorBackgroundColorInitialized = false;
 
     private static final Deque<Long> LEFT_CLICKS = new ArrayDeque<>();
+    private static final Deque<Long> RIGHT_CLICKS = new ArrayDeque<>();
     private static boolean renderedThisFrame = false;
     private static boolean wasMouseDown = false;
     private static boolean wasLeftMouseDown = false;
+    private static boolean wasRightMouseDown = false;
     private static long lastFrameNanos = -1L;
     private static float verticalGuideProgress = 0.0f;
     private static float horizontalGuideProgress = 0.0f;
@@ -176,17 +170,13 @@ public class InGameHudMixin {
     private static final int[] HUD_PART_ORDER = new int[HUD_PART_NAMES.length];
     private static float directionDisplayYaw = Float.NaN;
     private static final long SESSION_START_MS = System.currentTimeMillis();
+    private static final int HUD_SCOREBOARD_BLUR_SLOT = 7;
 
 
     @Inject(method = "render", at = @At("HEAD"))
     private void beginHudFrame(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         renderedThisFrame = false;
         Blur.INSTANCE.beginCachedFrame();
-    }
-
-    @Inject(method = "renderScoreboardSidebar", at = @At("TAIL"))
-    private void renderCustomHudAfterScoreboard(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        renderHudInternal(context);
     }
 
     @Inject(method = "render", at = @At("TAIL"))
@@ -199,7 +189,6 @@ public class InGameHudMixin {
 
     private void renderHudInternal(DrawContext context) {
         renderedThisFrame = true;
-        FastSettingsHud.getInstance().applyToAllHudModulesIfDirty();
 
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.options == null || client.options.hudHidden) {
@@ -234,8 +223,9 @@ public class InGameHudMixin {
         double mouseX = client.mouse.getX();
         double mouseY = client.mouse.getY();
         boolean mouseDown = GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        boolean rightMouseDown = GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
         boolean gameplayInput = client.currentScreen == null && client.player != null && client.world != null;
-        updateClicksPerSecond(mouseDown, gameplayInput);
+        updateClicksPerSecond(mouseDown, rightMouseDown, gameplayInput);
         showVerticalGuideThisFrame = false;
         showHorizontalGuideThisFrame = false;
 
@@ -244,14 +234,43 @@ public class InGameHudMixin {
         timeHudPart(0, statsSmoothing, () -> renderBufferedHud(context, FpsHud.getInstance(), chatEditing, () ->
                 renderRectHud(context, client, FpsHud.getInstance(), fpsText, HUD_FPS,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(FpsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
-        String cpsText = getCachedHudText(CpsHud.getInstance(), HUD_CPS, chatEditing, () -> "CPS: " + LEFT_CLICKS.size());
+        String cpsText = getCachedHudText(CpsHud.getInstance(), HUD_CPS, chatEditing, () -> {
+            CpsHud cpsHud = CpsHud.getInstance();
+            int leftCps = LEFT_CLICKS.size();
+            int rightCps = RIGHT_CLICKS.size();
+            
+            if (cpsHud.rightClickCps.isValue()) {
+                // Show both left and right CPS: *left* | *right*
+                if (cpsHud.showCpsText.isValue()) {
+                    if (cpsHud.reverseText.isValue()) {
+                        return leftCps + " | " + rightCps + " CPS";
+                    } else {
+                        return "CPS: " + leftCps + " | " + rightCps;
+                    }
+                } else {
+                    return leftCps + " | " + rightCps;
+                }
+            } else {
+                // Show only left CPS
+                if (cpsHud.showCpsText.isValue()) {
+                    if (cpsHud.reverseText.isValue()) {
+                        return leftCps + " CPS";
+                    } else {
+                        return "CPS: " + leftCps;
+                    }
+                } else {
+                    return String.valueOf(leftCps);
+                }
+            }
+        });
         timeHudPart(1, statsSmoothing, () -> renderBufferedHud(context, CpsHud.getInstance(), chatEditing, () ->
                 renderRectHud(context, client, CpsHud.getInstance(), cpsText, HUD_CPS,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(CpsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
         String reachText = getCachedHudText(ReachHud.getInstance(), HUD_REACH, chatEditing, () -> ReachHud.getInstance().getFormattedReach());
         timeHudPart(2, statsSmoothing, () -> renderBufferedHud(context, ReachHud.getInstance(), chatEditing, () ->
                 renderRectHud(context, client, ReachHud.getInstance(), reachText, HUD_REACH,
-                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(ReachHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
+                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(ReachHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                        BASE_WIDTH + 6.0f, BASE_HEIGHT)));
         timeHudPart(3, statsSmoothing, () -> renderBufferedHud(context, ArmorHud.getInstance(), chatEditing, () ->
                 renderArmorHud(context, client, ArmorHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(ArmorHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
         String sprintText = getCachedHudText(SprintHud.getInstance(), HUD_SPRINT, chatEditing, () -> getSprintHudText(client));
@@ -284,8 +303,28 @@ public class InGameHudMixin {
                         getHudDelta(TimeHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
         String sessionText = getSessionText(SessionTimeHud.getInstance());
         renderBufferedHud(context, SessionTimeHud.getInstance(), chatEditing, () ->
-                renderSimpleTextHud(context, client, SessionTimeHud.getInstance(), sessionText, HUD_SESSION, chatEditing, mouseX, mouseY, mouseDown,
+                renderSessionTimeHud(context, client, SessionTimeHud.getInstance(), sessionText, HUD_SESSION, chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(SessionTimeHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        String memoryText = MemoryHud.getInstance().getMemoryText();
+        renderBufferedHud(context, MemoryHud.getInstance(), chatEditing, () ->
+                renderMemoryHud(context, client, MemoryHud.getInstance(), memoryText, HUD_MEMORY, chatEditing, mouseX, mouseY, mouseDown,
+                        getHudDelta(MemoryHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        String comboText = ComboCounterHud.getInstance().getComboText();
+        renderBufferedHud(context, ComboCounterHud.getInstance(), chatEditing, () ->
+                renderComboHud(context, client, ComboCounterHud.getInstance(), comboText, HUD_COMBO, chatEditing, mouseX, mouseY, mouseDown,
+                        getHudDelta(ComboCounterHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        String serverAddressText = ServerAddressHud.getInstance().getServerAddress();
+        renderBufferedHud(context, ServerAddressHud.getInstance(), chatEditing, () ->
+                renderServerAddressHud(context, client, ServerAddressHud.getInstance(), serverAddressText, HUD_SERVER_ADDRESS, chatEditing, mouseX, mouseY, mouseDown,
+                        getHudDelta(ServerAddressHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        // TODO: Scoreboard HUD temporarily disabled for debugging
+        // renderBufferedHud(context, ScoreboardHud.getInstance(), chatEditing, () ->
+        //         renderScoreboardHud(context, client, ScoreboardHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
+        //                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
         if (chatEditing) {
             verticalGuideProgress = approachExp(verticalGuideProgress, showVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
@@ -300,23 +339,19 @@ public class InGameHudMixin {
     }
 
     private void renderBufferedHud(DrawContext context, RectHudModule module, boolean chatEditing, Runnable renderLogic) {
-        renderBufferedHudInternal(context, module.isEnabled(), module.hudBatching.isValue() && isFboBatchSafe(module), module.getHudBuffer(), module.hudFps.getInt(), chatEditing, renderLogic);
+        renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
     }
 
     private void renderBufferedHud(DrawContext context, ArmorHud module, boolean chatEditing, Runnable renderLogic) {
-        renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), module.hudFps.getInt(), chatEditing, renderLogic);
+        renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
     }
 
-    private boolean isFboBatchSafe(RectHudModule module) {
-        if (module.background.isValue() && module.backgroundBlurRadius.getValue() > 0.0f) {
-            return false;
-        }
-        return module == FpsHud.getInstance()
-                || module == CpsHud.getInstance()
-                || module == ReachHud.getInstance()
-                || module == SprintHud.getInstance()
-                || module == PingHud.getInstance()
-                || module == DayCounterHud.getInstance();
+    private float getHudDelta(RectHudModule module, boolean chatEditing, float deltaSeconds) {
+        return deltaSeconds;
+    }
+
+    private float getHudDelta(ArmorHud module, boolean chatEditing, float deltaSeconds) {
+        return deltaSeconds;
     }
 
     private void renderBufferedHudInternal(DrawContext context, boolean enabled, boolean batching, HudBuffer buffer, int targetFps, boolean chatEditing, Runnable renderLogic) {
@@ -325,35 +360,14 @@ public class InGameHudMixin {
             return;
         }
 
+        // Caching disabled due to flickering issue
         renderLogic.run();
-    }
-
-    private float getHudDelta(RectHudModule module, boolean chatEditing, float deltaSeconds) {
-        if (chatEditing || !module.hudBatching.isValue() || module.forceHudUpdate.isValue()) {
-            return deltaSeconds;
-        }
-        return module.getHudBuffer().getThrottledDelta(module.hudFps.getInt(), deltaSeconds);
-    }
-
-    private float getHudDelta(ArmorHud module, boolean chatEditing, float deltaSeconds) {
-        if (chatEditing || !module.hudBatching.isValue() || module.forceHudUpdate.isValue()) {
-            return deltaSeconds;
-        }
-        return module.getHudBuffer().getThrottledDelta(module.hudFps.getInt(), deltaSeconds);
-    }
-
-    private boolean shouldUpdateHudData(RectHudModule module, boolean chatEditing) {
-        return chatEditing || !module.hudBatching.isValue() || module.forceHudUpdate.isValue() || module.getHudBuffer().shouldUpdateData(module.hudFps.getInt());
-    }
-
-    private boolean shouldUpdateHudData(ArmorHud module, boolean chatEditing) {
-        return chatEditing || !module.hudBatching.isValue() || module.forceHudUpdate.isValue() || module.getHudBuffer().shouldUpdateData(module.hudFps.getInt());
     }
 
     private String getCachedHudText(RectHudModule module, int hudIndex, boolean chatEditing, Supplier<String> supplier) {
         long now = System.currentTimeMillis();
         boolean throttledDue = now - HUD_TEXT_CACHE_TIME_MS[hudIndex] >= HUD_TEXT_THROTTLE_MS;
-        if (HUD_TEXT_CACHE[hudIndex] == null || shouldUpdateHudData(module, chatEditing) || throttledDue) {
+        if (HUD_TEXT_CACHE[hudIndex] == null || throttledDue) {
             HUD_TEXT_CACHE[hudIndex] = supplier.get();
             HUD_TEXT_CACHE_TIME_MS[hudIndex] = now;
         }
@@ -510,11 +524,9 @@ public class InGameHudMixin {
             RECT_HOVER_PROGRESS[hudIndex] = approachExp(RECT_HOVER_PROGRESS[hudIndex], hoveredHud ? 1.0f : 0.0f, 10.0f, deltaSeconds);
         }
 
-        float textWidth = getHudTextWidth(client, text, RECT_HUD_MSDF_SIZE);
+        float textWidth = getHudTextWidth(client, text, HUD_TEXT_SIZE);
         float textX = (baseWidth - textWidth) / 2.0f;
-        float textY = Theme.getInstance().useMsdfHudFont()
-                ? (baseHeight - RECT_HUD_MSDF_SIZE) / 2.0f + RECT_HUD_MSDF_Y_OFFSET
-                : (baseHeight - 8.0f) / 2.0f;
+        float textY = (baseHeight - 8.0f) / 2.0f;
         int hoverOutlineThickness = Math.max(1, Math.round(BASE_HOVER_OUTLINE_THICKNESS / Math.max(1.0f, scale)));
 
         context.getMatrices().push();
@@ -570,7 +582,14 @@ public class InGameHudMixin {
 
         context.getMatrices().pop();
 
-        renderScaledHudText(context, client, text, x, y, textX, textY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+        // Use custom color for MemoryHud if Color Based On Usage is enabled
+        int textColor = HUD_TEXT_COLOR;
+        if (module instanceof MemoryHud) {
+            MemoryHud memoryHud = (MemoryHud) module;
+            textColor = memoryHud.getMemoryColor();
+        }
+
+        renderScaledHudTextColored(context, client, text, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
 
         if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05f) {
             int borderColor = withAlpha(0xFFFFFF, (int) (175.0f * RECT_HOVER_PROGRESS[hudIndex]));
@@ -615,7 +634,7 @@ public class InGameHudMixin {
             return;
         }
 
-        if (!armorCacheInitialized || shouldUpdateHudData(module, chatEditing)) {
+        if (!armorCacheInitialized) {
             List<ItemStack> updatedStacks = new ArrayList<>();
             List<String> updatedDurabilityTexts = new ArrayList<>();
 
@@ -662,7 +681,7 @@ public class InGameHudMixin {
         int numberSidePadding = 2;
         float maxTextWidth = 0.0f;
         for (String text : durabilityTexts) {
-            maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, text, ARMOR_HUD_MSDF_SIZE));
+            maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, text, HUD_TEXT_SIZE));
         }
 
         float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
@@ -824,7 +843,7 @@ public class InGameHudMixin {
             ItemStack stack = stacks.get(i);
             String durabilityText = durabilityTexts.get(i);
             float rowY = i * rowHeight;
-            float textWidth = getHudTextWidth(client, durabilityText, ARMOR_HUD_MSDF_SIZE);
+            float textWidth = getHudTextWidth(client, durabilityText, HUD_TEXT_SIZE);
 
             int iconX;
             float textX;
@@ -844,7 +863,7 @@ public class InGameHudMixin {
         for (int i = 0; i < stacks.size(); i++) {
             String durabilityText = durabilityTexts.get(i);
             float rowY = i * rowHeight;
-            float textWidth = getHudTextWidth(client, durabilityText, ARMOR_HUD_MSDF_SIZE);
+            float textWidth = getHudTextWidth(client, durabilityText, HUD_TEXT_SIZE);
 
             float textX;
             if (textOnLeft) {
@@ -853,11 +872,9 @@ public class InGameHudMixin {
                 textX = iconSize + textGap;
             }
 
-            float textY = Theme.getInstance().useMsdfHudFont()
-                    ? rowY + (iconSize - ARMOR_HUD_MSDF_SIZE) / 2.0f + ARMOR_HUD_MSDF_Y_OFFSET + 3.0f + ARMOR_TEXT_VERTICAL_NUDGE + ARMOR_HUD_MSDF_EXTRA_Y_OFFSET
-                    : rowY + 4.0f + ARMOR_TEXT_VERTICAL_NUDGE;
+            float textY = rowY + 4.0f;
 
-            renderScaledHudText(context, client, durabilityText, x, y, textX, textY, ARMOR_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+            renderScaledHudText(context, client, durabilityText, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
         }
 
         if (chatEditing && armorHoverProgress > 0.05f) {
@@ -903,7 +920,7 @@ public class InGameHudMixin {
             return;
         }
 
-        if (!coordinatesCacheInitialized || shouldUpdateHudData(module, chatEditing)) {
+        if (!coordinatesCacheInitialized) {
             List<String> updatedLines = new ArrayList<>();
             BlockPos pos = client.player.getBlockPos();
             if (module.showX.isValue()) {
@@ -946,7 +963,7 @@ public class InGameHudMixin {
         float lineHeight = 10.0f;
         float maxLineWidth = 0.0f;
         for (String line : lines) {
-            maxLineWidth = Math.max(maxLineWidth, getHudTextWidth(client, line, RECT_HUD_MSDF_SIZE));
+            maxLineWidth = Math.max(maxLineWidth, getHudTextWidth(client, line, HUD_TEXT_SIZE));
         }
         boolean showDirection = module.showDirection.isValue();
         float directionColumn = showDirection ? 26.0f : 0.0f;
@@ -967,17 +984,17 @@ public class InGameHudMixin {
             float textY = paddingY + i * lineHeight;
             if (module.showBiome.isValue() && line.startsWith("Biome: ")) {
                 String label = "Biome: ";
-                renderScaledHudTextColored(context, client, label, x, y, paddingX, textY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue(), 0xFFFFFF);
-                float labelWidth = getHudTextWidth(client, label, RECT_HUD_MSDF_SIZE);
-                renderScaledHudTextColored(context, client, biomeName, x, y, paddingX + labelWidth, textY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue(), coordinatesBiomeColorCache);
+                renderScaledHudTextColored(context, client, label, x, y, paddingX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), 0xFFFFFF);
+                float labelWidth = getHudTextWidth(client, label, HUD_TEXT_SIZE);
+                renderScaledHudTextColored(context, client, biomeName, x, y, paddingX + labelWidth, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), coordinatesBiomeColorCache);
             } else {
-                renderScaledHudText(context, client, line, x, y, paddingX, textY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+                renderScaledHudText(context, client, line, x, y, paddingX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
             }
         }
 
         if (showDirection) {
             String facing = coordinatesFacingCache;
-            float facingWidth = getHudTextWidth(client, facing, RECT_HUD_MSDF_SIZE);
+            float facingWidth = getHudTextWidth(client, facing, HUD_TEXT_SIZE);
             float facingCenterX = baseWidth - directionColumn * 0.5f;
             float facingX = facingCenterX - facingWidth * 0.5f;
             float facingY = baseHeight * 0.5f - 4.0f;
@@ -985,16 +1002,16 @@ public class InGameHudMixin {
                 String topSign = coordinatesTopSignCache;
                 String bottomSign = coordinatesBottomSignCache;
                 if (!topSign.isEmpty()) {
-                    float signWidth = getHudTextWidth(client, topSign, RECT_HUD_MSDF_SIZE);
-                    renderScaledHudText(context, client, topSign, x, y, facingCenterX - signWidth * 0.5f, facingY - 10.0f, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+                    float signWidth = getHudTextWidth(client, topSign, HUD_TEXT_SIZE);
+                    renderScaledHudText(context, client, topSign, x, y, facingCenterX - signWidth * 0.5f, facingY - 10.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
                 }
-                renderScaledHudText(context, client, facing, x, y, facingX, facingY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+                renderScaledHudText(context, client, facing, x, y, facingX, facingY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
                 if (!bottomSign.isEmpty()) {
-                    float signWidth = getHudTextWidth(client, bottomSign, RECT_HUD_MSDF_SIZE);
-                    renderScaledHudText(context, client, bottomSign, x, y, facingCenterX - signWidth * 0.5f, facingY + 10.0f, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+                    float signWidth = getHudTextWidth(client, bottomSign, HUD_TEXT_SIZE);
+                    renderScaledHudText(context, client, bottomSign, x, y, facingCenterX - signWidth * 0.5f, facingY + 10.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
                 }
             } else {
-                renderScaledHudText(context, client, facing, x, y, facingX, facingY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+                renderScaledHudText(context, client, facing, x, y, facingX, facingY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
             }
         }
 
@@ -1030,9 +1047,9 @@ public class InGameHudMixin {
             int rawPing = getServerPing(client);
             module.updatePing(rawPing);
             int displayPing = module.getCachedPing();
-            return displayPing > 0 ? displayPing + " ms" : "... ms";
+            return displayPing >= 0 ? displayPing + " ms" : "... ms";
         });
-        float baseWidth = Math.max(48.0f, getHudTextWidth(client, label + value, RECT_HUD_MSDF_SIZE) + 12.0f);
+        float baseWidth = Math.max(48.0f, getHudTextWidth(client, label + value, HUD_TEXT_SIZE) + 12.0f);
 
         renderRectHud(context, client, module, "", HUD_PING, chatEditing, mouseX, mouseY, mouseDown,
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, BASE_HEIGHT);
@@ -1040,17 +1057,29 @@ public class InGameHudMixin {
         float x = module.getHudX();
         float y = module.getHudY();
         float scale = module.getHudScale();
-        float totalWidth = getHudTextWidth(client, label + value, RECT_HUD_MSDF_SIZE);
+        float totalWidth = getHudTextWidth(client, label + value, HUD_TEXT_SIZE);
         float textX = (baseWidth - totalWidth) * 0.5f;
-        float textY = Theme.getInstance().useMsdfHudFont()
-                ? (BASE_HEIGHT - RECT_HUD_MSDF_SIZE) / 2.0f + RECT_HUD_MSDF_Y_OFFSET
-                : (BASE_HEIGHT - 8.0f) / 2.0f;
+        float textY = (BASE_HEIGHT - 8.0f) / 2.0f;
 
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
-        renderScaledHudText(context, client, label, x, y, textX, textY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
-        float labelWidth = getHudTextWidth(client, label, RECT_HUD_MSDF_SIZE);
-        renderScaledHudTextColored(context, client, value, x, y, textX + labelWidth, textY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue(), local ? 0xFFFF55 : 0xFFFFFF);
+        renderScaledHudText(context, client, label, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+        float labelWidth = getHudTextWidth(client, label, HUD_TEXT_SIZE);
+        int pingColor;
+        if (local) {
+            pingColor = 0xFFFF55;
+        } else {
+            int ping = module.getCachedPing();
+            if (module.dynamicPingColor.isValue() && ping > 0) {
+                if (ping < 60) pingColor = 0xFF55FF55;
+                else if (ping < 150) pingColor = 0xFFFFFF55;
+                else if (ping < 300) pingColor = 0xFFFFAA00;
+                else pingColor = 0xFFFF5555;
+            } else {
+                pingColor = 0xFFFFFF;
+            }
+        }
+        renderScaledHudTextColored(context, client, value, x, y, textX + labelWidth, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), pingColor);
         context.getMatrices().pop();
     }
 
@@ -1114,7 +1143,7 @@ public class InGameHudMixin {
         float lineHeight = 10.0f;
         float maxLineWidth = 0.0f;
         for (String line : lines) {
-            maxLineWidth = Math.max(maxLineWidth, getHudTextWidth(client, line, RECT_HUD_MSDF_SIZE));
+            maxLineWidth = Math.max(maxLineWidth, getHudTextWidth(client, line, HUD_TEXT_SIZE));
         }
         float baseWidth = Math.max(90.0f, paddingX * 2.0f + maxLineWidth);
         float baseHeight = Math.max(BASE_HEIGHT, paddingY * 2.0f + lines.size() * lineHeight);
@@ -1128,7 +1157,7 @@ public class InGameHudMixin {
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
         for (int i = 0; i < lines.size(); i++) {
-            renderScaledHudText(context, client, lines.get(i), x, y, paddingX, paddingY + i * lineHeight, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+            renderScaledHudText(context, client, lines.get(i), x, y, paddingX, paddingY + i * lineHeight, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
         }
         context.getMatrices().pop();
     }
@@ -1150,9 +1179,228 @@ public class InGameHudMixin {
             float screenCenterX,
             float screenCenterY
     ) {
-        float baseWidth = Math.max(48.0f, getHudTextWidth(client, text, RECT_HUD_MSDF_SIZE) + 14.0f);
+        float baseWidth = Math.max(48.0f, getHudTextWidth(client, text, HUD_TEXT_SIZE) + 14.0f);
         renderRectHud(context, client, module, text, hudIndex, chatEditing, mouseX, mouseY, mouseDown,
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, BASE_HEIGHT);
+    }
+
+    private void renderSessionTimeHud(
+            DrawContext context,
+            MinecraftClient client,
+            RectHudModule module,
+            String text,
+            int hudIndex,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        float x = module.getHudX();
+        float y = module.getHudY();
+        float scale = module.getHudScale();
+        float textWidth = client.textRenderer.getWidth(text);
+        float baseWidth = Math.max(48.0f, textWidth + 16.0f);
+        float baseHeight = BASE_HEIGHT;
+
+        renderRectHud(context, client, module, "", hudIndex, chatEditing, mouseX, mouseY, mouseDown,
+                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight);
+
+        context.getMatrices().push();
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().push();
+        context.getMatrices().translate(x, y, HUD_RENDER_Z + 25.0f);
+        context.getMatrices().scale(scale, scale, 1.0f);
+        float textX = (baseWidth - textWidth) * 0.5f;
+        float textY = (baseHeight - 9.0f) * 0.5f;
+        context.drawText(client.textRenderer, text, Math.round(textX), Math.round(textY), 0xFFFFFF, module.textShadow.isValue());
+        context.draw();
+        context.getMatrices().pop();
+        context.getMatrices().pop();
+    }
+
+    private void renderScoreboardHud(
+            DrawContext context,
+            MinecraftClient client,
+            ScoreboardHud module,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        if (!module.isEnabled() || client.world == null || client.player == null) {
+            return;
+        }
+
+        // Get scoreboard data
+        var scoreboard = client.world.getScoreboard();
+        var objective = scoreboard.getObjectiveForSlot(net.minecraft.scoreboard.ScoreboardDisplaySlot.SIDEBAR);
+        if (objective == null) {
+            return;
+        }
+
+        var entries = scoreboard.getScoreboardEntries(objective);
+        var filteredEntries = entries.stream()
+                .filter(entry -> !entry.hidden())
+                .sorted((a, b) -> Integer.compare(b.value(), a.value()))
+                .limit(15)
+                .toList();
+        if (filteredEntries.isEmpty()) {
+            return;
+        }
+
+        var numberFormat = objective.getNumberFormat();
+
+        // Create sidebar entries
+        interface SidebarEntry {
+            net.minecraft.text.Text name();
+            net.minecraft.text.Text score();
+            int scoreWidth();
+        }
+
+        var sidebarEntries = new java.util.ArrayList<SidebarEntry>();
+        for (var entry : filteredEntries) {
+            var team = scoreboard.getScoreHolderTeam(entry.owner());
+            var name = entry.name();
+            var decoratedName = net.minecraft.scoreboard.Team.decorateName(team, name);
+            var formattedScore = entry.formatted(numberFormat);
+            int scoreWidth = (int)getHudTextWidth(client, formattedScore.getString(), HUD_TEXT_SIZE);
+
+            final var finalDecoratedName = decoratedName;
+            final var finalFormattedScore = formattedScore;
+            final var finalScoreWidth = scoreWidth;
+
+            sidebarEntries.add(new SidebarEntry() {
+                @Override
+                public net.minecraft.text.Text name() { return finalDecoratedName; }
+                @Override
+                public net.minecraft.text.Text score() { return finalFormattedScore; }
+                @Override
+                public int scoreWidth() { return finalScoreWidth; }
+            });
+        }
+
+        // Calculate dimensions
+        var title = objective.getDisplayName();
+        int titleWidth = (int)getHudTextWidth(client, title.getString(), HUD_TEXT_SIZE);
+        int maxContentWidth = titleWidth;
+        int separatorWidth = (int)getHudTextWidth(client, ": ", HUD_TEXT_SIZE);
+        int entryCount = sidebarEntries.size();
+
+        for (var sidebarEntry : sidebarEntries) {
+            int textWidth = (int)getHudTextWidth(client, sidebarEntry.name().getString(), HUD_TEXT_SIZE);
+            int scoreWidth = sidebarEntry.scoreWidth();
+            if (scoreWidth > 0) {
+                maxContentWidth = Math.max(maxContentWidth, textWidth + separatorWidth + scoreWidth);
+            } else {
+                maxContentWidth = Math.max(maxContentWidth, textWidth);
+            }
+        }
+
+        int vanillaHorizontalPadding = 3;
+        float baseWidth = maxContentWidth + vanillaHorizontalPadding + 2;
+        float baseHeight = entryCount * 9.0f + (module.showTitle.isValue() ? 10.0f : 1.0f);
+
+        // Render base frame using renderRectHud
+        renderRectHud(context, client, module, "", HUD_SCOREBOARD, chatEditing, mouseX, mouseY, mouseDown,
+                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight);
+
+        // Get actual position and scale after renderRectHud
+        float hudX = module.getHudX();
+        float hudY = module.getHudY();
+        float hudScale = module.getHudScale();
+
+        // Calculate render positions in local coordinates (relative to hudX, hudY)
+        int rightEdgeLocal = maxContentWidth + vanillaHorizontalPadding;
+        int topYLocal = 0;
+        int verticalPosLocal = entryCount * 9;
+        int titleYLocal = module.showTitle.isValue() ? -10 : 0;
+
+        // Get colors
+        int titleBgColor;
+        int rowBgColor;
+        if (module.shouldUseVanillaColors()) {
+            titleBgColor = client.options.getTextBackgroundColor(0.4F);
+            rowBgColor = client.options.getTextBackgroundColor(0.3F);
+        } else {
+            titleBgColor = module.getResolvedBackgroundColor(client);
+            rowBgColor = module.getResolvedBackgroundColor(client);
+        }
+
+        // Push matrices and use local coordinates like renderRectHud
+        context.getMatrices().push();
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().push();
+        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z);
+        context.getMatrices().scale(hudScale, hudScale, 1.0f);
+
+        // Render blur and background
+        if (module.background.isValue()) {
+            int backgroundTopLocal = module.showTitle.isValue() ? -10 : -1;
+            int backgroundBottomLocal = verticalPosLocal;
+
+            if (module.backgroundBlurRadius.getValue() > 0) {
+                float blurQuality = getOptimizedHudBlurQuality(module.backgroundBlurRadius.getValue());
+                context.draw();
+                if (blurQuality > 0.0f) {
+                    Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(),
+                                    -2, backgroundTopLocal, rightEdgeLocal + 2, backgroundBottomLocal - backgroundTopLocal)
+                            .round(0.0f)
+                            .softness(0.0f)
+                            .quality(blurQuality)
+                            .color(0xFFFFFFFF)
+                            .build());
+                }
+                if (module.showTitle.isValue()) {
+                    context.fill(-2, -10, rightEdgeLocal, -1, titleBgColor);
+                }
+                context.fill(-2, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
+                context.draw();
+            } else {
+                if (module.showTitle.isValue()) {
+                    context.fill(-2, -10, rightEdgeLocal, -1, titleBgColor);
+                }
+                context.fill(-2, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
+            }
+        }
+
+        context.getMatrices().pop();
+
+        // Render title (in local coordinates)
+        if (module.showTitle.isValue()) {
+            float titleX = (rightEdgeLocal - titleWidth) / 2.0f;
+            var textRenderer = client.textRenderer;
+            context.drawText(textRenderer, title, (int)titleX, -9, -1, false);
+        }
+
+        // Render entries (in local coordinates)
+        for (int i = 0; i < entryCount; i++) {
+            var sidebarEntry = sidebarEntries.get(i);
+            int rowY = verticalPosLocal - (entryCount - i) * 9;
+
+            var textRenderer = client.textRenderer;
+            context.drawText(textRenderer, sidebarEntry.name(), 0, rowY, -1, false);
+
+            if (module.showNumbers.isValue()) {
+                float scoreWidth = sidebarEntry.scoreWidth();
+                float scoreX = rightEdgeLocal - scoreWidth;
+                context.drawText(textRenderer, sidebarEntry.score(), (int)scoreX, rowY, -1, false);
+            }
+        }
+
+        context.getMatrices().pop();
+        context.getMatrices().pop();
     }
 
     private void renderDirectionHud(
@@ -1259,7 +1507,7 @@ public class InGameHudMixin {
                 continue;
             }
 
-            float tw = getHudTextWidth(client, label, RECT_HUD_MSDF_SIZE);
+            float tw = getHudTextWidth(client, label, HUD_TEXT_SIZE);
             float textLeft = px - tw * 0.5f;
             float textRight = textLeft + tw;
             int alphaLeft = MathHelper.clamp(Math.round(255.0f * directionEdgeFade(textLeft + 1.0f, baseWidth)), 0, 255);
@@ -1272,13 +1520,13 @@ public class InGameHudMixin {
             if (textRight < leftPadding || textLeft > baseWidth - rightPadding) {
                 continue;
             }
-            renderScaledHudTextWithAlpha(context, client, label, x, y, textLeft, labelY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue(), alpha);
+            renderScaledHudTextWithAlpha(context, client, label, x, y, textLeft, labelY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), alpha);
         }
 
         if (module.showDegreeNumber.isValue()) {
             String degree = String.valueOf(Math.round(directionDisplayYaw));
-            float tw = getHudTextWidth(client, degree, RECT_HUD_MSDF_SIZE);
-            renderScaledHudText(context, client, degree, x, y, centerX - tw * 0.5f, yawNumberY, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+            float tw = getHudTextWidth(client, degree, HUD_TEXT_SIZE);
+            renderScaledHudText(context, client, degree, x, y, centerX - tw * 0.5f, yawNumberY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
             int triSize = 18;
             renderScaledHudTexture(context, x, y, centerX - triSize * 0.5f, triangleY, triSize, triSize, scale);
         }
@@ -1346,23 +1594,23 @@ public class InGameHudMixin {
         context.getMatrices().translate(x, y, HUD_RENDER_Z + 20.0f);
         context.getMatrices().scale(scale, scale, 1.0f);
         renderKeystrokeButtonBlur(context, module, scale);
-        renderKeyButton(context, 18, 0, 17, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W]);
-        renderKeyButton(context, 0, 19, 17, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_A]);
-        renderKeyButton(context, 18, 19, 17, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_S]);
-        renderKeyButton(context, 36, 19, 17, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_D]);
+        renderKeyButton(context, 20, 0, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W]);
+        renderKeyButton(context, 0, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_A]);
+        renderKeyButton(context, 19, 19, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_S]);
+        renderKeyButton(context, 36, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_D]);
         renderKeyButton(context, 0, 38, 54, 8, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE]);
         renderKeyButton(context, 0, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_LMB]);
-        renderKeyButton(context, 27, 47, 27, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB]);
+        renderKeyButton(context, 28, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB]);
         context.draw();
         context.getMatrices().pop();
 
-        renderKeyLabel(context, client, getKeyLabel(client.options.forwardKey.getBoundKeyLocalizedText()), x, y, 18, 4, 17, KEYSTROKE_PROGRESS[KEYSTROKE_W], scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, getKeyLabel(client.options.leftKey.getBoundKeyLocalizedText()), x, y, 0, 23, 17, KEYSTROKE_PROGRESS[KEYSTROKE_A], scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, getKeyLabel(client.options.backKey.getBoundKeyLocalizedText()), x, y, 18, 23, 17, KEYSTROKE_PROGRESS[KEYSTROKE_S], scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, getKeyLabel(client.options.rightKey.getBoundKeyLocalizedText()), x, y, 36, 23, 17, KEYSTROKE_PROGRESS[KEYSTROKE_D], scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "W", x, y, 20, 4, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W], scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "A", x, y, 0, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A], scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "S", x, y, 19, 23, 16, KEYSTROKE_PROGRESS[KEYSTROKE_S], scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "D", x, y, 36, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D], scale, module.textShadow.isValue());
         renderSpacebarLabel(context, x, y, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE], scale);
         renderKeyLabel(context, client, "LMB", x, y, 0, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_LMB], scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "RMB", x, y, 27, 50, 27, KEYSTROKE_PROGRESS[KEYSTROKE_RMB], scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "RMB", x, y, 28, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_RMB], scale, module.textShadow.isValue());
         context.getMatrices().pop();
     }
 
@@ -1385,7 +1633,7 @@ public class InGameHudMixin {
             return;
         }
 
-        if (!potionCacheInitialized || shouldUpdateHudData(module, chatEditing) || (potionSampleCache && !chatEditing)) {
+        if (!potionCacheInitialized || !chatEditing) {
             List<StatusEffectInstance> updatedEffects = new ArrayList<>(client.player.getStatusEffects());
             updatedEffects.sort(Comparator.comparing(effect -> effect.getEffectType().value().getName().getString()));
             boolean updatedSample = false;
@@ -1413,9 +1661,7 @@ public class InGameHudMixin {
         List<StatusEffectInstance> effects = potionEffectsCache;
         boolean sample = potionSampleCache;
         if (effects.isEmpty() && !sample) {
-            if (!chatEditing) {
-                return;
-            }
+            return;
         }
 
         float rowHeight = 24.0f;
@@ -1426,8 +1672,8 @@ public class InGameHudMixin {
         int rows = sample ? 1 : effects.size();
         float maxTextWidth = 0.0f;
         for (int i = 0; i < rows; i++) {
-            maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, potionNamesCache.get(i), RECT_HUD_MSDF_SIZE));
-            maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, potionDurationsCache.get(i), RECT_HUD_MSDF_SIZE));
+            maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, potionNamesCache.get(i), HUD_TEXT_SIZE));
+            maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, potionDurationsCache.get(i), HUD_TEXT_SIZE));
         }
 
         float baseWidth = Math.max(94.0f, textX + maxTextWidth + paddingX);
@@ -1459,8 +1705,8 @@ public class InGameHudMixin {
             float rowY = paddingY + i * rowHeight;
             String name = potionNamesCache.get(i);
             String duration = potionDurationsCache.get(i);
-            renderScaledHudText(context, client, name, x, y, textX, rowY + 2.0f, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
-            renderScaledHudText(context, client, duration, x, y, textX, rowY + 12.0f, RECT_HUD_MSDF_SIZE, scale, module.textShadow.isValue());
+            renderScaledHudText(context, client, name, x, y, textX, rowY + 2.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+            renderScaledHudText(context, client, duration, x, y, textX, rowY + 12.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
         }
 
         context.getMatrices().pop();
@@ -1475,7 +1721,12 @@ public class InGameHudMixin {
     }
 
     private static float getTextHudBaseWidth(MinecraftClient client, String text) {
-        return Math.max(44.0f, getHudTextWidth(client, text, RECT_HUD_MSDF_SIZE) + 14.0f);
+        float width = Math.max(44.0f, getHudTextWidth(client, text, HUD_TEXT_SIZE) + 14.0f);
+        // Add 2 pixels to background width when text contains "A"
+        if (text.contains("A") || text.contains("a")) {
+            width += 2.0f;
+        }
+        return width;
     }
 
     private static String getSprintHudText(MinecraftClient client) {
@@ -1711,12 +1962,12 @@ public class InGameHudMixin {
         }
         long blurStateKey = makeHudBlurStateKey(normalizedBlurRadius, safeScale, 0.0f, 0.0f, 54.0f, 63.0f);
         Blur.INSTANCE.registerHudBlurState(HUD_KEYSTROKES, blurStateKey);
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 18.0f, 0.0f, 17.0f, 18.0f, blurQuality));  // W
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 0.0f, 19.0f, 17.0f, 18.0f, blurQuality));  // A
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 18.0f, 19.0f, 17.0f, 18.0f, blurQuality)); // S
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 36.0f, 19.0f, 17.0f, 18.0f, blurQuality)); // D
+        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 18.0f, 0.0f, 16.0f, 18.0f, blurQuality));  // W
+        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 0.0f, 19.0f, 16.0f, 18.0f, blurQuality));  // A
+        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 18.0f, 19.0f, 16.0f, 18.0f, blurQuality)); // S
+        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 36.0f, 19.0f, 18.0f, 18.0f, blurQuality)); // D
         Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 0.0f, 38.0f, 54.0f, 8.0f, blurQuality));   // Space
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 0.0f, 47.0f, 26.0f, 16.0f, blurQuality));  // LMB
+        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 0.0f, 47.0f, 27.0f, 16.0f, blurQuality));  // LMB
         Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 27.0f, 47.0f, 27.0f, 16.0f, blurQuality)); // RMB
     }
 
@@ -1747,9 +1998,9 @@ public class InGameHudMixin {
             float scale,
             boolean shadow
     ) {
-        float textWidth = getHudTextWidth(client, label, RECT_HUD_MSDF_SIZE);
+        float textWidth = getHudTextWidth(client, label, HUD_TEXT_SIZE);
         int color = progress > 0.45f ? 0x111111 : 0xFFFFFF;
-        renderScaledHudTextColored(context, client, label, hudX, hudY, keyX + (keyWidth - textWidth) * 0.5f, keyY, RECT_HUD_MSDF_SIZE, scale, shadow, color);
+        renderScaledHudTextColored(context, client, label, hudX, hudY, keyX + (keyWidth - textWidth) * 0.5f, keyY, HUD_TEXT_SIZE, scale, shadow, color);
     }
 
     private static void renderSpacebarLabel(DrawContext context, float hudX, float hudY, float keyX, float keyY, float keyWidth, float keyHeight, float progress, float scale) {
@@ -1812,77 +2063,25 @@ public class InGameHudMixin {
         return String.format(Locale.US, "%02d:%02d", minutes, seconds);
     }
 
-    private static float getHudTextWidth(MinecraftClient client, String text, float msdfSize) {
-        boolean msdf = Theme.getInstance().useMsdfHudFont();
-        String cacheKey = (msdf ? "M|" : "V|") + msdfSize + "|" + text;
+    private static float getHudTextWidth(MinecraftClient client, String text, float textSize) {
+        String cacheKey = "V|" + textSize + "|" + text;
         Float cached = HUD_TEXT_WIDTH_CACHE.get(cacheKey);
         if (cached != null) {
             return cached;
         }
 
-        float width = msdf
-                ? MsdfFonts.hud().getWidth(text, getMatchedMsdfSize(msdfSize))
-                : client.textRenderer.getWidth(text);
+        float width = client.textRenderer.getWidth(text);
         HUD_TEXT_WIDTH_CACHE.put(cacheKey, width);
         return width;
     }
 
-    private static void renderHudTextWithAlpha(DrawContext context, MinecraftClient client, String text, float x, float y, float msdfSize, boolean shadow, int alpha) {
-        renderHudTextColoredWithAlpha(context, client, text, x, y, msdfSize, shadow, 0x00FFFFFF, alpha);
+    private static void renderHudTextWithAlpha(DrawContext context, MinecraftClient client, String text, float x, float y, float textSize, boolean shadow, int alpha) {
+        renderHudTextColoredWithAlpha(context, client, text, x, y, textSize, shadow, 0x00FFFFFF, alpha);
     }
 
-    private static void renderHudTextColoredWithAlpha(DrawContext context, MinecraftClient client, String text, float x, float y, float msdfSize, boolean shadow, int rgbColor, int alpha) {
+    private static void renderHudTextColoredWithAlpha(DrawContext context, MinecraftClient client, String text, float x, float y, float textSize, boolean shadow, int rgbColor, int alpha) {
         int textColor = (MathHelper.clamp(alpha, 0, 255) << 24) | (rgbColor & 0x00FFFFFF);
-        if (Theme.getInstance().useMsdfHudFont()) {
-            float matchedMsdfSize = getMatchedMsdfSize(msdfSize);
-            float msdfSmoothness = getHudMsdfSmoothness(msdfSize);
-            RenderSystem.disableDepthTest();
-            RenderSystem.depthMask(false);
-            RenderSystem.enableBlend();
-            if (shadow) {
-                float shadowThickness = HUD_MSDF_THICKNESS + 0.0025f;
-                float shadowSmoothness = Math.max(0.008f, msdfSmoothness * 0.80f);
-                int shadowColor = withAlpha(MSDF_SHADOW_COLOR, MathHelper.clamp(alpha, 0, 255));
-                MsdfRenderer.renderText(
-                        MsdfFonts.hud(),
-                        text,
-                        matchedMsdfSize,
-                        shadowColor,
-                        context.getMatrices().peek().getPositionMatrix(),
-                        x + HUD_MSDF_GLOBAL_X_OFFSET + MSDF_SHADOW_OFFSET,
-                        y + HUD_MSDF_GLOBAL_Y_OFFSET + MSDF_SHADOW_OFFSET,
-                        HUD_TEXT_RENDER_Z,
-                        shadowThickness,
-                        shadowSmoothness
-                );
-            }
-            MsdfRenderer.renderText(
-                MsdfFonts.hud(),
-                text,
-                matchedMsdfSize,
-                textColor,
-                context.getMatrices().peek().getPositionMatrix(),
-                x + HUD_MSDF_GLOBAL_X_OFFSET,
-                y + HUD_MSDF_GLOBAL_Y_OFFSET,
-                HUD_TEXT_RENDER_Z,
-                HUD_MSDF_THICKNESS,
-                msdfSmoothness
-            );
-            RenderSystem.depthMask(true);
-            RenderSystem.enableDepthTest();
-            return;
-        }
-
         context.drawText(client.textRenderer, text, Math.round(x), Math.round(y), textColor, shadow);
-    }
-
-    private static float getMatchedMsdfSize(float baseMsdfSize) {
-        return baseMsdfSize * HUD_MSDF_SIZE_MATCH_MULTIPLIER;
-    }
-
-    private static float getHudMsdfSmoothness(float msdfSize) {
-        float smallTextBoost = MathHelper.clamp((RECT_HUD_MSDF_SIZE - msdfSize) / RECT_HUD_MSDF_SIZE, 0.0f, 1.0f);
-        return HUD_MSDF_SMOOTHNESS + smallTextBoost * 0.018f;
     }
 
     private static float getOptimizedHudBlurQuality(float normalizedBlurRadius) {
@@ -1891,17 +2090,10 @@ public class InGameHudMixin {
             return 0.0f;
         }
 
-        // Ease-in curve: lower blur strength on small values, near old behavior on high values.
-        float lowRadiusAttenuation = 0.55f + 0.45f * MathHelper.clamp(radius / 18.0f, 0.0f, 1.0f);
-        float baseQuality = radius * 4.0f * lowRadiusAttenuation;
-        if (radius <= 20.0f) {
-            return baseQuality * Theme.getInstance().getHudBlurQualityMultiplier();
-        }
-        // Soft curve after 20+: tiny quality reduction at first, stronger only at very high radius.
-        float over = radius - 20.0f;
-        float t = MathHelper.clamp(over / 16.0f, 0.0f, 1.0f);
-        float factor = 1.0f - (0.14f * t * t);
-        return baseQuality * factor * Theme.getInstance().getHudBlurQualityMultiplier();
+        // Soft compressed curve: the 0-32 slider changes blur gently, and max blur stays controlled.
+        float t = MathHelper.clamp(radius / 32.0f, 0.0f, 1.0f);
+        float strength = 0.42f + 0.33f * t;
+        return radius * strength * Theme.getInstance().getHudBlurQualityMultiplier();
     }
 
     private static long makeHudBlurStateKey(float normalizedRadius, float safeScale, float x, float y, float width, float height) {
@@ -1935,18 +2127,14 @@ public class InGameHudMixin {
             float hudY,
             float textX,
             float textY,
-            float msdfSize,
+            float textSize,
             float scale,
             boolean shadow
     ) {
         context.getMatrices().push();
-        if (Theme.getInstance().useMsdfHudFont()) {
-            renderHudText(context, client, text, hudX + textX * scale, hudY + textY * scale, msdfSize * scale, shadow);
-        } else {
-            context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
-            context.getMatrices().scale(scale, scale, 1.0f);
-            renderHudText(context, client, text, textX, textY, msdfSize, shadow);
-        }
+        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
+        context.getMatrices().scale(scale, scale, 1.0f);
+        renderHudText(context, client, text, textX, textY, textSize, shadow);
         context.getMatrices().pop();
     }
 
@@ -1958,19 +2146,15 @@ public class InGameHudMixin {
             float hudY,
             float textX,
             float textY,
-            float msdfSize,
+            float textSize,
             float scale,
             boolean shadow,
             int alpha
     ) {
         context.getMatrices().push();
-        if (Theme.getInstance().useMsdfHudFont()) {
-            renderHudTextWithAlpha(context, client, text, hudX + textX * scale, hudY + textY * scale, msdfSize * scale, shadow, alpha);
-        } else {
-            context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
-            context.getMatrices().scale(scale, scale, 1.0f);
-            renderHudTextWithAlpha(context, client, text, textX, textY, msdfSize, shadow, alpha);
-        }
+        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
+        context.getMatrices().scale(scale, scale, 1.0f);
+        renderHudTextWithAlpha(context, client, text, textX, textY, textSize, shadow, alpha);
         context.getMatrices().pop();
     }
 
@@ -1982,30 +2166,29 @@ public class InGameHudMixin {
             float hudY,
             float textX,
             float textY,
-            float msdfSize,
+            float textSize,
             float scale,
             boolean shadow,
             int rgbColor
     ) {
         context.getMatrices().push();
-        if (Theme.getInstance().useMsdfHudFont()) {
-            renderHudTextColored(context, client, text, hudX + textX * scale, hudY + textY * scale, msdfSize * scale, shadow, rgbColor);
-        } else {
-            context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
-            context.getMatrices().scale(scale, scale, 1.0f);
-            renderHudTextColored(context, client, text, textX, textY, msdfSize, shadow, rgbColor);
-        }
+        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
+        context.getMatrices().scale(scale, scale, 1.0f);
+        renderHudTextColored(context, client, text, textX, textY, textSize, shadow, rgbColor);
         context.getMatrices().pop();
     }
 
-    private static void updateClicksPerSecond(boolean mouseDown, boolean gameplayInput) {
+    private static void updateClicksPerSecond(boolean mouseDown, boolean rightMouseDown, boolean gameplayInput) {
         if (!gameplayInput) {
             LEFT_CLICKS.clear();
+            RIGHT_CLICKS.clear();
             wasLeftMouseDown = false;
+            wasRightMouseDown = false;
             return;
         }
 
         long nowMs = System.currentTimeMillis();
+        // Left click tracking (button 0)
         if (mouseDown && !wasLeftMouseDown) {
             LEFT_CLICKS.addLast(nowMs);
         }
@@ -2013,6 +2196,16 @@ public class InGameHudMixin {
 
         while (!LEFT_CLICKS.isEmpty() && nowMs - LEFT_CLICKS.peekFirst() > 1000L) {
             LEFT_CLICKS.removeFirst();
+        }
+
+        // Right click tracking (button 1)
+        if (rightMouseDown && !wasRightMouseDown) {
+            RIGHT_CLICKS.addLast(nowMs);
+        }
+        wasRightMouseDown = rightMouseDown;
+
+        while (!RIGHT_CLICKS.isEmpty() && nowMs - RIGHT_CLICKS.peekFirst() > 1000L) {
+            RIGHT_CLICKS.removeFirst();
         }
     }
 
@@ -2036,10 +2229,12 @@ public class InGameHudMixin {
                 || PotionHud.getInstance().isEnabled()
                 || DayCounterHud.getInstance().isEnabled()
                 || StatsHud.getInstance().isEnabled()
-                || TabHud.getInstance().isEnabled()
                 || NametagHud.getInstance().isEnabled()
                 || TimeHud.getInstance().isEnabled()
-                || SessionTimeHud.getInstance().isEnabled();
+                || SessionTimeHud.getInstance().isEnabled()
+                || MemoryHud.getInstance().isEnabled()
+                || ComboCounterHud.getInstance().isEnabled()
+                || ServerAddressHud.getInstance().isEnabled();
     }
 
     private static boolean isAnyHudInteractionActive() {
@@ -2057,6 +2252,10 @@ public class InGameHudMixin {
                 || RECT_DRAGGING[HUD_NAMETAG] || RECT_RESIZING[HUD_NAMETAG]
                 || RECT_DRAGGING[HUD_TIME] || RECT_RESIZING[HUD_TIME]
                 || RECT_DRAGGING[HUD_SESSION] || RECT_RESIZING[HUD_SESSION]
+                || RECT_DRAGGING[HUD_MEMORY] || RECT_RESIZING[HUD_MEMORY]
+                || RECT_DRAGGING[HUD_COMBO] || RECT_RESIZING[HUD_COMBO]
+                || RECT_DRAGGING[HUD_SERVER_ADDRESS] || RECT_RESIZING[HUD_SERVER_ADDRESS]
+                || RECT_DRAGGING[HUD_SCOREBOARD] || RECT_RESIZING[HUD_SCOREBOARD]
                 || armorDragging || armorResizing;
     }
 
@@ -2189,4 +2388,79 @@ public class InGameHudMixin {
 
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
+
+    private void renderMemoryHud(
+            DrawContext context,
+            MinecraftClient client,
+            MemoryHud module,
+            String text,
+            int hudIndex,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        renderRectHud(context, client, module, text, hudIndex,
+                chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                getTextHudBaseWidth(client, text), BASE_HEIGHT);
+    }
+
+    private void renderComboHud(
+            DrawContext context,
+            MinecraftClient client,
+            ComboCounterHud module,
+            String text,
+            int hudIndex,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        renderRectHud(context, client, module, text, hudIndex,
+                chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                getTextHudBaseWidth(client, text), BASE_HEIGHT);
+    }
+
+    private void renderServerAddressHud(
+            DrawContext context,
+            MinecraftClient client,
+            ServerAddressHud module,
+            String text,
+            int hudIndex,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        renderRectHud(context, client, module, text, hudIndex,
+                chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                getTextHudBaseWidth(client, text), BASE_HEIGHT);
+        
+        // Render server icon if enabled
+        if (module.displayServerIcon.isValue()) {
+            float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
+            float x = MathHelper.clamp(module.getHudX(), 0.0f, screenWidth - getTextHudBaseWidth(client, text));
+            float y = MathHelper.clamp(module.getHudY(), 0.0f, screenHeight - BASE_HEIGHT);
+            module.renderServerIcon(context, (int)x + 2, (int)(y + 2), scale);
+        }
+    }
+
 }

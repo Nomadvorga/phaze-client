@@ -6,6 +6,7 @@ import net.minecraft.client.util.math.MatrixStack;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
+import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 
 import static net.minecraft.util.math.MathHelper.clamp;
@@ -23,14 +24,14 @@ public class SaturationComponent extends AbstractComponent {
         MatrixStack matrix = context.getMatrices();
 
         X = x + 6;
-        Y = y + 73.5F;
+        Y = y + 65.5F;
         W = 138;
-        H = 4;
+        H = 6;
 
         float clampedX = clamp(X + W * setting.getHue(), X, X + W - 4);
         float min = clamp((mouseX - X) / W, 0, 1);
 
-        image.setTexture("textures/color_picker/hue.png").render(ShapeProperties.create(matrix, X, Y + 0.5, W, H - 1).build());
+        image.setTexture("textures/color_picker/hue.png").render(ShapeProperties.create(matrix, X, Y + 0.5, W, H - 1).round(3).thickness(1.5F).outlineColor(MenuStyle.BORDER_LIGHT).build());
 
         rectangle.render(ShapeProperties.create(matrix, clampedX, Y, H, H)
                 .round(H / 2).thickness(3).color(0x00FFFFFF).outlineColor(0xFFFFFFFF).build());

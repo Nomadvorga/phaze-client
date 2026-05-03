@@ -57,15 +57,6 @@ public final class ArmorHud extends Module {
     public final SelectSetting durabilityMode = new SelectSetting("Durability Mode", "How to display armor durability")
             .value("Units", "Percent")
             .selected("Units");
-    public final SectionSetting batchingSection = new SectionSetting("Batching");
-    public final BooleanSetting hudBatching = new BooleanSetting("HUD Batching", "Throttle HUD data and animation updates for performance").setValue(false);
-    public final BooleanSetting forceHudUpdate = new BooleanSetting("Force HUD Update", "Disable FPS limit but keep batching optimizations")
-            .setValue(false)
-            .visible(() -> hudBatching.isValue());
-    public final ValueSetting hudFps = new ValueSetting("HUD FPS", "Limit HUD render rate to save performance")
-            .range(5, 120)
-            .setValue(60)
-            .visible(() -> hudBatching.isValue() && !forceHudUpdate.isValue());
 
     private final HudBuffer hudBuffer = new HudBuffer();
 
@@ -86,10 +77,7 @@ public final class ArmorHud extends Module {
         backgroundOpacity.setFullWidth(true);
         backgroundBlurRadius.setFullWidth(true);
         durabilityMode.setFullWidth(true);
-        hudBatching.setFullWidth(true);
-        forceHudUpdate.setFullWidth(true);
-        hudFps.setFullWidth(true);
-        setup(textShadow, colorSection, background, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, otherSection, durabilityMode, batchingSection, hudBatching, forceHudUpdate, hudFps);
+        setup(textShadow, colorSection, background, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, otherSection, durabilityMode);
     }
 
     @Override

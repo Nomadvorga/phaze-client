@@ -5,6 +5,7 @@ import lombok.Setter;
 import lombok.experimental.Accessors;
 import vorga.phazeclient.api.feature.module.setting.Setting;
 
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 @Getter
@@ -13,7 +14,9 @@ import java.util.function.Supplier;
 public class TextSetting extends Setting {
     private String text;
     private String defaultText;
-    private int min, max;
+    private int min = 0;
+    private int max = Integer.MAX_VALUE;
+    private Consumer<String> onChangeCallback;
 
     public TextSetting(String name, String description) {
         super(name, description);
@@ -24,12 +27,21 @@ public class TextSetting extends Setting {
         return this;
     }
 
+    public TextSetting onChange(Consumer<String> callback) {
+        this.onChangeCallback = callback;
+        return this;
+    }
+
     public TextSetting setText(String text) {
         if (defaultText == null) {
             defaultText = text;
         }
+        boolean changed = this.text == null ? text != null : !this.text.equals(text);
         this.text = text;
         notifyChange();
+        if (changed && onChangeCallback != null) {
+            onChangeCallback.accept(text);
+        }
         return this;
     }
 

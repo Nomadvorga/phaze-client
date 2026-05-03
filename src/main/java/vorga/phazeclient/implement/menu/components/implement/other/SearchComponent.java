@@ -31,7 +31,7 @@ public class SearchComponent extends AbstractComponent {
     @Getter
     private String text = "";
     @Setter
-    private ModuleCategory previousCategory = ModuleCategory.VISUALS;
+    private ModuleCategory previousCategory = ModuleCategory.ALL;
 
     private float animatedWidth = 82;
     private static final float COLLAPSED_WIDTH = 82;

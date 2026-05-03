@@ -6,6 +6,7 @@ import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.base.util.math.MathUtil;
 
 import java.awt.*;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import static vorga.phazeclient.base.util.math.MathUtil.*;
@@ -29,6 +30,7 @@ public class ColorSetting extends Setting {
 
     private int[] presets;
     private Integer defaultColor;
+    private Consumer<Integer> onChangeCallback;
 
     public ColorSetting(String name, String description) {
         super(name, description);
@@ -53,6 +55,11 @@ public class ColorSetting extends Setting {
         return this;
     }
 
+    public ColorSetting onChange(Consumer<Integer> callback) {
+        this.onChangeCallback = callback;
+        return this;
+    }
+
     public int getColor() {
         return (getColorWithAlpha() & 0x00FFFFFF) | (Math.round(alpha * 255) << 24);
     }
@@ -69,6 +76,33 @@ public class ColorSetting extends Setting {
         return this;
     }
 
+    public void setHue(float hue) {
+        this.hue = hue;
+        notifyColorChange();
+    }
+
+    public void setSaturation(float saturation) {
+        this.saturation = saturation;
+        notifyColorChange();
+    }
+
+    public void setBrightness(float brightness) {
+        this.brightness = brightness;
+        notifyColorChange();
+    }
+
+    public void setAlpha(float alpha) {
+        this.alpha = alpha;
+        notifyColorChange();
+    }
+
+    private void notifyColorChange() {
+        notifyChange();
+        if (onChangeCallback != null) {
+            onChangeCallback.accept(getColor());
+        }
+    }
+
     private void setColorInternal(int color) {
         float[] hsb = RGBtoHSB(
                 getRed(color),
@@ -81,7 +115,7 @@ public class ColorSetting extends Setting {
         brightness = hsb[2];
         alpha = (MathUtil.getAlpha(color) / 255f);
 
-        notifyChange();
+        notifyColorChange();
     }
 
     @Override

@@ -121,8 +121,7 @@ public class Blur implements Shape {
         boolean shouldRefreshCapture = !worldCaptureInitialized
                 || resized
                 || guiActive
-                || cameraMoved
-                || now - lastWorldCaptureNs >= WORLD_BLUR_CAPTURE_INTERVAL_NS;
+                || cameraMoved;
         if (shouldRefreshCapture) {
             captureWorldInput(client, framebufferWidth, framebufferHeight);
             worldCaptureInitialized = true;
@@ -377,12 +376,8 @@ public class Blur implements Shape {
             boolean cameraMoved = hasCameraMoved(client);
             boolean shouldRefreshHudInput = forceHudRefresh || resized || guiActive || cameraMoved;
 
-            // Cached HUD path: refresh only once per frame (beginCachedFrame resets the flag).
-            if (cachedFramePrepared) {
-                shouldRefreshHudInput = false;
-            }
-
-            if (!cachedFramePrepared && shouldRefreshHudInput) {
+            // Disable cached frame optimization to prevent flickering
+            if (shouldRefreshHudInput) {
                 captureWorldInput(client, framebufferWidth, framebufferHeight);
                 forceHudRefresh = false;
             }

@@ -315,17 +315,14 @@ public final class ConfigManager {
     }
     
     public void deleteConfig(String configName) {
+        // Prevent deletion of current config
+        if (currentConfigName.equals(configName)) {
+            return;
+        }
+        
         File configFile = getConfigFile(configName);
         if (configFile.exists()) {
             configFile.delete();
-        }
-
-        // If deleted config was current, switch to default
-        if (currentConfigName.equals(configName)) {
-            currentConfigName = "default";
-            currentConfig = getConfigFile(currentConfigName);
-            saveCurrentConfigName();
-            loadCurrentConfig();
         }
     }
     

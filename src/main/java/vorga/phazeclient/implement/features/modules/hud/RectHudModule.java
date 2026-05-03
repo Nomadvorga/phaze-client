@@ -56,16 +56,6 @@ public abstract class RectHudModule extends Module {
             .setValue(0)
             .visible(() -> background.isValue());
     public final SectionSetting colorSection = new SectionSetting("Color Settings");
-    public final SectionSetting batchingSection = new SectionSetting("Batching");
-
-    public final BooleanSetting hudBatching = new BooleanSetting("HUD Batching", "Throttle HUD data and animation updates for performance").setValue(false);
-    public final BooleanSetting forceHudUpdate = new BooleanSetting("Force HUD Update", "Disable FPS limit but keep batching optimizations")
-            .setValue(false)
-            .visible(() -> hudBatching.isValue());
-    public final ValueSetting hudFps = new ValueSetting("HUD FPS", "Limit HUD render rate to save performance")
-            .range(5, 120)
-            .setValue(60)
-            .visible(() -> hudBatching.isValue() && !forceHudUpdate.isValue());
 
     private final HudBuffer hudBuffer = new HudBuffer();
 
@@ -91,10 +81,7 @@ public abstract class RectHudModule extends Module {
         colorBrightness.setFullWidth(true);
         backgroundOpacity.setFullWidth(true);
         backgroundBlurRadius.setFullWidth(true);
-        hudBatching.setFullWidth(true);
-        forceHudUpdate.setFullWidth(true);
-        hudFps.setFullWidth(true);
-        setup(textShadow, colorSection, background, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, batchingSection, hudBatching, forceHudUpdate, hudFps);
+        setup(textShadow, colorSection, background, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius);
     }
 
     public float getHudX() {

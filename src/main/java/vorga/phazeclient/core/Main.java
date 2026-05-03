@@ -8,7 +8,6 @@ import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
 import vorga.phazeclient.implement.features.modules.hud.CoordinatesHud;
 import vorga.phazeclient.implement.features.modules.hud.CpsHud;
 import vorga.phazeclient.implement.features.modules.hud.DayCounterHud;
-import vorga.phazeclient.implement.features.modules.hud.FastSettingsHud;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.implement.features.modules.hud.FpsHud;
 import vorga.phazeclient.implement.features.modules.hud.KeystrokesHud;
@@ -20,11 +19,16 @@ import vorga.phazeclient.implement.features.modules.hud.StatsHud;
 import vorga.phazeclient.implement.features.modules.hud.SprintHud;
 import vorga.phazeclient.implement.features.modules.hud.TabHud;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
+import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
+import vorga.phazeclient.implement.features.modules.hud.MemoryHud;
+import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
+import vorga.phazeclient.implement.features.modules.hud.ServerAddressHud;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.features.modules.other.TimeChanger;
 import vorga.phazeclient.implement.features.modules.other.WeatherChanger;
+import vorga.phazeclient.implement.features.modules.other.Saturation;
 
 import java.util.ArrayList;
 
@@ -60,9 +64,6 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(AutoSprint.class) == null) {
             moduleProvider.getModules().add(AutoSprint.getInstance());
         }
-        if (moduleProvider.get(FastSettingsHud.class) == null) {
-            moduleProvider.getModules().add(FastSettingsHud.getInstance());
-        }
         if (moduleProvider.get(FpsHud.class) == null) {
             moduleProvider.getModules().add(FpsHud.getInstance());
         }
@@ -74,6 +75,7 @@ public class Main implements ModInitializer {
         }
         if (moduleProvider.get(ArmorHud.class) == null) {
             moduleProvider.getModules().add(ArmorHud.getInstance());
+            ArmorHud.getInstance().setState(true);
         }
         if (moduleProvider.get(SprintHud.class) == null) {
             moduleProvider.getModules().add(SprintHud.getInstance());
@@ -108,6 +110,25 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(SessionTimeHud.class) == null) {
             moduleProvider.getModules().add(SessionTimeHud.getInstance());
         }
+        if (moduleProvider.get(MemoryHud.class) == null) {
+            moduleProvider.getModules().add(MemoryHud.getInstance());
+        }
+        if (moduleProvider.get(ComboCounterHud.class) == null) {
+            moduleProvider.getModules().add(ComboCounterHud.getInstance());
+        }
+        if (moduleProvider.get(ServerAddressHud.class) == null) {
+            moduleProvider.getModules().add(ServerAddressHud.getInstance());
+        }
+        if (moduleProvider.get(Saturation.class) == null) {
+            moduleProvider.getModules().add(Saturation.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HitColor.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HitColor.getInstance());
+        }
+// TODO: ScoreboardHud temporarily disabled for debugging
+        // if (moduleProvider.get(ScoreboardHud.class) == null) {
+        //     moduleProvider.getModules().add(ScoreboardHud.getInstance());
+        // }
 
         configManager.loadCurrentConfig();
     }

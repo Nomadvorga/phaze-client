@@ -13,6 +13,7 @@ base {
 
 repositories {
     mavenCentral()
+    maven { url 'https://jitpack.io' }
 }
 
 loom {
@@ -38,7 +39,6 @@ dependencies {
     configurations.libImpl.dependencies.each {
         implementation(it)
     }
-
 
     configurations.modImpl.dependencies.each {
         modImplementation(it)
@@ -82,6 +82,9 @@ jar {
     }
     from {
         configurations.libImpl.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    from {
+        configurations.runtimeClasspath.findAll { it.name.startsWith('vlcj') || it.name.startsWith('jna') }.collect { it.isDirectory() ? it : zipTree(it) }
     }
     duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
 }

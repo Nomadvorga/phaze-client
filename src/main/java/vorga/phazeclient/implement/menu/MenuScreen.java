@@ -62,7 +62,7 @@ public class MenuScreen extends Screen implements QuickImports {
     private final ModuleDescriptionComponent moduleDescriptionComponent = new ModuleDescriptionComponent();
     private final ModuleDetailComponent moduleDetailComponent = new ModuleDetailComponent();
     public final Animation animation = new LinearAnimation().setMs(200).setValue(1);
-    public ModuleCategory category = ModuleCategory.VISUALS;
+    public ModuleCategory category = ModuleCategory.ALL;
     public int x, y, width, height;
 
     private boolean menuDragging = false;
@@ -384,7 +384,7 @@ public class MenuScreen extends Screen implements QuickImports {
             SearchComponent.typing = true;
             searchComponent.setText("");
             searchComponent.setCursorPosition(0);
-            searchComponent.setPreviousCategory(category != ModuleCategory.SEARCH ? category : ModuleCategory.VISUALS);
+            searchComponent.setPreviousCategory(category != ModuleCategory.SEARCH ? category : ModuleCategory.ALL);
             return true;
         }
 
@@ -442,7 +442,6 @@ public class MenuScreen extends Screen implements QuickImports {
     @Override
     public void close() {
         if (animation.isFinished(BACKWARDS)) {
-            TextComponent.typing = false;
             SelectComponent.closeAllDropdowns();
             MultiSelectComponent.closeAllDropdowns();
             super.close();
