@@ -20,6 +20,10 @@ public class StringUtil implements QuickImports {
 
     public String getBindName(int key) {
         if (key < 0) return "N/A";
+        String keyName = org.lwjgl.glfw.GLFW.glfwGetKeyName(key, 0);
+        if (keyName != null) {
+            return keyName.toUpperCase();
+        }
         return "KEY_" + key;
     }
 

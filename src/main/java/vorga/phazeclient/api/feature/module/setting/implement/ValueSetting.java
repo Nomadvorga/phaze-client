@@ -15,6 +15,7 @@ public class ValueSetting extends Setting {
     private float value, min, max;
     private boolean integer;
     private Float defaultValue;
+    private float step = 0.1f;
     private Consumer<Float> onChangeCallback;
 
     public ValueSetting(String name, String description) {
@@ -31,6 +32,11 @@ public class ValueSetting extends Setting {
         this.min = min;
         this.max = max;
         this.integer = true;
+        return this;
+    }
+
+    public ValueSetting step(float step) {
+        this.step = step;
         return this;
     }
 

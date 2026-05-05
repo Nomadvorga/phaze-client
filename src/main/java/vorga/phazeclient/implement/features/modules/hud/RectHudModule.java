@@ -21,8 +21,10 @@ public abstract class RectHudModule extends Module {
     private final float defaultHudY;
     private final float defaultHudScale;
 
+    public final SectionSetting mainSection = new SectionSetting("Main");
     public final BooleanSetting textShadow = new BooleanSetting("Text Shadow", "Draw text with vanilla shadow").setValue(true);
     public final BooleanSetting background = new BooleanSetting("Background", "Draw scoreboard-style background").setValue(true);
+    public final BooleanSetting showBrackets = new BooleanSetting("Show Brackets", "Show brackets around text when background is disabled").setValue(false).visible(() -> !background.isValue());
     public final SelectSetting backgroundPreset = new SelectSetting("Background Preset", "Choose preset background style")
             .value(
                     "Vanilla",
@@ -49,7 +51,7 @@ public abstract class RectHudModule extends Module {
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundOpacity = new ValueSetting("Background Opacity", "Custom background opacity")
             .range(0, 100)
-            .setValue(30)
+            .setValue(40)
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundBlurRadius = new ValueSetting("Background Blur Radius", "Blur radius for HUD background")
             .range(0, 32)
@@ -75,13 +77,15 @@ public abstract class RectHudModule extends Module {
         this.hudX = defaultHudX;
         this.hudY = defaultHudY;
         this.hudScale = defaultHudScale;
+        mainSection.setFullWidth(true);
         textShadow.setFullWidth(true);
         background.setFullWidth(true);
+        showBrackets.setFullWidth(true);
         backgroundPreset.setFullWidth(true);
         colorBrightness.setFullWidth(true);
         backgroundOpacity.setFullWidth(true);
         backgroundBlurRadius.setFullWidth(true);
-        setup(textShadow, colorSection, background, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius);
+        setup(mainSection, showBrackets, textShadow, background, colorSection, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius);
     }
 
     public float getHudX() {
@@ -128,7 +132,7 @@ public abstract class RectHudModule extends Module {
 
     public int getResolvedBackgroundColor(MinecraftClient client) {
         if (isVanillaPreset()) {
-            return client.options.getTextBackgroundColor(0.3F);
+            return client.options.getTextBackgroundColor(0.4F);
         }
         var palette = MenuPalettes.byName(backgroundPreset.getSelected());
         int presetColor = adjustBrightness(palette.chipActive(), colorBrightness.getValue() / 100.0f);

@@ -1,4 +1,4 @@
-accessWidener v1 named
+accessWidener v2 named
 
 # Essential rendering access for GUI and custom rendering
 accessible field net/minecraft/client/util/math/MatrixStack stack Ljava/util/Deque;
@@ -67,3 +67,7 @@ accessible field net/minecraft/entity/player/PlayerEntity inventory Lnet/minecra
 # ModelPart rendering for custom crystal rendering
 accessible method net/minecraft/client/model/ModelPart renderCuboids (Lnet/minecraft/client/util/math/MatrixStack$Entry;Lnet/minecraft/client/render/VertexConsumer;III)V
 accessible field net/minecraft/client/model/ModelPart pivotY F
+
+# Motion Blur shader access
+accessible method net/minecraft/client/render/GameRenderer getFov (Lnet/minecraft/client/render/Camera;FZ)F
+accessible class net/minecraft/client/gl/ShaderLoader$Cache

@@ -27,7 +27,7 @@ public final class DirectionHud extends RectHudModule {
         showIntermediate.setFullWidth(true);
         showDegreeNumber.setFullWidth(true);
         smoothness.setFullWidth(true);
-        setup(directionSection, hudLength, showIntermediate, showDegreeNumber, smoothness);
+        setup(showBrackets, directionSection, hudLength, showIntermediate, showDegreeNumber, smoothness);
     }
 
     @Override

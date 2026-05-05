@@ -18,7 +18,21 @@
     "OverlayTextureMixin",
     "LivingEntityRendererMixin",
     "ArmorFeatureRendererMixin",
-    "EquipmentRendererMixin"
+    "EquipmentRendererMixin",
+    "GameRendererZoomMixin",
+    "MouseZoomMixin",
+    "KeyboardZoomMixin",
+    "ScreenOpenMixin",
+    "GameRendererMotionBlurMixin",
+    "GameRendererColorCorrectionMixin",
+    "WorldRendererMotionBlurMixin",
+    "GameRendererAccessor",
+    "PostEffectProcessorAccessor",
+    "ShaderLoaderAccessor",
+    "ItemEntityPhysicsMixin",
+    "ItemEntityRendererPhysicsMixin",
+    "PlayerEntitySkinMixin",
+    "PlayerEntityRendererSkinMixin"
   ],
   "injectors": {
     "defaultRequire": 0

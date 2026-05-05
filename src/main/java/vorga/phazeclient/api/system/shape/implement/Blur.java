@@ -57,10 +57,9 @@ public class Blur implements Shape {
     private double lastCameraZ = Double.NaN;
     private float lastYaw = Float.NaN;
     private float lastPitch = Float.NaN;
+    private net.minecraft.entity.Entity lastCameraEntity = null;
     private final long[] hudStateKeys = new long[8];
     private final boolean[] hudStateInitialized = new boolean[8];
-    private static final long WORLD_BLUR_CAPTURE_INTERVAL_NS = 40_000_000L; // ~25 Hz
-    private long lastWorldCaptureNs = 0L;
     private int lastWorldCaptureWidth = -1;
     private int lastWorldCaptureHeight = -1;
     private boolean worldCaptureInitialized = false;
@@ -114,7 +113,6 @@ public class Blur implements Shape {
 
         int framebufferWidth = Math.max(1, client.getWindow().getFramebufferWidth());
         int framebufferHeight = Math.max(1, client.getWindow().getFramebufferHeight());
-        long now = System.nanoTime();
         boolean guiActive = client.currentScreen != null;
         boolean cameraMoved = hasCameraMoved(client);
         boolean resized = framebufferWidth != lastWorldCaptureWidth || framebufferHeight != lastWorldCaptureHeight;
@@ -125,7 +123,6 @@ public class Blur implements Shape {
         if (shouldRefreshCapture) {
             captureWorldInput(client, framebufferWidth, framebufferHeight);
             worldCaptureInitialized = true;
-            lastWorldCaptureNs = now;
             lastWorldCaptureWidth = framebufferWidth;
             lastWorldCaptureHeight = framebufferHeight;
         }
@@ -372,15 +369,8 @@ public class Blur implements Shape {
         }
 
         if (cacheFrame) {
-            boolean guiActive = client.currentScreen != null;
-            boolean cameraMoved = hasCameraMoved(client);
-            boolean shouldRefreshHudInput = forceHudRefresh || resized || guiActive || cameraMoved;
-
-            // Disable cached frame optimization to prevent flickering
-            if (shouldRefreshHudInput) {
-                captureWorldInput(client, framebufferWidth, framebufferHeight);
-                forceHudRefresh = false;
-            }
+            // Always refresh HUD blur input every frame to prevent darkening artifacts
+            captureWorldInput(client, framebufferWidth, framebufferHeight);
             cachedFramePrepared = true;
             return true;
         }
@@ -421,19 +411,22 @@ public class Blur implements Shape {
         var pos = camera.getPos();
         float yaw = camera.getYaw();
         float pitch = camera.getPitch();
+        net.minecraft.entity.Entity cameraEntity = client.getCameraEntity();
 
         boolean moved = Double.isNaN(lastCameraX)
                 || Math.abs(pos.x - lastCameraX) > 1.0E-6
                 || Math.abs(pos.y - lastCameraY) > 1.0E-6
                 || Math.abs(pos.z - lastCameraZ) > 1.0E-6
                 || Math.abs(yaw - lastYaw) > 1.0E-4f
-                || Math.abs(pitch - lastPitch) > 1.0E-4f;
+                || Math.abs(pitch - lastPitch) > 1.0E-4f
+                || cameraEntity != lastCameraEntity;
 
         lastCameraX = pos.x;
         lastCameraY = pos.y;
         lastCameraZ = pos.z;
         lastYaw = yaw;
         lastPitch = pitch;
+        lastCameraEntity = cameraEntity;
         return moved;
     }
 
