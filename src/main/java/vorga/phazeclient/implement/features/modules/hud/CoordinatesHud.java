@@ -29,7 +29,7 @@ public final class CoordinatesHud extends RectHudModule {
         showBiome.setFullWidth(true);
         showDirection.setFullWidth(true);
         showAxisSigns.setFullWidth(true);
-        setup(otherSection, showX, showY, showZ, showChunk, showBiome, showDirection, showAxisSigns);
+        setup(showBrackets, otherSection, showX, showY, showZ, showChunk, showBiome, showDirection, showAxisSigns);
     }
 
     @Override

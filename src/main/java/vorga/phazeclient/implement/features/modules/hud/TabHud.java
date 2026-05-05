@@ -32,7 +32,7 @@ public final class TabHud extends RectHudModule {
         displayPingAsNumber.setFullWidth(true);
         pingNumberShadow.setFullWidth(true);
         dynamicPingColor.setFullWidth(true);
-        setup(colorSection2, highlightOwn, displayPingAsNumber, pingNumberShadow, dynamicPingColor);
+        setup(showBrackets, colorSection2, highlightOwn, displayPingAsNumber, pingNumberShadow, dynamicPingColor);
     }
 
     @Override

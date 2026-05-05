@@ -18,6 +18,7 @@ public final class ArmorHud extends Module {
     private static final float MIN_HUD_SCALE = 0.5f;
     private static final float MAX_HUD_SCALE = 5.0f;
 
+    public final SectionSetting mainSection = new SectionSetting("Main");
     public final BooleanSetting textShadow = new BooleanSetting("Text Shadow", "Draw text with vanilla shadow").setValue(true);
     public final BooleanSetting background = new BooleanSetting("Background", "Draw scoreboard-style background").setValue(false);
     public final SelectSetting backgroundPreset = new SelectSetting("Background Preset", "Choose preset background style")
@@ -70,6 +71,7 @@ public final class ArmorHud extends Module {
 
     private ArmorHud() {
         super("armor_hud", "Armor", ModuleCategory.HUD, true, false);
+        mainSection.setFullWidth(true);
         textShadow.setFullWidth(true);
         background.setFullWidth(true);
         backgroundPreset.setFullWidth(true);
@@ -77,7 +79,7 @@ public final class ArmorHud extends Module {
         backgroundOpacity.setFullWidth(true);
         backgroundBlurRadius.setFullWidth(true);
         durabilityMode.setFullWidth(true);
-        setup(textShadow, colorSection, background, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, otherSection, durabilityMode);
+        setup(mainSection, textShadow, background, colorSection, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, otherSection, durabilityMode);
     }
 
     @Override

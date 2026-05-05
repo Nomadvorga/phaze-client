@@ -245,12 +245,8 @@ public abstract class EntityRendererNametagMixin {
             quality *= 0.75f; // 75% quality for medium distance
         }
 
-        // Render blur immediately or add to batch
-        if (NametagBatchRenderer.isBatchingEnabled()) {
-            NametagBatchRenderer.addBlurRect(left, top, width, height, 0xFFFFFFFF, matrix, quality);
-        } else {
-            Blur.INSTANCE.renderWorldRect(matrix, left, top, width, height, quality, 0xFFFFFFFF);
-        }
+        // Render blur immediately
+        Blur.INSTANCE.renderWorldRect(matrix, left, top, width, height, quality, 0xFFFFFFFF);
         drawSolidRect3D(matrix, left, top, width, height, background);
         phaze$backgroundDrawnThisLabel = true;
         // Keep vanilla backdrop in both passes and draw solid background on top.

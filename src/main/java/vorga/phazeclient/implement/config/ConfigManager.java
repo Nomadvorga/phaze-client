@@ -131,6 +131,8 @@ public final class ConfigManager {
                     settings.addProperty(setting.getName(), selectSetting.getSelected());
                 } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.ColorSetting colorSetting) {
                     settings.addProperty(setting.getName(), colorSetting.getColor());
+                } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.BindSetting bindSetting) {
+                    settings.addProperty(setting.getName(), bindSetting.getKey());
                 }
             });
             moduleData.add("settings", settings);
@@ -186,7 +188,7 @@ public final class ConfigManager {
             }
             // Reset theme to default
             vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected("Lunar Blue");
-            vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(10.0F);
+            vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(5.0F);
             
             currentConfig = configFile;
             setCurrentConfigName(configName);
@@ -232,6 +234,9 @@ public final class ConfigManager {
                                     } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.ColorSetting colorSetting) {
                                         int value = settings.get(setting.getName()).getAsInt();
                                         colorSetting.setColor(value);
+                                    } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.BindSetting bindSetting) {
+                                        int value = settings.get(setting.getName()).getAsInt();
+                                        bindSetting.setKey(value);
                                     }
                                 } catch (Exception e) {
                                     // Skip invalid values

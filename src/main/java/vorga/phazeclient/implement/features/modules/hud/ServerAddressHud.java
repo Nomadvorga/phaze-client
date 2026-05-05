@@ -16,40 +16,61 @@ public final class ServerAddressHud extends RectHudModule {
 
     private ServerAddressHud() {
         super("server_address_hud", "Server Address", 100.0f, 50.0f, 1.0f);
-        setup(displayServerIcon);
+        setup(showBrackets, displayServerIcon);
     }
 
     public String getServerAddress() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getNetworkHandler() == null) {
-            return "Singleplayer";
+            return "Local";
+        }
+        // Check if it's singleplayer/integrated server
+        if (client.isIntegratedServerRunning()) {
+            return "Local";
+        }
+        ServerInfo serverInfo = getServerInfo();
+        if (serverInfo != null && serverInfo.address != null && !serverInfo.address.isEmpty()) {
+            String address = normalizeServerAddress(serverInfo.address);
+            if (!isNumericAddress(address)) {
+                return address;
+            }
+        }
+        if (serverInfo != null && serverInfo.name != null && !serverInfo.name.isEmpty() && !isNumericAddress(serverInfo.name)) {
+            return serverInfo.name;
         }
         String address = client.getNetworkHandler().getConnection().getAddress().toString();
-        // Remove leading slash
-        if (address.startsWith("/")) {
-            address = address.substring(1);
-        }
-        
-        // Check if it's an IPv6 address (contains brackets)
-        if (address.contains("[")) {
-            // IPv6 format: [address]:port
-            int bracketEnd = address.indexOf("]");
-            if (bracketEnd != -1 && bracketEnd < address.length() - 1 && address.charAt(bracketEnd + 1) == ':') {
-                // Remove the port part
-                address = address.substring(0, bracketEnd + 1);
-            }
-            // Remove brackets for display
-            address = address.replace("[", "").replace("]", "");
-        } else {
-            // IPv4 format: address:port
-            // Remove port (everything after the last colon)
-            int lastColon = address.lastIndexOf(':');
-            if (lastColon != -1) {
-                address = address.substring(0, lastColon);
-            }
+        address = normalizeServerAddress(address);
+        if (isNumericAddress(address)) {
+            return "Unknown";
         }
         
         return address;
+    }
+
+    private String normalizeServerAddress(String address) {
+        if (address.startsWith("/")) {
+            address = address.substring(1);
+        }
+
+        if (address.contains("[")) {
+            int bracketEnd = address.indexOf("]");
+            if (bracketEnd != -1 && bracketEnd < address.length() - 1 && address.charAt(bracketEnd + 1) == ':') {
+                address = address.substring(0, bracketEnd + 1);
+            }
+            address = address.replace("[", "").replace("]", "");
+        } else {
+            int lastColon = address.lastIndexOf(':');
+            if (lastColon != -1 && address.indexOf(':') == lastColon) {
+                address = address.substring(0, lastColon);
+            }
+        }
+
+        return address;
+    }
+
+    private boolean isNumericAddress(String address) {
+        String normalized = address.trim().toLowerCase();
+        return normalized.matches("\\d{1,3}(\\.\\d{1,3}){3}") || normalized.matches("[0-9a-f:]+") && normalized.contains(":");
     }
 
     public ServerInfo getServerInfo() {

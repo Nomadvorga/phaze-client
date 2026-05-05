@@ -15,7 +15,7 @@ public final class CpsHud extends RectHudModule {
 
     private CpsHud() {
         super("cps_hud", "CPS");
-        setup(reverseText, showCpsText, rightClickCps);
+        setup(showBrackets, reverseText, showCpsText, rightClickCps);
     }
 
     @Override

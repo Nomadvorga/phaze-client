@@ -83,6 +83,11 @@ public class MenuScreen extends Screen implements QuickImports {
         initialize();
     }
 
+    public static void preload() {
+        INSTANCE.updateOverlayMetrics();
+        INSTANCE.categoryContainerComponent.initializeCategoryComponents();
+    }
+
     public void initialize() {
         animation.setDirection(FORWARDS);
         categoryContainerComponent.initializeCategoryComponents();

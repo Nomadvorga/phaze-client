@@ -10,14 +10,25 @@ import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.item.Item;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Block;
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.Registries;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -33,19 +44,21 @@ import vorga.phazeclient.implement.features.modules.hud.DayCounterHud;
 import vorga.phazeclient.implement.features.modules.hud.DirectionHud;
 import vorga.phazeclient.implement.features.modules.hud.FpsHud;
 import vorga.phazeclient.implement.features.modules.hud.KeystrokesHud;
+import vorga.phazeclient.implement.features.modules.hud.MovementSpeedHud;
 import vorga.phazeclient.implement.features.modules.hud.PingHud;
 import vorga.phazeclient.implement.features.modules.hud.PotionHud;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
 import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
 import vorga.phazeclient.implement.features.modules.hud.SessionTimeHud;
-import vorga.phazeclient.implement.features.modules.hud.StatsHud;
 import vorga.phazeclient.implement.features.modules.hud.SprintHud;
 import vorga.phazeclient.implement.features.modules.hud.MemoryHud;
 import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
 import vorga.phazeclient.implement.features.modules.hud.ServerAddressHud;
+import vorga.phazeclient.implement.features.modules.hud.WailaHud;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
+import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 
@@ -87,17 +100,18 @@ public class InGameHudMixin {
     private static final int HUD_KEYSTROKES = 6;
     private static final int HUD_POTION = 7;
     private static final int HUD_DAY_COUNTER = 8;
-    private static final int HUD_STATS = 9;
-    private static final int HUD_DIRECTION = 10;
-    private static final int HUD_TAB = 11;
-    private static final int HUD_NAMETAG = 12;
-    private static final int HUD_TIME = 13;
-    private static final int HUD_SESSION = 14;
-    private static final int HUD_SCOREBOARD = 15;
-    private static final int HUD_MEMORY = 16;
-    private static final int HUD_COMBO = 17;
-    private static final int HUD_SERVER_ADDRESS = 18;
-    private static final int RECT_HUD_COUNT = 19;
+    private static final int HUD_DIRECTION = 9;
+    private static final int HUD_TAB = 10;
+    private static final int HUD_NAMETAG = 11;
+    private static final int HUD_TIME = 12;
+    private static final int HUD_SESSION = 13;
+    private static final int HUD_SCOREBOARD = 14;
+    private static final int HUD_MEMORY = 15;
+    private static final int HUD_COMBO = 16;
+    private static final int HUD_SERVER_ADDRESS = 17;
+    private static final int HUD_MOVEMENT_SPEED = 18;
+    private static final int HUD_WAILA = 19;
+    private static final int RECT_HUD_COUNT = 20;
     private static final int HUD_ARMOR_BLUR_SLOT = 15;
     private static final int KEYSTROKE_W = 0;
     private static final int KEYSTROKE_A = 1;
@@ -137,6 +151,7 @@ public class InGameHudMixin {
     private static List<ItemStack> armorStacksCache = new ArrayList<>();
     private static List<String> armorDurabilityTextsCache = new ArrayList<>();
     private static boolean armorCacheInitialized = false;
+    private static net.minecraft.world.World lastWorld = null;
     private static List<StatusEffectInstance> potionEffectsCache = new ArrayList<>();
     private static List<String> potionNamesCache = new ArrayList<>();
     private static List<String> potionDurationsCache = new ArrayList<>();
@@ -165,12 +180,8 @@ public class InGameHudMixin {
     private static float horizontalGuideProgress = 0.0f;
     private static boolean showVerticalGuideThisFrame = false;
     private static boolean showHorizontalGuideThisFrame = false;
-    private static final String[] HUD_PART_NAMES = {"FPS", "CPS", "Reach", "Armor", "Sprint", "Coords", "Ping", "Keys", "Potion", "Days"};
-    private static final double[] HUD_PART_AVG_NS = new double[HUD_PART_NAMES.length];
-    private static final int[] HUD_PART_ORDER = new int[HUD_PART_NAMES.length];
     private static float directionDisplayYaw = Float.NaN;
     private static final long SESSION_START_MS = System.currentTimeMillis();
-    private static final int HUD_SCOREBOARD_BLUR_SLOT = 7;
 
 
     @Inject(method = "render", at = @At("HEAD"))
@@ -185,6 +196,14 @@ public class InGameHudMixin {
             renderHudInternal(context);
         }
         Blur.INSTANCE.endCachedFrame();
+        
+        // Render zoom level outside of HUD check
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.options != null && !client.options.hudHidden) {
+            float screenWidth = client.getWindow().getWidth();
+            float screenHeight = client.getWindow().getHeight();
+            renderZoomLevel(context, client, screenWidth, screenHeight);
+        }
     }
 
     private void renderHudInternal(DrawContext context) {
@@ -229,11 +248,11 @@ public class InGameHudMixin {
         showVerticalGuideThisFrame = false;
         showHorizontalGuideThisFrame = false;
 
-        float statsSmoothing = StatsHud.getInstance().sampleSmoothing.getValue();
         String fpsText = getCachedHudText(FpsHud.getInstance(), HUD_FPS, chatEditing, () -> "FPS: " + client.getCurrentFps());
-        timeHudPart(0, statsSmoothing, () -> renderBufferedHud(context, FpsHud.getInstance(), chatEditing, () ->
-                renderRectHud(context, client, FpsHud.getInstance(), fpsText, HUD_FPS,
-                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(FpsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
+        final String fpsTextWrapped = wrapTextWithBrackets(fpsText, FpsHud.getInstance());
+        renderBufferedHud(context, FpsHud.getInstance(), chatEditing, () ->
+                renderRectHud(context, client, FpsHud.getInstance(), fpsTextWrapped, HUD_FPS,
+                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(FpsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
         String cpsText = getCachedHudText(CpsHud.getInstance(), HUD_CPS, chatEditing, () -> {
             CpsHud cpsHud = CpsHud.getInstance();
             int leftCps = LEFT_CLICKS.size();
@@ -263,63 +282,103 @@ public class InGameHudMixin {
                 }
             }
         });
-        timeHudPart(1, statsSmoothing, () -> renderBufferedHud(context, CpsHud.getInstance(), chatEditing, () ->
-                renderRectHud(context, client, CpsHud.getInstance(), cpsText, HUD_CPS,
-                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(CpsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
+        final String cpsTextWrapped = wrapTextWithBrackets(cpsText, CpsHud.getInstance());
+        renderBufferedHud(context, CpsHud.getInstance(), chatEditing, () ->
+                renderRectHud(context, client, CpsHud.getInstance(), cpsTextWrapped, HUD_CPS,
+                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(CpsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
         String reachText = getCachedHudText(ReachHud.getInstance(), HUD_REACH, chatEditing, () -> ReachHud.getInstance().getFormattedReach());
-        timeHudPart(2, statsSmoothing, () -> renderBufferedHud(context, ReachHud.getInstance(), chatEditing, () ->
-                renderRectHud(context, client, ReachHud.getInstance(), reachText, HUD_REACH,
+        final String reachTextWrapped = wrapTextWithBrackets(reachText, ReachHud.getInstance());
+        renderBufferedHud(context, ReachHud.getInstance(), chatEditing, () ->
+                renderRectHud(context, client, ReachHud.getInstance(), reachTextWrapped, HUD_REACH,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(ReachHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
-                        BASE_WIDTH + 6.0f, BASE_HEIGHT)));
-        timeHudPart(3, statsSmoothing, () -> renderBufferedHud(context, ArmorHud.getInstance(), chatEditing, () ->
-                renderArmorHud(context, client, ArmorHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(ArmorHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
+                        BASE_WIDTH + 6.0f, BASE_HEIGHT));
+        renderBufferedHud(context, ArmorHud.getInstance(), chatEditing, () ->
+                renderArmorHud(context, client, ArmorHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(ArmorHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
         String sprintText = getCachedHudText(SprintHud.getInstance(), HUD_SPRINT, chatEditing, () -> getSprintHudText(client));
-        timeHudPart(4, statsSmoothing, () -> renderBufferedHud(context, SprintHud.getInstance(), chatEditing, () ->
-                renderRectHud(context, client, SprintHud.getInstance(), sprintText, HUD_SPRINT,
+        final String sprintTextWrapped = wrapTextWithBrackets(sprintText, SprintHud.getInstance());
+        renderBufferedHud(context, SprintHud.getInstance(), chatEditing, () ->
+                renderRectHud(context, client, SprintHud.getInstance(), sprintTextWrapped, HUD_SPRINT,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(SprintHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
-                        getTextHudBaseWidth(client, sprintText), BASE_HEIGHT)));
-        timeHudPart(5, statsSmoothing, () -> renderBufferedHud(context, CoordinatesHud.getInstance(), chatEditing, () ->
-                renderCoordinatesHud(context, client, CoordinatesHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(CoordinatesHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
-        timeHudPart(6, statsSmoothing, () -> renderBufferedHud(context, PingHud.getInstance(), chatEditing, () ->
-                renderPingHud(context, client, PingHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(PingHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
-        timeHudPart(7, statsSmoothing, () -> renderBufferedHud(context, KeystrokesHud.getInstance(), chatEditing, () ->
-                renderKeystrokesHud(context, client, KeystrokesHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(KeystrokesHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
-        timeHudPart(8, statsSmoothing, () -> renderBufferedHud(context, PotionHud.getInstance(), chatEditing, () ->
-                renderPotionHud(context, client, PotionHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(PotionHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY)));
+                        getTextHudBaseWidth(client, sprintTextWrapped), BASE_HEIGHT));
+        renderBufferedHud(context, CoordinatesHud.getInstance(), chatEditing, () ->
+                renderCoordinatesHud(context, client, CoordinatesHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(CoordinatesHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+        renderBufferedHud(context, PingHud.getInstance(), chatEditing, () ->
+                renderPingHud(context, client, PingHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(PingHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+        renderBufferedHud(context, KeystrokesHud.getInstance(), chatEditing, () ->
+                renderKeystrokesHud(context, client, KeystrokesHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(KeystrokesHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+        renderBufferedHud(context, PotionHud.getInstance(), chatEditing, () ->
+                renderPotionHud(context, client, PotionHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(PotionHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
         String dayText = getCachedHudText(DayCounterHud.getInstance(), HUD_DAY_COUNTER, chatEditing, () -> getDayCounterText(client));
-
-        timeHudPart(9, statsSmoothing, () -> renderBufferedHud(context, DayCounterHud.getInstance(), chatEditing, () ->
-                renderRectHud(context, client, DayCounterHud.getInstance(), dayText, HUD_DAY_COUNTER,
+        final String dayTextWrapped = wrapTextWithBrackets(dayText, DayCounterHud.getInstance());
+        renderBufferedHud(context, DayCounterHud.getInstance(), chatEditing, () ->
+                renderRectHud(context, client, DayCounterHud.getInstance(), dayTextWrapped, HUD_DAY_COUNTER,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(DayCounterHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
-                        getTextHudBaseWidth(client, dayText), BASE_HEIGHT)));
-        renderBufferedHud(context, StatsHud.getInstance(), chatEditing, () ->
-                renderStatsHud(context, client, StatsHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
-                        getHudDelta(StatsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+                        getTextHudBaseWidth(client, dayTextWrapped), BASE_HEIGHT));
         // Direction HUD temporarily disabled by request.
         // TabHud/NametagHud now affect vanilla TAB list and world nametags directly via dedicated mixins.
         String timeText = getTimeHudText(TimeHud.getInstance());
+        final String timeTextWrapped = wrapTextWithBrackets(timeText, TimeHud.getInstance());
         renderBufferedHud(context, TimeHud.getInstance(), chatEditing, () ->
-                renderSimpleTextHud(context, client, TimeHud.getInstance(), timeText, HUD_TIME, chatEditing, mouseX, mouseY, mouseDown,
+                renderSimpleTextHud(context, client, TimeHud.getInstance(), timeTextWrapped, HUD_TIME, chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(TimeHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
         String sessionText = getSessionText(SessionTimeHud.getInstance());
+        final String sessionTextWrapped = wrapTextWithBrackets(sessionText, SessionTimeHud.getInstance());
         renderBufferedHud(context, SessionTimeHud.getInstance(), chatEditing, () ->
-                renderSessionTimeHud(context, client, SessionTimeHud.getInstance(), sessionText, HUD_SESSION, chatEditing, mouseX, mouseY, mouseDown,
+                renderSessionTimeHud(context, client, SessionTimeHud.getInstance(), sessionTextWrapped, HUD_SESSION, chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(SessionTimeHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
         String memoryText = MemoryHud.getInstance().getMemoryText();
+        final String memoryTextWrapped = wrapTextWithBrackets(memoryText, MemoryHud.getInstance());
         renderBufferedHud(context, MemoryHud.getInstance(), chatEditing, () ->
-                renderMemoryHud(context, client, MemoryHud.getInstance(), memoryText, HUD_MEMORY, chatEditing, mouseX, mouseY, mouseDown,
+                renderMemoryHud(context, client, MemoryHud.getInstance(), memoryTextWrapped, HUD_MEMORY, chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(MemoryHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
         String comboText = ComboCounterHud.getInstance().getComboText();
+        final String comboTextWrapped = wrapTextWithBrackets(comboText, ComboCounterHud.getInstance());
         renderBufferedHud(context, ComboCounterHud.getInstance(), chatEditing, () ->
-                renderComboHud(context, client, ComboCounterHud.getInstance(), comboText, HUD_COMBO, chatEditing, mouseX, mouseY, mouseDown,
+                renderComboHud(context, client, ComboCounterHud.getInstance(), comboTextWrapped, HUD_COMBO, chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(ComboCounterHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
         String serverAddressText = ServerAddressHud.getInstance().getServerAddress();
+        final String serverAddressTextWrapped = wrapTextWithBrackets(serverAddressText, ServerAddressHud.getInstance());
         renderBufferedHud(context, ServerAddressHud.getInstance(), chatEditing, () ->
-                renderServerAddressHud(context, client, ServerAddressHud.getInstance(), serverAddressText, HUD_SERVER_ADDRESS, chatEditing, mouseX, mouseY, mouseDown,
+                renderServerAddressHud(context, client, ServerAddressHud.getInstance(), serverAddressTextWrapped, HUD_SERVER_ADDRESS, chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(ServerAddressHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        String speedText = getCachedHudText(MovementSpeedHud.getInstance(), HUD_MOVEMENT_SPEED, chatEditing, () -> {
+            if (client.player == null) return "0.00 m/s";
+            
+            MovementSpeedHud module = MovementSpeedHud.getInstance();
+            
+            // Calculate speed using distance between current and previous position (like soup)
+            double speed = Math.sqrt(client.player.squaredDistanceTo(new Vec3d(client.player.prevX, client.player.prevY, client.player.prevZ))) * 20.0;
+            
+            // If using ground speed only, calculate horizontal component
+            if (module.onlyUseGroundSpeed.isValue()) {
+                double dx = client.player.getX() - client.player.prevX;
+                double dz = client.player.getZ() - client.player.prevZ;
+                speed = Math.sqrt(dx * dx + dz * dz) * 20.0;
+            }
+            
+            // If standing still, show 0
+            if (speed < 0.01) speed = 0.0;
+            
+            return module.getSpeedText(speed) + " m/s";
+        });
+        final String speedTextWrapped = wrapTextWithBrackets(speedText, MovementSpeedHud.getInstance());
+        renderBufferedHud(context, MovementSpeedHud.getInstance(), chatEditing, () ->
+                renderRectHud(context, client, MovementSpeedHud.getInstance(), speedTextWrapped, HUD_MOVEMENT_SPEED,
+                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(MovementSpeedHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        ItemStack wailaIcon = getWailaIcon(client);
+        String wailaText = getCachedHudText(WailaHud.getInstance(), HUD_WAILA, chatEditing, () -> {
+            if (client.player == null) return "";
+            return getWailaText(client);
+        });
+        final String wailaTextWrapped = wrapTextWithBrackets(wailaText, WailaHud.getInstance());
+        renderBufferedHud(context, WailaHud.getInstance(), chatEditing, () ->
+                renderWailaHud(context, client, WailaHud.getInstance(), wailaTextWrapped, wailaIcon, HUD_WAILA,
+                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(WailaHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
         // TODO: Scoreboard HUD temporarily disabled for debugging
         // renderBufferedHud(context, ScoreboardHud.getInstance(), chatEditing, () ->
@@ -632,6 +691,13 @@ public class InGameHudMixin {
     ) {
         if (!module.isEnabled() || client.player == null) {
             return;
+        }
+
+        // Check if world has changed and reset cache
+        net.minecraft.world.World currentWorld = client.player.getWorld();
+        if (currentWorld != lastWorld) {
+            armorCacheInitialized = false;
+            lastWorld = currentWorld;
         }
 
         if (!armorCacheInitialized) {
@@ -1049,7 +1115,9 @@ public class InGameHudMixin {
             int displayPing = module.getCachedPing();
             return displayPing >= 0 ? displayPing + " ms" : "... ms";
         });
-        float baseWidth = Math.max(48.0f, getHudTextWidth(client, label + value, HUD_TEXT_SIZE) + 12.0f);
+        String fullText = label + value;
+        fullText = wrapTextWithBrackets(fullText, module);
+        float baseWidth = Math.max(48.0f, getHudTextWidth(client, fullText, HUD_TEXT_SIZE) + 12.0f);
 
         renderRectHud(context, client, module, "", HUD_PING, chatEditing, mouseX, mouseY, mouseDown,
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, BASE_HEIGHT);
@@ -1057,13 +1125,13 @@ public class InGameHudMixin {
         float x = module.getHudX();
         float y = module.getHudY();
         float scale = module.getHudScale();
-        float totalWidth = getHudTextWidth(client, label + value, HUD_TEXT_SIZE);
+        float totalWidth = getHudTextWidth(client, fullText, HUD_TEXT_SIZE);
         float textX = (baseWidth - totalWidth) * 0.5f;
         float textY = (BASE_HEIGHT - 8.0f) / 2.0f;
 
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
-        renderScaledHudText(context, client, label, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+        renderScaledHudText(context, client, fullText, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
         float labelWidth = getHudTextWidth(client, label, HUD_TEXT_SIZE);
         int pingColor;
         if (local) {
@@ -1080,85 +1148,6 @@ public class InGameHudMixin {
             }
         }
         renderScaledHudTextColored(context, client, value, x, y, textX + labelWidth, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), pingColor);
-        context.getMatrices().pop();
-    }
-
-    private void renderStatsHud(
-            DrawContext context,
-            MinecraftClient client,
-            StatsHud module,
-            boolean chatEditing,
-            double mouseX,
-            double mouseY,
-            boolean mouseDown,
-            float deltaSeconds,
-            float inverseGuiScale,
-            float screenWidth,
-            float screenHeight,
-            float screenCenterX,
-            float screenCenterY
-    ) {
-        if (!module.isEnabled()) {
-            return;
-        }
-
-        int top = MathHelper.clamp(module.topCount.getInt(), 1, HUD_PART_NAMES.length);
-        for (int i = 0; i < HUD_PART_ORDER.length; i++) {
-            HUD_PART_ORDER[i] = i;
-        }
-        for (int i = 0; i < HUD_PART_ORDER.length - 1; i++) {
-            for (int j = i + 1; j < HUD_PART_ORDER.length; j++) {
-                if (HUD_PART_AVG_NS[HUD_PART_ORDER[j]] > HUD_PART_AVG_NS[HUD_PART_ORDER[i]]) {
-                    int t = HUD_PART_ORDER[i];
-                    HUD_PART_ORDER[i] = HUD_PART_ORDER[j];
-                    HUD_PART_ORDER[j] = t;
-                }
-            }
-        }
-
-        double totalNs = 0.0;
-        for (double v : HUD_PART_AVG_NS) {
-            totalNs += v;
-        }
-        totalNs = Math.max(totalNs, 1.0);
-
-        List<String> lines = new ArrayList<>();
-        for (int i = 0; i < top; i++) {
-            int idx = HUD_PART_ORDER[i];
-            double ms = HUD_PART_AVG_NS[idx] / 1_000_000.0;
-            double pct = (HUD_PART_AVG_NS[idx] / totalNs) * 100.0;
-            StringBuilder sb = new StringBuilder(HUD_PART_NAMES[idx]).append(": ");
-            if (module.showMs.isValue()) {
-                sb.append(String.format(Locale.US, "%.2fms", ms));
-            }
-            if (module.showPercent.isValue()) {
-                if (module.showMs.isValue()) sb.append(" ");
-                sb.append(String.format(Locale.US, "(%.0f%%)", pct));
-            }
-            lines.add(sb.toString());
-        }
-
-        float paddingX = 5.0f;
-        float paddingY = 4.0f;
-        float lineHeight = 10.0f;
-        float maxLineWidth = 0.0f;
-        for (String line : lines) {
-            maxLineWidth = Math.max(maxLineWidth, getHudTextWidth(client, line, HUD_TEXT_SIZE));
-        }
-        float baseWidth = Math.max(90.0f, paddingX * 2.0f + maxLineWidth);
-        float baseHeight = Math.max(BASE_HEIGHT, paddingY * 2.0f + lines.size() * lineHeight);
-
-        renderRectHud(context, client, module, "", HUD_STATS, chatEditing, mouseX, mouseY, mouseDown,
-                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight);
-
-        float x = module.getHudX();
-        float y = module.getHudY();
-        float scale = module.getHudScale();
-        context.getMatrices().push();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
-        for (int i = 0; i < lines.size(); i++) {
-            renderScaledHudText(context, client, lines.get(i), x, y, paddingX, paddingY + i * lineHeight, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
-        }
         context.getMatrices().pop();
     }
 
@@ -1798,6 +1787,13 @@ public class InGameHudMixin {
         return a;
     }
 
+    private static String wrapTextWithBrackets(String text, RectHudModule module) {
+        if (module != null && !module.background.isValue() && module.showBrackets.isValue()) {
+            return "[" + text + "]";
+        }
+        return text;
+    }
+
     private static float shortestAngleDeg(float target, float current) {
         float diff = (target - current) % 360.0f;
         if (diff > 180.0f) diff -= 360.0f;
@@ -2209,14 +2205,6 @@ public class InGameHudMixin {
         }
     }
 
-    private static void timeHudPart(int index, float smoothingSetting, Runnable task) {
-        long start = System.nanoTime();
-        task.run();
-        long elapsed = System.nanoTime() - start;
-        double keep = MathHelper.clamp(smoothingSetting / 100.0f, 0.05f, 0.95f);
-        HUD_PART_AVG_NS[index] = HUD_PART_AVG_NS[index] * keep + elapsed * (1.0 - keep);
-    }
-
     private static boolean hasAnyHudEnabled() {
         return FpsHud.getInstance().isEnabled()
                 || CpsHud.getInstance().isEnabled()
@@ -2228,7 +2216,6 @@ public class InGameHudMixin {
                 || KeystrokesHud.getInstance().isEnabled()
                 || PotionHud.getInstance().isEnabled()
                 || DayCounterHud.getInstance().isEnabled()
-                || StatsHud.getInstance().isEnabled()
                 || NametagHud.getInstance().isEnabled()
                 || TimeHud.getInstance().isEnabled()
                 || SessionTimeHud.getInstance().isEnabled()
@@ -2247,7 +2234,6 @@ public class InGameHudMixin {
                 || RECT_DRAGGING[HUD_KEYSTROKES] || RECT_RESIZING[HUD_KEYSTROKES]
                 || RECT_DRAGGING[HUD_POTION] || RECT_RESIZING[HUD_POTION]
                 || RECT_DRAGGING[HUD_DAY_COUNTER] || RECT_RESIZING[HUD_DAY_COUNTER]
-                || RECT_DRAGGING[HUD_STATS] || RECT_RESIZING[HUD_STATS]
                 || RECT_DRAGGING[HUD_TAB] || RECT_RESIZING[HUD_TAB]
                 || RECT_DRAGGING[HUD_NAMETAG] || RECT_RESIZING[HUD_NAMETAG]
                 || RECT_DRAGGING[HUD_TIME] || RECT_RESIZING[HUD_TIME]
@@ -2463,4 +2449,228 @@ public class InGameHudMixin {
         }
     }
 
+    private String getWailaText(MinecraftClient client) {
+        WailaHud waila = WailaHud.getInstance();
+        if (client.player == null || client.world == null) {
+            return waila.alwaysShow.isValue() ? "No target" : "";
+        }
+
+        HitResult hit = client.player.raycast(4.5, 0.0f, false);
+        
+        if (hit.getType() == HitResult.Type.MISS) {
+            return waila.alwaysShow.isValue() ? "No target" : "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+
+        if (hit.getType() == HitResult.Type.BLOCK) {
+            BlockPos pos = ((BlockHitResult)hit).getBlockPos();
+            BlockState state = client.world.getBlockState(pos);
+            Block block = state.getBlock();
+
+            // Block name (uses Minecraft language)
+            String blockName = block.getName().getString();
+            sb.append(blockName);
+
+            // Coordinates on separate line (English style: X: 123, Y: 456, Z: 789)
+            if (waila.showCoordinates.isValue()) {
+                sb.append("\nX: ").append(pos.getX())
+                  .append(", Y: ").append(pos.getY())
+                  .append(", Z: ").append(pos.getZ());
+            }
+
+            // Break time on separate line
+            if (waila.showBreakTime.isValue()) {
+                if (client.player.isCreative()) {
+                    sb.append("\nBreak: Instant");
+                } else {
+                    float hardness = state.getHardness(client.world, pos);
+                    if (hardness <= 0) {
+                        sb.append("\nBreak: Instant");
+                    } else {
+                        float breakSpeed = client.player.getBlockBreakingSpeed(state);
+                        if (breakSpeed <= 0) {
+                            sb.append("\nBreak: Never");
+                        } else {
+                            boolean canHarvest = client.player.canHarvest(state);
+                            int divider = canHarvest ? 30 : 100;
+                            float breakTime = hardness / breakSpeed * divider / 20.0f;
+                            if (breakTime < 0.05f) {
+                                sb.append("\nBreak: Instant");
+                            } else {
+                                sb.append(String.format("\nBreak: %.2fs", breakTime));
+                            }
+                        }
+                    }
+                }
+            }
+
+        } else if (hit.getType() == HitResult.Type.ENTITY && waila.showEntities.isValue()) {
+            Entity entity = ((EntityHitResult)hit).getEntity();
+            String entityName = entity.getName().getString();
+            sb.append(entityName);
+            
+            // Add entity type info
+            EntityType<?> entityType = entity.getType();
+            sb.append("\nType: ").append(entityType.getName().getString());
+        }
+
+        return sb.toString();
+    }
+
+    private ItemStack getWailaIcon(MinecraftClient client) {
+        WailaHud waila = WailaHud.getInstance();
+        if (!waila.showIcon.isValue()) {
+            return null;
+        }
+        
+        if (client.player == null || client.world == null) {
+            return null;
+        }
+
+        HitResult hit = client.player.raycast(4.5, 0.0f, false);
+        
+        if (hit.getType() == HitResult.Type.MISS) {
+            // Return barrier block icon for "No target"
+            return new ItemStack(Items.BARRIER);
+        }
+
+        if (hit.getType() == HitResult.Type.BLOCK) {
+            BlockPos pos = ((BlockHitResult)hit).getBlockPos();
+            BlockState state = client.world.getBlockState(pos);
+            Block block = state.getBlock();
+            
+            // Get block as item stack for icon
+            Item item = block.asItem();
+            if (item != Items.AIR) {
+                return new ItemStack(item);
+            }
+        } else if (hit.getType() == HitResult.Type.ENTITY && waila.showEntities.isValue()) {
+            Entity entity = ((EntityHitResult)hit).getEntity();
+            
+            // For item frames, show the held item
+            if (entity.getType() == EntityType.ITEM_FRAME || entity.getType() == EntityType.GLOW_ITEM_FRAME) {
+                net.minecraft.entity.decoration.ItemFrameEntity itemFrame = (net.minecraft.entity.decoration.ItemFrameEntity)entity;
+                ItemStack heldItem = itemFrame.getHeldItemStack();
+                if (!heldItem.isEmpty()) {
+                    return heldItem;
+                }
+            }
+            
+            // Try to get spawn egg for entity type
+            try {
+                String entityName = entity.getType().getName().getString().toLowerCase().replace(" ", "_");
+                Identifier spawnEggId = Identifier.of("minecraft", entityName + "_spawn_egg");
+                Item spawnEgg = Registries.ITEM.get(spawnEggId);
+                if (spawnEgg != null && spawnEgg != Items.AIR) {
+                    return new ItemStack(spawnEgg);
+                }
+            } catch (Exception e) {
+                // Fall through to default
+            }
+            
+            // Default to barrier icon for entities
+            return new ItemStack(Items.BARRIER);
+        }
+
+        return null;
+    }
+
+    private void renderWailaHud(
+            DrawContext context,
+            MinecraftClient client,
+            WailaHud module,
+            String text,
+            ItemStack icon,
+            int hudIndex,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        float lineHeight = 10.0f;
+        float scale = module.getHudScale();
+        float iconSize = lineHeight * 2.0f / 1.1f; // Base icon size in HUD units (1.1x smaller than 2.0)
+        float iconOffset = icon != null ? iconSize + 3.0f : 0.0f; // Base offset for text
+        
+        // Split text into lines and compute base dimensions (without scale, like PotionHud)
+        String[] lines = text.split("\n");
+        float maxTextWidth = 0.0f;
+        for (String line : lines) {
+            if (!line.isEmpty()) {
+                maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, line, HUD_TEXT_SIZE));
+            }
+        }
+        float baseWidth = iconOffset + maxTextWidth;
+        float baseHeight = text.isEmpty() || text.contains("No target") ? 20.0f : lines.length * lineHeight;
+        // Add 2px to width and height when targeting a block
+        if (!text.isEmpty() && !text.contains("No target")) {
+            baseWidth += 2.0f;
+            baseHeight += 2.0f;
+        }
+        
+        // renderRectHud handles scaling internally, pass base dimensions
+        renderRectHud(context, client, module, "", hudIndex,
+                chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                baseWidth, baseHeight);
+        
+        float x = module.getHudX();
+        float y = module.getHudY();
+        
+        context.getMatrices().push();
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        
+        // Render icon - using translate(x,y) + scale approach like PotionHud
+        if (icon != null) {
+            context.getMatrices().push();
+            context.getMatrices().translate(x, y, HUD_RENDER_Z + 50.0f);
+            context.getMatrices().scale(scale, scale, 1.0f);
+            // Scale icon from 16x16 to desired size within HUD space
+            float iconDrawScale = iconSize / 16.0f;
+            context.getMatrices().scale(iconDrawScale, iconDrawScale, 1.0f);
+            // Disable blend to prevent blur from affecting icon
+            RenderSystem.disableBlend();
+            int iconY = text.isEmpty() || text.contains("No target") ? 1 : 5; // Lower by 4px when targeting
+            context.drawItem(icon, 1, iconY);
+            context.draw();
+            context.getMatrices().pop();
+        }
+        
+        // Render each line separately - renderScaledHudText applies scale internally
+        float totalTextHeight = lines.length * lineHeight;
+        float verticalOffset;
+        if (text.isEmpty() || text.contains("No target")) {
+            verticalOffset = (20.0f - totalTextHeight) / 2.0f + 2.0f; // Center in 20px rect, then lower by 2px
+        } else {
+            verticalOffset = 2.0f; // Original offset
+        }
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            renderScaledHudText(context, client, line, x, y, iconOffset + 4.0f, verticalOffset + (i * lineHeight), HUD_TEXT_SIZE, scale, true);
+        }
+        
+        context.getMatrices().pop();
+    }
+
+    private void renderZoomLevel(DrawContext context, MinecraftClient client, float screenWidth, float screenHeight) {
+        if (!Zoom.getInstance().isShowCurrentZoom() || !Zoom.isZoomActive()) {
+            return;
+        }
+
+        float currentZoom = Zoom.getInstance().getCurrentZoomLevel();
+        String zoomText = String.format("%.1f", currentZoom);
+        String displayText = zoomText + "x";
+
+        float textWidth = client.textRenderer.getWidth(displayText);
+        float x = (screenWidth - textWidth) / 2.0f;
+        float y = screenHeight - 50.0f;
+
+        context.drawText(client.textRenderer, Text.literal(displayText), (int)x, (int)y, 0xFFFFFFFF, true);
+    }
 }

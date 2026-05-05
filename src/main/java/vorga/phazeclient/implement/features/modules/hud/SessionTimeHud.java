@@ -18,7 +18,12 @@ public final class SessionTimeHud extends RectHudModule {
     private SessionTimeHud() {
         super("session_time_hud", "Session Time", 22.0f, 476.0f, 1.0f);
         displayOption.setFullWidth(true);
-        setup(sessionSection, displayOption);
+        setup(showBrackets, sessionSection, displayOption);
+    }
+
+    @Override
+    public String getIcon() {
+        return "session_time.png";
     }
 
     @Override
@@ -26,4 +31,3 @@ public final class SessionTimeHud extends RectHudModule {
         return "Shows current session duration";
     }
 }
-

@@ -3,6 +3,7 @@ package vorga.phazeclient.core;
 import lombok.Getter;
 import net.fabricmc.api.ModInitializer;
 import vorga.phazeclient.api.feature.module.ModuleProvider;
+import vorga.phazeclient.api.system.discord.DiscordManager;
 import vorga.phazeclient.base.util.render.ScissorManager;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
 import vorga.phazeclient.implement.features.modules.hud.CoordinatesHud;
@@ -11,24 +12,30 @@ import vorga.phazeclient.implement.features.modules.hud.DayCounterHud;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.implement.features.modules.hud.FpsHud;
 import vorga.phazeclient.implement.features.modules.hud.KeystrokesHud;
+import vorga.phazeclient.implement.features.modules.hud.MovementSpeedHud;
 import vorga.phazeclient.implement.features.modules.hud.PingHud;
 import vorga.phazeclient.implement.features.modules.hud.PotionHud;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
+import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
+import vorga.phazeclient.implement.features.modules.hud.ServerAddressHud;
 import vorga.phazeclient.implement.features.modules.hud.SessionTimeHud;
-import vorga.phazeclient.implement.features.modules.hud.StatsHud;
 import vorga.phazeclient.implement.features.modules.hud.SprintHud;
 import vorga.phazeclient.implement.features.modules.hud.TabHud;
-import vorga.phazeclient.implement.features.modules.hud.NametagHud;
-import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
+import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.hud.MemoryHud;
 import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
-import vorga.phazeclient.implement.features.modules.hud.ServerAddressHud;
+import vorga.phazeclient.implement.features.modules.hud.WailaHud;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.features.modules.other.TimeChanger;
 import vorga.phazeclient.implement.features.modules.other.WeatherChanger;
 import vorga.phazeclient.implement.features.modules.other.Saturation;
+import vorga.phazeclient.implement.features.modules.other.Zoom;
+import vorga.phazeclient.implement.features.modules.other.MotionBlur;
+import vorga.phazeclient.implement.features.modules.other.ItemPhysics;
+import vorga.phazeclient.implement.features.modules.other.ColorCorrection;
+import vorga.phazeclient.implement.features.modules.other.ThreeDSkins;
 
 import java.util.ArrayList;
 
@@ -38,6 +45,7 @@ public class Main implements ModInitializer {
     private final ScissorManager scissorManager = new ScissorManager();
     private final ModuleProvider moduleProvider = new ModuleProvider(new ArrayList<>());
     private final ConfigManager configManager = new ConfigManager();
+    private final DiscordManager discordManager = new DiscordManager();
 
     public Main() {
         instance = this;
@@ -95,9 +103,6 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(DayCounterHud.class) == null) {
             moduleProvider.getModules().add(DayCounterHud.getInstance());
         }
-        if (moduleProvider.get(StatsHud.class) == null) {
-            moduleProvider.getModules().add(StatsHud.getInstance());
-        }
         if (moduleProvider.get(TabHud.class) == null) {
             moduleProvider.getModules().add(TabHud.getInstance());
         }
@@ -119,11 +124,32 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(ServerAddressHud.class) == null) {
             moduleProvider.getModules().add(ServerAddressHud.getInstance());
         }
+        if (moduleProvider.get(MovementSpeedHud.class) == null) {
+            moduleProvider.getModules().add(MovementSpeedHud.getInstance());
+        }
+        if (moduleProvider.get(WailaHud.class) == null) {
+            moduleProvider.getModules().add(WailaHud.getInstance());
+        }
         if (moduleProvider.get(Saturation.class) == null) {
             moduleProvider.getModules().add(Saturation.getInstance());
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HitColor.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HitColor.getInstance());
+        }
+        if (moduleProvider.get(Zoom.class) == null) {
+            moduleProvider.getModules().add(Zoom.getInstance());
+        }
+        if (moduleProvider.get(MotionBlur.class) == null) {
+            moduleProvider.getModules().add(MotionBlur.getInstance());
+        }
+        if (moduleProvider.get(ItemPhysics.class) == null) {
+            moduleProvider.getModules().add(ItemPhysics.getInstance());
+        }
+        if (moduleProvider.get(ColorCorrection.class) == null) {
+            moduleProvider.getModules().add(ColorCorrection.getInstance());
+        }
+        if (moduleProvider.get(ThreeDSkins.class) == null) {
+            moduleProvider.getModules().add(ThreeDSkins.getInstance());
         }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {
@@ -131,5 +157,6 @@ public class Main implements ModInitializer {
         // }
 
         configManager.loadCurrentConfig();
+        discordManager.init();
     }
 }
