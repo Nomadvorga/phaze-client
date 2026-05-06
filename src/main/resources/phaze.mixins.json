@@ -8,8 +8,10 @@
     "InGameHudMixin",
     "InGameHudSaturationMixin",
     "EntityRendererNametagMixin",
+    "EntityRenderDispatcherMixin",
     "LivingEntityRendererNametagMixin",
     "PlayerListHudMixin",
+    "ClientPlayerEntityMixin",
     "ClientPlayerInteractionManagerMixin",
     "ClientWorldPropertiesMixin",
     "WorldMixin",
@@ -22,7 +24,10 @@
     "GameRendererZoomMixin",
     "MouseZoomMixin",
     "KeyboardZoomMixin",
+    "KeyboardAutoSwapMixin",
+    "InventoryScreenAutoSwapMixin",
     "ScreenOpenMixin",
+    "MinecraftClientFramebufferMixin",
     "GameRendererMotionBlurMixin",
     "GameRendererColorCorrectionMixin",
     "WorldRendererMotionBlurMixin",
@@ -31,8 +36,8 @@
     "ShaderLoaderAccessor",
     "ItemEntityPhysicsMixin",
     "ItemEntityRendererPhysicsMixin",
-    "PlayerEntitySkinMixin",
-    "PlayerEntityRendererSkinMixin"
+    "CameraFreeLookMixin",
+    "PlayerInventoryPotionMixin"
   ],
   "injectors": {
     "defaultRequire": 0

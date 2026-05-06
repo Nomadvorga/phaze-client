@@ -35,7 +35,6 @@ import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 import vorga.phazeclient.implement.features.modules.other.ItemPhysics;
 import vorga.phazeclient.implement.features.modules.other.ColorCorrection;
-import vorga.phazeclient.implement.features.modules.other.ThreeDSkins;
 
 import java.util.ArrayList;
 
@@ -139,6 +138,31 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(Zoom.class) == null) {
             moduleProvider.getModules().add(Zoom.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoSwap.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoSwap.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ShiftTap.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ShiftTap.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoNear.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoNear.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoReissue.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoReissue.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HudOptimizer.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HudOptimizer.getInstance());
+            vorga.phazeclient.implement.features.modules.other.HudOptimizer.getInstance().setState(true);
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.FreeLook.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.FreeLook.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.PotionAuto.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.PotionAuto.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HitboxCustomizer.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HitboxCustomizer.getInstance());
+        }
         if (moduleProvider.get(MotionBlur.class) == null) {
             moduleProvider.getModules().add(MotionBlur.getInstance());
         }
@@ -147,9 +171,6 @@ public class Main implements ModInitializer {
         }
         if (moduleProvider.get(ColorCorrection.class) == null) {
             moduleProvider.getModules().add(ColorCorrection.getInstance());
-        }
-        if (moduleProvider.get(ThreeDSkins.class) == null) {
-            moduleProvider.getModules().add(ThreeDSkins.getInstance());
         }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {

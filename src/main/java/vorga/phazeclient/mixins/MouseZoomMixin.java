@@ -1,20 +1,16 @@
-/**
- * Zoom functionality
- * Code from ok-boomer by glisco (MIT License)
- * Copyright (c) 2022 glisco
- * https://modrinth.com/mod/ok-boomer
- */
-
 package vorga.phazeclient.mixins;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.Mouse;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.implement.features.modules.other.FreeLook;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 
 @Mixin(value = Mouse.class, priority = 500)
@@ -24,6 +20,26 @@ public class MouseZoomMixin {
     private static float cinematic$smoothX = 0;
     @Unique
     private static float cinematic$smoothY = 0;
+
+    @Final
+    @Shadow
+    private MinecraftClient client;
+
+    @Shadow
+    private double cursorDeltaX;
+
+    @Shadow
+    private double cursorDeltaY;
+
+    @Inject(method = "onMouseButton", at = @At("HEAD"))
+    private void phaze$onMouseButton(long window, int button, int action, int mods, CallbackInfo ci) {
+        if (window == client.getWindow().getHandle()) {
+            FreeLook freeLook = FreeLook.getInstance();
+            if (freeLook != null && freeLook.isEnabled()) {
+                freeLook.onBindStateChanged(button, action);
+            }
+        }
+    }
 
     @Inject(method = "onMouseScroll", at = @At("HEAD"), cancellable = true)
     private void scrollZoom(long window, double horizontal, double vertical, CallbackInfo ci) {
@@ -51,6 +67,14 @@ public class MouseZoomMixin {
 
         Zoom.getInstance().setCurrentZoomLevel((float) newZoom);
         ci.cancel();
+    }
+
+    @Inject(method = "updateMouse", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;changeLookDirection(DD)V"), cancellable = true)
+    private void phaze$onUpdateMouse(double timeDelta, CallbackInfo ci) {
+        FreeLook freeLook = FreeLook.getInstance();
+        if (freeLook != null && freeLook.isEnabled() && freeLook.onMouseLook(cursorDeltaX, cursorDeltaY)) {
+            ci.cancel();
+        }
     }
 
     @ModifyArg(method = "updateMouse", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;changeLookDirection(DD)V"), index = 0)

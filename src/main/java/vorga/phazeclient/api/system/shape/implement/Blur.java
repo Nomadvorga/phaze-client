@@ -43,6 +43,10 @@ public class Blur implements Shape {
             Defines.EMPTY
     );
 
+    // Cached blur kernel weights for common blur radii (optimization)
+    private static final java.util.Map<Integer, float[]> BLUR_KERNEL_CACHE = new java.util.HashMap<>();
+    private static final int MAX_CACHED_KERNELS = 32;
+
     private final DrawEngineImpl drawEngine = new DrawEngineImpl();
     private Framebuffer input;
     private Framebuffer ping;
@@ -57,9 +61,18 @@ public class Blur implements Shape {
     private double lastCameraZ = Double.NaN;
     private float lastYaw = Float.NaN;
     private float lastPitch = Float.NaN;
-    private net.minecraft.entity.Entity lastCameraEntity = null;
+    private float lastZoomLevel = 1.0f;
+    private boolean lastZoomActive = false;
+    private int zoomOutAnimationFrames = 0;
+    private boolean lastGuiActive = false;
+    private double lastPlayerX = Double.NaN;
+    private double lastPlayerY = Double.NaN;
+    private double lastPlayerZ = Double.NaN;
+    private long lastSpeedCheckTime = 0L;
     private final long[] hudStateKeys = new long[8];
     private final boolean[] hudStateInitialized = new boolean[8];
+    private static final long WORLD_BLUR_CAPTURE_INTERVAL_NS = 40_000_000L; // ~25 Hz
+    private long lastWorldCaptureNs = 0L;
     private int lastWorldCaptureWidth = -1;
     private int lastWorldCaptureHeight = -1;
     private boolean worldCaptureInitialized = false;
@@ -113,6 +126,7 @@ public class Blur implements Shape {
 
         int framebufferWidth = Math.max(1, client.getWindow().getFramebufferWidth());
         int framebufferHeight = Math.max(1, client.getWindow().getFramebufferHeight());
+        long now = System.nanoTime();
         boolean guiActive = client.currentScreen != null;
         boolean cameraMoved = hasCameraMoved(client);
         boolean resized = framebufferWidth != lastWorldCaptureWidth || framebufferHeight != lastWorldCaptureHeight;
@@ -123,6 +137,7 @@ public class Blur implements Shape {
         if (shouldRefreshCapture) {
             captureWorldInput(client, framebufferWidth, framebufferHeight);
             worldCaptureInitialized = true;
+            lastWorldCaptureNs = now;
             lastWorldCaptureWidth = framebufferWidth;
             lastWorldCaptureHeight = framebufferHeight;
         }
@@ -130,7 +145,9 @@ public class Blur implements Shape {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
+        RenderSystem.enableDepthTest();
+        RenderSystem.depthFunc(GL11C.GL_LEQUAL);
+        RenderSystem.depthMask(false);
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         drawEngine.quad(matrix, buffer, x, y, width, height, color);
@@ -140,6 +157,7 @@ public class Blur implements Shape {
         if (shader != null) {
             Theme theme = Theme.getInstance();
             int blurMode = theme.getHudBlurMode();
+            // Use Kawase blur for better performance (blurMode = 1 is Kawase)
             if (blurMode == 2) {
                 blurMode = 1;
             }
@@ -154,6 +172,7 @@ public class Blur implements Shape {
         }
 
         client.getFramebuffer().beginWrite(false);
+        RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
     }
@@ -369,8 +388,15 @@ public class Blur implements Shape {
         }
 
         if (cacheFrame) {
-            // Always refresh HUD blur input every frame to prevent darkening artifacts
-            captureWorldInput(client, framebufferWidth, framebufferHeight);
+            boolean guiActive = client.currentScreen != null;
+            boolean cameraMoved = hasCameraMoved(client);
+            boolean shouldRefreshHudInput = forceHudRefresh || resized || guiActive || cameraMoved;
+
+            // Disable cached frame optimization to prevent flickering
+            if (shouldRefreshHudInput) {
+                captureWorldInput(client, framebufferWidth, framebufferHeight);
+                forceHudRefresh = false;
+            }
             cachedFramePrepared = true;
             return true;
         }
@@ -382,7 +408,15 @@ public class Blur implements Shape {
     }
 
     private void captureWorldInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        Framebuffer framebuffer = client.getFramebuffer();
+        // When a HUD batch capture is active, mc.getFramebuffer() is redirected
+        // to the HUD FBO by MinecraftClientFramebufferMixin. We need the REAL
+        // main framebuffer here to read the world content for the blur backdrop.
+        Framebuffer framebuffer = HudBuffer.activeCaptureTarget >= 0
+                ? vorga.phazeclient.api.system.hud.BatchedHudBuffer.INSTANCE.getRealMainFramebuffer()
+                : client.getFramebuffer();
+        if (framebuffer == null) {
+            framebuffer = client.getFramebuffer();
+        }
         GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, framebuffer.fbo);
         GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, input.fbo);
         GL30C.glBlitFramebuffer(
@@ -411,7 +445,50 @@ public class Blur implements Shape {
         var pos = camera.getPos();
         float yaw = camera.getYaw();
         float pitch = camera.getPitch();
-        net.minecraft.entity.Entity cameraEntity = client.getCameraEntity();
+
+        // Check GUI state
+        boolean guiActive = client.currentScreen != null;
+        boolean guiJustClosed = lastGuiActive && !guiActive;
+
+        // Check zoom state
+        boolean zoomActive = false;
+        float zoomLevel = 1.0f;
+        boolean zoomModuleEnabled = false;
+        try {
+            vorga.phazeclient.implement.features.modules.other.Zoom zoomModule = 
+                vorga.phazeclient.implement.features.modules.other.Zoom.getInstance();
+            if (zoomModule != null) {
+                zoomModuleEnabled = zoomModule.isEnabled();
+                if (zoomModuleEnabled) {
+                    zoomActive = vorga.phazeclient.implement.features.modules.other.Zoom.isZoomActive();
+                    zoomLevel = zoomModule.getCurrentZoomLevel();
+                }
+            }
+        } catch (Exception e) {
+            // Ignore zoom errors
+        }
+
+        // Detect zoom out start (transition from active to inactive)
+        boolean zoomJustDeactivated = lastZoomActive && !zoomActive;
+        if (zoomJustDeactivated) {
+            // Fixed duration: always 60 frames (1 second at 60 FPS) regardless of zoom level
+            zoomOutAnimationFrames = 60;
+        }
+
+        // Decrement animation frame counter
+        if (zoomOutAnimationFrames > 0) {
+            zoomOutAnimationFrames--;
+        }
+
+        // Check if zoom animation just finished (zoom level returned to 1.0)
+        boolean zoomAnimationFinished = !zoomActive && lastZoomLevel != 1.0f && Math.abs(zoomLevel - 1.0f) < 0.001f;
+
+        boolean zoomChanged = zoomJustDeactivated ||
+                              (zoomActive != lastZoomActive) || 
+                              (zoomActive && Math.abs(zoomLevel - lastZoomLevel) > 0.001f) ||
+                              (zoomOutAnimationFrames > 0) || // Update during zoom out animation
+                              zoomActive || // Always update while zoom is active
+                              zoomAnimationFinished; // Update when zoom finishes
 
         boolean moved = Double.isNaN(lastCameraX)
                 || Math.abs(pos.x - lastCameraX) > 1.0E-6
@@ -419,15 +496,53 @@ public class Blur implements Shape {
                 || Math.abs(pos.z - lastCameraZ) > 1.0E-6
                 || Math.abs(yaw - lastYaw) > 1.0E-4f
                 || Math.abs(pitch - lastPitch) > 1.0E-4f
-                || cameraEntity != lastCameraEntity;
+                || zoomChanged
+                || guiJustClosed; // Update when GUI closes
 
         lastCameraX = pos.x;
         lastCameraY = pos.y;
         lastCameraZ = pos.z;
         lastYaw = yaw;
         lastPitch = pitch;
-        lastCameraEntity = cameraEntity;
+        lastZoomLevel = zoomLevel;
+        lastZoomActive = zoomActive;
+        lastGuiActive = guiActive;
         return moved;
+    }
+
+    public float getPlayerSpeed(MinecraftClient client) {
+        if (client == null || client.player == null) {
+            return 0.0f;
+        }
+
+        var playerPos = client.player.getPos();
+        long currentTime = System.currentTimeMillis();
+
+        if (Double.isNaN(lastPlayerX)) {
+            lastPlayerX = playerPos.x;
+            lastPlayerY = playerPos.y;
+            lastPlayerZ = playerPos.z;
+            lastSpeedCheckTime = currentTime;
+            return 0.0f;
+        }
+
+        double deltaTime = (currentTime - lastSpeedCheckTime) / 1000.0; // seconds
+        if (deltaTime < 0.05) { // Update every 50ms minimum
+            return 0.0f;
+        }
+
+        double dx = playerPos.x - lastPlayerX;
+        double dy = playerPos.y - lastPlayerY;
+        double dz = playerPos.z - lastPlayerZ;
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float speed = (float) (distance / deltaTime); // blocks per second
+
+        lastPlayerX = playerPos.x;
+        lastPlayerY = playerPos.y;
+        lastPlayerZ = playerPos.z;
+        lastSpeedCheckTime = currentTime;
+
+        return speed;
     }
 
     private boolean applyGaussianBlur(MinecraftClient client, float blurRadius) {
@@ -477,6 +592,10 @@ public class Blur implements Shape {
         int support = MathHelper.clamp(Math.round(blurRadius), 1, 64);
         float sigma = Math.max(1.0F, blurRadius * 0.55F);
 
+        // Use cached kernel weights if available (optimization)
+        int cacheKey = (int)(blurRadius * 100);
+        float[] cachedWeights = getCachedBlurKernel(cacheKey, support, sigma);
+
         shader.getUniformOrDefault("Direction").set(directionX, directionY);
         shader.getUniformOrDefault("TexelSize").set(1.0F / source.textureWidth, 1.0F / source.textureHeight);
         shader.getUniformOrDefault("Support").set(support);
@@ -486,6 +605,33 @@ public class Blur implements Shape {
         ShaderHelper.drawFullScreenQuad();
         // Ensure we finish writing to the target FBO for this pass
         target.endWrite();
+    }
+
+    private static float[] getCachedBlurKernel(int cacheKey, int support, float sigma) {
+        // Check cache first
+        if (BLUR_KERNEL_CACHE.containsKey(cacheKey)) {
+            return BLUR_KERNEL_CACHE.get(cacheKey);
+        }
+
+        // Compute Gaussian weights
+        float[] weights = new float[support];
+        float sum = 0.0f;
+        for (int i = 0; i < support; i++) {
+            float x = i / sigma;
+            weights[i] = (float) Math.exp(-0.5 * x * x);
+            sum += weights[i] * (i == 0 ? 1 : 2);
+        }
+        // Normalize
+        for (int i = 0; i < support; i++) {
+            weights[i] /= sum;
+        }
+
+        // Cache it (with size limit)
+        if (BLUR_KERNEL_CACHE.size() < MAX_CACHED_KERNELS) {
+            BLUR_KERNEL_CACHE.put(cacheKey, weights);
+        }
+
+        return weights;
     }
 
     private void bindMainDrawTarget(MinecraftClient client) {

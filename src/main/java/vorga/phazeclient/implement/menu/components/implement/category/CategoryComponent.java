@@ -73,7 +73,10 @@ public class CategoryComponent extends AbstractComponent {
 
     private void initialize() {
         List<Module> modules = new ArrayList<>(Main.getInstance().getModuleProvider().getModules());
-        modules.sort((a, b) -> Integer.compare(countAllSettings(b), countAllSettings(a)));
+        // Render iterates visibleComponents from last to first, but the offset
+        // arithmetic puts the FIRST list element at the visual top of its
+        // column. Sort A..Z so the menu reads A..Z top-down.
+        modules.sort((a, b) -> a.getVisibleName().compareToIgnoreCase(b.getVisibleName()));
 
         for (Module module : modules) {
             if (!module.isVisible()) {

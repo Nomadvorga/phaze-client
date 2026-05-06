@@ -51,7 +51,7 @@ public abstract class RectHudModule extends Module {
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundOpacity = new ValueSetting("Background Opacity", "Custom background opacity")
             .range(0, 100)
-            .setValue(40)
+            .setValue(100)
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundBlurRadius = new ValueSetting("Background Blur Radius", "Blur radius for HUD background")
             .range(0, 32)
@@ -122,6 +122,15 @@ public abstract class RectHudModule extends Module {
 
     public HudBuffer getHudBuffer() {
         return hudBuffer;
+    }
+
+    /**
+     * Whether this HUD currently renders a live blur backdrop. Used by the
+     * HUD batching to force unlimited refresh, since a throttled blur would
+     * freeze the world behind it between refreshes.
+     */
+    public boolean hasActiveBackgroundBlur() {
+        return background.isValue() && backgroundBlurRadius.getInt() > 0;
     }
 
     public void resetHudTransform() {

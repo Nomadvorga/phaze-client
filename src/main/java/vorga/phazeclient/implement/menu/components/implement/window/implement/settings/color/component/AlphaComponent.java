@@ -31,13 +31,23 @@ public class AlphaComponent extends AbstractComponent {
         float clampedX = clamp(X + W * setting.getAlpha(), X, X + W - 4);
         float min = clamp((mouseX - X) / W, 0, 1);
 
-        image.setTexture("textures/color_picker/alpha.png").render(ShapeProperties.create(matrix, X, Y, W, H).round(3).thickness(1.5F).outlineColor(MenuStyle.BORDER_LIGHT).build());
+        image.setTexture("textures/color_picker/alpha.png").render(ShapeProperties.create(matrix, X, Y, W, H)
+                .round(3).thickness(1.5F)
+                .outlineColor(applyGlobalAlpha(MenuStyle.BORDER_LIGHT))
+                .color(applyGlobalAlpha(0xFFFFFFFF))
+                .build());
 
+        int gradColorWithAlpha = applyGlobalAlpha(setting.getColorWithAlpha());
         rectangle.render(ShapeProperties.create(matrix, X, Y - 0.2, W + 0.5, H)
-                .round(1.5F).color(0x80000000, 0x8000000, setting.getColorWithAlpha(), setting.getColorWithAlpha()).build());
+                .round(1.5F)
+                .color(applyGlobalAlpha(0x80000000), applyGlobalAlpha(0x80000000), gradColorWithAlpha, gradColorWithAlpha)
+                .build());
 
         rectangle.render(ShapeProperties.create(matrix, clampedX, Y, H, H)
-                .round(H / 2).thickness(3).color(0x00FFFFFF).outlineColor(0xFFFFFFFF).build());
+                .round(H / 2).thickness(3)
+                .color(0x00FFFFFF)
+                .outlineColor(applyGlobalAlpha(0xFFFFFFFF))
+                .build());
 
         if (alphaDragging) {
             setting.setAlpha(min);

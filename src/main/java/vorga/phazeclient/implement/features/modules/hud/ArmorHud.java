@@ -101,6 +101,15 @@ public final class ArmorHud extends Module {
         return hudBuffer;
     }
 
+    /**
+     * Whether this HUD currently renders a live blur backdrop. Used by the
+     * HUD batching to force unlimited refresh, since a throttled blur would
+     * freeze the world behind it between refreshes.
+     */
+    public boolean hasActiveBackgroundBlur() {
+        return background.isValue() && backgroundBlurRadius.getInt() > 0;
+    }
+
     public float getHudX() {
         return hudX;
     }

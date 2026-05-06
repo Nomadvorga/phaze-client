@@ -60,7 +60,9 @@ import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.api.system.hud.HudBuffer;
+import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
+import vorga.phazeclient.implement.features.modules.other.HudOptimizer;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -176,10 +178,15 @@ public class InGameHudMixin {
     private static boolean wasLeftMouseDown = false;
     private static boolean wasRightMouseDown = false;
     private static long lastFrameNanos = -1L;
+    private static float cachedFrameDeltaSeconds = 0.0f;
     private static float verticalGuideProgress = 0.0f;
     private static float horizontalGuideProgress = 0.0f;
     private static boolean showVerticalGuideThisFrame = false;
     private static boolean showHorizontalGuideThisFrame = false;
+    /** When true, blur HUDs are skipped in the current renderHudInternal call (batch FBO pass). */
+    private static boolean inBatchPass = false;
+    /** When true, only blur HUDs are rendered in the current renderHudInternal call (direct main-FB pass). */
+    private static boolean inBlurPass = false;
     private static float directionDisplayYaw = Float.NaN;
     private static final long SESSION_START_MS = System.currentTimeMillis();
 
@@ -192,13 +199,45 @@ public class InGameHudMixin {
 
     @Inject(method = "render", at = @At("TAIL"))
     private void renderCustomHudFallback(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        boolean hudHidden = client == null || client.options == null || client.options.hudHidden;
+
         if (!renderedThisFrame) {
-            renderHudInternal(context);
+            if (hudHidden) {
+                BatchedHudBuffer.INSTANCE.invalidate();
+            } else if (!HudOptimizer.getInstance().isEnabled()) {
+                BatchedHudBuffer.INSTANCE.invalidate();
+                renderHudInternal(context);
+            } else {
+                BatchedHudBuffer.INSTANCE.setTargetFps(HudOptimizer.getInstance().refreshRate.getInt());
+                boolean chatEditing = client.currentScreen instanceof ChatScreen;
+                boolean shouldRefresh = chatEditing || BatchedHudBuffer.INSTANCE.shouldRefresh(false);
+
+                // Pass 1 — refresh frames only: render NON-blur HUDs into the
+                // batched FBO at the throttled refresh rate.
+                if (shouldRefresh) {
+                    inBatchPass = true;
+                    BatchedHudBuffer.INSTANCE.beginCapture();
+                    renderHudInternal(context);
+                    // Flush deferred DrawContext draws into the FBO before unbinding,
+                    // otherwise vanilla flushes them later into the main framebuffer.
+                    context.draw();
+                    BatchedHudBuffer.INSTANCE.endCapture();
+                    inBatchPass = false;
+                }
+                BatchedHudBuffer.INSTANCE.blit();
+
+                // Pass 2 — every frame: render BLUR HUDs directly to the main
+                // framebuffer so the blur tracks the moving world without
+                // throttling, while non-blur HUDs stay batched.
+                inBlurPass = true;
+                renderHudInternal(context);
+                inBlurPass = false;
+            }
         }
         Blur.INSTANCE.endCachedFrame();
-        
-        // Render zoom level outside of HUD check
-        MinecraftClient client = MinecraftClient.getInstance();
+
+        // Render zoom level outside of HUD check (always fresh, not batched)
         if (client != null && client.options != null && !client.options.hudHidden) {
             float screenWidth = client.getWindow().getWidth();
             float screenHeight = client.getWindow().getHeight();
@@ -207,6 +246,12 @@ public class InGameHudMixin {
     }
 
     private void renderHudInternal(DrawContext context) {
+        // First call within the current frame is responsible for all global
+        // state updates (delta-time, click tracking, guide reset). A second
+        // call (the blur-only pass after the batch blit) reuses the values
+        // computed during the first call to avoid double-tracking clicks /
+        // halving animation deltas.
+        boolean firstCallThisFrame = !renderedThisFrame;
         renderedThisFrame = true;
 
         MinecraftClient client = MinecraftClient.getInstance();
@@ -218,12 +263,18 @@ public class InGameHudMixin {
             return;
         }
 
-        long now = System.nanoTime();
-        if (lastFrameNanos < 0L) {
+        float deltaSeconds;
+        if (firstCallThisFrame) {
+            long now = System.nanoTime();
+            if (lastFrameNanos < 0L) {
+                lastFrameNanos = now;
+            }
+            deltaSeconds = MathHelper.clamp((now - lastFrameNanos) / 1_000_000_000.0f, 0.0f, 0.10f);
             lastFrameNanos = now;
+            cachedFrameDeltaSeconds = deltaSeconds;
+        } else {
+            deltaSeconds = cachedFrameDeltaSeconds;
         }
-        float deltaSeconds = MathHelper.clamp((now - lastFrameNanos) / 1_000_000_000.0f, 0.0f, 0.10f);
-        lastFrameNanos = now;
 
         float guiScale = (float) client.getWindow().getScaleFactor();
         if (guiScale <= 0.0f) {
@@ -244,9 +295,11 @@ public class InGameHudMixin {
         boolean mouseDown = GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
         boolean rightMouseDown = GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
         boolean gameplayInput = client.currentScreen == null && client.player != null && client.world != null;
-        updateClicksPerSecond(mouseDown, rightMouseDown, gameplayInput);
-        showVerticalGuideThisFrame = false;
-        showHorizontalGuideThisFrame = false;
+        if (firstCallThisFrame) {
+            updateClicksPerSecond(mouseDown, rightMouseDown, gameplayInput);
+            showVerticalGuideThisFrame = false;
+            showHorizontalGuideThisFrame = false;
+        }
 
         String fpsText = getCachedHudText(FpsHud.getInstance(), HUD_FPS, chatEditing, () -> "FPS: " + client.getCurrentFps());
         final String fpsTextWrapped = wrapTextWithBrackets(fpsText, FpsHud.getInstance());
@@ -385,24 +438,38 @@ public class InGameHudMixin {
         //         renderScoreboardHud(context, client, ScoreboardHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
         //                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
-        if (chatEditing) {
-            verticalGuideProgress = approachExp(verticalGuideProgress, showVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
-            horizontalGuideProgress = approachExp(horizontalGuideProgress, showHorizontalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
-            renderHudGuides(context, screenWidth, screenHeight, inverseGuiScale);
-        } else {
-            verticalGuideProgress = 0.0f;
-            horizontalGuideProgress = 0.0f;
+        if (firstCallThisFrame) {
+            if (chatEditing) {
+                verticalGuideProgress = approachExp(verticalGuideProgress, showVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
+                horizontalGuideProgress = approachExp(horizontalGuideProgress, showHorizontalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
+                renderHudGuides(context, screenWidth, screenHeight, inverseGuiScale);
+            } else {
+                verticalGuideProgress = 0.0f;
+                horizontalGuideProgress = 0.0f;
+            }
+            wasMouseDown = mouseDown;
         }
-
-        wasMouseDown = mouseDown;
     }
 
     private void renderBufferedHud(DrawContext context, RectHudModule module, boolean chatEditing, Runnable renderLogic) {
+        if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
         renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
     }
 
     private void renderBufferedHud(DrawContext context, ArmorHud module, boolean chatEditing, Runnable renderLogic) {
+        if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
         renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
+    }
+
+    /**
+     * Two-pass filter: blur HUDs are skipped during the batched FBO pass, and
+     * non-blur HUDs are skipped during the direct blur-only pass. In the
+     * normal (un-batched) path both passes are inactive and all HUDs render.
+     */
+    private static boolean shouldSkipForCurrentPass(boolean hasBlur) {
+        if (inBatchPass && hasBlur) return true;
+        if (inBlurPass && !hasBlur) return true;
+        return false;
     }
 
     private float getHudDelta(RectHudModule module, boolean chatEditing, float deltaSeconds) {
@@ -415,11 +482,11 @@ public class InGameHudMixin {
 
     private void renderBufferedHudInternal(DrawContext context, boolean enabled, boolean batching, HudBuffer buffer, int targetFps, boolean chatEditing, Runnable renderLogic) {
         if (!enabled) {
-            buffer.invalidate();
             return;
         }
 
-        // Caching disabled due to flickering issue
+        // Per-HUD caching is unused; the entire HUD is batched into BatchedHudBuffer
+        // at the InGameHudMixin#render TAIL injection level (Exordium-style).
         renderLogic.run();
     }
 

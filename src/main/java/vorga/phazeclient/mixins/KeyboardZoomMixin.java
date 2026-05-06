@@ -1,10 +1,3 @@
-/**
- * Zoom functionality
- * Code from ok-boomer by glisco (MIT License)
- * Copyright (c) 2022 glisco
- * https://modrinth.com/mod/ok-boomer
- */
-
 package vorga.phazeclient.mixins;
 
 import net.minecraft.client.Keyboard;
@@ -12,6 +5,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.implement.features.modules.other.FreeLook;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 import org.lwjgl.glfw.GLFW;
 
@@ -20,6 +14,13 @@ public class KeyboardZoomMixin {
 
     @Inject(method = "onKey", at = @At("HEAD"), cancellable = true)
     private void onKeyPress(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
+        // FreeLook handling
+        FreeLook freeLook = FreeLook.getInstance();
+        if (freeLook != null && freeLook.isEnabled()) {
+            freeLook.onBindStateChanged(key, action);
+        }
+
+        // Zoom handling
         int bindKey = Zoom.getInstance().keybind.getKey();
         
         if (bindKey == key && bindKey != GLFW.GLFW_KEY_UNKNOWN) {
