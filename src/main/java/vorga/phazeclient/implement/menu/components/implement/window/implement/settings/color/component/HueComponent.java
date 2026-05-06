@@ -31,16 +31,16 @@ public class HueComponent extends AbstractComponent {
         H = 50;
 
         int[] color = {
-                0xFF000000,
-                0xFFFFFFFF,
-                0xFF000000,
-                Color.HSBtoRGB(setting.getHue(), 1, 1)
+                applyGlobalAlpha(0xFF000000),
+                applyGlobalAlpha(0xFFFFFFFF),
+                applyGlobalAlpha(0xFF000000),
+                applyGlobalAlpha(0xFF000000 | (Color.HSBtoRGB(setting.getHue(), 1, 1) & 0x00FFFFFF))
         };
 
         rectangle.render(ShapeProperties.create(matrix, X, Y, W, H)
                 .round(2)
                 .thickness(2)
-                .outlineColor(MenuStyle.BORDER_LIGHT)
+                .outlineColor(applyGlobalAlpha(MenuStyle.BORDER_LIGHT))
                 .color(color)
                 .build()
         );
@@ -53,7 +53,7 @@ public class HueComponent extends AbstractComponent {
                 .softness(1)
                 .thickness(3)
                 .color(0x00FFFFFF)
-                .outlineColor(0xFFFFFFFF)
+                .outlineColor(applyGlobalAlpha(0xFFFFFFFF))
                 .build()
         );
 

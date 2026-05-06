@@ -45,7 +45,10 @@ public class BindComponent extends AbstractSettingComponent {
         renderSettingCard(context, binding ? 1.0f : 0.0f, hoverProgress);
 
         rectangle.render(ShapeProperties.create(matrix, x + width - stringWidth - 17, y + height / 2 - 5.75f, stringWidth + 10, 11.5f)
-                .round(2).thickness(1.1F).outlineColor(MenuStyle.settingOutline(binding)).color(MenuStyle.settingSurface(binding)).build());
+                .round(2).thickness(1.1F)
+                .outlineColor(MenuStyle.withAlpha(MenuStyle.settingOutline(binding), currentAlpha))
+                .color(MenuStyle.withAlpha(MenuStyle.settingSurface(binding), currentAlpha))
+                .build());
 
         float badgeY = y + height / 2 - 5.75f;
         bindFont.drawString(matrix, name, x + width - 12 - stringWidth - 1, centeredTextY(bindFont, name, badgeY, 11.5F), mutedText());

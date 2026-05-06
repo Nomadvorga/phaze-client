@@ -15,15 +15,11 @@ import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
-import vorga.phazeclient.api.system.nametag.NametagBlurStorage;
-import vorga.phazeclient.api.system.nametag.NametagBatchRenderer;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 
 import java.util.LinkedHashMap;
@@ -90,10 +86,14 @@ public abstract class EntityRendererNametagMixin {
             return;
         }
         
-        // Frustum culling - skip rendering if entity is outside camera view
+        if (state != null && state.invisible) {
+            ci.cancel();
+            return;
+        }
+        
         if (client.cameraEntity != null && client.player != null) {
             double distance = client.cameraEntity.squaredDistanceTo(client.player);
-            if (distance > 4096.0) { // 64 blocks squared
+            if (distance > 4096.0) {
                 ci.cancel();
                 return;
             }
@@ -224,25 +224,57 @@ public abstract class EntityRendererNametagMixin {
             return background;
         }
 
-        // Calculate distance from camera for blur quality optimization
+        // Calculate distance from camera for LOD system
         MinecraftClient client = MinecraftClient.getInstance();
         float distance = 0.0f;
         if (client != null && client.player != null && client.cameraEntity != null) {
             distance = (float) client.cameraEntity.getPos().distanceTo(client.player.getPos());
         }
 
+        // Check player speed for motion blur reduction
+        float playerSpeed = Blur.INSTANCE.getPlayerSpeed(client);
+
         float left = x - 1.0f;
         float top = y - 1.0f;
         float rightExtend = -1.0f;
         float width = textWidth + 2.0f + rightExtend;
         float height = 10.0f;
+        
+        // Early Exit: Skip blur for very small nametags (< 50 pixels area)
+        if (width * height < 50.0f) {
+            drawSolidRect3D(matrix, left, top, width, height, background);
+            phaze$backgroundDrawnThisLabel = true;
+            return vanillaBackgroundColor;
+        }
+        
         float quality = MathHelper.clamp(0.35f + blurRadius * 0.10f, 0.35f, 4.2f);
 
-        // Reduce blur quality based on distance
-        if (distance > 32.0f) {
-            quality *= 0.5f; // 50% quality for distant nametags
-        } else if (distance > 16.0f) {
-            quality *= 0.75f; // 75% quality for medium distance
+        // Enhanced LOD: Reduce both quality AND blur radius based on distance
+        if (distance > 50.0f) {
+            // Very far (> 50 blocks): no blur at all
+            drawSolidRect3D(matrix, left, top, width, height, background);
+            phaze$backgroundDrawnThisLabel = true;
+            return vanillaBackgroundColor;
+        } else if (distance > 30.0f) {
+            // Far (30-50 blocks): minimal blur
+            quality *= 0.25f;
+            blurRadius *= 0.3f;
+        } else if (distance > 20.0f) {
+            // Medium-far (20-30 blocks): reduced blur
+            quality *= 0.4f;
+            blurRadius *= 0.5f;
+        } else if (distance > 10.0f) {
+            // Medium (10-20 blocks): slightly reduced blur
+            quality *= 0.7f;
+            blurRadius *= 0.8f;
+        }
+        // Close (< 10 blocks): full quality - no changes
+
+        // Speed-based blur reduction: reduce blur at high speeds (> 20 blocks/sec)
+        if (playerSpeed > 20.0f) {
+            float speedFactor = MathHelper.clamp(20.0f / playerSpeed, 0.3f, 1.0f);
+            blurRadius *= speedFactor;
+            quality *= speedFactor;
         }
 
         // Render blur immediately

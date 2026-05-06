@@ -36,7 +36,7 @@ public class Module extends SettingRepository implements QuickImports {
         this.visibleName = name;
         this.secondaryCategory = null;
         this.showEnable = true;
-        this.canBind = true;
+        this.canBind = false;
         initializeModule();
     }
 
@@ -46,7 +46,7 @@ public class Module extends SettingRepository implements QuickImports {
         this.visibleName = name;
         this.secondaryCategory = null;
         this.showEnable = showEnable;
-        this.canBind = true;
+        this.canBind = false;
         initializeModule();
     }
 
@@ -66,7 +66,7 @@ public class Module extends SettingRepository implements QuickImports {
         this.category = category;
         this.secondaryCategory = null;
         this.showEnable = true;
-        this.canBind = true;
+        this.canBind = false;
         initializeModule();
     }
 
@@ -76,7 +76,7 @@ public class Module extends SettingRepository implements QuickImports {
         this.category = category;
         this.secondaryCategory = null;
         this.showEnable = showEnable;
-        this.canBind = true;
+        this.canBind = false;
         initializeModule();
     }
 
@@ -231,5 +231,22 @@ public class Module extends SettingRepository implements QuickImports {
 
     public String getIdentifier() {
         return extractModuleContext(name);
+    }
+
+    /**
+     * Returns true if this module is allowed to operate on the currently connected server.
+     * Override in subclasses that should be restricted to specific servers. When this returns
+     * false the GUI shows a "LOCKED" badge and the module is auto-disabled if it was active.
+     */
+    public boolean isServerAllowed() {
+        return true;
+    }
+
+    /**
+     * Convenience helper: a module is locked iff it is server-restricted and not allowed
+     * on the current server.
+     */
+    public boolean isServerLocked() {
+        return !isServerAllowed();
     }
 }

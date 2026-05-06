@@ -97,25 +97,16 @@ public class ModuleComponent extends AbstractComponent {
         boolean showOptionsRow = hasSettings();
         boolean showStateRow = module.isShowEnable();
         float optionsY = y + baseHeight - (showStateRow ? (OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT) : OPTIONS_ROW_HEIGHT);
-        float bodyHeight = showOptionsRow ? optionsY - y : baseHeight;
 
         context.getMatrices().push();
         context.getMatrices().translate(offsetX, offsetY, 0);
 
         int outlineColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, outlineColorAnimation.getOutput().floatValue() * 0.75f);
         outlineColor = MenuStyle.withAlpha(outlineColor, applyGlobalAlpha(0.96F));
-        int cardColor = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.CARD_BG, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.035F), applyGlobalAlpha(0.85F));
-        int innerCardColor = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.CARD_INNER, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.025F), applyGlobalAlpha(0.90F));
-        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height = getComponentHeight())
-                .round(8).softness(1).thickness(1.8F).outlineColor(outlineColor).color(cardColor).build());
-
-        if (showOptionsRow) {
-            rectangle.render(ShapeProperties.create(context.getMatrices(), x + CARD_INSET, y + CARD_INSET, width - CARD_INSET * 2.0F, Math.max(0.0F, bodyHeight - CARD_INSET))
-                    .round(7, 0, 7, 0).color(innerCardColor).build());
-        } else {
-            rectangle.render(ShapeProperties.create(context.getMatrices(), x + CARD_INSET, y + CARD_INSET, width - CARD_INSET * 2.0F, baseHeight - CARD_INSET * 2.0F)
-                    .round(7).color(innerCardColor).build());
-        }
+        // Card background is intentionally transparent so the module blends with the GUI panel background.
+        height = getComponentHeight();
+        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
+                .round(8).softness(1).thickness(3.6F).outlineColor(outlineColor).color(0x00000000).build());
 
         float iconSize = module.getIconSize();
         float iconX = x + (width - iconSize) / 2.0F;
@@ -202,10 +193,19 @@ public class ModuleComponent extends AbstractComponent {
     }
 
     private void renderStateRow(DrawContext context, float enabledY, float hoverProgress) {
-        float stateProgress = outlineColorAnimation.getOutput().floatValue();
-        int stateColor = MenuStyle.mix(0xFFA01E40, MenuStyle.ACCENT_GREEN, stateProgress);
-        stateColor = applyGlobalAlpha(MenuStyle.mix(stateColor, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.15F));
-        String stateText = module.isState() ? "ENABLED" : "DISABLED";
+        boolean locked = module.isServerLocked();
+        int stateColor;
+        String stateText;
+
+        if (locked) {
+            stateColor = applyGlobalAlpha(0xFF888986);
+            stateText = "LOCKED";
+        } else {
+            float stateProgress = outlineColorAnimation.getOutput().floatValue();
+            int base = MenuStyle.mix(0xFFA01E40, MenuStyle.ACCENT_GREEN, stateProgress);
+            stateColor = applyGlobalAlpha(MenuStyle.mix(base, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.15F));
+            stateText = module.isState() ? "ENABLED" : "DISABLED";
+        }
 
         rectangle.render(ShapeProperties.create(context.getMatrices(), x + CARD_INSET, enabledY, width - CARD_INSET * 2.0F, ENABLED_ROW_HEIGHT - 1)
                 .round(0, 7, 0, 7).color(stateColor).build());
@@ -239,6 +239,9 @@ public class ModuleComponent extends AbstractComponent {
         }
 
         if (showStateRow && button == 0 && MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT)) {
+            if (module.isServerLocked()) {
+                return true;
+            }
             playButtonClickSound();
             module.switchState();
             return true;
