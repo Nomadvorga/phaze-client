@@ -48,6 +48,17 @@ public class CategoryComponent extends AbstractComponent {
 
     private final Map<ModuleComponent, Integer> assignedColumns = new HashMap<>();
     private final List<ModuleComponent> visibleComponents = new ArrayList<>();
+    /**
+     * Sum of (componentHeight + ROW_GAP) per column, captured in
+     * {@link #assignColumns()}. Used as the seed array for the render-loop
+     * offsets and as the source for {@link #calculateMaxScrollHeight()},
+     * eliminating two O(n) iterations over {@link #visibleComponents} every
+     * frame. Invalidated whenever assignColumns() runs (category/search/
+     * visibility change), which is the only time per-card heights or column
+     * mapping can shift.
+     */
+    private final int[] cachedColumnHeights = new int[COLUMN_COUNT];
+    private int cachedMaxColumnHeight = 0;
     private ModuleCategory lastCategory = null;
     private String lastSearchText = "";
     private boolean visibleCacheDirty = true;
@@ -126,7 +137,12 @@ public class CategoryComponent extends AbstractComponent {
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
         scissorManager.push(positionMatrix, gridX, gridY, gridWidth, gridHeight);
 
-        int[] offsets = calculateOffsets();
+        // Working copy of the cached column totals; the render loop
+        // decrements per-column as it walks cards from the bottom of each
+        // stack upwards. Cached array is preserved for the next frame.
+        int[] offsets = new int[COLUMN_COUNT];
+        System.arraycopy(cachedColumnHeights, 0, offsets, 0, COLUMN_COUNT);
+        float gridBottom = gridY + gridHeight;
         for (int i = visibleComponents.size() - 1; i >= 0; i--) {
             ModuleComponent component = visibleComponents.get(i);
             int componentHeight = component.getComponentHeight() + ROW_GAP;
@@ -135,9 +151,18 @@ public class CategoryComponent extends AbstractComponent {
             component.x = gridX + (column * (columnWidth + COLUMN_GAP));
             component.y = (float) (gridY + ROW_GAP + offsets[column] - componentHeight + smoothedScroll);
             component.width = columnWidth;
+            // Keep height in sync so mouseClicked / isHover work even for
+            // cards we are about to cull (preserves the contract that
+            // component bounds are always valid after CategoryComponent.render).
+            component.height = component.getComponentHeight();
 
-            component.globalAlpha = globalAlpha;
-            component.render(context, mouseX, mouseY, delta);
+            float cardTop = component.y;
+            float cardBottom = cardTop + component.height;
+            boolean offscreen = cardBottom < gridY || cardTop > gridBottom;
+            if (!offscreen) {
+                component.globalAlpha = globalAlpha;
+                component.render(context, mouseX, mouseY, delta);
+            }
             offsets[column] -= componentHeight;
         }
 
@@ -170,17 +195,18 @@ public class CategoryComponent extends AbstractComponent {
         float gridWidth = menuScreen.width - SIDEBAR_WIDTH - 12f;
         float gridHeight = menuScreen.height - GRID_TOP - GRID_BOTTOM_PADDING;
         if (MathUtil.isHovered(mouseX, mouseY, gridX, gridY, gridWidth, gridHeight)) {
-            boolean isAnyComponentHovered = visibleComponents.stream()
-                    .anyMatch(moduleComponent -> moduleComponent.isHover(mouseX, mouseY));
-
-            if (isAnyComponentHovered) {
-                for (ModuleComponent moduleComponent : visibleComponents) {
-                    if (moduleComponent.isHover(mouseX, mouseY)) {
-                        if (moduleComponent.mouseClicked(mouseX, mouseY, button)) {
-                            return true;
-                        }
+            // Single-pass: was previously iterating visibleComponents twice
+            // (anyMatch -> for-loop). Each isHover() call is a bounds check.
+            boolean anyHovered = false;
+            for (ModuleComponent moduleComponent : visibleComponents) {
+                if (moduleComponent.isHover(mouseX, mouseY)) {
+                    anyHovered = true;
+                    if (moduleComponent.mouseClicked(mouseX, mouseY, button)) {
+                        return true;
                     }
                 }
+            }
+            if (anyHovered) {
                 return super.mouseClicked(mouseX, mouseY, button);
             }
         }
@@ -190,7 +216,7 @@ public class CategoryComponent extends AbstractComponent {
 
     @Override
     public boolean isHover(double mouseX, double mouseY) {
-        visibleComponents.forEach(moduleComponent -> moduleComponent.isHover(mouseX, mouseY));
+        // Removed redundant forEach(isHover) call whose result was discarded.
         for (ModuleComponent moduleComponent : visibleComponents) {
             if (moduleComponent.isHover(mouseX, mouseY)) {
                 return true;
@@ -286,6 +312,15 @@ public class CategoryComponent extends AbstractComponent {
             assignedColumns.put(component, shortestColumn);
             heights[shortestColumn] += component.getComponentHeight() + ROW_GAP;
         }
+
+        // Cache totals for reuse in render() and calculateMaxScrollHeight()
+        // so we don't iterate visibleComponents twice every frame.
+        System.arraycopy(heights, 0, cachedColumnHeights, 0, COLUMN_COUNT);
+        int max = 0;
+        for (int h : heights) {
+            if (h > max) max = h;
+        }
+        cachedMaxColumnHeight = max;
     }
 
     private int findShortestColumn(int[] heights) {
@@ -298,24 +333,10 @@ public class CategoryComponent extends AbstractComponent {
         return shortest;
     }
 
-    private int[] calculateOffsets() {
-        int[] offsets = new int[COLUMN_COUNT];
-
-        for (int i = visibleComponents.size() - 1; i >= 0; i--) {
-            ModuleComponent component = visibleComponents.get(i);
-            int componentHeight = component.getComponentHeight() + ROW_GAP;
-            int column = assignedColumns.getOrDefault(component, 0);
-            offsets[column] += componentHeight;
-        }
-        return offsets;
-    }
-
     private int calculateMaxScrollHeight() {
         MenuScreen menuScreen = MenuScreen.INSTANCE;
-        int[] offsets = calculateOffsets();
-        int maxColumnHeight = Arrays.stream(offsets).max().orElse(0);
         int visibleHeight = Math.round(menuScreen.height - GRID_TOP - GRID_BOTTOM_PADDING);
-        int maxScroll = maxColumnHeight - visibleHeight;
+        int maxScroll = cachedMaxColumnHeight - visibleHeight;
         return Math.max(0, maxScroll);
     }
 

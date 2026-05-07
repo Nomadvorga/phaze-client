@@ -18,29 +18,33 @@ public final class AutoSprint extends Module {
         super("auto_sprint", "AutoSprint", ModuleCategory.UTILITIES, true, false);
         setup(showInSprintHud);
 
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (!isEnabled()) {
-                return;
-            }
-            tick(client);
-        });
+        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }
 
     private void tick(MinecraftClient client) {
-        if (client == null || client.player == null || client.world == null || client.currentScreen != null) {
-            return;
-        }
-        if (!client.options.forwardKey.isPressed() || client.options.sneakKey.isPressed()) {
-            return;
-        }
-        if (client.player.isUsingItem() || client.player.horizontalCollision) {
-            return;
-        }
-        if (!client.player.isCreative() && !client.player.isSpectator() && client.player.getHungerManager().getFoodLevel() <= 6) {
+        if (client == null || client.player == null || client.options == null) {
             return;
         }
 
-        client.player.setSprinting(true);
+        if (!isEnabled()) {
+            // Release the sprint key whenever the module is off so we don't
+            // hold sprint after toggling.
+            client.options.sprintKey.setPressed(false);
+            return;
+        }
+
+        // Hold sprint key down while enabled.
+        client.options.sprintKey.setPressed(true);
+
+        // Mirror upstream conditions: only auto-sprint when actually moving
+        // forward, not sneaking / using an item, and with enough hunger.
+        if (client.player.forwardSpeed > 0
+                && !client.player.isSprinting()
+                && !client.player.isSneaking()
+                && !client.player.isUsingItem()
+                && client.player.getHungerManager().getFoodLevel() > 6) {
+            client.player.setSprinting(true);
+        }
     }
 
     @Override

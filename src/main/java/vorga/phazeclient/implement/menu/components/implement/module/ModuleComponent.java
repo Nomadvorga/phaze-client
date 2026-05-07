@@ -6,6 +6,7 @@ import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
+import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.api.feature.module.setting.SettingComponentAdder;
 import vorga.phazeclient.api.feature.module.setting.implement.*;
@@ -83,13 +84,30 @@ public class ModuleComponent extends AbstractComponent {
         float offsetX = visualX - x;
         float offsetY = visualY - y;
 
-        this.isHovered = isHover(mouseX, mouseY);
-        hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        
-        boolean currentModuleState = module.isState();
-        if (currentModuleState != lastModuleState) {
-            outlineColorAnimation.setDirection(currentModuleState ? Direction.FORWARDS : Direction.BACKWARDS);
-            lastModuleState = currentModuleState;
+        // While the user is in SEARCH mode, every module card renders in a
+        // completely static state - no hover thickening, no smooth
+        // enabled/disabled transitions, no row-hover shimmer. setDirectionAndFinish
+        // pins each animation at its target value so getOutput() returns the
+        // neutral/state-synced value for the rest of this render() and inner
+        // helpers (renderOptionsRow / renderStateRow) skip their own
+        // setDirection calls.
+        boolean inSearchMode = isInSearchMode();
+        if (inSearchMode) {
+            hoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
+            optionsHoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
+            stateRowHoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
+            outlineColorAnimation.setDirectionAndFinish(module.isState() ? Direction.FORWARDS : Direction.BACKWARDS);
+            lastModuleState = module.isState();
+            this.isHovered = false;
+        } else {
+            this.isHovered = isHover(mouseX, mouseY);
+            hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
+
+            boolean currentModuleState = module.isState();
+            if (currentModuleState != lastModuleState) {
+                outlineColorAnimation.setDirection(currentModuleState ? Direction.FORWARDS : Direction.BACKWARDS);
+                lastModuleState = currentModuleState;
+            }
         }
 
         float hoverProgress = hoverAnimation.getOutput().floatValue();
@@ -131,13 +149,15 @@ public class ModuleComponent extends AbstractComponent {
         );
 
         if (showOptionsRow) {
-            renderOptionsRow(context, mouseX, mouseY, optionsY, !showStateRow);
+            renderOptionsRow(context, mouseX, mouseY, optionsY, !showStateRow, inSearchMode);
         }
 
         if (showStateRow) {
             float enabledY = optionsY + OPTIONS_ROW_HEIGHT;
-            boolean stateRowHovered = MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT);
-            stateRowHoverAnimation.setDirection(stateRowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
+            if (!inSearchMode) {
+                boolean stateRowHovered = MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT);
+                stateRowHoverAnimation.setDirection(stateRowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
+            }
             renderStateRow(context, enabledY, stateRowHoverAnimation.getOutput().floatValue());
         }
 
@@ -148,7 +168,7 @@ public class ModuleComponent extends AbstractComponent {
         context.getMatrices().pop();
     }
 
-    private void renderOptionsRow(DrawContext context, int mouseX, int mouseY, float optionsY, boolean standaloneRow) {
+    private void renderOptionsRow(DrawContext context, int mouseX, int mouseY, float optionsY, boolean standaloneRow, boolean inSearchMode) {
         boolean hasSettings = hasSettings();
         int baseRowColor = hasSettings
                 ? MenuStyle.CARD_OPTIONS
@@ -157,8 +177,10 @@ public class ModuleComponent extends AbstractComponent {
         float rowX = standaloneRow ? x : x + CARD_INSET;
         float rowWidth = standaloneRow ? width : width - CARD_INSET * 2.0F;
         float dividerX = rowX + rowWidth - iconSectionWidth;
-        boolean rowHovered = MathUtil.isHovered(mouseX, mouseY, rowX, optionsY, rowWidth, OPTIONS_ROW_HEIGHT);
-        optionsHoverAnimation.setDirection(rowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
+        if (!inSearchMode) {
+            boolean rowHovered = MathUtil.isHovered(mouseX, mouseY, rowX, optionsY, rowWidth, OPTIONS_ROW_HEIGHT);
+            optionsHoverAnimation.setDirection(rowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
+        }
         float rowHoverProgress = optionsHoverAnimation.getOutput().floatValue();
         int rowColor = MenuStyle.mix(baseRowColor, MenuStyle.TEXT_PRIMARY, rowHoverProgress * 0.055F);
         int borderColor = MenuStyle.withAlpha(MenuStyle.BORDER_LIGHT, applyGlobalAlpha(standaloneRow ? (0.45F + rowHoverProgress * 0.17F) : (0.35F + rowHoverProgress * 0.13F)));
@@ -299,6 +321,10 @@ public class ModuleComponent extends AbstractComponent {
 
     public int getComponentHeight() {
         return Math.round(getBaseHeightFloat());
+    }
+
+    private boolean isInSearchMode() {
+        return MenuScreen.INSTANCE != null && MenuScreen.INSTANCE.getCategory() == ModuleCategory.SEARCH;
     }
 
     private void drawBind(DrawContext context, float renderX, float renderY) {

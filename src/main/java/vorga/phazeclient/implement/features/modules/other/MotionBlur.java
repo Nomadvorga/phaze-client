@@ -41,6 +41,16 @@ public final class MotionBlur extends Module {
         return "Motion blur effect";
     }
 
+    @Override
+    public String getIcon() {
+        return "motion_blur.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     public float getStrength() {
         return strength.getValue();
     }
