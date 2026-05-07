@@ -187,49 +187,56 @@ public abstract class ChatHudSmoothScrollMixin {
     }
 
     /**
-     * Clamp the chat draw region with a scissor so the back-stepped row
-     * at the top and the addLinesUnder row at the bottom can't bleed
-     * past the natural chat boundary while the smooth-scroll slide is
-     * mid-flight. Targets LVT ordinal=7 = slot 12 ({@code m}, the chat
-     * baseline y); MC's {@link DrawContext#enableScissor} works in
-     * unscaled GUI coords with no matrix-translate compensation, so we
-     * read the current matrix translate ourselves and shift our local
-     * scissor rect into screen space.
+     * Set up a tight scissor at the natural chat boundary AND push a
+     * matrix translate by the sub-pixel remainder so that every row -
+     * including the back-stepped row at the top, the addLinesUnder row
+     * at the bottom, and the per-row backgrounds and indicators - moves
+     * as one rigid block. The scissor clips whatever spills past the
+     * natural top/bottom, so the visible chat rectangle stays static
+     * while content slides inside it.
+     *
+     * <p>Targets LVT ordinal=7 = slot 12 ({@code m}, the chat baseline).
+     * MC's {@link DrawContext#enableScissor} works in unscaled GUI
+     * coords with no matrix-translate compensation, so we read the
+     * current matrix translate ourselves and shift our chat-local rect
+     * into screen space.
      */
     @ModifyVariable(method = "render", at = @At("STORE"), ordinal = 7)
     private int phaze$mask(int m, @Local(argsOnly = true) DrawContext ctx) {
+        phaze$pushedMatrix = false;
         if (!phaze$enabled() || isChatHidden()) return m;
 
-        int chatHeight = getVisibleLineCount() * getLineHeight();
-        int masktop = m - chatHeight;
-        int maskbottom = m;
+        // Natural chat extent: top is the topmost line's y-baseline (in
+        // MC's drawText that's also the top of the glyph box); bottom is
+        // the bottommost baseline plus a typical text descender of ~9px.
+        int visible = getVisibleLineCount();
+        int lh = getLineHeight();
+        int natTop = m - (visible - 1) * lh;
+        int natBottom = m + lh; // include descender of bottom row
 
         Vector3f translate = ctx.getMatrices().peek().getPositionMatrix()
                 .getTranslation(new Vector3f());
         int tx = (int) translate.x;
         int ty = (int) translate.y;
 
-        // Pad: -2/+2 keeps underlines and descenders inside the clip
-        // when a sub-pixel slide is in progress.
         ctx.enableScissor(
                 tx - 20,
-                ty + masktop - 2,
+                ty + natTop,
                 tx + ctx.getScaledWindowWidth(),
-                ty + maskbottom + 2);
-        return m;
-    }
+                ty + natBottom);
 
-    /**
-     * Pull each line's y-baseline up by the sub-pixel remainder. Targets
-     * LVT ordinal=18 = slot 32 (x = m - r*lineHeight). The downstream
-     * text-y (slot 33 = x + p) inherits the shift, and the indicator /
-     * background {@code fill} calls iload slot 32 directly so they
-     * track the slide in lock-step.
-     */
-    @ModifyVariable(method = "render", at = @At("STORE"), ordinal = 18)
-    private int phaze$changePosY(int y) {
-        if (!phaze$enabled()) return y;
-        return y - phaze$getChatDrawOffset();
+        // Apply a uniform vertical translate so every row (including
+        // the back-stepped extra row at the top and the addLinesUnder
+        // extra row at the bottom) shifts together. Flush pending HUD
+        // draw queue first so this only affects subsequent chat draws.
+        int drawOff = phaze$getChatDrawOffset();
+        if (drawOff != 0) {
+            ctx.draw();
+            ctx.getMatrices().push();
+            ctx.getMatrices().translate(0.0F, (float) -drawOff, 0.0F);
+            phaze$pushedMatrix = true;
+        }
+        return m;
     }
 
     /**
@@ -244,16 +251,25 @@ public abstract class ChatHudSmoothScrollMixin {
     }
 
     /**
-     * Drop the scissor once the visible-line loop has finished. Targets
-     * the only {@code lstore} in {@code render} (slot 23 reused as a
-     * long after the int loop scope closes).
+     * Pop the matrix translate we pushed in mask, then drop the
+     * scissor. Targets the only {@code lstore} in {@code render}
+     * (slot 23 reused as a long after the int loop scope closes), which
+     * fires immediately after the visible-line loop completes.
      */
     @ModifyVariable(method = "render", at = @At("STORE"))
     private long phaze$demask(long a, @Local(argsOnly = true) DrawContext ctx) {
-        if (!phaze$enabled() || isChatHidden()) return a;
-        ctx.disableScissor();
+        if (phaze$pushedMatrix) {
+            ctx.draw();
+            ctx.getMatrices().pop();
+            phaze$pushedMatrix = false;
+        }
+        if (phaze$enabled() && !isChatHidden()) {
+            ctx.disableScissor();
+        }
         return a;
     }
+
+    @Unique private boolean phaze$pushedMatrix = false;
 
     @Inject(method = "render", at = @At("RETURN"))
     private void phaze$renderT(DrawContext ctx, int currentTick, int mouseX, int mouseY,
