@@ -31,11 +31,7 @@ public final class Animations extends Module {
 
     private static final int CHAT_FADE_IN_TICKS = 4;
 
-    public final SectionSetting generalSection = new SectionSetting("General");
-    public final BooleanSetting chatFade = new BooleanSetting(
-            "Chat Fade",
-            "Fade in newly received chat messages over a few ticks"
-    ).setValue(true);
+    public final SectionSetting tabSection = new SectionSetting("Tab List");
     public final BooleanSetting tabSlide = new BooleanSetting(
             "Tab Slide",
             "Slide the player tab list in from the top when opening or closing it"
@@ -44,14 +40,48 @@ public final class Animations extends Module {
             "Tab Fade",
             "Fade the tab list's opacity in and out together with the slide"
     ).setValue(true);
-    public final ValueSetting slideSpeed = new ValueSetting(
-            "Slide Speed",
+    public final ValueSetting tabSlideSpeed = new ValueSetting(
+            "Tab Slide Speed",
             "How quickly the tab list slides in/out. Higher = snappier."
     ).range(1, 10).step(0.5F).setValue(5);
-    public final BooleanSetting hotbarShift = new BooleanSetting(
-            "Hotbar Shift (WIP)",
-            "Smoothly slide the hotbar selection highlight when changing slots (work in progress)"
-    ).setValue(false);
+
+    public final SectionSetting chatSection = new SectionSetting("Chat");
+    public final BooleanSetting chatFade = new BooleanSetting(
+            "Chat Fade",
+            "Fade in newly received chat messages over a few ticks"
+    ).setValue(true);
+    public final BooleanSetting chatSmoothScroll = new BooleanSetting(
+            "Chat Smooth Scroll",
+            "Smoothly animate the chat history offset when scrolling with mouse wheel or PgUp/PgDown"
+    ).setValue(true);
+    public final ValueSetting chatSmoothSpeed = new ValueSetting(
+            "Chat Scroll Speed",
+            "Smoothness of chat history scrolling. Higher = snappier."
+    ).range(1, 10).step(0.5F).setValue(5);
+
+    public final SectionSetting hotbarSection = new SectionSetting("Hotbar");
+    public final BooleanSetting hotbarSlide = new BooleanSetting(
+            "Hotbar Slide",
+            "Smoothly slide the hotbar selection highlight when changing slots"
+    ).setValue(true);
+    public final BooleanSetting hotbarRollover = new BooleanSetting(
+            "Hotbar Rollover",
+            "When wrapping past slot 8 to 0 (or vice versa), slide across the wrap instead of teleporting"
+    ).setValue(true);
+    public final ValueSetting hotbarSpeed = new ValueSetting(
+            "Hotbar Slide Speed",
+            "Smoothness of the hotbar selection slide. Higher = snappier."
+    ).range(1, 10).step(0.5F).setValue(5);
+
+    public final SectionSetting listsSection = new SectionSetting("Lists");
+    public final BooleanSetting listSmoothScroll = new BooleanSetting(
+            "List Smooth Scroll",
+            "Smooth scrolling for option lists, server lists, multiplayer lists, etc."
+    ).setValue(true);
+    public final ValueSetting listSpeed = new ValueSetting(
+            "List Scroll Speed",
+            "Smoothness of widget-list scrolling. Higher = snappier."
+    ).range(1, 10).step(0.5F).setValue(5);
 
     /** Current interpolated offset; -TAB_SLIDE_TRAVEL = fully hidden. */
     private float tabCurrentOffset = -TAB_SLIDE_TRAVEL;
@@ -61,14 +91,34 @@ public final class Animations extends Module {
 
     private Animations() {
         super("animations", "Animations", ModuleCategory.UTILITIES);
-        chatFade.setFullWidth(true);
+
         tabSlide.setFullWidth(true);
         tabFade.setFullWidth(true);
         tabFade.visible(tabSlide::isValue);
-        slideSpeed.setFullWidth(true);
-        slideSpeed.visible(tabSlide::isValue);
-        hotbarShift.setFullWidth(true);
-        setup(generalSection, chatFade, tabSlide, tabFade, slideSpeed, hotbarShift);
+        tabSlideSpeed.setFullWidth(true);
+        tabSlideSpeed.visible(tabSlide::isValue);
+
+        chatFade.setFullWidth(true);
+        chatSmoothScroll.setFullWidth(true);
+        chatSmoothSpeed.setFullWidth(true);
+        chatSmoothSpeed.visible(chatSmoothScroll::isValue);
+
+        hotbarSlide.setFullWidth(true);
+        hotbarRollover.setFullWidth(true);
+        hotbarRollover.visible(hotbarSlide::isValue);
+        hotbarSpeed.setFullWidth(true);
+        hotbarSpeed.visible(hotbarSlide::isValue);
+
+        listSmoothScroll.setFullWidth(true);
+        listSpeed.setFullWidth(true);
+        listSpeed.visible(listSmoothScroll::isValue);
+
+        setup(
+                tabSection, tabSlide, tabFade, tabSlideSpeed,
+                chatSection, chatFade, chatSmoothScroll, chatSmoothSpeed,
+                hotbarSection, hotbarSlide, hotbarRollover, hotbarSpeed,
+                listsSection, listSmoothScroll, listSpeed
+        );
     }
 
     public static Animations getInstance() {
@@ -90,6 +140,32 @@ public final class Animations extends Module {
 
     public boolean isTabFadeEnabled() {
         return isTabSlideEnabled() && tabFade.isValue();
+    }
+
+    public boolean isHotbarSlideEnabled() {
+        return isEnabled() && hotbarSlide.isValue();
+    }
+
+    public boolean isHotbarRolloverEnabled() {
+        return isHotbarSlideEnabled() && hotbarRollover.isValue();
+    }
+
+    public boolean isChatSmoothScrollEnabled() {
+        return isEnabled() && chatSmoothScroll.isValue();
+    }
+
+    public boolean isListSmoothScrollEnabled() {
+        return isEnabled() && listSmoothScroll.isValue();
+    }
+
+    /**
+     * Maps a 1..10 speed slider to an exponential-decay smoothness factor
+     * such that {@code value=5} reproduces the reference {@link #TAB_SMOOTH_BASE}
+     * baseline, lower values get exponentially smoother and higher exponentially
+     * snappier. Shared by every sliding/scrolling animation.
+     */
+    public float smoothnessForSpeed(float speed) {
+        return (float) Math.pow(TAB_SMOOTH_BASE, speed / 5.0F);
     }
 
     /**
@@ -139,7 +215,7 @@ public final class Animations extends Module {
         // above 5 push the exponent past 1 so each per-second decay step
         // squeezes a smaller fraction (snappier), and below 5 raises the
         // base toward 1 (slower). pow(0.0015, 5/5) = 0.0015 exactly.
-        float smoothness = (float) Math.pow(TAB_SMOOTH_BASE, slideSpeed.getValue() / 5.0F);
+        float smoothness = smoothnessForSpeed(tabSlideSpeed.getValue());
 
         // Frame-rate independent exponential decay: identical settle time
         // regardless of FPS. Math.pow(s, dt) returns 1 when dt=0, smaller as

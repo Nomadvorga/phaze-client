@@ -45,7 +45,10 @@
     "ChatHudCollapseMixin",
     "ChatHudFadeInMixin",
     "HandledScreenShulkerPreviewMixin",
-    "InGameHudTabSlideMixin"
+    "InGameHudTabSlideMixin",
+    "InGameHudHotbarSlideMixin",
+    "EntryListWidgetSmoothScrollMixin",
+    "ChatHudSmoothScrollMixin"
   ],
   "injectors": {
     "defaultRequire": 0
