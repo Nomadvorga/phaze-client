@@ -2,9 +2,21 @@ package vorga.phazeclient.implement.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.client.MinecraftClient;
 import vorga.phazeclient.api.feature.module.Module;
+import vorga.phazeclient.api.feature.module.setting.Setting;
+import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.GroupSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.MultiColorSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
 import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
@@ -17,10 +29,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -135,19 +149,9 @@ public final class ConfigManager {
             }
             
             JsonObject settings = new JsonObject();
-            module.settings().forEach(setting -> {
-                if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.ValueSetting valueSetting) {
-                    settings.addProperty(setting.getName(), valueSetting.getValue());
-                } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting boolSetting) {
-                    settings.addProperty(setting.getName(), boolSetting.isValue());
-                } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.SelectSetting selectSetting) {
-                    settings.addProperty(setting.getName(), selectSetting.getSelected());
-                } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.ColorSetting colorSetting) {
-                    settings.addProperty(setting.getName(), colorSetting.getColor());
-                } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.BindSetting bindSetting) {
-                    settings.addProperty(setting.getName(), bindSetting.getKey());
-                }
-            });
+            for (Setting setting : module.settings()) {
+                serializeSetting(setting, settings);
+            }
             moduleData.add("settings", settings);
             
             modules.add(module.getName(), moduleData);
@@ -305,30 +309,13 @@ public final class ConfigManager {
 
                     if (hasModuleData && moduleData.has("settings")) {
                         JsonObject settings = moduleData.getAsJsonObject("settings");
-                        module.settings().forEach(setting -> {
-                            if (settings.has(setting.getName())) {
-                                try {
-                                    if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.ValueSetting valueSetting) {
-                                        float value = settings.get(setting.getName()).getAsFloat();
-                                        valueSetting.setValue(value);
-                                    } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting boolSetting) {
-                                        boolean value = settings.get(setting.getName()).getAsBoolean();
-                                        boolSetting.setValue(value);
-                                    } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.SelectSetting selectSetting) {
-                                        String value = settings.get(setting.getName()).getAsString();
-                                        selectSetting.setSelected(value);
-                                    } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.ColorSetting colorSetting) {
-                                        int value = settings.get(setting.getName()).getAsInt();
-                                        colorSetting.setColor(value);
-                                    } else if (setting instanceof vorga.phazeclient.api.feature.module.setting.implement.BindSetting bindSetting) {
-                                        int value = settings.get(setting.getName()).getAsInt();
-                                        bindSetting.setKey(value);
-                                    }
-                                } catch (Exception e) {
-                                    // Skip invalid values
-                                }
+                        for (Setting setting : module.settings()) {
+                            try {
+                                deserializeSetting(setting, settings);
+                            } catch (Exception ignored) {
+                                // Skip invalid values
                             }
-                        });
+                        }
                     }
 
                     if (module instanceof RectHudModule rectHudModule) {
@@ -472,6 +459,161 @@ public final class ConfigManager {
                 return name;
             }
             index++;
+        }
+    }
+
+    /**
+     * Writes a single {@link Setting} into the supplied JSON object,
+     * keyed by {@link Setting#getName()} (= {@code nameKey}). Mirrors
+     * the per-type encoding {@link vorga.phazeclient.implement.menu.components.implement.module.ModuleComponent}
+     * uses for its clipboard copy/paste flow so saved configs and the
+     * copy/paste payload share an on-disk shape - including settings
+     * the previous inline switch silently dropped (text, multi-select,
+     * multi-color, group + recursive sub-settings).
+     *
+     * <p>Skips settings that opt out of persistence via
+     * {@link Setting#isSaveToConfig()} - {@link vorga.phazeclient.api.feature.module.setting.implement.SectionSetting}
+     * and {@link vorga.phazeclient.api.feature.module.setting.implement.ButtonSetting}
+     * fall under this; they are pure UI affordances with nothing to
+     * persist.
+     */
+    private static void serializeSetting(Setting setting, JsonObject target) {
+        if (setting == null || !setting.isSaveToConfig()) {
+            return;
+        }
+
+        String key = setting.getName();
+
+        switch (setting) {
+            case BooleanSetting booleanSetting -> target.addProperty(key, booleanSetting.isValue());
+            case ValueSetting valueSetting -> target.addProperty(key, valueSetting.getValue());
+            case TextSetting textSetting -> {
+                String value = textSetting.getText();
+                if (value != null) {
+                    // Match ModuleComponent's transport encoding so a config
+                    // round-trips identically through both the auto-save
+                    // pipeline and the clipboard import flow.
+                    value = value.replace(" ", "%%").replace("/", "++");
+                }
+                target.addProperty(key, value);
+            }
+            case BindSetting bindSetting -> target.addProperty(key, bindSetting.getKey());
+            case ColorSetting colorSetting -> target.addProperty(key, colorSetting.getColor());
+            case SelectSetting selectSetting -> target.addProperty(key, selectSetting.getSelected());
+            case MultiSelectSetting multiSelectSetting -> {
+                List<String> selected = multiSelectSetting.getSelected();
+                target.addProperty(key, selected == null ? "" : String.join(",", selected));
+            }
+            case MultiColorSetting multiColor -> {
+                JsonObject colorObject = new JsonObject();
+                colorObject.addProperty("selectedColorIndex", multiColor.getSelectedColorIndex());
+
+                JsonArray colorsArray = new JsonArray();
+                for (ColorSetting color : multiColor.getAllColors()) {
+                    colorsArray.add(color.getColor());
+                }
+                colorObject.add("colors", colorsArray);
+                target.add(key, colorObject);
+            }
+            case GroupSetting group -> {
+                JsonObject groupObject = new JsonObject();
+                groupObject.addProperty("state", group.isValue());
+                for (Setting subSetting : group.getSubSettings()) {
+                    serializeSetting(subSetting, groupObject);
+                }
+                target.add(key, groupObject);
+            }
+            default -> {
+                // Unsupported / non-persisting setting; drop silently so
+                // a future setting type doesn't crash the whole save.
+            }
+        }
+    }
+
+    /**
+     * Pulls a single {@link Setting} value back out of the supplied
+     * JSON object, matching the encoding produced by
+     * {@link #serializeSetting(Setting, JsonObject)}. Returns silently
+     * when the key is absent or the setting opts out of persistence.
+     *
+     * <p>{@link MultiColorSetting} retains a backwards-compat path for
+     * configs written by older builds that stored a single int instead
+     * of the structured object - the legacy int is mapped onto the
+     * first color so existing user configs aren't reset on upgrade.
+     */
+    private static void deserializeSetting(Setting setting, JsonObject source) {
+        if (setting == null || !setting.isSaveToConfig()) {
+            return;
+        }
+
+        String key = setting.getName();
+        if (!source.has(key)) {
+            return;
+        }
+        JsonElement element = source.get(key);
+        if (element == null || element.isJsonNull()) {
+            return;
+        }
+
+        switch (setting) {
+            case BooleanSetting booleanSetting -> booleanSetting.setValue(element.getAsBoolean());
+            case ValueSetting valueSetting -> valueSetting.setValue(element.getAsFloat());
+            case TextSetting textSetting -> {
+                String value = element.getAsString();
+                if (value != null) {
+                    value = value.replace("%%", " ").replace("++", "/");
+                }
+                textSetting.setText(value);
+            }
+            case BindSetting bindSetting -> bindSetting.setKey(element.getAsInt());
+            case ColorSetting colorSetting -> colorSetting.setColor(element.getAsInt());
+            case SelectSetting selectSetting -> selectSetting.setSelected(element.getAsString());
+            case MultiSelectSetting multiSelectSetting -> {
+                String value = element.getAsString();
+                List<String> selected = new ArrayList<>(Arrays.asList(value.split(",")));
+                // Drop entries that no longer exist in the option list
+                // (so renaming an option in code doesn't strand the user
+                // with a phantom selection that fails the equality check
+                // everywhere downstream).
+                selected.removeIf(s -> s.isEmpty() || !multiSelectSetting.getList().contains(s));
+                multiSelectSetting.setSelected(selected);
+            }
+            case MultiColorSetting multiColor -> {
+                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
+                    int legacyColor = element.getAsInt();
+                    if (multiColor.getColor1() != null) {
+                        multiColor.getColor1().setColor(legacyColor);
+                    }
+                    return;
+                }
+                JsonObject colorObject = element.getAsJsonObject();
+                if (colorObject.has("selectedColorIndex")) {
+                    multiColor.setSelectedColorIndex(colorObject.get("selectedColorIndex").getAsInt());
+                }
+                if (colorObject.has("colors")) {
+                    JsonArray colorsArray = colorObject.getAsJsonArray("colors");
+                    List<ColorSetting> colorSettings = multiColor.getAllColors();
+                    int n = Math.min(colorsArray.size(), colorSettings.size());
+                    for (int i = 0; i < n; i++) {
+                        colorSettings.get(i).setColor(colorsArray.get(i).getAsInt());
+                    }
+                }
+            }
+            case GroupSetting group -> {
+                JsonObject groupObject = element.getAsJsonObject();
+                if (groupObject.has("state")) {
+                    group.setValue(groupObject.get("state").getAsBoolean());
+                }
+                for (Setting subSetting : group.getSubSettings()) {
+                    try {
+                        deserializeSetting(subSetting, groupObject);
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            default -> {
+                // Unsupported / non-persisting setting type.
+            }
         }
     }
 }
