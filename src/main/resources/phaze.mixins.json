@@ -54,7 +54,9 @@
     "ScrollableWidgetSmoothScrollMixin",
     "ChatHudMessageSlideMixin",
     "ChatHudSmoothScrollMixin",
-    "ChatScreenInputFieldMixin"
+    "ChatScreenInputFieldMixin",
+    "LivingEntityMixin",
+    "PlayerEntityMixin"
   ],
   "injectors": {
     "defaultRequire": 0
