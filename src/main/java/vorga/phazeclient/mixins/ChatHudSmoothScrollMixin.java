@@ -251,10 +251,16 @@ public abstract class ChatHudSmoothScrollMixin {
     }
 
     /**
-     * Pop the matrix translate we pushed in mask, then drop the
-     * scissor. Targets the only {@code lstore} in {@code render}
-     * (slot 23 reused as a long after the int loop scope closes), which
-     * fires immediately after the visible-line loop completes.
+     * Pop the matrix translate we pushed in mask, drop the scissor, AND
+     * restore {@code scrolledLines} to vanilla's pre-back-step value.
+     * Targets the only {@code lstore} in {@code render} (slot 23 reused
+     * as a long after the int loop scope closes), which fires
+     * immediately after the visible-line loop and BEFORE the chat
+     * scroll-indicator block at the tail of {@code render}. The
+     * indicator's track and thumb positions are computed straight from
+     * the {@code scrolledLines} field, so they would jitter every
+     * frame if the back-stepped value bled through; restoring here
+     * keeps the indicator pinned to vanilla's true scroll position.
      */
     @ModifyVariable(method = "render", at = @At("STORE"))
     private long phaze$demask(long a, @Local(argsOnly = true) DrawContext ctx) {
@@ -266,11 +272,21 @@ public abstract class ChatHudSmoothScrollMixin {
         if (phaze$enabled() && !isChatHidden()) {
             ctx.disableScissor();
         }
+        if (phaze$rolledBack) {
+            scrolledLines = phaze$scrollValBefore;
+            phaze$rolledBack = false;
+        }
         return a;
     }
 
     @Unique private boolean phaze$pushedMatrix = false;
 
+    /**
+     * Safety-net restore: if {@link #phaze$demask} didn't fire (e.g.,
+     * the chat was hidden before the loop or vanilla refactored away
+     * the post-loop {@code lstore}) we still need to undo the back-step
+     * so the rest of the codebase observes vanilla's true scroll value.
+     */
     @Inject(method = "render", at = @At("RETURN"))
     private void phaze$renderT(DrawContext ctx, int currentTick, int mouseX, int mouseY,
                                boolean focused, CallbackInfo ci) {
