@@ -47,7 +47,7 @@
     "HandledScreenShulkerPreviewMixin",
     "InGameHudTabSlideMixin",
     "InGameHudHotbarSlideMixin",
-    "EntryListWidgetSmoothScrollMixin",
+    "ScrollableWidgetSmoothScrollMixin",
     "ChatHudSmoothScrollMixin"
   ],
   "injectors": {
