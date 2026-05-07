@@ -52,12 +52,16 @@ public final class Animations extends Module {
     ).setValue(true);
     public final BooleanSetting chatSmoothScroll = new BooleanSetting(
             "Chat Smooth Scroll",
-            "Smoothly animate the chat history offset when scrolling with mouse wheel or PgUp/PgDown"
+            "Slide newly received chat messages up into place instead of popping in"
     ).setValue(true);
     public final ValueSetting chatSmoothSpeed = new ValueSetting(
             "Chat Scroll Speed",
-            "Smoothness of chat history scrolling. Higher = snappier."
+            "Speed of the new-message slide. Higher = snappier (shorter slide duration)."
     ).range(1, 20).step(0.5F).setValue(5);
+    public final BooleanSetting smoothInputField = new BooleanSetting(
+            "Smooth Input Field",
+            "Slide the chat input box up from below when the chat screen opens (fixed speed)"
+    ).setValue(true);
 
     public final SectionSetting hotbarSection = new SectionSetting("Hotbar");
     public final BooleanSetting hotbarSlide = new BooleanSetting(
@@ -102,6 +106,7 @@ public final class Animations extends Module {
         chatSmoothScroll.setFullWidth(true);
         chatSmoothSpeed.setFullWidth(true);
         chatSmoothSpeed.visible(chatSmoothScroll::isValue);
+        smoothInputField.setFullWidth(true);
 
         hotbarSlide.setFullWidth(true);
         hotbarRollover.setFullWidth(true);
@@ -115,7 +120,7 @@ public final class Animations extends Module {
 
         setup(
                 tabSection, tabSlide, tabFade, tabSlideSpeed,
-                chatSection, chatFade, chatSmoothScroll, chatSmoothSpeed,
+                chatSection, chatFade, chatSmoothScroll, chatSmoothSpeed, smoothInputField,
                 hotbarSection, hotbarSlide, hotbarRollover, hotbarSpeed,
                 listsSection, listSmoothScroll, listSpeed
         );
@@ -154,8 +159,29 @@ public final class Animations extends Module {
         return isEnabled() && chatSmoothScroll.isValue();
     }
 
+    public boolean isSmoothInputFieldEnabled() {
+        return isEnabled() && smoothInputField.isValue();
+    }
+
     public boolean isListSmoothScrollEnabled() {
         return isEnabled() && listSmoothScroll.isValue();
+    }
+
+    /**
+     * Maps the {@code Chat Scroll Speed} slider [1..20] to a fade-time in
+     * milliseconds for the new-message slide animation. Slider value 5
+     * reproduces the ChatAnimation reference's 150 ms default; smaller
+     * values stretch the fade out, larger values snap quickly.
+     *
+     * <p>Curve is a simple inverse so each unit of slider change roughly
+     * halves/doubles the duration:
+     * <pre>{@code fadeMs = 750 / slider}</pre>
+     * Slider 1 = 750 ms (very slow), 5 = 150 ms (default), 20 = 37.5 ms.
+     */
+    public float chatSlideFadeMs() {
+        float v = chatSmoothSpeed.getValue();
+        if (v < 1.0F) v = 1.0F;
+        return 750.0F / v;
     }
 
     /**

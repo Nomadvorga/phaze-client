@@ -48,7 +48,8 @@
     "InGameHudTabSlideMixin",
     "InGameHudHotbarSlideMixin",
     "ScrollableWidgetSmoothScrollMixin",
-    "ChatHudSmoothScrollMixin"
+    "ChatHudMessageSlideMixin",
+    "ChatScreenInputFieldMixin"
   ],
   "injectors": {
     "defaultRequire": 0
