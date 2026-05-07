@@ -69,10 +69,17 @@ public abstract class InGameHudTabSlideMixin {
         module.tickTabSlide(keyPressed);
 
         // Vanilla already rendered the tab list in this frame; nothing more
-        // to do on the open path. Latch the cycle flag so a subsequent
-        // release legitimately triggers our forced close render.
+        // to do on the open path. Only latch the cycle flag if vanilla
+        // ACTUALLY rendered the tab list this frame though - in singleplayer
+        // with one player and no scoreboard list objective, vanilla's
+        // renderPlayerList method short-circuits and never makes the player
+        // list visible even when Tab is held. Without this guard our forced
+        // close render would fire a moment later and conjure the tab list
+        // out of nowhere just so it could play a slide-out animation.
         if (keyPressed) {
-            phaze$wasOpenedThisCycle = true;
+            if (phaze$vanillaTabListWouldRender()) {
+                phaze$wasOpenedThisCycle = true;
+            }
             return;
         }
 
@@ -103,5 +110,44 @@ public abstract class InGameHudTabSlideMixin {
         ScoreboardObjective objective = scoreboard == null ? null
                 : scoreboard.getObjectiveForSlot(ScoreboardDisplaySlot.LIST);
         playerListHud.render(context, context.getScaledWindowWidth(), scoreboard, objective);
+    }
+
+    /**
+     * Replicates the visibility predicate vanilla's
+     * {@code InGameHud#renderPlayerList} uses before flipping the tab list
+     * visible. The relevant excerpt from the 1.21.4 bytecode:
+     * <pre>{@code
+     * if (keyPressed && (!isInSingleplayer
+     *                    || getListedPlayerListEntries().size() > 1
+     *                    || sidebarListObjective != null)) {
+     *     playerListHud.setVisible(true);
+     *     playerListHud.render(...);
+     * }
+     * }</pre>
+     * Returns true when vanilla would render the tab list this frame
+     * given that the playerList key is currently held. We assume the
+     * caller has already checked {@code keyPressed}.
+     */
+    @Unique
+    private boolean phaze$vanillaTabListWouldRender() {
+        if (client == null || client.player == null) {
+            return false;
+        }
+        if (!client.isInSingleplayer()) {
+            // Multiplayer: vanilla always shows the tab list.
+            return true;
+        }
+        if (client.player.networkHandler != null
+                && client.player.networkHandler.getListedPlayerListEntries().size() > 1) {
+            return true;
+        }
+        if (client.world != null) {
+            Scoreboard scoreboard = client.world.getScoreboard();
+            if (scoreboard != null
+                    && scoreboard.getObjectiveForSlot(ScoreboardDisplaySlot.LIST) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 }

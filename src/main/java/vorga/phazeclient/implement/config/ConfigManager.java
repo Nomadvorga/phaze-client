@@ -17,8 +17,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 public final class ConfigManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -228,6 +232,24 @@ public final class ConfigManager {
     }
     
     public void loadConfig(String configName) {
+        try {
+            loadConfigInternal(configName);
+        } finally {
+            // Settings updated during the load fire notifyChange() ->
+            // markDirty(), which would otherwise cause the very next
+            // flushIfDirty tick to write the freshly-loaded state back
+            // to disk. Worse: when the user switches to the "default"
+            // config, that flush would hit saveCurrentConfig's default
+            // -> autosave redirect and immediately flip the active
+            // config back to autosave (overwriting the autosave file
+            // with the default state in the process). Clearing the
+            // dirty timestamp here scopes auto-save to genuine post-
+            // load user actions only.
+            dirtyAt = 0L;
+        }
+    }
+
+    private void loadConfigInternal(String configName) {
         // Save current config before loading new one, only when switching to a different config
         if (currentConfig != null && currentConfig.exists() && !currentConfigName.equals(configName)) {
             save(currentConfig);
@@ -366,17 +388,49 @@ public final class ConfigManager {
         loadConfig(currentConfigName);
     }
     
+    /**
+     * Returns the list of available config names, ordered so that the
+     * pinned configs come first:
+     * <ol>
+     *   <li>{@code default} - always present even if no
+     *       {@code default.Phaze} file has been written yet (it's a
+     *       virtual factory-reset target).</li>
+     *   <li>{@code autosave} - second when present, so the user's most
+     *       recent auto-saved state sits right under the reset target.</li>
+     *   <li>Everything else, case-insensitive alphabetical.</li>
+     * </ol>
+     */
     public String[] getConfigList() {
         File[] files = configsDir.listFiles((dir, name) -> name.endsWith(".Phaze"));
-        if (files == null) {
-            return new String[0];
+
+        Set<String> uniqueNames = new LinkedHashSet<>();
+        // Always expose "default" - even on a fresh install where no
+        // default.Phaze exists yet - because the load path treats it as
+        // a virtual reset target rather than a real file.
+        uniqueNames.add("default");
+        if (files != null) {
+            for (File file : files) {
+                uniqueNames.add(file.getName().replace(".Phaze", ""));
+            }
         }
 
-        String[] configs = new String[files.length];
-        for (int i = 0; i < files.length; i++) {
-            configs[i] = files[i].getName().replace(".Phaze", "");
-        }
+        String[] configs = uniqueNames.toArray(new String[0]);
+        Arrays.sort(configs, CONFIG_LIST_ORDER);
         return configs;
+    }
+
+    /** See {@link #getConfigList()} for ordering rules. */
+    private static final Comparator<String> CONFIG_LIST_ORDER = (a, b) -> {
+        int aRank = pinnedRank(a);
+        int bRank = pinnedRank(b);
+        if (aRank != bRank) return Integer.compare(aRank, bRank);
+        return a.compareToIgnoreCase(b);
+    };
+
+    private static int pinnedRank(String name) {
+        if ("default".equalsIgnoreCase(name)) return 0;
+        if ("autosave".equalsIgnoreCase(name)) return 1;
+        return 2;
     }
     
     public boolean configExists(String configName) {
