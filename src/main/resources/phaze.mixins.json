@@ -43,6 +43,7 @@
     "ClientPlayNetworkHandlerItemPickupMixin",
     "ChatHudAccessor",
     "ChatHudCollapseMixin",
+    "ChatHudNickHiderMixin",
     "ChatHudFadeInMixin",
     "HandledScreenShulkerPreviewMixin",
     "InGameHudTabSlideMixin",
