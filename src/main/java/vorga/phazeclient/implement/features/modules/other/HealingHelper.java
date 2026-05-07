@@ -181,10 +181,11 @@ public final class HealingHelper extends Module {
 
         if (isHealingPotion(stack)) {
             if (lowHp) {
-                // Yellow when both HP AND saturation rules are firing -
-                // matches the user's "if slider 3 is also highlighting,
-                // change healing potion color to yellow" requirement.
-                rgb = lowSat ? RGB_YELLOW : RGB_GREEN;
+                // Per the May follow-up: green when slider 3 (saturation
+                // rule) is ALSO firing, signaling "you can fix both with
+                // a heal potion + a future eat", and yellow when only the
+                // HP rule fires (heal but watch your food next).
+                rgb = lowSat ? RGB_GREEN : RGB_YELLOW;
             }
         } else if (stack.isOf(Items.ENCHANTED_GOLDEN_APPLE)) {
             long since = System.currentTimeMillis() - lastEgappleEatenMs;
