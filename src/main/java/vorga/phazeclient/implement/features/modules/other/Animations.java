@@ -43,7 +43,7 @@ public final class Animations extends Module {
     public final ValueSetting tabSlideSpeed = new ValueSetting(
             "Tab Slide Speed",
             "How quickly the tab list slides in/out. Higher = snappier."
-    ).range(1, 20).step(0.5F).setValue(5);
+    ).range(1, 30).step(0.5F).setValue(5);
 
     public final SectionSetting chatSection = new SectionSetting("Chat");
     public final BooleanSetting chatFade = new BooleanSetting(
@@ -57,7 +57,7 @@ public final class Animations extends Module {
     public final ValueSetting chatSmoothSpeed = new ValueSetting(
             "Chat Scroll Speed",
             "Speed of the new-message slide. Higher = snappier (shorter slide duration)."
-    ).range(1, 20).step(0.5F).setValue(5);
+    ).range(1, 30).step(0.5F).setValue(5);
     public final BooleanSetting smoothInputField = new BooleanSetting(
             "Smooth Input Field",
             "Slide the chat input box up from below when the chat screen opens (fixed speed)"
@@ -75,7 +75,7 @@ public final class Animations extends Module {
     public final ValueSetting hotbarSpeed = new ValueSetting(
             "Hotbar Slide Speed",
             "Smoothness of the hotbar selection slide. Higher = snappier."
-    ).range(1, 20).step(0.5F).setValue(5);
+    ).range(1, 30).step(0.5F).setValue(5);
 
     public final SectionSetting listsSection = new SectionSetting("Lists");
     public final BooleanSetting listSmoothScroll = new BooleanSetting(
@@ -85,7 +85,7 @@ public final class Animations extends Module {
     public final ValueSetting listSpeed = new ValueSetting(
             "List Scroll Speed",
             "Smoothness of widget-list scrolling. Higher = snappier."
-    ).range(1, 20).step(0.5F).setValue(5);
+    ).range(1, 30).step(0.5F).setValue(5);
 
     /** Current interpolated offset; -TAB_SLIDE_TRAVEL = fully hidden. */
     private float tabCurrentOffset = -TAB_SLIDE_TRAVEL;
