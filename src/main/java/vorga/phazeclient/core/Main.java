@@ -199,6 +199,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.NickHider.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.NickHider.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HealingHelper.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HealingHelper.getInstance());
+        }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ShulkerPreview.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ShulkerPreview.getInstance());
         }

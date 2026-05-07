@@ -58,7 +58,10 @@ public class TextComponent extends AbstractSettingComponent {
         this.rectHeight = 12.0F;
 
         rectangle.render(ShapeProperties.create(matrix, rectX, rectY, rectWidth, rectHeight)
-                .round(2).thickness(1.1F).outlineColor(typing ? MenuStyle.CHIP_ACTIVE : MenuStyle.BORDER).color(MenuStyle.PANEL_CHIP).build());
+                .round(2).thickness(1.1F)
+                .outlineColor(MenuStyle.withAlpha(typing ? MenuStyle.CHIP_ACTIVE : MenuStyle.BORDER, currentAlpha))
+                .color(MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, currentAlpha))
+                .build());
 
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
 
@@ -80,14 +83,17 @@ public class TextComponent extends AbstractSettingComponent {
                 float selectionXEnd = rectX + 3 - xOffset + font.getStringWidth(text.substring(0, end));
                 float selectionWidth = selectionXEnd - selectionXStart;
 
-                rectangle.render(ShapeProperties.create(matrix, selectionXStart, cursorTop - 0.5F, selectionWidth, cursorHeight + 1.0F).color(MenuStyle.CHIP_ACTIVE).build());
+                rectangle.render(ShapeProperties.create(matrix, selectionXStart, cursorTop - 0.5F, selectionWidth, cursorHeight + 1.0F)
+                        .color(MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, currentAlpha))
+                        .build());
             }
         }
 
-        font.drawString(context.getMatrices(), text, rectX + 3 - xOffset, inputTextY, typing ? MenuStyle.TEXT_PRIMARY : MenuStyle.TEXT_MUTED);
+        font.drawString(context.getMatrices(), text, rectX + 3 - xOffset, inputTextY,
+                MenuStyle.withAlpha(typing ? MenuStyle.TEXT_PRIMARY : MenuStyle.TEXT_MUTED, currentAlpha));
 
         if (!typing && text.isEmpty()) {
-            font.drawString(context.getMatrices(), text = setting.getText(), rectX + 3, inputTextY, MenuStyle.TEXT_MUTED);
+            font.drawString(context.getMatrices(), text = setting.getText(), rectX + 3, inputTextY, mutedText());
         }
 
         long currentTime = System.currentTimeMillis();
@@ -95,7 +101,9 @@ public class TextComponent extends AbstractSettingComponent {
 
         if (focused && (selectionStart == -1 || selectionStart == selectionEnd)) {
             float cursorX = font.getStringWidth(text.substring(0, cursorPosition));
-            rectangle.render(ShapeProperties.create(matrix, rectX + 3 - xOffset + cursorX, cursorTop, 0.5F, cursorHeight).color(-1).build());
+            rectangle.render(ShapeProperties.create(matrix, rectX + 3 - xOffset + cursorX, cursorTop, 0.5F, cursorHeight)
+                    .color(MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha))
+                    .build());
         }
 
         if (dragging) {

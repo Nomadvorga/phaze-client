@@ -49,6 +49,8 @@
     "InGameHudTabSlideMixin",
     "InGameHudHotbarSlideMixin",
     "InGameHudHotbarFlushMixin",
+    "InGameHudHealingHelperMixin",
+    "HandledScreenHealingHelperMixin",
     "ScrollableWidgetSmoothScrollMixin",
     "ChatHudMessageSlideMixin",
     "ChatScreenInputFieldMixin"
