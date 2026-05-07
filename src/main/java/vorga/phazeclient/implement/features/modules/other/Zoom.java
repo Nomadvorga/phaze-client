@@ -39,7 +39,7 @@ public final class Zoom extends Module {
     public final ValueSetting maxZoom = new ValueSetting("Max Zoom", "Maximum zoom level").range(10, 5000).setValue(100).visible(() -> enableLimits.isValue());
 
     private Zoom() {
-        super("zoom", "Zoom", ModuleCategory.UTILITIES);
+        super("zoom", "Zoom", ModuleCategory.OTHER);
         
         // Set full width for settings
         keybind.setFullWidth(true);

@@ -51,7 +51,7 @@ public abstract class RectHudModule extends Module {
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundOpacity = new ValueSetting("Background Opacity", "Custom background opacity")
             .range(0, 100)
-            .setValue(100)
+            .setValue(40)
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundBlurRadius = new ValueSetting("Background Blur Radius", "Blur radius for HUD background")
             .range(0, 32)

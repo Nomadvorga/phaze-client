@@ -94,7 +94,7 @@ public final class Animations extends Module {
     private long tabLastFrameNanos = 0L;
 
     private Animations() {
-        super("animations", "Animations", ModuleCategory.UTILITIES);
+        super("animations", "Animations", ModuleCategory.HUD);
 
         tabSlide.setFullWidth(true);
         tabFade.setFullWidth(true);

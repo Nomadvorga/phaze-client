@@ -16,7 +16,7 @@ public final class Saturation extends Module {
             .selected("Yellow Bar");
 
     private Saturation() {
-        super("saturation", "Saturation", ModuleCategory.UTILITIES);
+        super("saturation", "Saturation", ModuleCategory.HUD);
         setup(style);
     }
 
