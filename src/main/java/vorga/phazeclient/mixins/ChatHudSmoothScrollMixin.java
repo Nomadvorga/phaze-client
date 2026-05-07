@@ -55,8 +55,6 @@ public abstract class ChatHudSmoothScrollMixin {
     @Unique private boolean phaze$pushedMatrix = false;
     /** True while we're inside addMessage so scroll(I) hooks ignore the auto-bump. */
     @Unique private boolean phaze$inAddMessage = false;
-    /** Exposed so ChatHudMessageSlideMixin can suppress its slide during our back-step. */
-    @Unique public static boolean phaze$suppressSlide = false;
 
     /** Snap-to-zero threshold (pixels). */
     @Unique private static final float SETTLE_EPSILON = 0.5F;
@@ -124,7 +122,7 @@ public abstract class ChatHudSmoothScrollMixin {
                                boolean focused, CallbackInfo ci) {
         phaze$rolledBack = false;
         phaze$pushedMatrix = false;
-        phaze$suppressSlide = false;
+        ChatScrollState.suppressSlide = false;
 
         if (!phaze$enabled()) {
             phaze$scrollOffset = 0F;
@@ -178,7 +176,7 @@ public abstract class ChatHudSmoothScrollMixin {
         }
         scrolledLines = adjusted;
         phaze$rolledBack = true;
-        phaze$suppressSlide = true;
+        ChatScrollState.suppressSlide = true;
 
         if (subPixelPx != 0) {
             // Negate: the back-step puts content one row visually
@@ -205,6 +203,6 @@ public abstract class ChatHudSmoothScrollMixin {
             scrolledLines = phaze$savedScrolledLines;
             phaze$rolledBack = false;
         }
-        phaze$suppressSlide = false;
+        ChatScrollState.suppressSlide = false;
     }
 }
