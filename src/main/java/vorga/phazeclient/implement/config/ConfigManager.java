@@ -531,10 +531,33 @@ public final class ConfigManager {
     }
 
     /**
+     * Per-setting legacy aliases. When a setting's user-facing name is
+     * renamed in code we still need to honour the old key on disk so
+     * existing user configs round-trip without resetting to default.
+     * The lookup is keyed by the CURRENT name and lists every prior
+     * name in deprecation order; first match wins.
+     *
+     * <p>Add a new entry here whenever a setting's display label
+     * changes, then drop the entry once enough release cycles have
+     * passed that everyone's configs have been re-saved with the new
+     * key.
+     */
+    private static final Map<String, String[]> LEGACY_KEY_ALIASES = Map.of(
+            // Animations module: Chat Smooth Scroll -> Message Animation
+            // (the toggle now describes only the new-message slide-in;
+            // the smooth-scroll port was removed in commit e0233a4).
+            "Message Animation", new String[]{"Chat Smooth Scroll"},
+            "Message Animation Speed", new String[]{"Chat Scroll Speed"}
+    );
+
+    /**
      * Pulls a single {@link Setting} value back out of the supplied
      * JSON object, matching the encoding produced by
      * {@link #serializeSetting(Setting, JsonObject)}. Returns silently
      * when the key is absent or the setting opts out of persistence.
+     *
+     * <p>Looks up {@link #LEGACY_KEY_ALIASES} when the current key is
+     * missing so renames don't reset existing user configs.
      *
      * <p>{@link MultiColorSetting} retains a backwards-compat path for
      * configs written by older builds that stored a single int instead
@@ -548,7 +571,18 @@ public final class ConfigManager {
 
         String key = setting.getName();
         if (!source.has(key)) {
-            return;
+            String[] aliases = LEGACY_KEY_ALIASES.get(key);
+            if (aliases != null) {
+                for (String alias : aliases) {
+                    if (source.has(alias)) {
+                        key = alias;
+                        break;
+                    }
+                }
+            }
+            if (!source.has(key)) {
+                return;
+            }
         }
         JsonElement element = source.get(key);
         if (element == null || element.isJsonNull()) {
