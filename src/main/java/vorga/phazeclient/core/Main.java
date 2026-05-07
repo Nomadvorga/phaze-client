@@ -184,6 +184,24 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.FastExp.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.FastExp.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ItemPickupLogger.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ItemPickupLogger.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoEat.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoEat.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ArmorNotifier.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ArmorNotifier.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChatHelper.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChatHelper.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ShulkerPreview.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ShulkerPreview.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Animations.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Animations.getInstance());
+        }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {
         //     moduleProvider.getModules().add(ScoreboardHud.getInstance());

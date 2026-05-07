@@ -16,6 +16,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.hud.TabHud;
+import vorga.phazeclient.implement.features.modules.other.Animations;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -51,6 +52,40 @@ public class PlayerListHudMixin {
         int textX = x + width - textWidth - 2;
         context.drawText(client.textRenderer, text, textX, y, color, tabHud.pingNumberShadow.isValue());
         ci.cancel();
+    }
+
+    /**
+     * Push a translation matrix at the very start of the tab list render so
+     * the whole list slides in from above when first opened. The Animations
+     * module returns 0 once the slide has settled, making this a no-op for
+     * subsequent frames while the tab key stays held.
+     */
+    @Inject(method = "render", at = @At("HEAD"))
+    private void phaze$pushTabSlide(DrawContext context, int scaledWindowWidth,
+                                    net.minecraft.scoreboard.Scoreboard scoreboard,
+                                    net.minecraft.scoreboard.ScoreboardObjective objective,
+                                    CallbackInfo ci) {
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isTabSlideEnabled()) {
+            return;
+        }
+        float offsetY = module.computeTabSlideOffsetY();
+        context.getMatrices().push();
+        if (offsetY != 0.0F) {
+            context.getMatrices().translate(0.0F, offsetY, 0.0F);
+        }
+    }
+
+    @Inject(method = "render", at = @At("RETURN"))
+    private void phaze$popTabSlide(DrawContext context, int scaledWindowWidth,
+                                   net.minecraft.scoreboard.Scoreboard scoreboard,
+                                   net.minecraft.scoreboard.ScoreboardObjective objective,
+                                   CallbackInfo ci) {
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isTabSlideEnabled()) {
+            return;
+        }
+        context.getMatrices().pop();
     }
 
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)

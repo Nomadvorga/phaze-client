@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
+import vorga.phazeclient.implement.features.modules.other.AutoEat;
 import vorga.phazeclient.implement.features.modules.other.LockSlot;
 import vorga.phazeclient.implement.features.modules.other.ShiftTap;
 
@@ -35,6 +36,21 @@ public class ClientPlayerInteractionManagerMixin {
         ShiftTap shiftTap = ShiftTap.getInstance();
         if (shiftTap.isEnabled()) {
             shiftTap.triggerShiftTap();
+        }
+    }
+
+    /**
+     * Vanilla calls {@code stopUsingItem} every tick that the use-key isn't
+     * held while the player has an item active. Auto Eat starts the use
+     * programmatically (no key held) so we have to suppress that automatic
+     * stop while a bite is in progress; the use will still finish naturally
+     * once {@code itemUseTimeLeft} reaches 0 via {@code Item.finishUsing}.
+     */
+    @Inject(method = "stopUsingItem", at = @At("HEAD"), cancellable = true)
+    private void phaze$preventStopWhileAutoEating(PlayerEntity player, CallbackInfo ci) {
+        AutoEat autoEat = AutoEat.getInstance();
+        if (autoEat != null && autoEat.isAutoEating()) {
+            ci.cancel();
         }
     }
 
