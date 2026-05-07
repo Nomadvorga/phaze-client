@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.other.Animations;
@@ -123,5 +124,48 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
         // from the latest target instead of the in-flight smoothed value -
         // otherwise rapid wheels would spread out as displayScroll caught up.
         scrollY = phaze$targetScroll;
+    }
+
+    /**
+     * Multiply the wheel-tick scroll delta by the user-configured lines-
+     * per-scroll value. Vanilla's {@code mouseScrolled} body passes
+     * {@code scrollY - vertical * deltaPerScroll} to {@code setScrollY};
+     * we rewrite that argument to extend the implied delta by the
+     * multiplier. Result for {@code lines = N} is the wheel advancing
+     * N entries instead of the vanilla 1.
+     *
+     * <p>Skipped for non-{@link EntryListWidget} widgets (e.g. text edits)
+     * and for any module-disabled state - in both cases the original
+     * argument is returned untouched so vanilla feel is preserved.
+     */
+    @ModifyArg(
+            method = "mouseScrolled",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/widget/ScrollableWidget;setScrollY(D)V"),
+            require = 0
+    )
+    private double phaze$multiplyWheelDelta(double newScrollY) {
+        if (!((Object) this instanceof EntryListWidget)) {
+            return newScrollY;
+        }
+        Animations module = Animations.getInstance();
+        if (module == null) {
+            return newScrollY;
+        }
+        int lines = module.linesPerScroll();
+        if (lines <= 1) {
+            return newScrollY;
+        }
+        // newScrollY = current - vertical * deltaPerScroll
+        // delta = current - newScrollY = vertical * deltaPerScroll
+        // multipliedDelta = delta * lines
+        // newY' = current - multipliedDelta = current + (newScrollY - current) * lines
+        // Use phaze$targetScroll if initialized to chain rapid ticks
+        // from the latest target rather than the in-flight smoothed
+        // value (mirrors phaze$wheelChain's reasoning - phaze$shouldApply
+        // there primed scrollY = targetScroll, but we may run before
+        // phaze$shouldApply ever gated, so fall back to the field).
+        double anchor = phaze$initialized ? phaze$targetScroll : scrollY;
+        return anchor + (newScrollY - anchor) * lines;
     }
 }

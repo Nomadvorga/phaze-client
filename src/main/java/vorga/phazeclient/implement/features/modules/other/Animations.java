@@ -51,11 +51,11 @@ public final class Animations extends Module {
             "Fade in newly received chat messages over a few ticks"
     ).setValue(true);
     public final BooleanSetting chatSmoothScroll = new BooleanSetting(
-            "Chat Smooth Scroll",
+            "Message Animation",
             "Slide newly received chat messages up into place instead of popping in"
     ).setValue(true);
     public final ValueSetting chatSmoothSpeed = new ValueSetting(
-            "Chat Scroll Speed",
+            "Message Animation Speed",
             "Speed of the new-message slide. Higher = snappier (shorter slide duration)."
     ).range(1, 30).step(0.5F).setValue(5);
     public final BooleanSetting smoothInputField = new BooleanSetting(
@@ -86,6 +86,10 @@ public final class Animations extends Module {
             "List Scroll Speed",
             "Smoothness of widget-list scrolling. Higher = snappier."
     ).range(1, 30).step(0.5F).setValue(5);
+    public final ValueSetting listLinesPerScroll = new ValueSetting(
+            "List Lines Per Scroll",
+            "Number of entries advanced per mouse-wheel tick in option lists."
+    ).range(1, 10).step(1.0F).setValue(1);
 
     /** Current interpolated offset; -TAB_SLIDE_TRAVEL = fully hidden. */
     private float tabCurrentOffset = -TAB_SLIDE_TRAVEL;
@@ -117,12 +121,13 @@ public final class Animations extends Module {
         listSmoothScroll.setFullWidth(true);
         listSpeed.setFullWidth(true);
         listSpeed.visible(listSmoothScroll::isValue);
+        listLinesPerScroll.setFullWidth(true);
 
         setup(
                 tabSection, tabSlide, tabFade, tabSlideSpeed,
                 chatSection, chatFade, chatSmoothScroll, chatSmoothSpeed, smoothInputField,
                 hotbarSection, hotbarSlide, hotbarRollover, hotbarSpeed,
-                listsSection, listSmoothScroll, listSpeed
+                listsSection, listSmoothScroll, listSpeed, listLinesPerScroll
         );
     }
 
@@ -175,6 +180,25 @@ public final class Animations extends Module {
 
     public boolean isListSmoothScrollEnabled() {
         return isEnabled() && listSmoothScroll.isValue();
+    }
+
+    /**
+     * Number of entries the widget-list scroll wheel advances per tick.
+     * Independent of {@link #isListSmoothScrollEnabled()} - the multiplier
+     * applies to vanilla's discrete jump as well as our smoothed slide,
+     * so users can crank the per-click distance without having to enable
+     * the smoothing animation. Falls back to vanilla's 1-line behaviour
+     * when the module is fully disabled so a turned-off module never
+     * silently changes the wheel feel.
+     */
+    public int linesPerScroll() {
+        if (!isEnabled()) {
+            return 1;
+        }
+        int v = (int) listLinesPerScroll.getValue();
+        if (v < 1) v = 1;
+        if (v > 10) v = 10;
+        return v;
     }
 
     /**
