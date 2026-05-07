@@ -84,12 +84,24 @@ public final class AutoEat extends Module {
             return;
         }
 
+        // Block any user-visible activity while a screen is open: vanilla
+        // GUIs (inventory, chest, ESC menu, advancements...), the chat
+        // screen, and our own ClickGui all populate mc.currentScreen, so
+        // a single null-check covers them. We still let an in-flight
+        // physical bite tick to its natural completion below - the bite
+        // is server-tick driven and would resolve weirdly if we cancelled
+        // it mid-use just because the user opened their inventory.
+        boolean screenOpen = mc.currentScreen != null;
+
         int hunger = mc.player.getHungerManager().getFoodLevel();
         int threshold = hungerThreshold.getInt();
 
         if (useCommand.isValue()) {
             if (eating) {
                 finishEating(mc);
+            }
+            if (screenOpen) {
+                return;
             }
             if (hunger <= threshold && mc.getNetworkHandler() != null) {
                 long now = System.currentTimeMillis();
@@ -111,6 +123,14 @@ public final class AutoEat extends Module {
             }
             // Vanilla finished using the item (Item.finishUsing fired).
             finishEating(mc);
+            return;
+        }
+
+        // Don't START a new bite while any screen is open - the user is
+        // interacting with a GUI, chat, ESC menu, or our ClickGui and
+        // wouldn't expect a hotbar-slot swap + interactItem behind the
+        // back of whatever they're doing.
+        if (screenOpen) {
             return;
         }
 
