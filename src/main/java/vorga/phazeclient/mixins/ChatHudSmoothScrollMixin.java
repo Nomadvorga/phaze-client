@@ -1,42 +1,56 @@
 package vorga.phazeclient.mixins;
 
+import java.util.List;
+
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.ChatHud;
-import net.minecraft.client.gui.hud.ChatHudLine;
+import net.minecraft.text.OrderedText;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.helpers.ChatScrollState;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 
 /**
- * Smooth-scroll for the in-game chat HUD - the scroll-wheel pass that
- * runs whether the chat is closed (HUD path) or open (ChatScreen path,
- * which still calls {@code chatHud.render(ctx, ...)} from its own
- * {@code render}). Modeled on the well-known PingIsFun smooth-scroll
- * trick: keep an extra {@code scrollOffset} in pixels that decays toward
- * zero with frame-rate-independent exponential smoothing, and during
- * render re-route vanilla's integer {@code scrolledLines} through
- * (target - integerLines) plus a sub-pixel matrix translate equal to the
- * remainder. The integer-line transition is invisible because the
- * sub-pixel offset compensates for it - net visual effect is a
- * continuous slide identical to {@code ScrollableWidgetSmoothScrollMixin}.
+ * Smooth-scroll for the in-game chat HUD, ported from
+ * <a href="https://github.com/AGudimenko/Minecraft-Smooth-Scrolling">smsk's
+ * Smooth-Scrolling</a> ({@code ChatHudMixin}). Algorithm:
  *
- * <p>The matrix-translate path replaces the prior @ModifyVariable hack
- * that bound to the LVT ordinal of the y-position local in vanilla's
- * for-loop; that's fragile across MC patch versions and would silently
- * break on any vanilla refactor of the render method.
+ * <ol>
+ *   <li>{@code scroll(I)} / {@code resetScroll()} HEAD-TAIL track the
+ *       integer scroll delta and accumulate it into a float
+ *       {@code scrollOffset} measured in pixels.</li>
+ *   <li>{@code render} HEAD decays {@code scrollOffset} toward zero with
+ *       a frame-rate-independent {@code Math.pow(smoothness, dt)}
+ *       multiplier, then temporarily decrements vanilla's integer
+ *       {@code scrolledLines} by {@code round(scrollOffset) / lineHeight}
+ *       so the visible line range matches the user's pre-scroll content
+ *       while the offset is large.</li>
+ *   <li>{@code @ModifyVariable(name="y")} subtracts the sub-pixel
+ *       remainder ({@code round(scrollOffset) - integerLines * lineHeight})
+ *       from the per-line y-coordinate that vanilla computes inside the
+ *       render-loop. Net: lines slide smoothly between row positions and
+ *       the integer back-step is invisible at the swap point.</li>
+ *   <li>{@code render} TAIL restores {@code scrolledLines} so the rest
+ *       of the codebase observes vanilla's true value.</li>
+ *   <li>{@code addVisibleMessage} {@code @ModifyVariable} on the
+ *       broken-line list compensates {@code scrollOffset} when vanilla
+ *       calls {@code scroll(1)} per new line while chat is focused +
+ *       scrolled up; without it the smooth scroll would lurch on every
+ *       incoming message.</li>
+ *   <li>{@code refresh} HEAD/TAIL flag suppresses the addVisibleMessage
+ *       compensation while vanilla rebuilds the visible cache.</li>
+ * </ol>
  *
  * <p>{@link ChatHudMessageSlideMixin} also pushes a translate during
- * render. Because mixin priorities run higher-first, our HEAD/RETURN
- * book-end the slide mixin's. The slide mixin's own
- * {@code scrolledLines != 0} guard would mis-fire on our temporarily-
- * decremented value, so we set {@link #phaze$suppressSlide} for the
- * duration of our back-step and {@link ChatHudMessageSlideMixin} will
- * eventually consult it once we wire it through.
+ * render. Higher mixin priority makes our HEAD run first; we set
+ * {@link ChatScrollState#suppressSlide} for the duration of our
+ * back-step so the slide mixin's {@code scrolledLines == 0} guard isn't
+ * fooled into stacking translates while we're mid-animation.
  */
 @Mixin(value = ChatHud.class, priority = 1500)
 public abstract class ChatHudSmoothScrollMixin {
@@ -47,82 +61,103 @@ public abstract class ChatHudSmoothScrollMixin {
 
     /** Lagging scroll position in pixels. Decays toward zero. */
     @Unique private float phaze$scrollOffset = 0F;
-    /** Captures {@code scrolledLines} before each scroll/resetScroll/addMessage call. */
-    @Unique private int phaze$preCallScrolledLines = 0;
-    /** Real value of {@code scrolledLines} we save/restore around render's back-step. */
-    @Unique private int phaze$savedScrolledLines = 0;
+    @Unique private int phaze$scrollValBefore = 0;
     @Unique private long phaze$lastFrameNanos = 0L;
+    @Unique private boolean phaze$refreshing = false;
     @Unique private boolean phaze$rolledBack = false;
-    @Unique private boolean phaze$pushedMatrix = false;
-    /** True while we're inside addMessage so scroll(I) hooks ignore the auto-bump. */
-    @Unique private boolean phaze$inAddMessage = false;
-
-    /** Snap-to-zero threshold (pixels). */
-    @Unique private static final float SETTLE_EPSILON = 0.5F;
 
     @Unique
     private boolean phaze$enabled() {
-        Animations module = Animations.getInstance();
-        return module != null && module.isChatSmoothScrollEnabled();
+        Animations m = Animations.getInstance();
+        return m != null && m.isChatSmoothScrollEnabled();
     }
 
-    // ---- scroll ------------------------------------------------------
+    @Unique
+    private float phaze$frameDtSeconds() {
+        long now = System.nanoTime();
+        float dt;
+        if (phaze$lastFrameNanos == 0L) {
+            dt = 1.0F / 60.0F;
+        } else {
+            dt = (now - phaze$lastFrameNanos) / 1_000_000_000.0F;
+            if (dt > 0.25F) dt = 0.25F;
+        }
+        phaze$lastFrameNanos = now;
+        return dt;
+    }
+
+    /** Round to the nearest pixel - the integer part of the lag. */
+    @Unique
+    private int phaze$scrollOffsetPx() {
+        return Math.round(phaze$scrollOffset);
+    }
+
+    /** Sub-pixel remainder: total offset minus the integer-line component. */
+    @Unique
+    private int phaze$drawOffsetPx() {
+        int total = phaze$scrollOffsetPx();
+        int lh = getLineHeight();
+        if (lh <= 0) return 0;
+        return total - (total / lh) * lh;
+    }
+
+    // ---- scroll / resetScroll: accumulate deltas as pixels --------------
 
     @Inject(method = "scroll(I)V", at = @At("HEAD"))
     private void phaze$scrollH(int amount, CallbackInfo ci) {
-        phaze$preCallScrolledLines = scrolledLines;
+        phaze$scrollValBefore = scrolledLines;
     }
 
     @Inject(method = "scroll(I)V", at = @At("TAIL"))
     private void phaze$scrollT(int amount, CallbackInfo ci) {
-        if (!phaze$enabled() || phaze$inAddMessage) return;
-        int delta = scrolledLines - phaze$preCallScrolledLines;
-        if (delta == 0) return;
-        // Positive delta = user scrolled UP into older history. We want
-        // the OLD content to keep showing while we slide into the new
-        // window, so push a positive offset; render rolls back
-        // scrolledLines by delta and translates by remaining sub-pixel.
-        phaze$scrollOffset += delta * getLineHeight();
+        if (!phaze$enabled()) return;
+        phaze$scrollOffset += (scrolledLines - phaze$scrollValBefore) * (float) getLineHeight();
     }
-
-    // ---- resetScroll -------------------------------------------------
 
     @Inject(method = "resetScroll", at = @At("HEAD"))
     private void phaze$resetScrollH(CallbackInfo ci) {
-        phaze$preCallScrolledLines = scrolledLines;
+        phaze$scrollValBefore = scrolledLines;
     }
 
     @Inject(method = "resetScroll", at = @At("TAIL"))
     private void phaze$resetScrollT(CallbackInfo ci) {
-        if (!phaze$enabled() || phaze$inAddMessage) return;
-        int delta = scrolledLines - phaze$preCallScrolledLines;
-        if (delta == 0) return;
-        phaze$scrollOffset += delta * getLineHeight();
+        if (!phaze$enabled()) return;
+        phaze$scrollOffset += (scrolledLines - phaze$scrollValBefore) * (float) getLineHeight();
     }
 
-    // ---- addMessage --------------------------------------------------
-    // Vanilla's addMessage may auto-bump scrolledLines while user is
-    // scrolled up to keep the visible window stable. We suppress our
-    // scroll-tracking during that, so reading older history while new
-    // messages arrive doesn't kick off a spurious smooth-scroll.
+    // ---- addVisibleMessage / refresh: compensate auto scroll bumps ------
 
-    @Inject(method = "addMessage(Lnet/minecraft/client/gui/hud/ChatHudLine;)V", at = @At("HEAD"))
-    private void phaze$addMessageH(ChatHudLine line, CallbackInfo ci) {
-        phaze$inAddMessage = true;
+    /**
+     * When the user has chat focused and scrolled up, vanilla's
+     * addVisibleMessage calls {@code scroll(1)} per broken line of the
+     * incoming message; that bumps {@code scrollOffset} via our scroll
+     * hook by {@code list.size() * lineHeight}, which would lurch the
+     * smooth-scroll target off-screen. Counter-balance here so the user
+     * stays on the same visible window.
+     */
+    @ModifyVariable(method = "addVisibleMessage", at = @At("STORE"), ordinal = 0)
+    private List<OrderedText> phaze$onNewVisibleMessage(List<OrderedText> ot) {
+        if (phaze$refreshing || !phaze$enabled() || ot == null) return ot;
+        phaze$scrollOffset -= ot.size() * (float) getLineHeight();
+        return ot;
     }
 
-    @Inject(method = "addMessage(Lnet/minecraft/client/gui/hud/ChatHudLine;)V", at = @At("TAIL"))
-    private void phaze$addMessageT(ChatHudLine line, CallbackInfo ci) {
-        phaze$inAddMessage = false;
+    @Inject(method = "refresh", at = @At("HEAD"))
+    private void phaze$refreshH(CallbackInfo ci) {
+        phaze$refreshing = true;
     }
 
-    // ---- render ------------------------------------------------------
+    @Inject(method = "refresh", at = @At("TAIL"))
+    private void phaze$refreshT(CallbackInfo ci) {
+        phaze$refreshing = false;
+    }
+
+    // ---- render: decay, back-step scrolledLines, sub-pixel y modify -----
 
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$renderH(DrawContext ctx, int currentTick, int mouseX, int mouseY,
                                boolean focused, CallbackInfo ci) {
         phaze$rolledBack = false;
-        phaze$pushedMatrix = false;
         ChatScrollState.suppressSlide = false;
 
         if (!phaze$enabled()) {
@@ -130,78 +165,47 @@ public abstract class ChatHudSmoothScrollMixin {
             return;
         }
 
-        long now = System.nanoTime();
-        float dt;
-        if (phaze$lastFrameNanos == 0L) {
-            dt = 1.0F / 60.0F;
-        } else {
-            dt = (now - phaze$lastFrameNanos) / 1_000_000_000.0F;
-            // Cap so an alt-tab pause doesn't snap to target.
-            if (dt > 0.25F) dt = 0.25F;
-        }
-        phaze$lastFrameNanos = now;
+        float dt = phaze$frameDtSeconds();
+        Animations m = Animations.getInstance();
+        float smoothness = m.smoothnessForSpeed(m.chatSmoothSpeed.getValue());
+        phaze$scrollOffset = (float) (phaze$scrollOffset * Math.pow(smoothness, dt));
 
-        if (Math.abs(phaze$scrollOffset) < SETTLE_EPSILON) {
-            phaze$scrollOffset = 0F;
+        int integerLines = phaze$scrollOffsetPx() / getLineHeight();
+        if (integerLines == 0) {
             return;
         }
 
-        Animations module = Animations.getInstance();
-        float smoothness = module.smoothnessForSpeed(module.chatSmoothSpeed.getValue());
-        double decay = Math.pow(smoothness, dt);
-        phaze$scrollOffset = (float) (phaze$scrollOffset * decay);
-
-        int lineHeight = getLineHeight();
-        int roundedPx = Math.round(phaze$scrollOffset);
-        // Java integer division truncates toward zero; for negative offsets
-        // (user scrolled DOWN / closed chat) that already gives the right
-        // sign for both integer-step and remainder so we don't need to
-        // floorDiv.
-        int integerLines = roundedPx / lineHeight;
-        int subPixelPx = roundedPx - integerLines * lineHeight;
-
-        if (integerLines == 0 && subPixelPx == 0) {
-            return;
-        }
-
-        // Roll scrolledLines back by integerLines so vanilla draws the
-        // line range that's visually closer to where the user came from.
-        phaze$savedScrolledLines = scrolledLines;
+        phaze$scrollValBefore = scrolledLines;
         int adjusted = scrolledLines - integerLines;
         if (adjusted < 0) {
-            // Underflow: clamp and zero the offset so we don't fight the
-            // bottom of the visible buffer.
+            // Underflow: clamp scrollOffset proportionally so the lag
+            // can't fight the bottom of the visible buffer.
             adjusted = 0;
             phaze$scrollOffset = 0F;
-            subPixelPx = 0;
         }
         scrolledLines = adjusted;
         phaze$rolledBack = true;
         ChatScrollState.suppressSlide = true;
+    }
 
-        if (subPixelPx != 0) {
-            // Negate: the back-step puts content one row visually
-            // higher than the post-scroll target, then sub-pixel slides
-            // it down (or up for negative offset) into rest position.
-            float translateY = -(float) subPixelPx;
-            ctx.draw();
-            ctx.getMatrices().push();
-            ctx.getMatrices().translate(0.0F, translateY, 0.0F);
-            phaze$pushedMatrix = true;
-        }
+    /**
+     * Pull each line's y-coordinate up by the sub-pixel remainder so the
+     * back-stepped content slides into the post-scroll positions
+     * smoothly. Targets the {@code y} local in vanilla's render-loop
+     * ({@code y = (m - r * lineHeight) + p}) by name to stay robust
+     * against bytecode shuffling between MC patches.
+     */
+    @ModifyVariable(method = "render", at = @At("STORE"), name = "y")
+    private int phaze$shiftLineY(int y) {
+        if (!phaze$enabled()) return y;
+        return y - phaze$drawOffsetPx();
     }
 
     @Inject(method = "render", at = @At("RETURN"))
     private void phaze$renderT(DrawContext ctx, int currentTick, int mouseX, int mouseY,
                                boolean focused, CallbackInfo ci) {
-        if (phaze$pushedMatrix) {
-            // Flush translated chat batch with matrix still active.
-            ctx.draw();
-            ctx.getMatrices().pop();
-            phaze$pushedMatrix = false;
-        }
         if (phaze$rolledBack) {
-            scrolledLines = phaze$savedScrolledLines;
+            scrolledLines = phaze$scrollValBefore;
             phaze$rolledBack = false;
         }
         ChatScrollState.suppressSlide = false;
