@@ -4,6 +4,7 @@ import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
 public final class Animations extends Module {
     private static final Animations INSTANCE = new Animations();
@@ -12,13 +13,14 @@ public final class Animations extends Module {
     private static final float TAB_SLIDE_TRAVEL = 18.0F;
 
     /**
-     * Per-second decay factor used for frame-rate independent smoothing,
-     * inspired by the smooth-scrolling mod's {@code pow(smoothness, dt)}
-     * trick: at any frame {@code current = (current - target) * pow(s, dt)
-     * + target}. Lower values snap faster; this gives a noticeable but not
-     * sluggish slide.
+     * Reference per-second decay factor at slider value 5. Inspired by the
+     * smooth-scrolling mod's {@code pow(smoothness, dt)} trick:
+     * {@code current = (current - target) * pow(s, dt) + target}. The Slide
+     * Speed slider exponentiates this so each unit of change keeps the same
+     * perceived ratio of speed-up / slow-down regardless of where on the
+     * slider you are.
      */
-    private static final float TAB_SMOOTH_FACTOR = 0.0015F;
+    private static final float TAB_SMOOTH_BASE = 0.0015F;
 
     /**
      * Distance in pixels at which we consider the slide "settled" - once
@@ -38,6 +40,14 @@ public final class Animations extends Module {
             "Tab Slide",
             "Slide the player tab list in from the top when opening or closing it"
     ).setValue(true);
+    public final BooleanSetting tabFade = new BooleanSetting(
+            "Tab Fade",
+            "Fade the tab list's opacity in and out together with the slide"
+    ).setValue(true);
+    public final ValueSetting slideSpeed = new ValueSetting(
+            "Slide Speed",
+            "How quickly the tab list slides in/out. Higher = snappier."
+    ).range(1, 10).step(0.5F).setValue(5);
     public final BooleanSetting hotbarShift = new BooleanSetting(
             "Hotbar Shift (WIP)",
             "Smoothly slide the hotbar selection highlight when changing slots (work in progress)"
@@ -53,8 +63,12 @@ public final class Animations extends Module {
         super("animations", "Animations", ModuleCategory.UTILITIES);
         chatFade.setFullWidth(true);
         tabSlide.setFullWidth(true);
+        tabFade.setFullWidth(true);
+        tabFade.visible(tabSlide::isValue);
+        slideSpeed.setFullWidth(true);
+        slideSpeed.visible(tabSlide::isValue);
         hotbarShift.setFullWidth(true);
-        setup(generalSection, chatFade, tabSlide, hotbarShift);
+        setup(generalSection, chatFade, tabSlide, tabFade, slideSpeed, hotbarShift);
     }
 
     public static Animations getInstance() {
@@ -72,6 +86,10 @@ public final class Animations extends Module {
 
     public boolean isTabSlideEnabled() {
         return isEnabled() && tabSlide.isValue();
+    }
+
+    public boolean isTabFadeEnabled() {
+        return isTabSlideEnabled() && tabFade.isValue();
     }
 
     /**
@@ -117,10 +135,16 @@ public final class Animations extends Module {
         }
         tabLastFrameNanos = now;
 
+        // Slider value 5 reproduces the old hardcoded 0.0015 base; values
+        // above 5 push the exponent past 1 so each per-second decay step
+        // squeezes a smaller fraction (snappier), and below 5 raises the
+        // base toward 1 (slower). pow(0.0015, 5/5) = 0.0015 exactly.
+        float smoothness = (float) Math.pow(TAB_SMOOTH_BASE, slideSpeed.getValue() / 5.0F);
+
         // Frame-rate independent exponential decay: identical settle time
         // regardless of FPS. Math.pow(s, dt) returns 1 when dt=0, smaller as
         // dt grows.
-        float decay = (float) Math.pow(TAB_SMOOTH_FACTOR, dt);
+        float decay = (float) Math.pow(smoothness, dt);
         tabCurrentOffset = (tabCurrentOffset - tabTargetOffset) * decay + tabTargetOffset;
 
         // Snap to target once we're within epsilon to avoid endless tiny
@@ -155,5 +179,21 @@ public final class Animations extends Module {
      */
     public float currentTabSlideOffset() {
         return tabCurrentOffset;
+    }
+
+    /**
+     * Alpha multiplier (0..1) that should be applied to the tab list while
+     * the slide is in progress. Maps the offset linearly: fully closed (-h)
+     * = 0 alpha, fully open (0) = 1 alpha. Returns 1 when fade is disabled
+     * or the module is off so the mixin can skip the shader-color dance.
+     */
+    public float currentTabAlpha() {
+        if (!isTabFadeEnabled()) {
+            return 1.0F;
+        }
+        float alpha = 1.0F + tabCurrentOffset / TAB_SLIDE_TRAVEL;
+        if (alpha < 0.0F) return 0.0F;
+        if (alpha > 1.0F) return 1.0F;
+        return alpha;
     }
 }

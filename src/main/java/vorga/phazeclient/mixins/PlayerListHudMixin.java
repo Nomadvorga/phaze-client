@@ -1,5 +1,6 @@
 package vorga.phazeclient.mixins;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.PlayerListHud;
@@ -76,11 +77,24 @@ public class PlayerListHudMixin {
         if (module == null || !module.isTabSlideEnabled()) {
             return;
         }
+        // Flush prior batches so they render with normal (1,1,1,1) shader
+        // color, not our faded one.
         context.draw();
+
         float offsetY = module.currentTabSlideOffset();
         context.getMatrices().push();
         if (offsetY != 0.0F) {
             context.getMatrices().translate(0.0F, offsetY, 0.0F);
+        }
+
+        // Tint subsequent draws with our fade alpha. This works for both
+        // the rectangle/texture batch and the font batch because every
+        // draw layer multiplies the fragment alpha by RenderSystem's
+        // current shader color. Reset in the RETURN inject below.
+        float alpha = module.currentTabAlpha();
+        if (alpha < 1.0F) {
+            RenderSystem.enableBlend();
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
         }
     }
 
@@ -93,8 +107,15 @@ public class PlayerListHudMixin {
         if (module == null || !module.isTabSlideEnabled()) {
             return;
         }
+        // Flush our (potentially translated and tinted) draws BEFORE we
+        // restore the matrix and shader color - DrawContext snapshots both
+        // at submit time, but the GL state at flush time still affects
+        // anything that pulls from it (e.g. text glyph batching that
+        // re-reads ShaderColor). Flushing first guarantees this batch goes
+        // out with the faded alpha and the next HUD element starts clean.
         context.draw();
         context.getMatrices().pop();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
