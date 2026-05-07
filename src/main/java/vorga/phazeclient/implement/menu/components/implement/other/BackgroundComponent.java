@@ -258,8 +258,12 @@ public class BackgroundComponent extends AbstractComponent {
                     0.0F
             );
 
-            // Only show delete icon if not default config
-            if (!config.equalsIgnoreCase("default")) {
+            // Hide the delete icon on (a) the immutable "default" entry
+            // and (b) whichever config is currently active. The active
+            // guard mirrors ConfigManager.deleteConfig which already
+            // refuses to delete the active config; without this, the
+            // user would see a clickable cross that silently no-ops.
+            if (!config.equalsIgnoreCase("default") && !active) {
                 float iconSize = 6.5F;
                 float deleteX = deleteSectionX(rowX, rowWidth) + (CONFIG_DELETE_WIDTH - iconSize) / 2.0F;
                 float iconY = rowY + (CONFIG_ROW_HEIGHT - iconSize) / 2.0F;
@@ -383,8 +387,12 @@ public class BackgroundComponent extends AbstractComponent {
             }
 
             if (isDeleteHovered(mouseX, mouseY, rowY)) {
-                // Only allow deletion if not default config
-                if (!config.equalsIgnoreCase("default")) {
+                // Only allow deletion when both (a) it's not the immutable
+                // "default" entry, and (b) it's not the currently active
+                // config. Mirrors the renderConfigs guard so the click
+                // region stays in sync with the visual icon.
+                boolean isActive = config.equalsIgnoreCase(configManager.getCurrentConfigName());
+                if (!config.equalsIgnoreCase("default") && !isActive) {
                     playButtonClickSound();
                     configManager.deleteConfig(config);
                     return true;
