@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.helpers.ChatScrollState;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 
 /**
