@@ -2,7 +2,9 @@ package vorga.phazeclient.implement.features.modules.other;
 
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.client.gui.hud.ChatHudLine;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
@@ -20,10 +22,20 @@ public final class ChatHelper extends Module {
     public final SectionSetting generalSection = new SectionSetting("General");
     public final BooleanSetting collapseRepeats = new BooleanSetting(
             "Collapse Repeats",
-            "Collapse consecutive identical chat messages into one with an (Nx) suffix"
+            "Collapse consecutive identical chat messages into one with a red (Nx) suffix"
     ).setValue(true);
 
     private boolean bypass = false;
+
+    /**
+     * The original styled text of the most recent unique message. Stored so
+     * collapsed re-renders can keep the original colors / formatting and
+     * append a separately-colored {@code (Nx)} suffix instead of flattening
+     * everything to plain white.
+     */
+    private Text lastBaseStyled;
+    private String lastBaseRaw;
+    private int lastCount;
 
     private ChatHelper() {
         super("chat_helper", "Chat Helper", ModuleCategory.UTILITIES);
@@ -37,7 +49,7 @@ public final class ChatHelper extends Module {
 
     @Override
     public String getDescription() {
-        return "Filters duplicate chat messages by collapsing them into one (Nx)";
+        return "Collapses repeated chat messages, preserving original colors with a red (Nx) suffix";
     }
 
     /**
@@ -49,51 +61,50 @@ public final class ChatHelper extends Module {
     }
 
     /**
-     * Inspects the latest message in the {@link ChatHud}. If it matches
-     * the {@code incoming} text (after stripping any prior {@code (Nx)}
-     * suffix), removes it from the message lists and returns a new
-     * {@link Text} containing the same base text with an incremented count
-     * suffix. Returns {@code null} when no collapse should happen and the
-     * caller should let vanilla render the message normally.
+     * Inspects the latest message in the {@link ChatHud}. If the new message
+     * matches the most recent unique base (ignoring any prior {@code (Nx)}
+     * suffix), removes the previous occurrence and returns a styled
+     * replacement: the ORIGINAL incoming text (with full color/formatting)
+     * followed by a red {@code (Nx)} sibling. Returns {@code null} when no
+     * collapse should happen.
      */
     public Text tryCollapse(ChatHud hud, Text incoming) {
         if (!isEnabled() || !collapseRepeats.isValue() || incoming == null) {
             return null;
         }
 
+        String incomingRaw = stripSuffixRaw(incoming.getString());
+
+        // Different message arrived: reset the collapse state so the next
+        // duplicate is counted against THIS one (whose styled form vanilla
+        // is about to render normally).
+        if (lastBaseRaw == null || !lastBaseRaw.equals(incomingRaw)) {
+            lastBaseStyled = incoming;
+            lastBaseRaw = incomingRaw;
+            lastCount = 1;
+            return null;
+        }
+
+        // Duplicate of the previous message - we need to remove whatever is
+        // currently sitting at the top of the chat and re-add a collapsed
+        // version.
         ChatHudAccessor accessor = (ChatHudAccessor) hud;
         List<ChatHudLine> messages = accessor.phaze$getMessages();
         if (messages == null || messages.isEmpty()) {
             return null;
         }
-
-        ChatHudLine topLine = messages.get(0);
-        if (topLine == null || topLine.content() == null) {
-            return null;
-        }
-
-        ParsedSuffix incomingParsed = stripSuffix(incoming.getString());
-        ParsedSuffix topParsed = stripSuffix(topLine.content().getString());
-
-        if (!incomingParsed.baseRaw.equals(topParsed.baseRaw)) {
-            return null;
-        }
-
-        int newCount = topParsed.count + 1;
-
-        // Remove the previous occurrence so we can re-add the collapsed one
-        // through vanilla's normal flow (which preserves wrapping, scroll
-        // index assignment, etc.).
         messages.remove(0);
         List<ChatHudLine.Visible> visible = accessor.phaze$getVisibleMessages();
         if (visible != null && !visible.isEmpty()) {
-            // Most chat messages fit on one wrapped line. Long wrapped lines
-            // can leave residual entries which is acceptable for v1; vanilla
-            // refresh on width change cleans them up eventually.
+            // Long wrapped lines can leave residual visible entries; vanilla
+            // refresh on width change cleans them up.
             visible.remove(0);
         }
 
-        return Text.literal(incomingParsed.baseRaw + " (" + newCount + "x)");
+        lastCount++;
+        MutableText replacement = lastBaseStyled.copy()
+                .append(Text.literal(" (" + lastCount + "x)").formatted(Formatting.RED));
+        return replacement;
     }
 
     public void runWithBypass(Runnable runnable) {
@@ -105,22 +116,19 @@ public final class ChatHelper extends Module {
         }
     }
 
-    private ParsedSuffix stripSuffix(String text) {
+    /**
+     * Strips a trailing {@code " (Nx)"} suffix from a raw message string so
+     * comparisons treat "hello" and "hello (3x)" as the same base. The numeric
+     * count itself is irrelevant when matching - we keep our own counter.
+     */
+    private String stripSuffixRaw(String text) {
         if (text == null) {
-            return new ParsedSuffix("", 1);
+            return "";
         }
         Matcher matcher = COUNT_SUFFIX.matcher(text);
         if (matcher.find()) {
-            int count;
-            try {
-                count = Integer.parseInt(matcher.group(1));
-            } catch (NumberFormatException ignored) {
-                count = 1;
-            }
-            return new ParsedSuffix(text.substring(0, matcher.start()), count);
+            return text.substring(0, matcher.start());
         }
-        return new ParsedSuffix(text, 1);
+        return text;
     }
-
-    private record ParsedSuffix(String baseRaw, int count) {}
 }
