@@ -115,6 +115,13 @@ public final class ShulkerPreview extends Module {
         if (y < 4) y = 4;
         if (y + PREVIEW_H > screenH - 4) y = screenH - 4 - PREVIEW_H;
 
+        // Flush whatever the screen already queued so its slot items / cursor
+        // stack render BELOW our preview, then render at a high Z so even
+        // vanilla tooltips (Z=400) can't poke through.
+        context.draw();
+        context.getMatrices().push();
+        context.getMatrices().translate(0.0F, 0.0F, 500.0F);
+
         // Background.
         context.fill(x, y, x + PREVIEW_W, y + PREVIEW_H, BG_COLOR);
         // Outline (1px on each side).
@@ -149,5 +156,13 @@ public final class ShulkerPreview extends Module {
             context.drawItem(stack, slotX, slotY);
             context.drawStackOverlay(mc.textRenderer, stack, slotX, slotY);
         }
+
+        // Flush our preview before popping so the high-Z translation actually
+        // sticks for the queued draws (DrawContext snapshots the matrix at
+        // submit time, so popping before draw() would still be correct, but
+        // explicit flushing here keeps our preview from re-batching with
+        // anything rendered later in the same frame).
+        context.draw();
+        context.getMatrices().pop();
     }
 }

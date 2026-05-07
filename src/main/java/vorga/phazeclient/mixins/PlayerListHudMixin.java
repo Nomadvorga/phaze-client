@@ -55,10 +55,17 @@ public class PlayerListHudMixin {
     }
 
     /**
-     * Push a translation matrix at the very start of the tab list render so
-     * the whole list slides in from above when first opened. The Animations
-     * module returns 0 once the slide has settled, making this a no-op for
-     * subsequent frames while the tab key stays held.
+     * Push a translation matrix at the start of the tab list render so the
+     * whole list slides up/down. The offset itself is computed once per
+     * frame inside {@link InGameHudTabSlideMixin} so the open and close
+     * branches share the same interpolated value.
+     *
+     * We also flush prior batches before pushing and again at the matching
+     * pop so DrawContext doesn't merge our translated text/icons with HUDs
+     * rendered immediately before/after the tab list - that's the source
+     * of the "text seems to lag behind the background" effect, since text
+     * runs through a deferred font batch that previously inherited a stale
+     * matrix.
      */
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$pushTabSlide(DrawContext context, int scaledWindowWidth,
@@ -69,7 +76,8 @@ public class PlayerListHudMixin {
         if (module == null || !module.isTabSlideEnabled()) {
             return;
         }
-        float offsetY = module.computeTabSlideOffsetY();
+        context.draw();
+        float offsetY = module.currentTabSlideOffset();
         context.getMatrices().push();
         if (offsetY != 0.0F) {
             context.getMatrices().translate(0.0F, offsetY, 0.0F);
@@ -85,6 +93,7 @@ public class PlayerListHudMixin {
         if (module == null || !module.isTabSlideEnabled()) {
             return;
         }
+        context.draw();
         context.getMatrices().pop();
     }
 

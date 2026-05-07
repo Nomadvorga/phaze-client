@@ -1,6 +1,5 @@
 package vorga.phazeclient.implement.features.modules.other;
 
-import net.minecraft.util.math.MathHelper;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
@@ -9,9 +8,25 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 public final class Animations extends Module {
     private static final Animations INSTANCE = new Animations();
 
-    private static final long TAB_SLIDE_DURATION_MS = 220L;
-    private static final long TAB_REOPEN_GAP_MS = 100L;
+    /** Total slide travel in GUI pixels. */
     private static final float TAB_SLIDE_TRAVEL = 18.0F;
+
+    /**
+     * Per-second decay factor used for frame-rate independent smoothing,
+     * inspired by the smooth-scrolling mod's {@code pow(smoothness, dt)}
+     * trick: at any frame {@code current = (current - target) * pow(s, dt)
+     * + target}. Lower values snap faster; this gives a noticeable but not
+     * sluggish slide.
+     */
+    private static final float TAB_SMOOTH_FACTOR = 0.0015F;
+
+    /**
+     * Distance in pixels at which we consider the slide "settled" - once
+     * we're closer than this AND the target matches the current direction,
+     * we stop forcing extra render frames during a close.
+     */
+    private static final float TAB_SETTLE_EPSILON = 0.15F;
+
     private static final int CHAT_FADE_IN_TICKS = 4;
 
     public final SectionSetting generalSection = new SectionSetting("General");
@@ -21,15 +36,18 @@ public final class Animations extends Module {
     ).setValue(true);
     public final BooleanSetting tabSlide = new BooleanSetting(
             "Tab Slide",
-            "Slide the player tab list in from the top when opening it"
+            "Slide the player tab list in from the top when opening or closing it"
     ).setValue(true);
     public final BooleanSetting hotbarShift = new BooleanSetting(
             "Hotbar Shift (WIP)",
             "Smoothly slide the hotbar selection highlight when changing slots (work in progress)"
     ).setValue(false);
 
-    private long tabLastFrameMs = 0L;
-    private long tabSlideStartMs = 0L;
+    /** Current interpolated offset; -TAB_SLIDE_TRAVEL = fully hidden. */
+    private float tabCurrentOffset = -TAB_SLIDE_TRAVEL;
+    /** Target offset: 0 when open, -TAB_SLIDE_TRAVEL when closed. */
+    private float tabTargetOffset = -TAB_SLIDE_TRAVEL;
+    private long tabLastFrameNanos = 0L;
 
     private Animations() {
         super("animations", "Animations", ModuleCategory.UTILITIES);
@@ -45,7 +63,7 @@ public final class Animations extends Module {
 
     @Override
     public String getDescription() {
-        return "Adds smooth UI animations: chat message fade-in, tab list slide-in";
+        return "Adds smooth UI animations: chat message fade-in, tab list slide-in/out";
     }
 
     public boolean isChatFadeEnabled() {
@@ -72,29 +90,70 @@ public final class Animations extends Module {
     }
 
     /**
-     * Computes a Y translation (in pixels) that should be applied to the
-     * tab list while it slides in from above. Negative values move the
-     * list upward. Tracks last-frame time so a brief gap (key released and
-     * re-pressed) restarts the animation, while consecutive frames keep
-     * progressing.
+     * Updates the tab slide target based on whether the player-list key is
+     * currently held. Should be called once per frame from the InGameHud
+     * mixin BEFORE either branch (open or closing) renders. Returns the
+     * current interpolated Y offset (in GUI pixels, negative = moved up).
      */
-    public float computeTabSlideOffsetY() {
+    public float tickTabSlide(boolean keyPressed) {
         if (!isTabSlideEnabled()) {
-            tabLastFrameMs = 0L;
+            // Reset to "open at zero" so a future toggle of the setting
+            // doesn't fire a stale slide.
+            tabCurrentOffset = 0.0F;
+            tabTargetOffset = 0.0F;
+            tabLastFrameNanos = 0L;
             return 0.0F;
         }
-        long now = System.currentTimeMillis();
-        if (tabLastFrameMs == 0L || now - tabLastFrameMs > TAB_REOPEN_GAP_MS) {
-            tabSlideStartMs = now;
+
+        tabTargetOffset = keyPressed ? 0.0F : -TAB_SLIDE_TRAVEL;
+
+        long now = System.nanoTime();
+        float dt;
+        if (tabLastFrameNanos == 0L) {
+            dt = 1.0F / 60.0F;
+        } else {
+            dt = (now - tabLastFrameNanos) / 1_000_000_000.0F;
+            if (dt > 0.25F) dt = 0.25F; // cap after long pauses (alt-tab etc.)
         }
-        tabLastFrameMs = now;
-        long elapsed = now - tabSlideStartMs;
-        if (elapsed >= TAB_SLIDE_DURATION_MS) {
-            return 0.0F;
+        tabLastFrameNanos = now;
+
+        // Frame-rate independent exponential decay: identical settle time
+        // regardless of FPS. Math.pow(s, dt) returns 1 when dt=0, smaller as
+        // dt grows.
+        float decay = (float) Math.pow(TAB_SMOOTH_FACTOR, dt);
+        tabCurrentOffset = (tabCurrentOffset - tabTargetOffset) * decay + tabTargetOffset;
+
+        // Snap to target once we're within epsilon to avoid endless tiny
+        // updates that prevent the closing forced-render path from giving up.
+        if (Math.abs(tabCurrentOffset - tabTargetOffset) < TAB_SETTLE_EPSILON) {
+            tabCurrentOffset = tabTargetOffset;
         }
-        float t = MathHelper.clamp(elapsed / (float) TAB_SLIDE_DURATION_MS, 0.0F, 1.0F);
-        // Ease-out cubic: starts fast, decelerates.
-        float eased = 1.0F - (1.0F - t) * (1.0F - t) * (1.0F - t);
-        return -TAB_SLIDE_TRAVEL * (1.0F - eased);
+        return tabCurrentOffset;
+    }
+
+    /**
+     * True while the tab list is currently being shown via the slide
+     * (either fully open, mid-open, or mid-close). The InGameHud mixin
+     * uses this to keep rendering the tab list one extra frame past the
+     * key release, until the closing slide finishes.
+     */
+    public boolean isTabSlideRendering(boolean keyPressed) {
+        if (!isTabSlideEnabled()) {
+            return keyPressed;
+        }
+        if (keyPressed) return true;
+        // Closing animation in progress while we're not yet at -TAB_SLIDE_TRAVEL.
+        return tabCurrentOffset > -TAB_SLIDE_TRAVEL + TAB_SETTLE_EPSILON;
+    }
+
+    /**
+     * Returns the most recently computed slide offset without ticking. Used
+     * by the {@link vorga.phazeclient.mixins.PlayerListHudMixin} when it
+     * pushes the matrix translate inside {@code render()}; the actual tick
+     * happens in the InGameHud wrapper so we get a single per-frame update
+     * shared between the open and close branches.
+     */
+    public float currentTabSlideOffset() {
+        return tabCurrentOffset;
     }
 }

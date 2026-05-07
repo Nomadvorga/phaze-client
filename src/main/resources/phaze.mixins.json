@@ -44,7 +44,8 @@
     "ChatHudAccessor",
     "ChatHudCollapseMixin",
     "ChatHudFadeInMixin",
-    "HandledScreenShulkerPreviewMixin"
+    "HandledScreenShulkerPreviewMixin",
+    "InGameHudTabSlideMixin"
   ],
   "injectors": {
     "defaultRequire": 0

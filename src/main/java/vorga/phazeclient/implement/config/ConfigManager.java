@@ -31,6 +31,15 @@ public final class ConfigManager {
     private File currentConfig;
     private String currentConfigName = "default";
 
+    // Debounced auto-save state. The global Setting change listener flips
+    // dirtyAt to System.currentTimeMillis(); flushIfDirty (called once per
+    // tick) actually writes when the dirty timer is older than the debounce
+    // window. This avoids spamming disk during slider drags or rapid bind
+    // re-presses while still guaranteeing single-action settings persist.
+    private static final long AUTOSAVE_DEBOUNCE_MS = 250L;
+    private volatile long dirtyAt = 0L;
+    private volatile boolean autoSaveEnabled = false;
+
     public static ConfigManager getInstance() {
         return INSTANCE;
     }
@@ -161,6 +170,44 @@ public final class ConfigManager {
             save(currentConfig);
             saveCurrentConfigName();
         }
+    }
+
+    /**
+     * Enables the auto-save pipeline. Should be called AFTER the initial
+     * config load completes so the load-time {@code setValue} calls don't
+     * trigger their own redundant writes.
+     */
+    public void enableAutoSave() {
+        autoSaveEnabled = true;
+    }
+
+    /**
+     * Marks the in-memory config as dirty so the next {@link #flushIfDirty}
+     * tick writes it to disk. Cheap and lock-free; safe to call from any
+     * setting's notifyChange path.
+     */
+    public void markDirty() {
+        if (autoSaveEnabled) {
+            dirtyAt = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * Persists the current config to disk if {@link #markDirty} was called
+     * at least {@link #AUTOSAVE_DEBOUNCE_MS} ago. Called once per client tick
+     * from {@link vorga.phazeclient.core.Main}; the debounce keeps slider
+     * drags / bind re-presses from spamming disk.
+     */
+    public void flushIfDirty() {
+        long ts = dirtyAt;
+        if (ts == 0L) {
+            return;
+        }
+        if (System.currentTimeMillis() - ts < AUTOSAVE_DEBOUNCE_MS) {
+            return;
+        }
+        dirtyAt = 0L;
+        saveCurrentConfig();
     }
     
     public void loadConfig(String configName) {

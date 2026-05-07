@@ -208,6 +208,20 @@ public class Main implements ModInitializer {
         // }
 
         configManager.loadCurrentConfig();
+
+        // Auto-save: every Setting.notifyChange() (BindSetting.setKey,
+        // BooleanSetting.setValue, sliders, color pickers, ...) flips the
+        // dirty flag; flushIfDirty drains it on a tick if the debounce
+        // window has elapsed. Listener is wired AFTER loadCurrentConfig so
+        // load-time setValue calls don't immediately mark the config dirty.
+        vorga.phazeclient.api.feature.module.setting.Setting.setGlobalChangeListener(
+                setting -> configManager.markDirty()
+        );
+        configManager.enableAutoSave();
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
+                client -> configManager.flushIfDirty()
+        );
+
         discordManager.init();
     }
 }
