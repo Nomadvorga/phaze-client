@@ -16,7 +16,7 @@ public final class HudOptimizer extends Module {
             .onChange(value -> BatchedHudBuffer.INSTANCE.setTargetFps(value.intValue()));
 
     private HudOptimizer() {
-        super("hudoptimizer", "HUD Optimizer", ModuleCategory.UTILITIES);
+        super("hudoptimizer", "HUD Optimizer", ModuleCategory.HUD);
         refreshRate.setFullWidth(true);
         setup(generalSection, refreshRate);
         BatchedHudBuffer.INSTANCE.setTargetFps((int) refreshRate.getValue());

@@ -197,13 +197,22 @@ public abstract class EntityRendererNametagMixin {
 
         MinecraftClient client = MinecraftClient.getInstance();
         int resolved = client != null ? module.getResolvedBackgroundColor(client) : vanillaBackgroundColor;
-        int vanillaAlpha = (vanillaBackgroundColor >>> 24) & 0xFF;
         int resolvedAlpha = (resolved >>> 24) & 0xFF;
         boolean vanillaPreset = "Vanilla".equalsIgnoreCase(module.backgroundPreset.getSelected());
-        int baseAlpha = vanillaPreset ? vanillaAlpha : resolvedAlpha;
-        // Scale opacity: 100% setting looks like 30%
-        baseAlpha = Math.round(baseAlpha * 0.3f);
-        // Apply vanilla distance-based opacity fade to custom background
+        int baseAlpha;
+        if (vanillaPreset) {
+            // Vanilla preset is pinned to a fixed 30% nametag background
+            // opacity per the user's request, independent of the player's
+            // textBackgroundColor accessibility option. (255 * 0.3 ~= 76.)
+            baseAlpha = Math.round(255 * 0.30f);
+        } else {
+            // Custom preset: backgroundOpacity slider maps 1:1 to alpha %
+            // (slider 40 -> 40% effective). The previous 0.3x compression
+            // factor has been removed so the slider value matches the
+            // user's mental model and stays consistent with the 2D HUD
+            // 40% default introduced in the same change.
+            baseAlpha = resolvedAlpha;
+        }
         int out = (baseAlpha << 24) | (resolved & 0x00FFFFFF);
 
         lastBackgroundSettingsSignature = settingsSignature;

@@ -30,7 +30,7 @@ public final class HitboxCustomizer extends Module {
             .setValue(false);
 
     private HitboxCustomizer() {
-        super("hitboxcustomizer", "Hitbox Customizer", ModuleCategory.UTILITIES);
+        super("hitboxcustomizer", "Hitbox Customizer", ModuleCategory.OTHER);
 
         hitboxColor.setFullWidth(true);
         reachColor.setFullWidth(true);

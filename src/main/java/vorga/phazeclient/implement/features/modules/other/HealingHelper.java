@@ -103,6 +103,16 @@ public final class HealingHelper extends Module {
         return "Pulses healing potions, golden apples, and enchanted gapples in your inventory based on HP, saturation, and a re-eat timer";
     }
 
+    @Override
+    public String getIcon() {
+        return "healing_helper.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     /**
      * Runs the enchanted-gapple eat-detector. Cheap (a few ItemStack reads
      * and an integer compare) and safe to call regardless of whether the
