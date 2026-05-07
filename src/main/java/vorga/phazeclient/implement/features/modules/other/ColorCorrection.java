@@ -43,6 +43,16 @@ public final class ColorCorrection extends Module {
         return "Color correction post-process effect";
     }
 
+    @Override
+    public String getIcon() {
+        return "color_correction.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     public float getBrightness() { return brightness.getValue(); }
     public float getContrast() { return contrast.getValue(); }
     public float getSaturation() { return saturation.getValue(); }
