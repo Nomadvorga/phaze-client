@@ -152,8 +152,6 @@ public class InGameHudMixin {
     private static boolean coordinatesCacheInitialized = false;
     private static List<ItemStack> armorStacksCache = new ArrayList<>();
     private static List<String> armorDurabilityTextsCache = new ArrayList<>();
-    private static boolean armorCacheInitialized = false;
-    private static net.minecraft.world.World lastWorld = null;
     private static List<StatusEffectInstance> potionEffectsCache = new ArrayList<>();
     private static List<String> potionNamesCache = new ArrayList<>();
     private static List<String> potionDurationsCache = new ArrayList<>();
@@ -769,47 +767,44 @@ public class InGameHudMixin {
             return;
         }
 
-        // Check if world has changed and reset cache
-        net.minecraft.world.World currentWorld = client.player.getWorld();
-        if (currentWorld != lastWorld) {
-            armorCacheInitialized = false;
-            lastWorld = currentWorld;
+        // Rebuild the armor list every frame. Caching it across frames was
+        // causing the HUD to stay invisible if the player joined the world
+        // without armor: the cache was only invalidated on world change, so
+        // equipping a piece of armor mid-game never refreshed it and the
+        // empty-list early return below kept the HUD permanently hidden.
+        // The list has at most 5 entries (4 armor + 1 shield) so the
+        // per-frame cost is negligible.
+        List<ItemStack> updatedStacks = new ArrayList<>();
+        List<String> updatedDurabilityTexts = new ArrayList<>();
+
+        var inventory = client.player.getInventory();
+        for (int slot = 3; slot >= 0; slot--) {
+            ItemStack stack = inventory.getArmorStack(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            updatedStacks.add(stack);
+            updatedDurabilityTexts.add(formatDurabilityText(module, stack));
         }
 
-        if (!armorCacheInitialized) {
-            List<ItemStack> updatedStacks = new ArrayList<>();
-            List<String> updatedDurabilityTexts = new ArrayList<>();
-
-            var inventory = client.player.getInventory();
-            for (int slot = 3; slot >= 0; slot--) {
-                ItemStack stack = inventory.getArmorStack(slot);
-                if (stack.isEmpty()) {
-                    continue;
-                }
-                updatedStacks.add(stack);
-                updatedDurabilityTexts.add(formatDurabilityText(module, stack));
-            }
-
-            ItemStack offHand = client.player.getOffHandStack();
-            if (!offHand.isEmpty() && offHand.isOf(Items.SHIELD)) {
-                updatedStacks.add(offHand);
-                updatedDurabilityTexts.add(formatDurabilityText(module, offHand));
-            }
-
-            if (updatedStacks.isEmpty() && chatEditing) {
-                updatedStacks.add(new ItemStack(Items.DIAMOND_HELMET));
-                updatedStacks.add(new ItemStack(Items.DIAMOND_CHESTPLATE));
-                updatedStacks.add(new ItemStack(Items.DIAMOND_LEGGINGS));
-                updatedStacks.add(new ItemStack(Items.DIAMOND_BOOTS));
-                for (ItemStack stack : updatedStacks) {
-                    updatedDurabilityTexts.add(module.formatDurability(stack.getMaxDamage(), stack.getMaxDamage()));
-                }
-            }
-
-            armorStacksCache = updatedStacks;
-            armorDurabilityTextsCache = updatedDurabilityTexts;
-            armorCacheInitialized = true;
+        ItemStack offHand = client.player.getOffHandStack();
+        if (!offHand.isEmpty() && offHand.isOf(Items.SHIELD)) {
+            updatedStacks.add(offHand);
+            updatedDurabilityTexts.add(formatDurabilityText(module, offHand));
         }
+
+        if (updatedStacks.isEmpty() && chatEditing) {
+            updatedStacks.add(new ItemStack(Items.DIAMOND_HELMET));
+            updatedStacks.add(new ItemStack(Items.DIAMOND_CHESTPLATE));
+            updatedStacks.add(new ItemStack(Items.DIAMOND_LEGGINGS));
+            updatedStacks.add(new ItemStack(Items.DIAMOND_BOOTS));
+            for (ItemStack stack : updatedStacks) {
+                updatedDurabilityTexts.add(module.formatDurability(stack.getMaxDamage(), stack.getMaxDamage()));
+            }
+        }
+
+        armorStacksCache = updatedStacks;
+        armorDurabilityTextsCache = updatedDurabilityTexts;
 
         List<ItemStack> stacks = armorStacksCache;
         List<String> durabilityTexts = armorDurabilityTextsCache;
