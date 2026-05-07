@@ -53,6 +53,7 @@
     "HandledScreenHealingHelperMixin",
     "ScrollableWidgetSmoothScrollMixin",
     "ChatHudMessageSlideMixin",
+    "ChatHudSmoothScrollMixin",
     "ChatScreenInputFieldMixin"
   ],
   "injectors": {
