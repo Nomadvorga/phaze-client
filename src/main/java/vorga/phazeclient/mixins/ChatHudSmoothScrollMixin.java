@@ -189,16 +189,26 @@ public abstract class ChatHudSmoothScrollMixin {
     }
 
     /**
-     * Pull each line's y-coordinate up by the sub-pixel remainder so the
+     * Pull each line's y-baseline up by the sub-pixel remainder so the
      * back-stepped content slides into the post-scroll positions
-     * smoothly. Targets the {@code y} local in vanilla's render-loop
-     * ({@code y = (m - r * lineHeight) + p}) by name to stay robust
-     * against bytecode shuffling between MC patches.
+     * smoothly. Targets the {@code x} local in vanilla's render-loop
+     * ({@code x = m - r * lineHeight}) by ordinal: it's the 16th
+     * {@code istore} in {@code render}'s bytecode in MC 1.21.4, so
+     * {@code ordinal=15} (0-indexed). The text {@code y} local is
+     * computed downstream as {@code y = x + p}, so modifying {@code x}
+     * cascades into both the indicator/background {@code fill} calls
+     * (which read it directly) and the {@code drawTextWithShadow}
+     * y-arg, keeping the per-line elements aligned through the slide.
+     *
+     * <p>We can't target by LVT {@code name="y"}: Minecraft's
+     * production-remapped jar strips local-variable debug names so the
+     * Mixin name-matcher would silently no-op. Ordinal positional
+     * matching is what the reference smsk Smooth-Scrolling mod does too.
      */
-    @ModifyVariable(method = "render", at = @At("STORE"), name = "y")
-    private int phaze$shiftLineY(int y) {
-        if (!phaze$enabled()) return y;
-        return y - phaze$drawOffsetPx();
+    @ModifyVariable(method = "render", at = @At("STORE"), ordinal = 15)
+    private int phaze$shiftLineY(int x) {
+        if (!phaze$enabled()) return x;
+        return x - phaze$drawOffsetPx();
     }
 
     @Inject(method = "render", at = @At("RETURN"))
