@@ -222,6 +222,15 @@ public class Main implements ModInitializer {
                 client -> configManager.flushIfDirty()
         );
 
+        // Final save on game close. The tick-based debounce can miss a
+        // change made within ~250ms of quitting; this catches it. We call
+        // saveCurrentConfig() unconditionally rather than flushIfDirty()
+        // because dirty flag may be cleared by an unrelated flush moments
+        // earlier - re-saving a clean config is cheap.
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(
+                client -> configManager.saveCurrentConfig()
+        );
+
         discordManager.init();
     }
 }
