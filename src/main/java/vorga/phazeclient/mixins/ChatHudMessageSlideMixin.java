@@ -69,7 +69,7 @@ public abstract class ChatHudMessageSlideMixin {
         // ChatHudSmoothScrollMixin temporarily zeroes scrolledLines for its
         // own back-step trick; honour its flag so we don't slide while it's
         // mid-animation (would cause both translates to stack and jitter).
-        if (ChatHudSmoothScrollMixin.phaze$suppressSlide) {
+        if (ChatScrollState.suppressSlide) {
             return;
         }
         // While the user is scrolled up, vanilla pins the visible window
