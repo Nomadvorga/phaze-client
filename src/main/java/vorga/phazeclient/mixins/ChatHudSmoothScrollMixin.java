@@ -2,9 +2,11 @@ package vorga.phazeclient.mixins;
 
 import java.util.List;
 
+import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.text.OrderedText;
+import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -68,6 +70,10 @@ public abstract class ChatHudSmoothScrollMixin {
     @Shadow private int scrolledLines;
 
     @Shadow protected abstract int getLineHeight();
+
+    @Shadow public abstract int getVisibleLineCount();
+
+    @Shadow private boolean isChatHidden() { return false; }
 
     @Unique private float phaze$scrollOffset;
     @Unique private boolean phaze$refreshing = false;
@@ -181,6 +187,39 @@ public abstract class ChatHudSmoothScrollMixin {
     }
 
     /**
+     * Clamp the chat draw region with a scissor so the back-stepped row
+     * at the top and the addLinesUnder row at the bottom can't bleed
+     * past the natural chat boundary while the smooth-scroll slide is
+     * mid-flight. Targets LVT ordinal=7 = slot 12 ({@code m}, the chat
+     * baseline y); MC's {@link DrawContext#enableScissor} works in
+     * unscaled GUI coords with no matrix-translate compensation, so we
+     * read the current matrix translate ourselves and shift our local
+     * scissor rect into screen space.
+     */
+    @ModifyVariable(method = "render", at = @At("STORE"), ordinal = 7)
+    private int phaze$mask(int m, @Local(argsOnly = true) DrawContext ctx) {
+        if (!phaze$enabled() || isChatHidden()) return m;
+
+        int chatHeight = getVisibleLineCount() * getLineHeight();
+        int masktop = m - chatHeight;
+        int maskbottom = m;
+
+        Vector3f translate = ctx.getMatrices().peek().getPositionMatrix()
+                .getTranslation(new Vector3f());
+        int tx = (int) translate.x;
+        int ty = (int) translate.y;
+
+        // Pad: -2/+2 keeps underlines and descenders inside the clip
+        // when a sub-pixel slide is in progress.
+        ctx.enableScissor(
+                tx - 20,
+                ty + masktop - 2,
+                tx + ctx.getScaledWindowWidth(),
+                ty + maskbottom + 2);
+        return m;
+    }
+
+    /**
      * Pull each line's y-baseline up by the sub-pixel remainder. Targets
      * LVT ordinal=18 = slot 32 (x = m - r*lineHeight). The downstream
      * text-y (slot 33 = x + p) inherits the shift, and the indicator /
@@ -202,6 +241,18 @@ public abstract class ChatHudSmoothScrollMixin {
     private int phaze$addLinesUnder(int r) {
         if (scrolledLines == 0 || !phaze$enabled() || phaze$getChatScrollOffset() <= 0) return r;
         return r - 1;
+    }
+
+    /**
+     * Drop the scissor once the visible-line loop has finished. Targets
+     * the only {@code lstore} in {@code render} (slot 23 reused as a
+     * long after the int loop scope closes).
+     */
+    @ModifyVariable(method = "render", at = @At("STORE"))
+    private long phaze$demask(long a, @Local(argsOnly = true) DrawContext ctx) {
+        if (!phaze$enabled() || isChatHidden()) return a;
+        ctx.disableScissor();
+        return a;
     }
 
     @Inject(method = "render", at = @At("RETURN"))
