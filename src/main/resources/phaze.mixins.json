@@ -39,7 +39,12 @@
     "ItemEntityRendererPhysicsMixin",
     "CameraFreeLookMixin",
     "PlayerInventoryPotionMixin",
-    "KeyboardElytraUtilityMixin"
+    "KeyboardElytraUtilityMixin",
+    "ClientPlayNetworkHandlerItemPickupMixin",
+    "ChatHudAccessor",
+    "ChatHudCollapseMixin",
+    "ChatHudFadeInMixin",
+    "HandledScreenShulkerPreviewMixin"
   ],
   "injectors": {
     "defaultRequire": 0
