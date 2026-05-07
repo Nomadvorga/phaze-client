@@ -165,7 +165,24 @@ public final class ConfigManager {
         save(getConfigFile(configName));
     }
     
+    /**
+     * Persists the in-memory state to whatever config is currently active.
+     *
+     * <p>Special-case: the {@code default} config is treated as a
+     * read-only baseline (it's effectively a "factory reset" target).
+     * Any attempt to write to it - whether via the auto-save pipeline
+     * after the user changes a setting, or via an explicit save - is
+     * transparently redirected to a config named {@code autosave}, which
+     * is created on demand and switched to the active config so the
+     * {@code default} file stays pristine. This way the user can always
+     * "Reset to Default" without first having to remember which settings
+     * they had changed.
+     */
     public void saveCurrentConfig() {
+        if ("default".equalsIgnoreCase(currentConfigName)) {
+            currentConfigName = "autosave";
+            currentConfig = getConfigFile("autosave");
+        }
         if (currentConfig != null) {
             save(currentConfig);
             saveCurrentConfigName();
