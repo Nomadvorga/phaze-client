@@ -29,6 +29,16 @@ public final class ItemPhysics extends Module {
         return "Realistic item physics";
     }
 
+    @Override
+    public String getIcon() {
+        return "item_physics.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     public float getRotationSpeed() {
         return rotationSpeed.getValue();
     }

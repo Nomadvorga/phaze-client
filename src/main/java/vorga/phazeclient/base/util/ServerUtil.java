@@ -129,6 +129,50 @@ public class ServerUtil {
     }
 
     /**
+     * Check if ElytraUtility is supported on current server
+     * Supported servers: FunTime, FunSky, HolyTime, SpookyTime, FunMoon, Singleplayer
+     */
+    public static boolean isElytraUtilitySupported() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) {
+            return false;
+        }
+
+        if (mc.isInSingleplayer()) {
+            return true;
+        }
+
+        return hasServerSegment("funtime")
+                || hasServerSegment("funsky")
+                || hasServerSegment("holytime")
+                || hasServerSegment("spookytime")
+                || hasServerSegment("funmoon");
+    }
+
+    /**
+     * Check if MouseClicker (Tape Mouse) is supported on current server
+     * Supported servers: FunTime, FunSky, HolyTime, Space-Times, SpookyTime, FunMoon, FillCube, Singleplayer
+     */
+    public static boolean isMouseClickerSupported() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) {
+            return false;
+        }
+
+        if (mc.isInSingleplayer()) {
+            return true;
+        }
+
+        return hasServerSegment("funtime")
+                || hasServerSegment("funsky")
+                || hasServerSegment("holytime")
+                || hasServerSegment("space-times")
+                || hasServerSegment("spookytime")
+                || hasServerSegment("funmoon")
+                || hasServerSegment("fillcube");
+    }
+
+    /**
      * Get current server address
      */
     public static String getServerAddress() {

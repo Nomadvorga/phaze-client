@@ -388,15 +388,22 @@ public class Blur implements Shape {
         }
 
         if (cacheFrame) {
-            boolean guiActive = client.currentScreen != null;
-            boolean cameraMoved = hasCameraMoved(client);
-            boolean shouldRefreshHudInput = forceHudRefresh || resized || guiActive || cameraMoved;
-
-            // Disable cached frame optimization to prevent flickering
-            if (shouldRefreshHudInput) {
+            // Capture the world framebuffer once per frame for HUD blur. We
+            // can't gate this on camera movement: entities (other players,
+            // mobs, items, particles) animate even when the camera stands
+            // still, so a stale snapshot would show the world *behind* an
+            // entity instead of a blurred version of the entity itself.
+            // beginCachedFrame() resets cachedFramePrepared to false at the
+            // start of every InGameHud.render frame, so this captures exactly
+            // once per frame and is reused by subsequent blur HUDs.
+            boolean needsCapture = !cachedFramePrepared || resized || forceHudRefresh;
+            if (needsCapture) {
                 captureWorldInput(client, framebufferWidth, framebufferHeight);
                 forceHudRefresh = false;
             }
+            // Keep camera tracking up to date so other call sites that still
+            // rely on hasCameraMoved() observe consistent deltas.
+            hasCameraMoved(client);
             cachedFramePrepared = true;
             return true;
         }

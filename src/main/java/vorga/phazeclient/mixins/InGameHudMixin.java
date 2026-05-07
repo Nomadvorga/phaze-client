@@ -246,12 +246,21 @@ public class InGameHudMixin {
     }
 
     private void renderHudInternal(DrawContext context) {
-        // First call within the current frame is responsible for all global
-        // state updates (delta-time, click tracking, guide reset). A second
-        // call (the blur-only pass after the batch blit) reuses the values
-        // computed during the first call to avoid double-tracking clicks /
-        // halving animation deltas.
+        // First call within the current frame is responsible for global state
+        // updates that must run once per frame BEFORE per-HUD logic
+        // (delta-time, click tracking, guide reset). A second call (the
+        // blur-only pass after the batch blit) reuses the values computed
+        // during the first call to avoid double-tracking clicks / halving
+        // animation deltas.
+        //
+        // Last call is responsible for state updates that must run AFTER all
+        // HUD drag/resize detection has completed (wasMouseDown edge tracking
+        // and guide rendering). Because blur HUDs only run their drag logic in
+        // pass 2 (inBlurPass), updating wasMouseDown in pass 1 would short-
+        // circuit the press-edge detection for blur HUDs and prevent dragging
+        // them while chat is open.
         boolean firstCallThisFrame = !renderedThisFrame;
+        boolean lastCallThisFrame = !inBatchPass;
         renderedThisFrame = true;
 
         MinecraftClient client = MinecraftClient.getInstance();
@@ -438,7 +447,7 @@ public class InGameHudMixin {
         //         renderScoreboardHud(context, client, ScoreboardHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
         //                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
-        if (firstCallThisFrame) {
+        if (lastCallThisFrame) {
             if (chatEditing) {
                 verticalGuideProgress = approachExp(verticalGuideProgress, showVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
                 horizontalGuideProgress = approachExp(horizontalGuideProgress, showHorizontalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);

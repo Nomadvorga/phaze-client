@@ -163,6 +163,15 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HitboxCustomizer.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HitboxCustomizer.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.LockSlot.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.LockSlot.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.MouseClicker.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.MouseClicker.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ElytraUtility.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ElytraUtility.getInstance());
+        }
         if (moduleProvider.get(MotionBlur.class) == null) {
             moduleProvider.getModules().add(MotionBlur.getInstance());
         }
@@ -171,6 +180,9 @@ public class Main implements ModInitializer {
         }
         if (moduleProvider.get(ColorCorrection.class) == null) {
             moduleProvider.getModules().add(ColorCorrection.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.FastExp.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.FastExp.getInstance());
         }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {

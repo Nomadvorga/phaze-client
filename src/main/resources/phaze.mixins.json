@@ -28,6 +28,7 @@
     "InventoryScreenAutoSwapMixin",
     "ScreenOpenMixin",
     "MinecraftClientFramebufferMixin",
+    "MinecraftClientFastExpMixin",
     "GameRendererMotionBlurMixin",
     "GameRendererColorCorrectionMixin",
     "WorldRendererMotionBlurMixin",
@@ -37,7 +38,8 @@
     "ItemEntityPhysicsMixin",
     "ItemEntityRendererPhysicsMixin",
     "CameraFreeLookMixin",
-    "PlayerInventoryPotionMixin"
+    "PlayerInventoryPotionMixin",
+    "KeyboardElytraUtilityMixin"
   ],
   "injectors": {
     "defaultRequire": 0
