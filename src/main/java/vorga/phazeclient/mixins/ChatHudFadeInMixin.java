@@ -19,7 +19,7 @@ import vorga.phazeclient.implement.features.modules.other.Animations;
 public abstract class ChatHudFadeInMixin {
 
     @Inject(method = "getMessageOpacityMultiplier", at = @At("RETURN"), cancellable = true)
-    private void phaze$applyFadeIn(int messageAge, CallbackInfoReturnable<Double> cir) {
+    private static void phaze$applyFadeIn(int messageAge, CallbackInfoReturnable<Double> cir) {
         Animations module = Animations.getInstance();
         if (module == null || !module.isChatFadeEnabled()) {
             return;
