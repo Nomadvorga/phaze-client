@@ -60,6 +60,16 @@ public final class ShulkerPreview extends Module {
         return "Shows shulker box contents in a tooltip while hovering it in any inventory";
     }
 
+    @Override
+    public String getIcon() {
+        return "shulker_preview.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     /**
      * True if the user wants the preview to render right now: either Always
      * Show is on, or the configured bind key is currently held.

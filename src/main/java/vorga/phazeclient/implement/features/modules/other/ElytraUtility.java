@@ -33,7 +33,9 @@ public final class ElytraUtility extends Module {
     private long lastActionMs;
 
     private ElytraUtility() {
-        super("elytrautility", "Elytra Utility", ModuleCategory.UTILITIES);
+        // Internal id stays as "elytrautility" so existing user configs that
+        // reference the module by id continue to load without migration.
+        super("elytrautility", "Elytra Swap", ModuleCategory.UTILITIES);
         keybind.setFullWidth(true);
         setup(generalSection, keybind);
     }
