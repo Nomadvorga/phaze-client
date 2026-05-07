@@ -9,7 +9,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import vorga.phazeclient.helpers.ChatScrollState;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 
 /**
@@ -29,13 +28,15 @@ import vorga.phazeclient.implement.features.modules.other.Animations;
  * from the bottom ({@code scrolledLines != 0}); otherwise the displacement
  * would visually fight the user's scroll position.
  *
- * <p>This replaces the prior matrix-decay-based smooth scroll mixin which
- * caused the bottom line to flicker because vanilla shifts the visible
- * message buffer atomically per frame whereas our offset was decaying
- * continuously - the two mechanisms ended up disagreeing about where the
- * newest line should land. The reference's approach side-steps the issue
- * entirely by using time-since-arrival rather than scroll-delta as the
- * animation driver.
+ * <p>This is the only chat-scroll animation we ship: a previous
+ * matrix-decay smooth-scroll port (smsk-style back-step + sub-pixel
+ * matrix translate) was removed because it inherently makes every row
+ * slide a fractional pixel during the decay window, and there's no
+ * way to keep both top and bottom rows static at the chat-box edges
+ * while still moving the content continuously. The new-message slide
+ * here side-steps that entirely by using time-since-arrival as the
+ * animation driver - rows only move during the brief slide-in window
+ * after a message arrives, and they all share one rigid translate.
  */
 @Mixin(ChatHud.class)
 public abstract class ChatHudMessageSlideMixin {
@@ -65,12 +66,6 @@ public abstract class ChatHudMessageSlideMixin {
 
         Animations module = Animations.getInstance();
         if (module == null || !module.isChatSmoothScrollEnabled()) {
-            return;
-        }
-        // ChatHudSmoothScrollMixin temporarily zeroes scrolledLines for its
-        // own back-step trick; honour its flag so we don't slide while it's
-        // mid-animation (would cause both translates to stack and jitter).
-        if (ChatScrollState.suppressSlide) {
             return;
         }
         // While the user is scrolled up, vanilla pins the visible window
