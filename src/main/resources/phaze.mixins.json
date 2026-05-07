@@ -47,6 +47,7 @@
     "HandledScreenShulkerPreviewMixin",
     "InGameHudTabSlideMixin",
     "InGameHudHotbarSlideMixin",
+    "InGameHudHotbarFlushMixin",
     "ScrollableWidgetSmoothScrollMixin",
     "ChatHudMessageSlideMixin",
     "ChatScreenInputFieldMixin"
