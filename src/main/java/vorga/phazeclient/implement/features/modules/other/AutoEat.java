@@ -51,6 +51,16 @@ public final class AutoEat extends Module {
         return "Automatically eats food (or runs /feed) when hunger drops below the threshold";
     }
 
+    @Override
+    public String getIcon() {
+        return "auto_eat.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     /**
      * Returns true while a physical-eating cycle is currently in progress.
      * The {@link vorga.phazeclient.mixins.ClientPlayerInteractionManagerMixin}

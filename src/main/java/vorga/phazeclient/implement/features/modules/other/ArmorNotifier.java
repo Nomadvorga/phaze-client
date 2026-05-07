@@ -47,6 +47,16 @@ public final class ArmorNotifier extends Module {
     }
 
     @Override
+    public String getIcon() {
+        return "armor_notifier.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
+    @Override
     public void deactivate() {
         wasBelow.clear();
     }
