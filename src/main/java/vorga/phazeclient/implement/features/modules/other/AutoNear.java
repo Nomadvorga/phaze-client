@@ -46,13 +46,21 @@ public final class AutoNear extends Module {
 
     @Override
     public boolean isServerAllowed() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        // Singleplayer is treated as a permitted environment so the user
+        // can test / use the module on their own integrated server, even
+        // though /near won't have any effect there without a backing mod
+        // or datapack. Multiplayer keeps the FunTime allowlist.
+        if (mc != null && mc.isInSingleplayer()) {
+            return true;
+        }
         return ServerUtil.isFunTimeServer();
     }
 
     public void tick() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        
-        if (!isEnabled() || mc.player == null || mc.getNetworkHandler() == null || !ServerUtil.isFunTimeServer()) {
+
+        if (!isEnabled() || mc.player == null || mc.getNetworkHandler() == null || !isServerAllowed()) {
             return;
         }
 
