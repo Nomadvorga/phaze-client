@@ -54,6 +54,7 @@
     "ScrollableWidgetSmoothScrollMixin",
     "ChatHudMessageSlideMixin",
     "ChatScreenInputFieldMixin",
+    "LightmapTextureManagerBrightMixin",
     "LivingEntityMixin",
     "PlayerEntityMixin"
   ],
