@@ -11,6 +11,7 @@ import net.minecraft.scoreboard.ScoreboardObjective;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -35,13 +36,29 @@ public abstract class InGameHudTabSlideMixin {
     @Final
     private PlayerListHud playerListHud;
 
+    /**
+     * Latches true the first frame we see the playerList key actually held
+     * down, latches back to false once the slide-out animation reaches the
+     * fully-closed position. Used to gate the forced close render below so
+     * we never play a phantom close animation in cases where the tab list
+     * was never actually opened (e.g. immediately after the user toggles
+     * the Animations module on, where {@code tabCurrentOffset} could still
+     * be in a non-closed transient state from earlier disabled-branch
+     * resets). Singleplayer was the most visible offender: the user reported
+     * the tab list briefly appearing and playing a close animation despite
+     * never having pressed Tab.
+     */
+    @Unique private boolean phaze$wasOpenedThisCycle = false;
+
     @Inject(method = "render", at = @At("TAIL"))
     private void phaze$tabSlideTick(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         Animations module = Animations.getInstance();
         if (module == null || !module.isTabSlideEnabled()) {
+            phaze$wasOpenedThisCycle = false;
             return;
         }
         if (client == null || client.options == null) {
+            phaze$wasOpenedThisCycle = false;
             return;
         }
 
@@ -52,14 +69,26 @@ public abstract class InGameHudTabSlideMixin {
         module.tickTabSlide(keyPressed);
 
         // Vanilla already rendered the tab list in this frame; nothing more
-        // to do on the open path.
+        // to do on the open path. Latch the cycle flag so a subsequent
+        // release legitimately triggers our forced close render.
         if (keyPressed) {
+            phaze$wasOpenedThisCycle = true;
             return;
         }
 
         // Key released and slide-out has fully settled - vanilla's
         // playerListHud.setVisible(false) call earlier this frame is fine.
         if (!module.isTabSlideRendering(false)) {
+            phaze$wasOpenedThisCycle = false;
+            return;
+        }
+
+        // The slide system thinks a close animation is in progress, but if
+        // the user never actually held Tab during this open/close cycle the
+        // animation is a phantom (e.g. left over from a stale offset after
+        // a module enable/disable transition). Refuse to force-render in
+        // that case so the tab list doesn't briefly appear out of nowhere.
+        if (!phaze$wasOpenedThisCycle) {
             return;
         }
 

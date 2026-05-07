@@ -217,12 +217,18 @@ public final class Animations extends Module {
      */
     public float tickTabSlide(boolean keyPressed) {
         if (!isTabSlideEnabled()) {
-            // Reset to "open at zero" so a future toggle of the setting
-            // doesn't fire a stale slide.
-            tabCurrentOffset = 0.0F;
-            tabTargetOffset = 0.0F;
+            // Park the offsets at the CLOSED position so a future toggle
+            // of the setting doesn't kick off a phantom slide-out from a
+            // stale "open" offset. The previous code reset to 0 (open),
+            // which caused a visible close animation the first frame the
+            // user re-enabled the module - particularly noticeable in
+            // singleplayer where vanilla normally never opens the tab on
+            // its own, so the phantom animation looked like the mod was
+            // forcing the tab list to appear.
+            tabCurrentOffset = -TAB_SLIDE_TRAVEL;
+            tabTargetOffset = -TAB_SLIDE_TRAVEL;
             tabLastFrameNanos = 0L;
-            return 0.0F;
+            return -TAB_SLIDE_TRAVEL;
         }
 
         tabTargetOffset = keyPressed ? 0.0F : -TAB_SLIDE_TRAVEL;
