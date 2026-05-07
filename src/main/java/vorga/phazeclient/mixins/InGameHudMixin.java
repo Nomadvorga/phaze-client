@@ -2715,6 +2715,12 @@ public class InGameHudMixin {
             int iconY = text.isEmpty() || text.contains("No target") ? 1 : 5; // Lower by 4px when targeting
             context.drawItem(icon, 1, iconY);
             context.draw();
+            // Re-enable blend so subsequent HUD elements (hotbar selection,
+            // tab list, chat, etc.) render with proper alpha blending. Without
+            // this the rest of the HUD inherits a blend-off state and looks
+            // noticeably darker/desaturated until something else triggers a
+            // RenderLayer state re-setup (e.g. a context.draw() flush).
+            RenderSystem.enableBlend();
             context.getMatrices().pop();
         }
         
