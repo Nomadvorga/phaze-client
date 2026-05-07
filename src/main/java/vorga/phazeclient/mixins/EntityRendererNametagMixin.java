@@ -196,24 +196,14 @@ public abstract class EntityRendererNametagMixin {
         }
 
         MinecraftClient client = MinecraftClient.getInstance();
-        int resolved = client != null ? module.getResolvedBackgroundColor(client) : vanillaBackgroundColor;
-        int resolvedAlpha = (resolved >>> 24) & 0xFF;
-        boolean vanillaPreset = "Vanilla".equalsIgnoreCase(module.backgroundPreset.getSelected());
-        int baseAlpha;
-        if (vanillaPreset) {
-            // Vanilla preset is pinned to a fixed 30% nametag background
-            // opacity per the user's request, independent of the player's
-            // textBackgroundColor accessibility option. (255 * 0.3 ~= 76.)
-            baseAlpha = Math.round(255 * 0.30f);
-        } else {
-            // Custom preset: backgroundOpacity slider maps 1:1 to alpha %
-            // (slider 40 -> 40% effective). The previous 0.3x compression
-            // factor has been removed so the slider value matches the
-            // user's mental model and stays consistent with the 2D HUD
-            // 40% default introduced in the same change.
-            baseAlpha = resolvedAlpha;
-        }
-        int out = (baseAlpha << 24) | (resolved & 0x00FFFFFF);
+        // NametagHud.getResolvedBackgroundColor already encodes the
+        // nametag-specific alpha rules: 30% pinned for vanilla preset
+        // and a linear slider->alpha mapping capped at 30% for custom
+        // presets. The mixin just consumes that color directly so the
+        // alpha curve stays smooth all the way down to slider=0 (no more
+        // "snap to invisible" around the 30 mark that the old multiplier
+        // path produced).
+        int out = client != null ? module.getResolvedBackgroundColor(client) : vanillaBackgroundColor;
 
         lastBackgroundSettingsSignature = settingsSignature;
         lastBackgroundInputColor = vanillaBackgroundColor;
