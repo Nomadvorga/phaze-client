@@ -135,6 +135,16 @@ public final class Animations extends Module {
         return "Adds smooth UI animations: chat message fade-in, tab list slide-in/out";
     }
 
+    @Override
+    public String getIcon() {
+        return "animations.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     public boolean isChatFadeEnabled() {
         return isEnabled() && chatFade.isValue();
     }

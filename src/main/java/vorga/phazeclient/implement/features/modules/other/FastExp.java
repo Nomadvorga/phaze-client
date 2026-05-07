@@ -23,6 +23,16 @@ public final class FastExp extends Module {
         return "Removes the right-click delay when throwing experience bottles";
     }
 
+    @Override
+    public String getIcon() {
+        return "fast_exp.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     /**
      * Returns true when the local player is currently holding an experience
      * bottle in either hand and the module is enabled. The mixin uses this to

@@ -52,6 +52,16 @@ public final class ChatHelper extends Module {
         return "Collapses repeated chat messages, preserving original colors with a red (Nx) suffix";
     }
 
+    @Override
+    public String getIcon() {
+        return "chat_helper.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     /**
      * Set while we're recursively re-adding a message we modified, so the
      * collapse mixin doesn't reprocess our own output as a duplicate.

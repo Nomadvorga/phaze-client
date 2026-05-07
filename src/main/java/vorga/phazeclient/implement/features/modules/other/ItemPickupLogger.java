@@ -35,6 +35,16 @@ public final class ItemPickupLogger extends Module {
         return "Logs every picked-up item to the chat";
     }
 
+    @Override
+    public String getIcon() {
+        return "item_pickup_logger.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
+
     /**
      * Posts a client-side chat message describing the pickup. Called from the
      * mixin on {@code ClientPlayNetworkHandler.onItemPickupAnimation} after it
