@@ -53,8 +53,10 @@
     "HandledScreenHealingHelperMixin",
     "ScrollableWidgetSmoothScrollMixin",
     "ChatHudMessageSlideMixin",
+    "ChatHudSmoothScrollMixin",
     "ChatScreenInputFieldMixin",
     "LightmapTextureManagerBrightMixin",
+    "GameRendererAspectRatioMixin",
     "LivingEntityMixin",
     "PlayerEntityMixin"
   ],
