@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.helpers.ChatScrollState;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 
 /**
@@ -45,8 +46,19 @@ public abstract class ChatHudMessageSlideMixin {
 
     @Shadow protected abstract int getLineHeight();
 
-    /** Vertical-displacement scale: 0.8 of a line height = ChatAnimation default. */
-    @Unique private static final float DISPLACEMENT_SCALE = 0.8F;
+    /**
+     * Vertical-displacement scale, expressed as a fraction of
+     * {@code lineHeight}. The ChatAnimation reference uses 0.8 (a full
+     * line of slide), but at that scale the matrix translate exposes an
+     * 8 px gap above the chat box (vanilla only renders {@code N} lines,
+     * shifting them down leaves the topmost {@code displacement} pixels
+     * empty) which shows world content behind the chat and visibly
+     * flickers on long messages / fast slider settings. 0.2 keeps the
+     * slide perceptible while shrinking the gap to ~2 px and the round
+     * below pins it to integer pixels so font glyphs aren't sampled
+     * across half-pixel boundaries.
+     */
+    @Unique private static final float DISPLACEMENT_SCALE = 0.2F;
 
     @Unique private long phaze$lastMessageNanos = 0L;
     @Unique private boolean phaze$pushedThisFrame = false;
@@ -66,6 +78,13 @@ public abstract class ChatHudMessageSlideMixin {
 
         Animations module = Animations.getInstance();
         if (module == null || !module.isChatSmoothScrollEnabled()) {
+            return;
+        }
+        // ChatHudSmoothScrollMixin back-steps scrolledLines mid-render to
+        // fill the slide-in gap, so the field reads as non-zero even on
+        // a freshly-bottomed chat. Defer to the suppress flag instead of
+        // the raw field while it's active so we don't double-translate.
+        if (ChatScrollState.suppressSlide) {
             return;
         }
         // While the user is scrolled up, vanilla pins the visible window
@@ -94,8 +113,12 @@ public abstract class ChatHudMessageSlideMixin {
         if (alpha > 1.0F) alpha = 1.0F;
 
         float maxDisplacement = getLineHeight() * DISPLACEMENT_SCALE;
-        float displacement = maxDisplacement - (alpha * maxDisplacement);
-        if (displacement <= 0.05F) {
+        // Round to integer pixels: avoids fractional Y translates that
+        // sample the font atlas across half-pixel boundaries (visible as
+        // a tearing artefact on the topmost glyph row, especially with
+        // long messages whose wrapped lines magnify the effect).
+        float displacement = Math.round(maxDisplacement * (1.0F - alpha));
+        if (displacement < 1.0F) {
             return;
         }
 
