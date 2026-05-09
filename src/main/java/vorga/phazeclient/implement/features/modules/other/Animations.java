@@ -278,6 +278,34 @@ public final class Animations extends Module {
     }
 
     /**
+     * Fade-time for the {@code Left} slide style. Travel distance is
+     * an order of magnitude larger than the Up style (full chat width
+     * vs. ~2 px), so reusing the same {@link #chatSlideFadeMs()} curve
+     * makes the slide visually whip across the screen at high speed
+     * settings - at slider 30 the message would cover several hundred
+     * pixels in 25 ms, which the eye can't track and reads as "popped
+     * in instantly".
+     *
+     * <p>The 4x multiplier on the base curve gives the user roughly
+     * the same perceived snappiness across both styles: at slider 5
+     * Up takes 150 ms (≈2 px / 150 ms ≈ 13 px/s) and Left takes 600 ms
+     * (≈300 px / 600 ms ≈ 500 px/s). Because pixel travel is ~150x
+     * larger we'd need a 150x longer duration to literally match speed
+     * but that's far too sluggish; 4x is the empirical sweet spot
+     * where the slide is unambiguously visible at every slider value
+     * without dragging on at the slow end.
+     *
+     * <ul>
+     *   <li>slider  1: 3000 ms (very slow, theatrical)</li>
+     *   <li>slider  5: 600 ms (matches default expectation)</li>
+     *   <li>slider 30: 100 ms (still readable as a slide, not a pop)</li>
+     * </ul>
+     */
+    public float chatLeftSlideFadeMs() {
+        return chatSlideFadeMs() * 4.0F;
+    }
+
+    /**
      * Maps a 1..10 speed slider to an exponential-decay smoothness factor
      * such that {@code value=5} reproduces the reference {@link #TAB_SMOOTH_BASE}
      * baseline, lower values get exponentially smoother and higher exponentially
