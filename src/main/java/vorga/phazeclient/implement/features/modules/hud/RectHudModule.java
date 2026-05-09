@@ -41,7 +41,15 @@ public abstract class RectHudModule extends Module {
                     "Velvet Plum",
                     "Frosted Peach",
                     "Moss Smoke",
-                    "Polar Night"
+                    "Polar Night",
+                    "Snow",
+                    "Obsidian",
+                    "Nebula",
+                    "Coral",
+                    "Jade",
+                    "Sunset",
+                    "Violet",
+                    "Ocean"
             )
             .selected("Vanilla")
             .visible(() -> background.isValue());

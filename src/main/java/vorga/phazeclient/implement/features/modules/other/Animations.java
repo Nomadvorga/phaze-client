@@ -4,6 +4,7 @@ import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
 public final class Animations extends Module {
@@ -34,15 +35,19 @@ public final class Animations extends Module {
     public final SectionSetting tabSection = new SectionSetting("Tab List");
     public final BooleanSetting tabSlide = new BooleanSetting(
             "Tab Slide",
-            "Slide the player tab list in from the top when opening or closing it"
+            "Animate the player tab list when opening or closing it"
     ).setValue(true);
+    public final SelectSetting tabAnimationType = new SelectSetting(
+            "Tab Animation",
+            "Which style of animation to use when showing or hiding the tab list"
+    ).value("Slide", "Scale", "Slide+Scale").selected("Slide");
     public final BooleanSetting tabFade = new BooleanSetting(
             "Tab Fade",
-            "Fade the tab list's opacity in and out together with the slide"
+            "Fade the tab list's opacity in and out together with the animation"
     ).setValue(true);
     public final ValueSetting tabSlideSpeed = new ValueSetting(
-            "Tab Slide Speed",
-            "How quickly the tab list slides in/out. Higher = snappier."
+            "Tab Animation Speed",
+            "How quickly the tab list animates in/out. Higher = snappier."
     ).range(1, 30).step(0.5F).setValue(5);
 
     public final SectionSetting chatSection = new SectionSetting("Chat");
@@ -101,8 +106,18 @@ public final class Animations extends Module {
         super("animations", "Animations", ModuleCategory.HUD);
 
         tabSlide.setFullWidth(true);
+        tabAnimationType.setFullWidth(true);
+        tabAnimationType.visible(tabSlide::isValue);
         tabFade.setFullWidth(true);
-        tabFade.visible(tabSlide::isValue);
+        // Fade is exposed for every animation style EXCEPT plain
+        // Slide. Slide always runs with fade because a fade-less slide
+        // either pops out at the 18px stop (ugly) or has to stretch
+        // off-screen (which the user explicitly didn't want), so hiding
+        // the toggle keeps Slide on its single coherent path. Both
+        // scale-based styles let the user pick because the matrix scale
+        // already collapses the tab into a sub-pixel speck so a hard
+        // cutoff without fade still looks clean.
+        tabFade.visible(() -> tabSlide.isValue() && !isTabSlideStyle());
         tabSlideSpeed.setFullWidth(true);
         tabSlideSpeed.visible(tabSlide::isValue);
 
@@ -124,7 +139,7 @@ public final class Animations extends Module {
         listLinesPerScroll.setFullWidth(true);
 
         setup(
-                tabSection, tabSlide, tabFade, tabSlideSpeed,
+                tabSection, tabSlide, tabAnimationType, tabFade, tabSlideSpeed,
                 chatSection, chatFade, chatSmoothScroll, chatSmoothSpeed, smoothInputField,
                 hotbarSection, hotbarSlide, hotbarRollover, hotbarSpeed,
                 listsSection, listSmoothScroll, listSpeed, listLinesPerScroll
@@ -159,7 +174,17 @@ public final class Animations extends Module {
     }
 
     public boolean isTabFadeEnabled() {
-        return isTabSlideEnabled() && tabFade.isValue();
+        if (!isTabSlideEnabled()) {
+            return false;
+        }
+        // Slide style: fade is always on (toggle is hidden in the UI),
+        // so the alpha-driven dissolve carries the final stretch the
+        // 18px translate can't reach on its own.
+        // Scale and Slide+Scale: respect the user's toggle.
+        if (isTabSlideStyle()) {
+            return true;
+        }
+        return tabFade.isValue();
     }
 
     public boolean isHotbarSlideEnabled() {
@@ -321,6 +346,52 @@ public final class Animations extends Module {
      */
     public float currentTabSlideOffset() {
         return tabCurrentOffset;
+    }
+
+    /**
+     * Normalised open-progress in the range 0..1 derived from the same
+     * underlying offset that {@link #currentTabSlideOffset()} exposes:
+     * 0 when the tab list is fully hidden, 1 when fully open. The Scale
+     * animation style uses this to drive the matrix scale factor, and
+     * alpha fading consumes the same curve so the two styles stay in
+     * sync with whatever speed slider value the user picks.
+     */
+    public float currentTabProgress() {
+        float progress = 1.0F + tabCurrentOffset / TAB_SLIDE_TRAVEL;
+        if (progress < 0.0F) return 0.0F;
+        if (progress > 1.0F) return 1.0F;
+        return progress;
+    }
+
+    /**
+     * True when the user has picked the plain "Slide" animation style.
+     * Slide hides the Fade toggle and always runs with fade.
+     */
+    public boolean isTabSlideStyle() {
+        return "Slide".equals(tabAnimationType.getSelected());
+    }
+
+    /**
+     * True when the user has picked the center-pivot "Scale" style.
+     * The {@link vorga.phazeclient.mixins.PlayerListHudMixin} pivots
+     * the matrix scale around scaledHeight/4 (approximate tab center)
+     * for this style.
+     */
+    public boolean isTabScaleStyle() {
+        return "Scale".equals(tabAnimationType.getSelected());
+    }
+
+    /**
+     * True when the user has picked the top-pivot "Slide+Scale" style.
+     * Same matrix-scale machinery as {@link #isTabScaleStyle()} but
+     * pivoted at the top of the tab list (around y=10) so the close
+     * animation visually retracts UP into the tab's header instead of
+     * collapsing toward the middle. "Slide+Scale" because the upward
+     * pivot makes the shrink read as a slide-up combined with a
+     * scale-down.
+     */
+    public boolean isTabSlideScaleStyle() {
+        return "Slide+Scale".equals(tabAnimationType.getSelected());
     }
 
     /**

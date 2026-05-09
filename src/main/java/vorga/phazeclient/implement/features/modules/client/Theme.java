@@ -5,7 +5,7 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.base.util.color.ColorPalette;
-import vorga.phazeclient.base.util.color.DarkPalette;
+import vorga.phazeclient.base.util.color.ThemeColorPalette;
 import vorga.phazeclient.implement.menu.MenuPalette;
 import vorga.phazeclient.implement.menu.MenuPalettes;
 import vorga.phazeclient.implement.menu.MenuStyle;
@@ -17,9 +17,9 @@ public final class Theme extends Module {
         return INSTANCE;
     }
 
-    private ColorPalette currentPalette = new DarkPalette();
+    private ColorPalette currentPalette = new ThemeColorPalette(MenuPalettes.LUNAR_BLUE);
 
-    public final SelectSetting menuTheme = new SelectSetting("Theme", "Lunar menu theme preset")
+    public final SelectSetting menuTheme = new SelectSetting("Theme", "Menu & HUD theme preset")
             .value(
                     "Lunar Blue",
                     "Mocha Gold",
@@ -34,7 +34,15 @@ public final class Theme extends Module {
                     "Velvet Plum",
                     "Frosted Peach",
                     "Moss Smoke",
-                    "Polar Night"
+                    "Polar Night",
+                    "Snow",
+                    "Obsidian",
+                    "Nebula",
+                    "Coral",
+                    "Jade",
+                    "Sunset",
+                    "Violet",
+                    "Ocean"
             )
             .selected("Lunar Blue");
 
@@ -70,9 +78,13 @@ public final class Theme extends Module {
 
     public float getMenuBlurRadius() {
         float value = blurRadius.getValue();
-        // Use logarithmic scaling to reduce impact at high values
-        // value 0-32 -> effective blur 0-12 (non-linear)
-        return (float) (Math.log1p(value) * 2.5);
+        // Softer logarithmic scaling - the slider's upper half has
+        // strong diminishing returns so raw value 32 tops out around
+        // ~5.3 effective radius (previously ~8.75) instead of turning
+        // the backdrop into a mushy wash. Low values feel roughly the
+        // same because log1p stays near-linear there.
+        // value 0-32 -> effective blur 0-5.3 (non-linear)
+        return (float) (Math.log1p(value) * 1.5);
     }
 
     public float getHudBlurQualityMultiplier() {
@@ -109,6 +121,10 @@ public final class Theme extends Module {
     }
 
     public void applyTheme() {
-        currentPalette = new DarkPalette();
+        // HUD palette is derived directly from the selected menu
+        // palette via ThemeColorPalette, so picking e.g. "Snow" in the
+        // dropdown automatically lightens HUD surfaces too. Previously
+        // the HUD was locked to DarkPalette regardless of selection.
+        currentPalette = new ThemeColorPalette(getCurrentMenuPalette());
     }
 }

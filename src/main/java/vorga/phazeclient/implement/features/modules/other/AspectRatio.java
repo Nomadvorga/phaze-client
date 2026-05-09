@@ -86,4 +86,14 @@ public final class AspectRatio extends Module {
     public String getDescription() {
         return "Override the world projection's aspect ratio with a preset or manual factor";
     }
+
+    @Override
+    public String getIcon() {
+        return "aspect_ratio.png";
+    }
+
+    @Override
+    public float getIconSize() {
+        return 21.0F;
+    }
 }
