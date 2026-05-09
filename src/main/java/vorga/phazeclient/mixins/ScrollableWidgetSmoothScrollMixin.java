@@ -47,6 +47,15 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
     @Unique private double phaze$displayScroll;
     @Unique private long phaze$lastFrameNanos = 0L;
     @Unique private boolean phaze$initialized = false;
+    /**
+     * True while we're inside the vanilla {@code mouseDragged} body.
+     * The flag exists purely so {@link #phaze$captureTargetAndRestore}
+     * can tell scrollbar-thumb drags apart from every other scroll
+     * source (wheel, programmatic, keyboard) and skip smoothing for
+     * drags only - smoothing a drag would visibly desync the thumb
+     * from the cursor, which is exactly the lag bug we're fixing.
+     */
+    @Unique private boolean phaze$insideMouseDragged = false;
 
     @Unique
     private boolean phaze$shouldApply() {
@@ -66,6 +75,19 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
             return;
         }
 
+        // Drag-from-scrollbar-thumb path: skip smoothing entirely so
+        // the thumb tracks the cursor pixel-for-pixel. Without this,
+        // every dragged frame would set targetScroll to the cursor
+        // and then roll scrollY back to the in-flight displayScroll,
+        // leaving the thumb visibly behind the cursor by however far
+        // the lerp hadn't caught up yet.
+        if (phaze$insideMouseDragged) {
+            phaze$displayScroll = scrollY;
+            phaze$targetScroll = scrollY;
+            phaze$initialized = true;
+            return;
+        }
+
         phaze$targetScroll = scrollY;
 
         if (!phaze$initialized) {
@@ -78,6 +100,30 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
         // value so the upcoming renderList still draws from where we are,
         // not where we're going.
         scrollY = phaze$displayScroll;
+    }
+
+    /*
+     * Mark the surrounding mouseDragged call so any setScrollY invoked
+     * from inside it can identify itself as a thumb-drag and bypass
+     * the smoothing logic. HEAD/RETURN bracket guarantees the flag is
+     * always cleared even if the body throws (RETURN fires on normal
+     * exit; mixin {@code @Inject} doesn't run on exception, but in
+     * practice mouseDragged in vanilla never throws and a stuck flag
+     * would only "snap" a single subsequent setScrollY anyway, so the
+     * blast radius of a missed clear is one frame at worst).
+     */
+    @Inject(method = "mouseDragged", at = @At("HEAD"), require = 0)
+    private void phaze$dragHead(double mouseX, double mouseY, int button,
+                                double deltaX, double deltaY,
+                                CallbackInfoReturnable<Boolean> cir) {
+        phaze$insideMouseDragged = true;
+    }
+
+    @Inject(method = "mouseDragged", at = @At("RETURN"), require = 0)
+    private void phaze$dragTail(double mouseX, double mouseY, int button,
+                                double deltaX, double deltaY,
+                                CallbackInfoReturnable<Boolean> cir) {
+        phaze$insideMouseDragged = false;
     }
 
     @Inject(method = "drawScrollbar", at = @At("HEAD"))
