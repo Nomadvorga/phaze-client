@@ -7,7 +7,10 @@ import com.google.gson.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.minecraft.client.MinecraftClient;
+
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
@@ -15,9 +18,12 @@ import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -131,10 +137,19 @@ public final class RemoteRulesService {
 
     private final String apiBase;
     private final boolean enabled;
+    private final String clientId;
 
     private volatile Set<String> blocked = Collections.emptySet();
     private volatile String lastHost = null;          // null = "never refreshed yet"
     private volatile long lastRefreshMs = 0L;
+
+    /**
+     * Last known online-client count from the most recent successful
+     * /api/module-rules response. Negative values signal "unknown yet"
+     * (no successful poll since startup) and the UI surfaces those as
+     * a placeholder rather than as zero.
+     */
+    private volatile int onlineCount = -1;
 
     private RemoteRulesService() {
         String configured = System.getProperty("phaze.rules.api", DEFAULT_API_BASE);
@@ -144,6 +159,80 @@ public final class RemoteRulesService {
         }
         this.apiBase = configured;
         this.enabled = !configured.isEmpty();
+        this.clientId = loadOrCreateClientId();
+    }
+
+    /**
+     * Returns the most recently observed count of distinct mod
+     * clients that have polled the API in the last few minutes, or a
+     * negative number if we haven't received any successful poll
+     * since the mod started. The {@link
+     * vorga.phazeclient.mixins.TitleScreenOnlineCounterMixin TitleScreen mixin}
+     * uses this to decide whether to render a real number or a
+     * placeholder.
+     */
+    public int getOnlineCount() {
+        return onlineCount;
+    }
+
+    /** Stable random identity for this install. See {@link #loadOrCreateClientId()}. */
+    public String getClientId() {
+        return clientId;
+    }
+
+    /**
+     * Reads the persisted client UUID from
+     * {@code <minecraft>/Phaze/files/client_id}, or generates and
+     * writes a fresh one on first run. The file deliberately lives
+     * next to the existing config plumbing so a player who wipes
+     * their {@code Phaze/} directory also resets their identity -
+     * useful for testing the online counter without coordinating
+     * across machines.
+     *
+     * <p>Privacy: the value is a vanilla UUIDv4, not derived from
+     * Mojang username, IP, or hardware. The server only ever uses
+     * it as a primary key into the heartbeat table; nothing about
+     * the player gets sent.
+     */
+    private String loadOrCreateClientId() {
+        try {
+            MinecraftClient client = MinecraftClient.getInstance();
+            Path runDir = client != null
+                    ? client.runDirectory.toPath()
+                    : Path.of(".");
+            Path file = runDir.resolve("Phaze").resolve("files").resolve("client_id");
+
+            if (Files.exists(file)) {
+                String existing = Files.readString(file, StandardCharsets.UTF_8).trim();
+                // Validate so a hand-edited / corrupt file gets
+                // replaced instead of silently producing a 400 from
+                // the worker every minute.
+                try {
+                    UUID parsed = UUID.fromString(existing);
+                    return parsed.toString();
+                } catch (IllegalArgumentException badShape) {
+                    // fall through to regeneration
+                }
+            }
+
+            String fresh = UUID.randomUUID().toString();
+            try {
+                Files.createDirectories(file.getParent());
+                Files.writeString(file, fresh, StandardCharsets.UTF_8);
+            } catch (IOException writeFailed) {
+                // Non-fatal: we'll just regenerate next launch. The
+                // player still appears in the count for the duration
+                // of this session.
+                LOG.warn("could not persist client id: {}", writeFailed.toString());
+            }
+            return fresh;
+        } catch (Throwable t) {
+            // Last-ditch fallback so the rest of the service can still
+            // function. A volatile in-memory id means this user counts
+            // as a fresh client every restart, but rules still resolve.
+            LOG.warn("client id init failed, using ephemeral id: {}", t.toString());
+            return UUID.randomUUID().toString();
+        }
     }
 
     /**
@@ -256,8 +345,14 @@ public final class RemoteRulesService {
     }
 
     private void fetch(String host) throws Exception {
-        String encoded = URLEncoder.encode(host == null ? "" : host, StandardCharsets.UTF_8);
-        URI uri = URI.create(apiBase + "/api/module-rules?host=" + encoded);
+        String encodedHost = URLEncoder.encode(host == null ? "" : host, StandardCharsets.UTF_8);
+        String encodedClient = URLEncoder.encode(clientId, StandardCharsets.UTF_8);
+        // clientId tells the worker to record a heartbeat for us and
+        // include the live online count in the response. The server
+        // tolerates older mod builds that omit it - it just won't
+        // count them in the presence number.
+        URI uri = URI.create(apiBase + "/api/module-rules?host=" + encodedHost
+                + "&clientId=" + encodedClient);
 
         URL url = uri.toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -307,6 +402,20 @@ public final class RemoteRulesService {
                 if (el.isJsonPrimitive()) {
                     next.add(el.getAsString().toLowerCase());
                 }
+            }
+        }
+
+        // The online counter updates regardless of whether the host
+        // changed mid-flight: a stale ruleset would be wrong to show,
+        // but the live-user count is a global value that doesn't
+        // depend on which server we ended up on. Worker emits -1 when
+        // it can't compute the count; we forward that through so the
+        // UI can render a placeholder.
+        if (obj.has("online") && obj.get("online").isJsonPrimitive()) {
+            try {
+                onlineCount = obj.get("online").getAsInt();
+            } catch (NumberFormatException ignored) {
+                // leave previous value in place
             }
         }
 
