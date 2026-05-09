@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonSyntaxException;
 import net.minecraft.client.MinecraftClient;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.setting.Setting;
@@ -26,9 +27,11 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -129,10 +132,31 @@ public final class ConfigManager {
         return new File(configsDir, configName + ".Phaze");
     }
     
+    /**
+     * Persists the current in-memory state to {@code configFile}.
+     *
+     * <p>Writes are atomic-with-backup: we never overwrite the target
+     * file in place because a crash / Alt+F4 / kill mid-{@code write}
+     * would leave a half-written JSON that {@link Gson} chokes on at
+     * the next startup, which used to silently reset every setting.
+     * Sequence:
+     * <ol>
+     *   <li>Serialize the whole config tree to a fresh {@code .tmp}
+     *       sibling.</li>
+     *   <li>Rotate the existing target into {@code .bak} (so a
+     *       corrupted next-write or accidental delete still has a
+     *       previous-good fallback that {@link #loadConfigInternal}
+     *       can recover from).</li>
+     *   <li>Atomic-move the temp on top of the target. If the move
+     *       isn't atomic on the host filesystem (rare on NTFS, but
+     *       e.g. on FAT32) we fall back to a non-atomic replace -
+     *       still safer than the original write-in-place.</li>
+     * </ol>
+     */
     public void save(File configFile) {
         JsonObject config = new JsonObject();
         JsonObject modules = new JsonObject();
-        
+
         for (Module module : Main.getInstance().getModuleProvider().getModules()) {
             JsonObject moduleData = new JsonObject();
             moduleData.addProperty("enabled", module.isState());
@@ -147,25 +171,59 @@ public final class ConfigManager {
                 moduleData.addProperty("hud_y", armorHud.getHudY());
                 moduleData.addProperty("hud_scale", armorHud.getHudScale());
             }
-            
+
             JsonObject settings = new JsonObject();
             for (Setting setting : module.settings()) {
-                serializeSetting(setting, settings);
+                try {
+                    serializeSetting(setting, settings);
+                } catch (Throwable t) {
+                    // One bad setting must not strand the whole save.
+                    // Skip silently - the next load will fall back to
+                    // the in-code default for this single key.
+                    System.err.println("[Phaze] failed to serialize setting " + setting.getName() + " of " + module.getName() + ": " + t);
+                }
             }
             moduleData.add("settings", settings);
-            
+
             modules.add(module.getName(), moduleData);
         }
-        
+
         config.add("modules", modules);
         vorga.phazeclient.implement.features.modules.client.Theme theme = vorga.phazeclient.implement.features.modules.client.Theme.getInstance();
         config.addProperty("theme", theme.menuTheme.getSelected());
         config.addProperty("blurRadius", theme.blurRadius.getValue());
-        
-        try (FileWriter writer = new FileWriter(configFile)) {
-            GSON.toJson(config, writer);
+
+        Path target = configFile.toPath();
+        Path tmp = target.resolveSibling(configFile.getName() + ".tmp");
+        Path bak = target.resolveSibling(configFile.getName() + ".bak");
+
+        try {
+            // 1. write to temp
+            try (FileWriter writer = new FileWriter(tmp.toFile())) {
+                GSON.toJson(config, writer);
+            }
+            // 2. rotate previous-good into .bak (best-effort)
+            if (Files.exists(target)) {
+                try {
+                    Files.move(target, bak, StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException ignored) {
+                    // .bak rotation failing is not fatal - the atomic
+                    // move below still gives us a consistent target.
+                }
+            }
+            // 3. atomic publish
+            try {
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException atomicFailed) {
+                // Fallback for filesystems that don't support atomic
+                // move (FAT32, some network mounts). Still safer than
+                // overwriting the original in place.
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException e) {
             e.printStackTrace();
+            // Clean up the temp so a retry doesn't trip over stale data.
+            try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
         }
     }
 
@@ -258,9 +316,9 @@ public final class ConfigManager {
         if (currentConfig != null && currentConfig.exists() && !currentConfigName.equals(configName)) {
             save(currentConfig);
         }
-        
+
         File configFile = getConfigFile(configName);
-        
+
         // If loading default config, reset it to default state instead of loading from file
         if (configName.equalsIgnoreCase("default")) {
             // Reset all modules to default state
@@ -279,95 +337,163 @@ public final class ConfigManager {
             // Reset theme to default
             vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected("Lunar Blue");
             vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(5.0F);
-            
+
             currentConfig = configFile;
             setCurrentConfigName(configName);
             return;
         }
-        
-        if (!configFile.exists()) {
-            return;
+
+        // Try the primary file first; on a corrupt-or-missing read,
+        // fall back to the .bak rotation save() leaves behind. This is
+        // the recovery path for crashes / Alt+F4 / power-loss during a
+        // write that produced a half-flushed primary.
+        JsonObject config = readConfigFile(configFile);
+        File backupFile = new File(configFile.getParentFile(), configFile.getName() + ".bak");
+        if (config == null && backupFile.exists()) {
+            System.err.println("[Phaze] primary config '" + configFile.getName()
+                    + "' unreadable, falling back to .bak");
+            config = readConfigFile(backupFile);
+        }
+        if (config == null) {
+            return; // nothing to apply; in-code defaults stay in place
         }
 
-        try (FileReader reader = new FileReader(configFile)) {
-            JsonObject config = GSON.fromJson(reader, JsonObject.class);
-            
+        try {
             if (config.has("modules")) {
                 JsonObject modules = config.getAsJsonObject("modules");
                 for (Module module : Main.getInstance().getModuleProvider().getModules()) {
-                    boolean hasModuleData = modules.has(module.getName());
-                    JsonObject moduleData = hasModuleData ? modules.getAsJsonObject(module.getName()) : null;
-
-                    if (module.isShowEnable()) {
-                        boolean enabled = hasModuleData && moduleData.has("enabled") && moduleData.get("enabled").getAsBoolean();
-                        module.setState(enabled);
-                    }
-
-                    if (hasModuleData && moduleData.has("key")) {
-                        module.setKey(moduleData.get("key").getAsInt());
-                    }
-
-                    if (hasModuleData && moduleData.has("settings")) {
-                        JsonObject settings = moduleData.getAsJsonObject("settings");
-                        for (Setting setting : module.settings()) {
-                            try {
-                                deserializeSetting(setting, settings);
-                            } catch (Exception ignored) {
-                                // Skip invalid values
-                            }
-                        }
-                    }
-
-                    if (module instanceof RectHudModule rectHudModule) {
-                        if (!hasModuleData) {
-                            rectHudModule.resetHudTransform();
-                        } else {
-                            if (moduleData.has("hud_x")) {
-                                rectHudModule.setHudX(moduleData.get("hud_x").getAsFloat());
-                            } else {
-                                rectHudModule.resetHudTransform();
-                            }
-                            if (moduleData.has("hud_y")) {
-                                rectHudModule.setHudY(moduleData.get("hud_y").getAsFloat());
-                            }
-                            if (moduleData.has("hud_scale")) {
-                                rectHudModule.setHudScale(moduleData.get("hud_scale").getAsFloat());
-                            }
-                        }
-                    } else if (module instanceof ArmorHud armorHud) {
-                        if (!hasModuleData) {
-                            armorHud.resetHudTransform();
-                        } else {
-                            if (moduleData.has("hud_x")) {
-                                armorHud.setHudX(moduleData.get("hud_x").getAsFloat());
-                            } else {
-                                armorHud.resetHudTransform();
-                            }
-                            if (moduleData.has("hud_y")) {
-                                armorHud.setHudY(moduleData.get("hud_y").getAsFloat());
-                            }
-                            if (moduleData.has("hud_scale")) {
-                                armorHud.setHudScale(moduleData.get("hud_scale").getAsFloat());
-                            }
-                        }
+                    // Wrap every module's load in its own try so a
+                    // single broken module entry can't strand all the
+                    // ones that come after it in the iteration order.
+                    // Without this, a ClassCastException on a
+                    // hand-edited JSON (e.g. "settings" not an object)
+                    // would short-circuit the loop and silently reset
+                    // every module after it - which is exactly the
+                    // "some modules sometimes reset" symptom users hit.
+                    try {
+                        loadModule(module, modules);
+                    } catch (Throwable t) {
+                        System.err.println("[Phaze] failed to load module '"
+                                + module.getName() + "' from config: " + t);
                     }
                 }
             }
-            
+
             if (config.has("theme")) {
-                String theme = config.get("theme").getAsString();
-                vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected(theme);
+                try {
+                    String theme = config.get("theme").getAsString();
+                    vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected(theme);
+                } catch (Throwable ignored) {}
             }
-            
+
             if (config.has("blurRadius")) {
-                float blurRadius = config.get("blurRadius").getAsFloat();
-                vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(blurRadius);
+                try {
+                    float blurRadius = config.get("blurRadius").getAsFloat();
+                    vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(blurRadius);
+                } catch (Throwable ignored) {}
             }
-            
+
             currentConfig = configFile;
             setCurrentConfigName(configName);
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (Throwable t) {
+            // Defensive: anything that escapes the per-module try (e.g.
+            // a structural cast on the top-level "modules" object) is
+            // logged but not rethrown, so onInitialize never aborts and
+            // the user keeps whatever in-memory defaults their modules
+            // have already initialised with.
+            t.printStackTrace();
+        }
+    }
+
+    /**
+     * Reads and parses a single config file into a {@link JsonObject},
+     * or returns {@code null} if the file is missing, empty, or
+     * unparseable. Used by {@link #loadConfigInternal} so the caller
+     * can transparently retry against the {@code .bak} sibling.
+     */
+    private JsonObject readConfigFile(File file) {
+        if (file == null || !file.exists()) {
+            return null;
+        }
+        try (Reader reader = new FileReader(file)) {
+            JsonObject parsed = GSON.fromJson(reader, JsonObject.class);
+            return parsed; // may be null if file was empty - caller treats that as no-op
+        } catch (JsonSyntaxException | IOException e) {
+            // Half-written / truncated / hand-corrupted file. Let the
+            // caller fall back to .bak. We log so the operator can see
+            // why their configs aren't applying.
+            System.err.println("[Phaze] could not parse config file '"
+                    + file.getAbsolutePath() + "': " + e);
+            return null;
+        }
+    }
+
+    /**
+     * Applies a single module's data block out of the {@code modules}
+     * top-level object. Extracted from the inline body of
+     * {@link #loadConfigInternal} so each module's load can be wrapped
+     * in its own try/catch up there - without that isolation, a single
+     * malformed module entry would short-circuit the iteration and
+     * leave every later module on its in-code defaults.
+     */
+    private void loadModule(Module module, JsonObject modules) {
+        boolean hasModuleData = modules.has(module.getName())
+                && modules.get(module.getName()).isJsonObject();
+        JsonObject moduleData = hasModuleData ? modules.getAsJsonObject(module.getName()) : null;
+
+        if (module.isShowEnable()) {
+            boolean enabled = hasModuleData && moduleData.has("enabled") && moduleData.get("enabled").getAsBoolean();
+            module.setState(enabled);
+        }
+
+        if (hasModuleData && moduleData.has("key")) {
+            module.setKey(moduleData.get("key").getAsInt());
+        }
+
+        if (hasModuleData && moduleData.has("settings") && moduleData.get("settings").isJsonObject()) {
+            JsonObject settings = moduleData.getAsJsonObject("settings");
+            for (Setting setting : module.settings()) {
+                try {
+                    deserializeSetting(setting, settings);
+                } catch (Exception ignored) {
+                    // Skip a single bad setting without taking the rest
+                    // of the module down with it.
+                }
+            }
+        }
+
+        if (module instanceof RectHudModule rectHudModule) {
+            if (!hasModuleData) {
+                rectHudModule.resetHudTransform();
+            } else {
+                if (moduleData.has("hud_x")) {
+                    rectHudModule.setHudX(moduleData.get("hud_x").getAsFloat());
+                } else {
+                    rectHudModule.resetHudTransform();
+                }
+                if (moduleData.has("hud_y")) {
+                    rectHudModule.setHudY(moduleData.get("hud_y").getAsFloat());
+                }
+                if (moduleData.has("hud_scale")) {
+                    rectHudModule.setHudScale(moduleData.get("hud_scale").getAsFloat());
+                }
+            }
+        } else if (module instanceof ArmorHud armorHud) {
+            if (!hasModuleData) {
+                armorHud.resetHudTransform();
+            } else {
+                if (moduleData.has("hud_x")) {
+                    armorHud.setHudX(moduleData.get("hud_x").getAsFloat());
+                } else {
+                    armorHud.resetHudTransform();
+                }
+                if (moduleData.has("hud_y")) {
+                    armorHud.setHudY(moduleData.get("hud_y").getAsFloat());
+                }
+                if (moduleData.has("hud_scale")) {
+                    armorHud.setHudScale(moduleData.get("hud_scale").getAsFloat());
+                }
+            }
         }
     }
     
