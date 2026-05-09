@@ -59,7 +59,8 @@
     "LightmapTextureManagerBrightMixin",
     "GameRendererAspectRatioMixin",
     "LivingEntityMixin",
-    "PlayerEntityMixin"
+    "PlayerEntityMixin",
+    "TitleScreenOnlineCounterMixin"
   ],
   "injectors": {
     "defaultRequire": 0
