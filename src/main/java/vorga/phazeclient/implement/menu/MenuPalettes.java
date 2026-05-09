@@ -1,6 +1,24 @@
 package vorga.phazeclient.implement.menu;
 
+/**
+ * Registry of the built-in menu themes. Each preset is constructed from
+ * six seed colors (surface, two accents, a success accent, and two text
+ * tones) via {@link #preset(String, int, int, int, int, int, int)},
+ * which derives the full {@link MenuPalette} record - panel surfaces,
+ * cards, borders, chips etc. - from those seeds. This keeps each theme's
+ * definition compact and guarantees visual consistency across all UI
+ * surfaces.
+ *
+ * <p>The fourteen legacy presets (LUNAR_BLUE ... POLAR_NIGHT) are the
+ * historical lineup; {@link #SNOW}, {@link #OBSIDIAN}, {@link #NEBULA},
+ * {@link #CORAL}, {@link #JADE}, {@link #SUNSET}, {@link #VIOLET},
+ * and {@link #OCEAN} are the eight newer additions that include a
+ * pure-white and pure-dark neutral plus six colored variants.
+ */
 public final class MenuPalettes {
+
+    // ===== Legacy 14 =====
+
     public static final MenuPalette LUNAR_BLUE = preset(
             "Lunar Blue",
             0xFF24211E,
@@ -141,15 +159,112 @@ public final class MenuPalettes {
             0xFF90A1AC
     );
 
+    // ===== 8 new presets =====
+
+    // iOS-inspired clean light theme. Near-white base with vibrant
+    // system-blue accent, crisp purple secondary, and Apple-ish green.
+    public static final MenuPalette SNOW = preset(
+            "Snow",
+            0xFFEEEEF2,
+            0xFF0A84FF,
+            0xFFAF52DE,
+            0xFF34C759,
+            0xFF1C1C1E,
+            0xFF6E6E73
+    );
+
+    // Deep dark neutral. Near-black surface with a crimson primary accent.
+    public static final MenuPalette OBSIDIAN = preset(
+            "Obsidian",
+            0xFF111114,
+            0xFFE64545,
+            0xFFF2A826,
+            0xFF30D982,
+            0xFFE8E6E4,
+            0xFF8A8786
+    );
+
+    // Cosmic indigo surface with an electric violet-magenta accent.
+    public static final MenuPalette NEBULA = preset(
+            "Nebula",
+            0xFF171528,
+            0xFF6E5CFF,
+            0xFFE060C0,
+            0xFF4FCFA0,
+            0xFFE4E0F5,
+            0xFF9A96B0
+    );
+
+    // Warm coral on a dark umber surface.
+    public static final MenuPalette CORAL = preset(
+            "Coral",
+            0xFF2B1B1C,
+            0xFFFF7058,
+            0xFFFFAD93,
+            0xFF4FC892,
+            0xFFF4E0DC,
+            0xFFA88F8A
+    );
+
+    // Bright jade green on a deep pine surface.
+    public static final MenuPalette JADE = preset(
+            "Jade",
+            0xFF152623,
+            0xFF00C9A7,
+            0xFF7CE0D0,
+            0xFF52E0A5,
+            0xFFE0F1ED,
+            0xFF829791
+    );
+
+    // Sunset orange fading to hot pink on a dark wine surface.
+    public static final MenuPalette SUNSET = preset(
+            "Sunset",
+            0xFF2A1A1E,
+            0xFFFF8347,
+            0xFFFF5B8F,
+            0xFF5ECC86,
+            0xFFF5E6DE,
+            0xFFAA8F89
+    );
+
+    // Electric violet on a deep indigo surface.
+    public static final MenuPalette VIOLET = preset(
+            "Violet",
+            0xFF20172B,
+            0xFF9B5AE8,
+            0xFFCFA0FF,
+            0xFF4FCFA0,
+            0xFFEAE0F5,
+            0xFF9A8DA8
+    );
+
+    // Deep ocean blue with a turquoise secondary accent.
+    public static final MenuPalette OCEAN = preset(
+            "Ocean",
+            0xFF132232,
+            0xFF2E9FD6,
+            0xFF3AC7B8,
+            0xFF3ECC8F,
+            0xFFE0EDF5,
+            0xFF829AA8
+    );
+
     private MenuPalettes() {
     }
 
+    /**
+     * Resolves a palette by its display name. Falls back to
+     * {@link #LUNAR_BLUE} for null or unknown names so old configs with
+     * since-renamed themes still load gracefully.
+     */
     public static MenuPalette byName(String name) {
         if (name == null) {
             return LUNAR_BLUE;
         }
 
         return switch (name) {
+            // Legacy 14
             case "Mocha Gold" -> MOCHA_GOLD;
             case "Rose Quartz" -> ROSE_QUARTZ;
             case "Emerald Frost" -> EMERALD_FROST;
@@ -163,6 +278,15 @@ public final class MenuPalettes {
             case "Frosted Peach" -> FROSTED_PEACH;
             case "Moss Smoke" -> MOSS_SMOKE;
             case "Polar Night" -> POLAR_NIGHT;
+            // New 8
+            case "Snow" -> SNOW;
+            case "Obsidian" -> OBSIDIAN;
+            case "Nebula" -> NEBULA;
+            case "Coral" -> CORAL;
+            case "Jade" -> JADE;
+            case "Sunset" -> SUNSET;
+            case "Violet" -> VIOLET;
+            case "Ocean" -> OCEAN;
             default -> LUNAR_BLUE;
         };
     }
@@ -171,19 +295,45 @@ public final class MenuPalettes {
         return preset("Custom", opaque(surface), opaque(accent), opaque(secondaryAccent), opaque(successAccent), opaque(textPrimary), opaque(textMuted));
     }
 
+    /**
+     * Derives a full {@link MenuPalette} from six seed colors. Blends
+     * the surface toward the accent / white / black / text tones to
+     * generate the nineteen derived surfaces the menu record needs.
+     *
+     * <p>Raised elements always lift toward white so cards keep the
+     * conventional "elevated" feel in both dark and light themes.
+     * Because a near-white surface can't lift visibly with the same
+     * blend factors as a dark surface, light themes get amplified
+     * raise factors, softer depth, and lighter borders - all keyed off
+     * the perceived surface brightness - so they render crisp and airy
+     * instead of muddy gray on gray.
+     */
     private static MenuPalette preset(String name, int surface, int accent, int secondaryAccent, int successAccent, int textPrimary, int textMuted) {
-        int deepSurface = blend(surface, 0xFF000000, 0.22F);
-        int raisedSurface = blend(surface, 0xFFFFFFFF, 0.035F);
+        int surfaceR = (surface >> 16) & 0xFF;
+        int surfaceG = (surface >> 8) & 0xFF;
+        int surfaceB = surface & 0xFF;
+        boolean lightSurface = (surfaceR + surfaceG + surfaceB) / 3 > 160;
+
+        // Light themes need amplified raise factors so pure-white cards
+        // read as elevated against the faint off-white base. Dark themes
+        // keep the original subtle factors tuned for gloomy backdrops.
+        float raiseMul = lightSurface ? 4.5F : 1.0F;
+        float deepAmount = lightSurface ? 0.07F : 0.22F;
+        float borderAmount = lightSurface ? 0.18F : 0.34F;
+        float borderLightAmount = lightSurface ? 0.22F : 0.42F;
+
+        int deepSurface = blend(surface, 0xFF000000, deepAmount);
+        int raisedSurface = blend(surface, 0xFFFFFFFF, 0.035F * raiseMul);
         int header = blend(surface, accent, 0.07F);
-        int chipSurface = blend(surface, 0xFFFFFFFF, 0.05F);
-        int rowSurface = blend(surface, 0xFFFFFFFF, 0.03F);
+        int chipSurface = blend(surface, 0xFFFFFFFF, 0.05F * raiseMul);
+        int rowSurface = blend(surface, 0xFFFFFFFF, 0.03F * raiseMul);
         int activeRow = blend(surface, accent, 0.16F);
         int contentSurface = blend(deepSurface, accent, 0.025F);
-        int cardSurface = blend(surface, 0xFFFFFFFF, 0.04F);
-        int optionSurface = blend(surface, 0xFFFFFFFF, 0.11F);
+        int cardSurface = blend(surface, 0xFFFFFFFF, 0.04F * raiseMul);
+        int optionSurface = blend(surface, 0xFFFFFFFF, 0.11F * raiseMul);
         int disabledSurface = blend(surface, textMuted, 0.18F);
-        int border = withAlpha(blend(surface, textMuted, 0.34F), 0x80);
-        int borderLight = withAlpha(blend(surface, textPrimary, 0.42F), 0xAA);
+        int border = withAlpha(blend(surface, textMuted, borderAmount), 0x80);
+        int borderLight = withAlpha(blend(surface, textPrimary, borderLightAmount), 0xAA);
 
         return new MenuPalette(
                 name,

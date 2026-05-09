@@ -11,6 +11,8 @@ import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.base.QuickImports;
+import vorga.phazeclient.base.util.RemoteRulesService;
+import vorga.phazeclient.base.util.ServerUtil;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Formatting;
 import org.lwjgl.glfw.GLFW;
@@ -234,19 +236,40 @@ public class Module extends SettingRepository implements QuickImports {
     }
 
     /**
-     * Returns true if this module is allowed to operate on the currently connected server.
-     * Override in subclasses that should be restricted to specific servers. When this returns
-     * false the GUI shows a "LOCKED" badge and the module is auto-disabled if it was active.
+     * Returns true if this module is allowed to operate on the currently connected server
+     * <em>per the local whitelist</em>. Override in subclasses that should be restricted to
+     * specific servers (see ItemScroller / AutoSwap / etc. for examples).
+     *
+     * <p>This method intentionally does <strong>not</strong> consult the remote-rules API -
+     * subclasses overriding it shouldn't have to know about remote rules. The composite
+     * "is the module actually usable right now?" check lives in {@link #isServerLocked()}.
      */
     public boolean isServerAllowed() {
         return true;
     }
 
     /**
-     * Convenience helper: a module is locked iff it is server-restricted and not allowed
-     * on the current server.
+     * True if the module is locked on the current server. A module is locked when either
+     * the local whitelist forbids it (subclass override of {@link #isServerAllowed()})
+     * <em>or</em> the remote rules API has blocked the module's identifier for the
+     * current host. The GUI uses this for the "LOCKED" badge and {@code
+     * ClientPlayerEntityMixin#phaze$enforceServerLocks} uses it to auto-disable any
+     * active module that becomes locked at runtime.
+     *
+     * <p>Server-based locks are skipped entirely in singleplayer / when the player isn't
+     * connected to anything: there's no realistic threat model there (no other players,
+     * no anti-cheat, no economy), and forcing modules off in your own world is the
+     * opposite of what the user wants. {@link ServerUtil#getCurrentServerHost()} returns
+     * an empty string in those cases.
      */
     public boolean isServerLocked() {
-        return !isServerAllowed();
+        String host = ServerUtil.getCurrentServerHost();
+        if (host == null || host.isEmpty()) {
+            return false;
+        }
+        if (!isServerAllowed()) {
+            return true;
+        }
+        return RemoteRulesService.getInstance().isModuleBlocked(getIdentifier());
     }
 }

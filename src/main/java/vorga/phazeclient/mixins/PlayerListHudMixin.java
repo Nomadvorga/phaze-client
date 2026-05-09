@@ -81,10 +81,48 @@ public class PlayerListHudMixin {
         // color, not our faded one.
         context.draw();
 
-        float offsetY = module.currentTabSlideOffset();
         context.getMatrices().push();
-        if (offsetY != 0.0F) {
-            context.getMatrices().translate(0.0F, offsetY, 0.0F);
+
+        if (module.isTabSlideStyle()) {
+            // "Slide" style: translate the tab list vertically so it
+            // slides in from the top edge of the screen. Fade is
+            // forced on for Slide (see Animations.isTabFadeEnabled),
+            // so the alpha drop carries the final dissolve that the
+            // tight 18px slide can't reach by itself.
+            float offsetY = module.currentTabSlideOffset();
+            if (offsetY != 0.0F) {
+                context.getMatrices().translate(0.0F, offsetY, 0.0F);
+            }
+        } else {
+            // Scale-based styles: shrink the tab list to a near-zero
+            // pivot when closed and grow it back to full size when
+            // open. Scale runs from 0.01 (effectively a 1-pixel speck
+            // for any realistic tab width) up to 1.0 so both open and
+            // close animations visually collapse into / explode out
+            // from a single point. The Math.max floor avoids the
+            // matrix collapsing to a true singular value when progress
+            // hits 0, which some GL drivers report as a degenerate
+            // transform.
+            //
+            // Pivot Y differs between the two scale styles:
+            //  - "Scale": scaledHeight/4 lands near the vertical
+            //    center of typical tab lists, so the speck appears
+            //    in the middle of where the tab would be.
+            //  - "Slide+Scale": pivotY=10 matches the top of the tab
+            //    list (vanilla starts drawing at y=10), so the speck
+            //    sits just below the top edge of the screen and the
+            //    shrink/grow visually retracts UP into / drops DOWN
+            //    from the tab's header position. Combined with fade
+            //    this reads as a slide+scale combo.
+            float progress = module.currentTabProgress();
+            float scale = Math.max(0.01F, progress);
+            float pivotX = scaledWindowWidth / 2.0F;
+            float pivotY = module.isTabSlideScaleStyle()
+                    ? 10.0F
+                    : context.getScaledWindowHeight() / 4.0F;
+            context.getMatrices().translate(pivotX, pivotY, 0.0F);
+            context.getMatrices().scale(scale, scale, 1.0F);
+            context.getMatrices().translate(-pivotX, -pivotY, 0.0F);
         }
 
         // Tint subsequent draws with our fade alpha. This works for both

@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.other.AutoEat;
+import vorga.phazeclient.implement.features.modules.other.AutoGG;
 import vorga.phazeclient.implement.features.modules.other.LockSlot;
 import vorga.phazeclient.implement.features.modules.other.ShiftTap;
 
@@ -28,6 +29,17 @@ public class ClientPlayerInteractionManagerMixin {
         ShiftTap shiftTap = ShiftTap.getInstance();
         if (shiftTap.isEnabled()) {
             shiftTap.triggerShiftTap();
+        }
+
+        // Auto GG: stamp the target as recently attacked so the kill
+        // detector can credit a follow-up death to the local player.
+        // Filtering to PlayerEntity (excluding self) here keeps the
+        // tracker map small and avoids mob-kill noise.
+        if (target instanceof PlayerEntity victim && !victim.equals(player)) {
+            AutoGG autoGG = AutoGG.getInstance();
+            if (autoGG != null) {
+                autoGG.recordAttack(victim);
+            }
         }
     }
 

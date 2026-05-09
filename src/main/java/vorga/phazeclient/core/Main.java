@@ -214,6 +214,12 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AspectRatio.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AspectRatio.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoGG.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoGG.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ItemScroller.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ItemScroller.getInstance());
+        }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {
         //     moduleProvider.getModules().add(ScoreboardHud.getInstance());
@@ -244,5 +250,13 @@ public class Main implements ModInitializer {
         );
 
         discordManager.init();
+
+        // Kick off the remote-rules poller. It runs on a daemon thread,
+        // is fail-open (network errors -> no extra blocks), and feeds
+        // Module#isServerLocked so any rule pushed from the admin panel
+        // takes effect within ~60s without the player relogging.
+        // Override the API base with -Dphaze.rules.api=https://... ;
+        // setting it to "" disables the service entirely (offline dev).
+        vorga.phazeclient.base.util.RemoteRulesService.getInstance().start();
     }
 }

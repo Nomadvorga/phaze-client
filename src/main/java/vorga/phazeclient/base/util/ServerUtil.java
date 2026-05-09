@@ -1,34 +1,70 @@
 package vorga.phazeclient.base.util;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ServerInfo;
+
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 
 /**
  * Utility class for server detection
  */
 public class ServerUtil {
-    
+
     /**
-     * Get current server host address
+     * Get current server host address. Returns "" for singleplayer or
+     * when no network handler is available. Public so the remote-rules
+     * service can read it directly without re-implementing the logic.
+     *
+     * <p>Resolution order, falling through to the next on null:
+     * <ol>
+     *   <li>{@code mc.getCurrentServerEntry()} - the entry the player
+     *       opened, includes the address as typed in the server list /
+     *       direct-connect dialog. This survives across server-transfer
+     *       packets ({@code dexland} -> {@code ru.dexland.org}) where
+     *       {@code networkHandler.getServerInfo()} can go null.</li>
+     *   <li>{@code networkHandler.getServerInfo()} - same data via the
+     *       network handler. Older fallback, kept for safety.</li>
+     *   <li>The actual TCP peer address from the live connection.
+     *       Last-resort fallback so we still return *something* even if
+     *       the server-info layer is broken; sometimes that's an IP
+     *       literal which won't match any segment, and that's fine.</li>
+     * </ol>
      */
-    private static String getCurrentServerHost() {
+    public static String getCurrentServerHost() {
         MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) return "";
 
-        if (mc == null || mc.getNetworkHandler() == null) {
-            return "";
+        // Singleplayer never has a remote host. Cheaper than
+        // resolving network handler on each tick from the client thread.
+        if (mc.isInSingleplayer()) return "";
+
+        ServerInfo entry = mc.getCurrentServerEntry();
+        if (entry != null && entry.address != null) {
+            return stripPort(entry.address);
         }
 
-        var serverInfo = mc.getNetworkHandler().getServerInfo();
-        if (serverInfo == null || serverInfo.address == null) {
-            return "";
+        var handler = mc.getNetworkHandler();
+        if (handler == null) return "";
+
+        ServerInfo handlerInfo = handler.getServerInfo();
+        if (handlerInfo != null && handlerInfo.address != null) {
+            return stripPort(handlerInfo.address);
         }
 
-        String serverAddress = serverInfo.address.toLowerCase().trim();
-        int portSeparator = serverAddress.indexOf(':');
-        if (portSeparator >= 0) {
-            serverAddress = serverAddress.substring(0, portSeparator);
+        // Live connection peer fallback - only useful when the
+        // server-info object disappeared mid-session (transfer/relogin).
+        SocketAddress peer = handler.getConnection().getAddress();
+        if (peer instanceof InetSocketAddress isa && isa.getHostString() != null) {
+            return isa.getHostString().toLowerCase().trim();
         }
+        return "";
+    }
 
-        return serverAddress;
+    private static String stripPort(String addr) {
+        String s = addr.toLowerCase().trim();
+        int sep = s.indexOf(':');
+        return sep >= 0 ? s.substring(0, sep) : s;
     }
 
     /**
@@ -145,6 +181,29 @@ public class ServerUtil {
         return hasServerSegment("funtime")
                 || hasServerSegment("funsky")
                 || hasServerSegment("holytime")
+                || hasServerSegment("spookytime")
+                || hasServerSegment("funmoon");
+    }
+
+    /**
+     * Check if ItemScroller is supported on current server
+     * Supported servers: FunTime, HolyWorld, HolyTime, FunSky, Space-Times, SpookyTime, FunMoon, Singleplayer
+     */
+    public static boolean isItemScrollerSupported() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) {
+            return false;
+        }
+
+        if (mc.isInSingleplayer()) {
+            return true;
+        }
+
+        return hasServerSegment("funtime")
+                || hasServerSegment("holyworld")
+                || hasServerSegment("holytime")
+                || hasServerSegment("funsky")
+                || hasServerSegment("space-times")
                 || hasServerSegment("spookytime")
                 || hasServerSegment("funmoon");
     }

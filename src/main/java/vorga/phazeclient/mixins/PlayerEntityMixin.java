@@ -1,10 +1,7 @@
 package vorga.phazeclient.mixins;
 
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -16,8 +13,11 @@ public class PlayerEntityMixin {
 
     @Inject(method = "attack", at = @At("HEAD"))
     private void onAttack(Entity target, CallbackInfo ci) {
-        if (target instanceof LivingEntity) {
-            ComboCounterHud.getInstance().onAttack((LivingEntity) target);
-        }
+        // Only advance the combo counter when the target is another
+        // player. Hits on mobs, armor stands, item frames, etc. are
+        // ignored so the counter tracks PvP combos exclusively.
+        if (!(target instanceof PlayerEntity player)) return;
+        if (target == (Object) this) return;
+        ComboCounterHud.getInstance().onAttack(player);
     }
 }
