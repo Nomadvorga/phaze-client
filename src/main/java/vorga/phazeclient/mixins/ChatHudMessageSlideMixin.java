@@ -46,6 +46,8 @@ public abstract class ChatHudMessageSlideMixin {
 
     @Shadow protected abstract int getLineHeight();
 
+    @Shadow public abstract int getWidth();
+
     /**
      * Vertical-displacement scale, expressed as a fraction of
      * {@code lineHeight}. The ChatAnimation reference uses 0.8 (a full
@@ -58,7 +60,20 @@ public abstract class ChatHudMessageSlideMixin {
      * below pins it to integer pixels so font glyphs aren't sampled
      * across half-pixel boundaries.
      */
-    @Unique private static final float DISPLACEMENT_SCALE = 0.2F;
+    @Unique private static final float UP_DISPLACEMENT_SCALE = 0.2F;
+
+    /**
+     * Horizontal-displacement scale for the "Left" slide style,
+     * expressed as a fraction of the chat-box width returned by
+     * {@link ChatHud#getWidth()}. 1.0 means the chat starts fully
+     * off-screen to the left of its anchor (so the new message
+     * literally enters from beyond the chat box) and slides in to
+     * its rest position over {@code fadeMs}. Unlike the Up style
+     * there's no half-pixel sampling concern because the chat box
+     * background hides the gap during the slide, so we don't need
+     * to attenuate the displacement.
+     */
+    @Unique private static final float LEFT_DISPLACEMENT_SCALE = 1.0F;
 
     @Unique private long phaze$lastMessageNanos = 0L;
     @Unique private boolean phaze$pushedThisFrame = false;
@@ -112,22 +127,49 @@ public abstract class ChatHudMessageSlideMixin {
         if (alpha < 0.0F) alpha = 0.0F;
         if (alpha > 1.0F) alpha = 1.0F;
 
-        float maxDisplacement = getLineHeight() * DISPLACEMENT_SCALE;
-        // Round to integer pixels: avoids fractional Y translates that
-        // sample the font atlas across half-pixel boundaries (visible as
-        // a tearing artefact on the topmost glyph row, especially with
-        // long messages whose wrapped lines magnify the effect).
-        float displacement = Math.round(maxDisplacement * (1.0F - alpha));
-        if (displacement < 1.0F) {
-            return;
+        // Two different translate axes depending on user choice. The
+        // "Up" style (default) keeps the original ChatAnimation feel:
+        // a small vertical push that lets the new message appear to
+        // shove the older ones up. The "Left" style is a much larger
+        // horizontal slide that visually has the new chat enter from
+        // beyond the left edge - what the user described as "from
+        // the end of the screen". We do not combine the two: the user
+        // explicitly wants the left slide to run *without* the scale
+        // / vertical movement, so each branch picks one axis only.
+        float dx;
+        float dy;
+        if (module.isChatMessageSlideLeft()) {
+            float maxLeft = getWidth() * LEFT_DISPLACEMENT_SCALE;
+            // Negative because we're sliding *from* the left: the
+            // chat starts at -maxLeft and eases to 0 as alpha -> 1.
+            // No half-pixel rounding needed - the chat-box background
+            // covers the in-flight gap, so the font atlas isn't being
+            // sampled at fractional offsets like in the Up case.
+            dx = -maxLeft * (1.0F - alpha);
+            dy = 0.0F;
+            if (Math.abs(dx) < 1.0F) {
+                return;
+            }
+        } else {
+            float maxUp = getLineHeight() * UP_DISPLACEMENT_SCALE;
+            // Round to integer pixels: avoids fractional Y translates
+            // that sample the font atlas across half-pixel boundaries
+            // (visible as a tearing artefact on the topmost glyph
+            // row, especially with long messages whose wrapped lines
+            // magnify the effect).
+            dx = 0.0F;
+            dy = Math.round(maxUp * (1.0F - alpha));
+            if (dy < 1.0F) {
+                return;
+            }
         }
 
         // Flush the layered draw batch BEFORE we translate so the HUD
         // elements vanilla queued earlier (hotbar background etc.) render
-        // at their original Y instead of inheriting our translate.
+        // at their original position instead of inheriting our translate.
         context.draw();
         context.getMatrices().push();
-        context.getMatrices().translate(0.0F, displacement, 0.0F);
+        context.getMatrices().translate(dx, dy, 0.0F);
         phaze$pushedThisFrame = true;
     }
 

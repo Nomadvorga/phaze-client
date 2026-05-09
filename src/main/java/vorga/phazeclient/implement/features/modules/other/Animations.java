@@ -57,8 +57,24 @@ public final class Animations extends Module {
     ).setValue(true);
     public final BooleanSetting chatSmoothScroll = new BooleanSetting(
             "Message Animation",
-            "Slide newly received chat messages up into place instead of popping in"
+            "Slide newly received chat messages into place instead of popping in"
     ).setValue(true);
+    /**
+     * Choice of slide direction for the new-message animation.
+     * <ul>
+     *   <li>{@code Up} - the original ChatAnimation-style behaviour: the
+     *       whole chat stack is translated down by ~20% of a line height
+     *       at message arrival and eases up to its rest position. Subtle,
+     *       no horizontal motion.</li>
+     *   <li>{@code Left} - the chat slides in from beyond the left edge
+     *       of the chat box on each new message. Larger, more theatrical
+     *       motion; runs without scale (matches the user request).</li>
+     * </ul>
+     */
+    public final SelectSetting chatMessageAnimationType = new SelectSetting(
+            "Message Animation Type",
+            "Direction the new chat message slides in from"
+    ).value("Up", "Left").selected("Up");
     public final ValueSetting chatSmoothSpeed = new ValueSetting(
             "Message Animation Speed",
             "Speed of the new-message slide. Higher = snappier (shorter slide duration)."
@@ -123,6 +139,8 @@ public final class Animations extends Module {
 
         chatFade.setFullWidth(true);
         chatSmoothScroll.setFullWidth(true);
+        chatMessageAnimationType.setFullWidth(true);
+        chatMessageAnimationType.visible(chatSmoothScroll::isValue);
         chatSmoothSpeed.setFullWidth(true);
         chatSmoothSpeed.visible(chatSmoothScroll::isValue);
         smoothInputField.setFullWidth(true);
@@ -140,7 +158,7 @@ public final class Animations extends Module {
 
         setup(
                 tabSection, tabSlide, tabAnimationType, tabFade, tabSlideSpeed,
-                chatSection, chatFade, chatSmoothScroll, chatSmoothSpeed, smoothInputField,
+                chatSection, chatFade, chatSmoothScroll, chatMessageAnimationType, chatSmoothSpeed, smoothInputField,
                 hotbarSection, hotbarSlide, hotbarRollover, hotbarSpeed,
                 listsSection, listSmoothScroll, listSpeed, listLinesPerScroll
         );
@@ -197,6 +215,22 @@ public final class Animations extends Module {
 
     public boolean isChatSmoothScrollEnabled() {
         return isEnabled() && chatSmoothScroll.isValue();
+    }
+
+    /**
+     * True when the message-arrival animation should slide horizontally
+     * from the left edge of the chat box rather than vertically from
+     * below. Read by {@link
+     * vorga.phazeclient.mixins.ChatHudMessageSlideMixin} on every render
+     * frame to pick the translate axis. Returns false (= use the
+     * default "Up" slide) whenever the smooth-scroll feature is off,
+     * so callers don't have to gate twice.
+     */
+    public boolean isChatMessageSlideLeft() {
+        if (!isChatSmoothScrollEnabled()) {
+            return false;
+        }
+        return "Left".equalsIgnoreCase(chatMessageAnimationType.getSelected());
     }
 
     public boolean isSmoothInputFieldEnabled() {
