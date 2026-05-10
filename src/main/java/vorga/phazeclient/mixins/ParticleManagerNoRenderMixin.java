@@ -1,13 +1,17 @@
 package vorga.phazeclient.mixins;
 
+import net.minecraft.block.BlockState;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleManager;
 import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleType;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.other.NoRender;
 
@@ -93,13 +97,75 @@ public abstract class ParticleManagerNoRenderMixin {
         if (mod.particles.isValue()) {
             return true;
         }
+        ParticleType<?> type = parameters.getType();
         if (mod.hitParticles.isValue()) {
-            ParticleType<?> type = parameters.getType();
-            return type == ParticleTypes.DAMAGE_INDICATOR
+            if (type == ParticleTypes.DAMAGE_INDICATOR
                     || type == ParticleTypes.CRIT
                     || type == ParticleTypes.ENCHANTED_HIT
-                    || type == ParticleTypes.SWEEP_ATTACK;
+                    || type == ParticleTypes.SWEEP_ATTACK) {
+                return true;
+            }
+        }
+        if (mod.potionParticles.isValue()) {
+            // {@link ParticleTypes#ENTITY_EFFECT} is the visible bubble
+            // produced by every active StatusEffect on a LivingEntity
+            // (LivingEntity#tickStatusEffects spawns one per tick per
+            // active effect, tinted by the effect colour). In 1.21.4
+            // ambient / beacon-supplied effects use the same particle
+            // type with an ambient-flag colour modifier rather than a
+            // separate type, so suppressing ENTITY_EFFECT alone covers
+            // every potion-bubble path the user can observe.
+            if (type == ParticleTypes.ENTITY_EFFECT) {
+                return true;
+            }
         }
         return false;
+    }
+
+    /**
+     * Cancel the burst of block-shard particles vanilla emits when a
+     * block finishes breaking. {@code addBlockBreakParticles} is the
+     * single funnel called from {@code WorldRenderer#processWorldEvent}
+     * (event id 2001) so a HEAD cancel covers every break source -
+     * own digging, neighbour break, BUD-style updates, world events.
+     */
+    @Inject(method = "addBlockBreakParticles(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;)V",
+            at = @At("HEAD"),
+            cancellable = true,
+            require = 0)
+    private void phaze$cancelBreakParticles(BlockPos pos, BlockState state, CallbackInfo ci) {
+        NoRender mod = NoRender.getInstance();
+        if (mod == null || !mod.isEnabled()) {
+            return;
+        }
+        // The broader {@code Particles} toggle already cancels every
+        // particle individually inside addParticle so it doesn't need
+        // to be re-checked here. Only the dedicated break-block toggle
+        // gates this fast-path early-return.
+        if (mod.breakBlockParticles.isValue()) {
+            ci.cancel();
+        }
+    }
+
+    /**
+     * Cancel the smaller per-tick particles that vanilla emits while
+     * a block is being mined (one shard per dig tick, before the
+     * block has actually broken). Distinct from {@link
+     * #phaze$cancelBreakParticles} but visually part of the same
+     * "breaking a block" experience - one toggle controls both so
+     * users don't have to track the engine's internal split.
+     */
+    @Inject(method = "addBlockBreakingParticles(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/Direction;)V",
+            at = @At("HEAD"),
+            cancellable = true,
+            require = 0)
+    private void phaze$cancelBreakingParticles(BlockPos pos, Direction direction, CallbackInfo ci) {
+        NoRender mod = NoRender.getInstance();
+        if (mod == null || !mod.isEnabled()) {
+            return;
+        }
+        if (mod.breakBlockParticles.isValue()) {
+            ci.cancel();
+        }
     }
 }

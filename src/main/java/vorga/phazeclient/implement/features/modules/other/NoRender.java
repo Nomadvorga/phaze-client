@@ -66,17 +66,31 @@ public final class NoRender extends Module {
             "Skip only the on-hit particles: damage indicators, crit, enchanted_hit, sweep_attack"
     ).setValue(true);
 
+    public final BooleanSetting potionParticles = new BooleanSetting(
+            "Potion Particles",
+            "Skip the bubbly status-effect particles drawn around entities under potion effects"
+    ).setValue(false);
+
+    public final BooleanSetting breakBlockParticles = new BooleanSetting(
+            "Break Block Particles",
+            "Skip the chunk-of-block particles that fly out when a block is broken"
+    ).setValue(false);
+
     private NoRender() {
         super("no_render", "No Render", ModuleCategory.OTHER);
         glowing.setFullWidth(true);
         fire.setFullWidth(true);
         particles.setFullWidth(true);
-        // Hide the more-specific toggle while the broader one is on -
-        // there is no useful state where Particles=ON + HitParticles=anything,
-        // so collapsing the redundant control keeps the panel readable.
+        // Hide the more-specific toggles while the broader one is on -
+        // there is no useful state where Particles=ON + <subtoggle>=anything,
+        // so collapsing the redundant controls keeps the panel readable.
         hitParticles.setFullWidth(true);
         hitParticles.visible(() -> !particles.isValue());
-        setup(glowing, fire, particles, hitParticles);
+        potionParticles.setFullWidth(true);
+        potionParticles.visible(() -> !particles.isValue());
+        breakBlockParticles.setFullWidth(true);
+        breakBlockParticles.visible(() -> !particles.isValue());
+        setup(glowing, fire, particles, hitParticles, potionParticles, breakBlockParticles);
     }
 
     public static NoRender getInstance() {
