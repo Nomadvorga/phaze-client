@@ -220,6 +220,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ItemScroller.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ItemScroller.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.NoRender.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.NoRender.getInstance());
+        }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {
         //     moduleProvider.getModules().add(ScoreboardHud.getInstance());

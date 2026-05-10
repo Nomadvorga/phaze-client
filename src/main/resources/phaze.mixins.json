@@ -60,7 +60,10 @@
     "GameRendererAspectRatioMixin",
     "LivingEntityMixin",
     "PlayerEntityMixin",
-    "TitleScreenOnlineCounterMixin"
+    "TitleScreenOnlineCounterMixin",
+    "EntityRendererNoGlowMixin",
+    "InGameOverlayRendererNoFireMixin",
+    "ParticleManagerNoRenderMixin"
   ],
   "injectors": {
     "defaultRequire": 0
