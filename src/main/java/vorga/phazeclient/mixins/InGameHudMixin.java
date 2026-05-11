@@ -2785,9 +2785,13 @@ public class InGameHudMixin {
     ) {
         float lineHeight = 10.0f;
         float scale = module.getHudScale();
-        float iconSize = lineHeight * 2.0f / 1.1f; // Base icon size in HUD units (1.1x smaller than 2.0)
-        float iconOffset = icon != null ? iconSize + 3.0f : 0.0f; // Base offset for text
-        
+        // Nominal icon size matches the original two-line-tall sprite. We
+        // clamp it down per-frame against {@code baseHeight} so a small
+        // rect (e.g. block name only, every sub-toggle disabled) doesn't
+        // overflow the rect with a 18 px icon.
+        float nominalIconSize = lineHeight * 2.0f / 1.1f;
+        boolean noTarget = text.isEmpty() || text.contains("No target");
+
         // Split text into lines and compute base dimensions (without scale, like PotionHud)
         String[] lines = text.split("\n");
         float maxTextWidth = 0.0f;
@@ -2796,43 +2800,67 @@ public class InGameHudMixin {
                 maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, line, HUD_TEXT_SIZE));
             }
         }
+
+        // Height: vanilla two-line minimum for the "no target" pill so it
+        // doesn't collapse into a sliver; otherwise hug the actual text
+        // line count + 2 px breathing room. This is what makes the rect
+        // grow / shrink automatically as the user toggles Show Break Time
+        // / Show Coordinates / Show Correct Tool - fewer enabled options
+        // -> fewer lines -> shorter rect.
+        float baseHeight = noTarget ? 20.0f : lines.length * lineHeight + 2.0f;
+
+        // Effective icon size: shrink so the icon always fits inside the
+        // rect with 2 px of padding top + bottom. For a 4-line targeting
+        // rect (42 px) the icon stays at its 18 px nominal; for a single-
+        // line block-name-only rect (12 px) it shrinks to 8 px and still
+        // sits cleanly in the centre. Floored at 8 px so the icon never
+        // becomes a single pixel speck.
+        float effectiveIconSize = icon != null
+                ? Math.max(8.0f, Math.min(nominalIconSize, baseHeight - 4.0f))
+                : 0.0f;
+        float iconOffset = icon != null ? effectiveIconSize + 3.0f : 0.0f;
+
         float baseWidth = iconOffset + maxTextWidth;
-        float baseHeight = text.isEmpty() || text.contains("No target") ? 20.0f : lines.length * lineHeight;
-        // Add 2px to width and height when targeting a block
-        if (!text.isEmpty() && !text.contains("No target")) {
-            baseWidth += 2.0f;
-            baseHeight += 2.0f;
-        }
-        // Universal +4 px right-side padding applied to both the
-        // "no target" and "targeting" states - keeps the WAILA text
-        // from running flush against the rect's right edge in both
-        // layouts. Width-only bump (no height change) so the rect
-        // stays at vanilla heights and only grows horizontally.
+        // Universal +4 px right-side padding so the WAILA text never sits
+        // flush against the rect's right edge.
         baseWidth += 4.0f;
-        
+        // Extra +2 px specifically for the "no target" pill - the empty
+        // / "No target" copy is shorter than block-name text and the
+        // user wants the rect to feel less cramped when nothing is
+        // selected. The targeting state already has +0 on top of the
+        // universal +4 because block-name text already gives it visual
+        // width.
+        if (noTarget) {
+            baseWidth += 2.0f;
+        }
+
         // renderRectHud handles scaling internally, pass base dimensions
         renderRectHud(context, client, module, "", hudIndex,
                 chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
                 baseWidth, baseHeight);
-        
+
         float x = module.getHudX();
         float y = module.getHudY();
-        
+
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
-        
-        // Render icon - using translate(x,y) + scale approach like PotionHud
+
+        // Render icon - translate to its centred slot in HUD-local space
+        // first, THEN scale the 16x16 sprite to {@code effectiveIconSize}.
+        // Separating translate and scale lets us reason about position
+        // (always centred vertically in {@code baseHeight}) without
+        // worrying about how it interacts with the sprite-scale factor.
         if (icon != null) {
+            float iconLocalY = (baseHeight - effectiveIconSize) * 0.5f;
             context.getMatrices().push();
             context.getMatrices().translate(x, y, HUD_RENDER_Z + 50.0f);
             context.getMatrices().scale(scale, scale, 1.0f);
-            // Scale icon from 16x16 to desired size within HUD space
-            float iconDrawScale = iconSize / 16.0f;
+            context.getMatrices().translate(1.0f, iconLocalY, 0.0f);
+            float iconDrawScale = effectiveIconSize / 16.0f;
             context.getMatrices().scale(iconDrawScale, iconDrawScale, 1.0f);
             // Disable blend to prevent blur from affecting icon
             RenderSystem.disableBlend();
-            int iconY = text.isEmpty() || text.contains("No target") ? 1 : 5; // Lower by 4px when targeting
-            context.drawItem(icon, 1, iconY);
+            context.drawItem(icon, 0, 0);
             context.draw();
             // Re-enable blend so subsequent HUD elements (hotbar selection,
             // tab list, chat, etc.) render with proper alpha blending. Without
@@ -2842,20 +2870,19 @@ public class InGameHudMixin {
             RenderSystem.enableBlend();
             context.getMatrices().pop();
         }
-        
-        // Render each line separately - renderScaledHudText applies scale internally
+
+        // Text is centred vertically inside the rect for ALL states - both
+        // "no target" and "targeting", regardless of how many sub-toggles
+        // are enabled. This is the single source of truth requested: "в
+        // любых вкл/выкл оно должно быть нормального размера и по центру
+        // ректа по высоте".
         float totalTextHeight = lines.length * lineHeight;
-        float verticalOffset;
-        if (text.isEmpty() || text.contains("No target")) {
-            verticalOffset = (20.0f - totalTextHeight) / 2.0f + 2.0f; // Center in 20px rect, then lower by 2px
-        } else {
-            verticalOffset = 2.0f; // Original offset
-        }
+        float verticalOffset = (baseHeight - totalTextHeight) * 0.5f;
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             renderScaledHudText(context, client, line, x, y, iconOffset + 4.0f, verticalOffset + (i * lineHeight), HUD_TEXT_SIZE, scale, true);
         }
-        
+
         context.getMatrices().pop();
     }
 
