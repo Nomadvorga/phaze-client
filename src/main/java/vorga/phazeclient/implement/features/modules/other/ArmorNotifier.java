@@ -35,15 +35,61 @@ public final class ArmorNotifier extends Module {
             "Show in Chat",
             "Also print '[Phaze] <piece> almost broke!' to chat (English) when an armor piece crosses the threshold"
     ).setValue(false);
+    public final BooleanSetting repeat = new BooleanSetting(
+            "Repeat",
+            "Replay the alert (sound and chat line if enabled) several more times after the initial trigger"
+    ).setValue(false);
+    /**
+     * Number of <em>additional</em> alerts played after the initial
+     * threshold trigger. Minimum 2 keeps the toggle meaningful - if
+     * the user only wanted a single alert they would leave Repeat
+     * off, so the slider only ever spans counts that make a Repeat
+     * sequence worth scheduling. Hidden when {@link #repeat} is off.
+     */
+    public final ValueSetting repetitions = new ValueSetting(
+            "Number of Repetitions",
+            "How many extra times the alert is replayed after the initial trigger"
+    ).range(2, 10).setValue(3).visible(repeat::isValue);
+    /**
+     * Seconds between successive repeats. Lower bound 3 sits below
+     * the existing {@link #ALERT_COOLDOWN_MS} (4s) used for fresh
+     * threshold crossings, but the repeat scheduler intentionally
+     * bypasses that cooldown - the cooldown only debounces repeated
+     * threshold crossings, not the user's own scheduled cadence.
+     */
+    public final ValueSetting repeatDelay = new ValueSetting(
+            "Repeat Delay",
+            "Seconds between successive repeated alerts"
+    ).range(3, 30).setValue(5).visible(repeat::isValue);
 
     private final Map<EquipmentSlot, Boolean> wasBelow = new EnumMap<>(EquipmentSlot.class);
     private long lastAlertMs = 0L;
+    /**
+     * How many repeat alerts still need to fire. Decremented each
+     * time the scheduler emits a repeat, zero means the sequence is
+     * idle. Overwritten (not appended to) on every new threshold
+     * crossing so the freshest alert wins when armor breaks again
+     * mid-sequence.
+     */
+    private int pendingRepeats = 0;
+    /** Wall-clock timestamp (ms) for the next pending repeat. */
+    private long nextRepeatMs = 0L;
+    /**
+     * Snapshot of the slots that triggered the initial alert. The
+     * scheduler resends the same chat lines on every repeat so the
+     * user sees a coherent "Helmet almost broke!" reminder even if
+     * a piece has been repaired or swapped in the meantime.
+     */
+    private final List<EquipmentSlot> pendingSlots = new ArrayList<>(4);
 
     private ArmorNotifier() {
         super("armor_notifier", "Armor Notifier", ModuleCategory.UTILITIES);
         threshold.setFullWidth(true);
         chatNotify.setFullWidth(true);
-        setup(generalSection, threshold, chatNotify);
+        repeat.setFullWidth(true);
+        repetitions.setFullWidth(true);
+        repeatDelay.setFullWidth(true);
+        setup(generalSection, threshold, chatNotify, repeat, repetitions, repeatDelay);
 
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }
@@ -70,11 +116,39 @@ public final class ArmorNotifier extends Module {
     @Override
     public void deactivate() {
         wasBelow.clear();
+        // A disabled module must NOT continue nagging the player - clear
+        // any pending sequence so the next enable starts from a clean
+        // slate. {@code lastAlertMs} is intentionally left alone so the
+        // 4-second debounce still protects against rapid toggle spam.
+        pendingRepeats = 0;
+        pendingSlots.clear();
     }
 
     private void tick(MinecraftClient mc) {
         if (!isEnabled() || mc == null || mc.player == null) {
             return;
+        }
+
+        long now = System.currentTimeMillis();
+
+        // Repeat scheduler runs before the threshold scan so a pending
+        // repeat fires this tick even if no new threshold crossing
+        // happens; this is the whole point of "Repeat" - it's an
+        // ongoing nag independent of armor durability ticking down
+        // again. Bypasses the ALERT_COOLDOWN_MS gate because that
+        // cooldown is a debouncer for fresh threshold crossings, not
+        // for the user's explicit repeat cadence.
+        if (pendingRepeats > 0 && now >= nextRepeatMs) {
+            playPing(mc);
+            if (chatNotify.isValue()) {
+                for (EquipmentSlot slot : pendingSlots) {
+                    sendChatAlert(mc, slot);
+                }
+            }
+            pendingRepeats--;
+            // Round to ms to stay within long arithmetic. Slider step is
+            // 0.1s so we always land on a clean multiple of 100ms.
+            nextRepeatMs = now + (long) (repeatDelay.getValue() * 1000.0F);
         }
 
         float pct = threshold.getValue() / 100.0F;
@@ -101,7 +175,6 @@ public final class ArmorNotifier extends Module {
         }
 
         if (newSlots != null) {
-            long now = System.currentTimeMillis();
             if (now - lastAlertMs >= ALERT_COOLDOWN_MS) {
                 playPing(mc);
                 if (chatNotify.isValue()) {
@@ -110,6 +183,23 @@ public final class ArmorNotifier extends Module {
                     }
                 }
                 lastAlertMs = now;
+                // Arm the repeat sequence. We overwrite (rather than
+                // append to) any in-flight sequence so a fresh threshold
+                // crossing wins: if another piece breaks while the
+                // previous repeat queue is still draining, the user
+                // sees the alert reset around the newest event instead
+                // of two staggered queues colliding. Snapshot the slot
+                // list defensively because {@code newSlots} is a tick-
+                // local builder we don't want to share by reference.
+                if (repeat.isValue()) {
+                    pendingRepeats = repetitions.getInt();
+                    nextRepeatMs = now + (long) (repeatDelay.getValue() * 1000.0F);
+                    pendingSlots.clear();
+                    pendingSlots.addAll(newSlots);
+                } else {
+                    pendingRepeats = 0;
+                    pendingSlots.clear();
+                }
             }
         }
     }
