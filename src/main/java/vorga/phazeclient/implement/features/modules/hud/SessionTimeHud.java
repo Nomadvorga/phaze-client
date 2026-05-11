@@ -18,7 +18,7 @@ public final class SessionTimeHud extends RectHudModule {
     private SessionTimeHud() {
         super("session_time_hud", "Session Time", 22.0f, 476.0f, 1.0f);
         displayOption.setFullWidth(true);
-        setup(showBrackets, sessionSection, displayOption);
+        setup(sessionSection, displayOption);
     }
 
     @Override

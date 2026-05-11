@@ -1781,7 +1781,10 @@ public class InGameHudMixin {
         float iconSize = 18.0f;
         float paddingX = 6.0f;
         float paddingY = 4.0f;
-        float textX = paddingX + iconSize + 5.0f;
+        // Effect-name column shifted 2 px to the left (was iconSize + 5,
+        // now iconSize + 3) so the text sits closer to the icon and
+        // gives the rect a tighter visual feel.
+        float textX = paddingX + iconSize + 3.0f;
         int rows = sample ? 1 : effects.size();
         float maxTextWidth = 0.0f;
         for (int i = 0; i < rows; i++) {
@@ -1789,10 +1792,22 @@ public class InGameHudMixin {
             maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, potionDurationsCache.get(i), HUD_TEXT_SIZE));
         }
 
-        float baseWidth = Math.max(94.0f, textX + maxTextWidth + paddingX);
+        // Right side trimmed by 3 px (was paddingX, now paddingX - 3).
+        // Min width also drops by 3 (94 -> 91) so the user-perceived
+        // width matches across the empty / non-empty cases.
+        float baseWidth = Math.max(91.0f, textX + maxTextWidth + paddingX - 3.0f);
+        // Height: -1 from top (rect's top edge moves DOWN 1 px) and
+        // -3 from bottom (rect's bottom edge moves UP 3 px). Total -4.
+        // We achieve the top-edge shift via a matrix translate on Y by
+        // +1, and the bottom-edge shift by feeding renderRectHud a
+        // baseHeight reduced by 4. Content (icons + text) renders
+        // outside this matrix scope so it stays at its original Y.
         float baseHeight = paddingY * 2.0f + rows * rowHeight;
+        context.getMatrices().push();
+        context.getMatrices().translate(0.0f, 1.0f, 0.0f);
         renderRectHud(context, client, module, "", HUD_POTION, chatEditing, mouseX, mouseY, mouseDown,
-                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight);
+                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight - 4.0f);
+        context.getMatrices().pop();
 
         float x = module.getHudX();
         float y = module.getHudY();
@@ -2175,7 +2190,9 @@ public class InGameHudMixin {
 
     private static String formatEffectDuration(StatusEffectInstance effect) {
         if (effect.isInfinite()) {
-            return "**:**";
+            // Infinity glyph (U+221E) - reads instantly as "permanent"
+            // and lines up nicely under the effect name.
+            return "\u221E";
         }
         int totalSeconds = Math.max(0, effect.getDuration() / 20);
         int minutes = totalSeconds / 60;
@@ -2844,15 +2861,15 @@ public class InGameHudMixin {
         // the rect at {@code module.getHudY()} as its top-left, which
         // means we cannot grow the rect upward by changing baseHeight
         // alone (that grows it downward). Instead we apply a matrix
-        // translate of {@code -2 px} on Y around the entire WAILA
+        // translate of {@code -4 px} on Y around the entire WAILA
         // sub-render (rect + icon + text), which visually moves the
-        // top edge up by 2 px while leaving the saved hudY untouched.
+        // top edge up by 4 px while leaving the saved hudY untouched.
         // Drag/resize hit-tests still use the saved coord so the user's
         // actual cursor target stays where they parked it.
         boolean liftTop = !noTarget;
         if (liftTop) {
             context.getMatrices().push();
-            context.getMatrices().translate(0.0F, -2.0F, 0.0F);
+            context.getMatrices().translate(0.0F, -4.0F, 0.0F);
         }
 
         // renderRectHud handles scaling internally, pass base dimensions

@@ -20,7 +20,7 @@ public final class TimeHud extends RectHudModule {
         super("time_hud", "Time", 22.0f, 442.0f, 1.0f);
         hour24.setFullWidth(true);
         showAmPm.setFullWidth(true);
-        setup(showBrackets, timeSection, hour24, showAmPm);
+        setup(timeSection, hour24, showAmPm);
     }
 
     @Override

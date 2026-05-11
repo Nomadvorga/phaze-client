@@ -19,7 +19,7 @@ public final class PingHud extends RectHudModule {
     private PingHud() {
         super("ping_hud", "Ping", 22.0f, 190.0f, 1.0f);
         dynamicPingColor.setFullWidth(true);
-        setup(showBrackets, otherSection, dynamicPingColor);
+        setup(otherSection, dynamicPingColor);
     }
 
     public int getCachedPing() {

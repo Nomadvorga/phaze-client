@@ -19,7 +19,7 @@ public final class MovementSpeedHud extends RectHudModule {
         super("movement_speed_hud", "Movement Speed", 22.0f, 510.0f, 1.0f);
         onlyUseGroundSpeed.setFullWidth(true);
         roundTo.setFullWidth(true);
-        setup(showBrackets, onlyUseGroundSpeed, roundTo);
+        setup(onlyUseGroundSpeed, roundTo);
     }
 
     @Override
