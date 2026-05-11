@@ -38,6 +38,12 @@ public final class NametagHud extends RectHudModule {
         // is the natural starting point - users get nametag backgrounds
         // at the documented 30% effective opacity out of the box.
         backgroundOpacity.setValue(100);
+        // Hide the parent-registered Text Shadow toggle: nametags have
+        // their own {@link #nametagTextShadow} switch which is the only
+        // one consulted by {@link EntityRendererNametagMixin}. Surfacing
+        // both would let the user toggle the inert "Text Shadow" and
+        // wonder why nothing happens.
+        textShadow.visible(() -> false);
         nametagTextShadow.setFullWidth(true);
         thirdPersonNametag.setFullWidth(true);
         toggleMessage.setFullWidth(true);

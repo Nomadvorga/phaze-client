@@ -85,12 +85,21 @@ public abstract class EntityRendererNametagMixin {
             ci.cancel();
             return;
         }
-        
-        if (state != null && state.invisible) {
-            ci.cancel();
-            return;
-        }
-        
+
+        // NOTE: previously this point hard-cancelled when
+        // {@code state.invisible} was true. That broke server-side
+        // holograms - the standard pattern there is an armor stand
+        // with {@code Invisible:1b} and a {@code CustomName}, and
+        // {@code ArmorStandEntityRenderer#hasLabel} purposefully
+        // returns true for those so vanilla can paint the floating
+        // text. By cancelling on {@code state.invisible} we were
+        // wiping every hologram on the server. Vanilla already
+        // guards non-armorstand entities through its own
+        // {@code hasLabel} chain (it filters invisibility there for
+        // mobs that aren't supposed to show names while invisible),
+        // so dropping the check restores hologram visibility without
+        // re-enabling nametags for normal hidden mobs.
+
         if (client.cameraEntity != null && client.player != null) {
             double distance = client.cameraEntity.squaredDistanceTo(client.player);
             if (distance > 4096.0) {
