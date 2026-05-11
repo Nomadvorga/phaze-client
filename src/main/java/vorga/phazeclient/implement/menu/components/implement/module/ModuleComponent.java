@@ -121,10 +121,17 @@ public class ModuleComponent extends AbstractComponent {
 
         int outlineColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, outlineColorAnimation.getOutput().floatValue() * 0.75f);
         outlineColor = MenuStyle.withAlpha(outlineColor, applyGlobalAlpha(0.96F));
-        // Card background is intentionally transparent so the module blends with the GUI panel background.
+        // Card background is transparent by default so the module blends with the GUI panel
+        // background. On hover we paint a faint white wash over the card (0.06 alpha at full
+        // hover progress) so the card the cursor is on stands out without flooding the grid
+        // when the cursor sits between cards. Same colour math the setting-card hover uses
+        // (see AbstractSettingComponent#renderSettingCard) - kept low so the wash reads as
+        // an accent, not a fill. {@code hoverAnimation} is already lerped above so the wash
+        // fades in/out smoothly rather than popping on the first hover frame.
         height = getComponentHeight();
+        int hoverFillColor = MenuStyle.withAlpha(0xFFFFFFFF, applyGlobalAlpha(hoverProgress * 0.06F));
         rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
-                .round(8).softness(1).thickness(3.6F).outlineColor(outlineColor).color(0x00000000).build());
+                .round(8).softness(1).thickness(3.6F).outlineColor(outlineColor).color(hoverFillColor).build());
 
         float iconSize = module.getIconSize();
         float iconX = x + (width - iconSize) / 2.0F;

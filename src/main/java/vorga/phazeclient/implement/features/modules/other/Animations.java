@@ -1,5 +1,6 @@
 package vorga.phazeclient.implement.features.modules.other;
 
+import net.minecraft.client.option.Perspective;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
@@ -98,6 +99,16 @@ public final class Animations extends Module {
             "Smoothness of the hotbar selection slide. Higher = snappier."
     ).range(1, 30).step(0.5F).setValue(5);
 
+    public final SectionSetting cameraSection = new SectionSetting("Camera");
+    public final BooleanSetting smoothF5 = new BooleanSetting(
+            "Smooth F5",
+            "Smoothly slide the camera out behind the player when toggling third person, and back in when returning to first person"
+    ).setValue(false);
+    public final ValueSetting smoothF5Speed = new ValueSetting(
+            "F5 Animation Speed",
+            "How quickly the camera zooms in / out on perspective toggle. Higher = snappier."
+    ).range(1, 30).step(0.5F).setValue(5);
+
     public final SectionSetting listsSection = new SectionSetting("Lists");
     public final BooleanSetting listSmoothScroll = new BooleanSetting(
             "List Smooth Scroll",
@@ -117,6 +128,30 @@ public final class Animations extends Module {
     /** Target offset: 0 when open, -TAB_SLIDE_TRAVEL when closed. */
     private float tabTargetOffset = -TAB_SLIDE_TRAVEL;
     private long tabLastFrameNanos = 0L;
+
+    /** Vanilla's default third-person camera distance. Matches the literal
+     *  {@code 4.0F} passed to {@code Camera#clipToSpace} in the third-person
+     *  branch of {@code Camera#update}. Kept as a named constant so the
+     *  intent ("this is the full zoom-out distance") is obvious. */
+    private static final float F5_FULL_DISTANCE = 4.0F;
+    /** Distance below which the camera-distance interpolator snaps to its
+     *  target. 0.02 blocks is well under a single pixel of camera travel
+     *  at any practical FOV; smaller and the exponential decay would
+     *  asymptote forever. */
+    private static final float F5_SETTLE_EPSILON = 0.02F;
+    /** Last polled perspective. Used by {@link #tickSmoothF5(Perspective)}
+     *  to detect FIRST↔THIRD transitions and arm the zoom animation. */
+    private Perspective f5LastPerspective = null;
+    /** Interpolated camera distance, in blocks. 0 = at the player's eye
+     *  (first-person), {@link #F5_FULL_DISTANCE} = full third-person
+     *  retracted. The Camera mixin feeds this to {@code clipToSpace} so
+     *  the camera physically slides instead of snapping. */
+    private float f5CurrentDistance = 0.0F;
+    /** Animation target distance; matches the vanilla distance for the
+     *  current perspective (0 in first-person, {@link #F5_FULL_DISTANCE}
+     *  in third-person). */
+    private float f5TargetDistance = 0.0F;
+    private long f5LastFrameNanos = 0L;
 
     private Animations() {
         super("animations", "Animations", ModuleCategory.HUD);
@@ -156,10 +191,15 @@ public final class Animations extends Module {
         listSpeed.visible(listSmoothScroll::isValue);
         listLinesPerScroll.setFullWidth(true);
 
+        smoothF5.setFullWidth(true);
+        smoothF5Speed.setFullWidth(true);
+        smoothF5Speed.visible(smoothF5::isValue);
+
         setup(
                 tabSection, tabSlide, tabAnimationType, tabFade, tabSlideSpeed,
                 chatSection, chatFade, chatSmoothScroll, chatMessageAnimationType, chatSmoothSpeed, smoothInputField,
                 hotbarSection, hotbarSlide, hotbarRollover, hotbarSpeed,
+                cameraSection, smoothF5, smoothF5Speed,
                 listsSection, listSmoothScroll, listSpeed, listLinesPerScroll
         );
     }
@@ -470,5 +510,130 @@ public final class Animations extends Module {
         if (alpha < 0.0F) return 0.0F;
         if (alpha > 1.0F) return 1.0F;
         return alpha;
+    }
+
+    /**
+     * True when the Smooth F5 feature is currently active. Gates both the
+     * mixin's {@code thirdPerson} override and its {@code clipToSpace}
+     * arg modification - a disabled feature must leave vanilla behaviour
+     * untouched.
+     */
+    public boolean isSmoothF5Enabled() {
+        return isEnabled() && smoothF5.isValue();
+    }
+
+    /**
+     * Advances the camera-distance interpolator one frame and returns the
+     * new distance. Called from
+     * {@link vorga.phazeclient.mixins.CameraSmoothF5Mixin} at the HEAD of
+     * every {@code Camera#update} so the value the same call site later
+     * reads back via {@link #currentF5Distance()} is fresh for THIS frame.
+     *
+     * <p>Transition detection:
+     * <ul>
+     *   <li>FIRST → THIRD: snap current distance to 0, target {@link #F5_FULL_DISTANCE}.
+     *       The camera was at the player's eye, animate it backwards.</li>
+     *   <li>THIRD → FIRST: leave current distance alone (probably already
+     *       at full retract), target 0. The camera slides forward into
+     *       the player's head; the mixin keeps {@code thirdPerson=true}
+     *       throughout so vanilla actually moves the camera instead of
+     *       snapping to the eye position.</li>
+     *   <li>BACK ↔ FRONT: no distance change, no animation - both modes
+     *       sit at {@link #F5_FULL_DISTANCE}. Vanilla's view-flip is
+     *       instant by design and we mirror that.</li>
+     * </ul>
+     *
+     * <p>The frame-rate-independent decay uses the same
+     * {@link #smoothnessForSpeed(float)} curve as the tab slide so the
+     * speed slider behaves identically across animations.
+     */
+    public float tickSmoothF5(Perspective currentPerspective) {
+        if (!isSmoothF5Enabled()) {
+            // Park the animation at whichever distance vanilla would
+            // render with right now. This prevents a phantom slide on the
+            // very first frame after the feature is re-enabled (we don't
+            // want a stale 4→0 anim to play just because the user
+            // toggled the setting off in third-person and on in first-).
+            float vanillaDistance = currentPerspective != null && currentPerspective.isFirstPerson()
+                    ? 0.0F : F5_FULL_DISTANCE;
+            f5CurrentDistance = vanillaDistance;
+            f5TargetDistance = vanillaDistance;
+            f5LastPerspective = currentPerspective;
+            f5LastFrameNanos = 0L;
+            return f5CurrentDistance;
+        }
+
+        // Cold-start: seed state to the vanilla position so a player who
+        // launches the game already in third-person doesn't see a phantom
+        // 0→4 slide on the first camera update.
+        if (f5LastPerspective == null) {
+            float seed = currentPerspective != null && currentPerspective.isFirstPerson()
+                    ? 0.0F : F5_FULL_DISTANCE;
+            f5CurrentDistance = seed;
+            f5TargetDistance = seed;
+            f5LastPerspective = currentPerspective;
+            f5LastFrameNanos = 0L;
+            return f5CurrentDistance;
+        }
+
+        if (f5LastPerspective != currentPerspective) {
+            boolean prevFirst = f5LastPerspective.isFirstPerson();
+            boolean curFirst = currentPerspective != null && currentPerspective.isFirstPerson();
+            if (prevFirst && !curFirst) {
+                // FIRST → THIRD_*: start zoom-out from the eye.
+                f5CurrentDistance = 0.0F;
+                f5TargetDistance = F5_FULL_DISTANCE;
+            } else if (!prevFirst && curFirst) {
+                // THIRD_* → FIRST: keep the current distance and slide back
+                // in. Mid-animation the mixin forces thirdPerson=true so the
+                // camera physically moves rather than vanilla snapping.
+                f5TargetDistance = 0.0F;
+            }
+            // BACK ↔ FRONT: no distance animation, both stay at full retract.
+            f5LastPerspective = currentPerspective;
+        }
+
+        long now = System.nanoTime();
+        float dt;
+        if (f5LastFrameNanos == 0L) {
+            dt = 1.0F / 60.0F;
+        } else {
+            dt = (now - f5LastFrameNanos) / 1_000_000_000.0F;
+            if (dt > 0.25F) dt = 0.25F; // cap after long pauses (alt-tab etc.)
+        }
+        f5LastFrameNanos = now;
+
+        float smoothness = smoothnessForSpeed(smoothF5Speed.getValue());
+        float decay = (float) Math.pow(smoothness, dt);
+        f5CurrentDistance = (f5CurrentDistance - f5TargetDistance) * decay + f5TargetDistance;
+
+        if (Math.abs(f5CurrentDistance - f5TargetDistance) < F5_SETTLE_EPSILON) {
+            f5CurrentDistance = f5TargetDistance;
+        }
+        return f5CurrentDistance;
+    }
+
+    /**
+     * Most recently computed camera distance from {@link #tickSmoothF5}.
+     * Read by {@link vorga.phazeclient.mixins.CameraSmoothF5Mixin} when it
+     * substitutes the argument of {@code Camera#clipToSpace(float)}.
+     */
+    public float currentF5Distance() {
+        return f5CurrentDistance;
+    }
+
+    /**
+     * True while the interpolator has work left to do AND the feature is
+     * enabled. The Camera mixin uses this to force
+     * {@code Camera#update}'s {@code thirdPerson} parameter to true during
+     * a THIRD→FIRST slide - vanilla would otherwise short-circuit to the
+     * first-person path (no camera offset) the moment the perspective
+     * flips, snapping the camera into the player's head and skipping our
+     * animation entirely. The {@code > epsilon} check matches the settle
+     * test in {@link #tickSmoothF5} so the forcing stops at the exact
+     * frame the animation reaches first-person rest.
+     */
+    public boolean isF5AnimationActive() {
+        return isSmoothF5Enabled() && f5CurrentDistance > F5_SETTLE_EPSILON;
     }
 }
