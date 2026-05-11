@@ -29,6 +29,7 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.Block;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.tag.BlockTags;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -2602,33 +2603,51 @@ public class InGameHudMixin {
             String blockName = block.getName().getString();
             sb.append(blockName);
 
-            // Coordinates on separate line (English style: X: 123, Y: 456, Z: 789)
+            // Coordinates formatted as "(x, y, z)" with parentheses and
+            // signed integers to match the screenshot the user shared
+            // (e.g. "(-101, 71, -298)"). Single line, no axis labels -
+            // the parens make the role unambiguous at a glance.
             if (waila.showCoordinates.isValue()) {
-                sb.append("\nX: ").append(pos.getX())
-                  .append(", Y: ").append(pos.getY())
-                  .append(", Z: ").append(pos.getZ());
+                sb.append("\n(").append(pos.getX())
+                  .append(", ").append(pos.getY())
+                  .append(", ").append(pos.getZ())
+                  .append(')');
             }
 
-            // Break time on separate line
+            // Optimal-tool hint. Walks the vanilla mineable BlockTags
+            // (each block carries at most one of pickaxe/axe/shovel/hoe;
+            // sword is the special-case for cobweb / leaves). The tier
+            // prefix comes from the needs_X_tool tags so a wood pick
+            // on diamond ore correctly shows "Diamond Pickaxe" instead
+            // of the bare "Pickaxe" - users expect to see why their
+            // current tool fails to harvest, not just the family.
+            if (waila.showCorrectTool.isValue()) {
+                sb.append("\nCorrect Tool: ").append(phaze$resolveCorrectTool(state));
+            }
+
+            // Break time on separate line. Label changed from "Break:"
+            // to "Break Time:" per user request - keeps parity with
+            // "Correct Tool:" wording above and is less ambiguous than
+            // a bare "Break:" which reads like a verb.
             if (waila.showBreakTime.isValue()) {
                 if (client.player.isCreative()) {
-                    sb.append("\nBreak: Instant");
+                    sb.append("\nBreak Time: Instant");
                 } else {
                     float hardness = state.getHardness(client.world, pos);
                     if (hardness <= 0) {
-                        sb.append("\nBreak: Instant");
+                        sb.append("\nBreak Time: Instant");
                     } else {
                         float breakSpeed = client.player.getBlockBreakingSpeed(state);
                         if (breakSpeed <= 0) {
-                            sb.append("\nBreak: Never");
+                            sb.append("\nBreak Time: Never");
                         } else {
                             boolean canHarvest = client.player.canHarvest(state);
                             int divider = canHarvest ? 30 : 100;
                             float breakTime = hardness / breakSpeed * divider / 20.0f;
                             if (breakTime < 0.05f) {
-                                sb.append("\nBreak: Instant");
+                                sb.append("\nBreak Time: Instant");
                             } else {
-                                sb.append(String.format("\nBreak: %.2fs", breakTime));
+                                sb.append(String.format("\nBreak Time: %.2fs", breakTime));
                             }
                         }
                     }
@@ -2646,6 +2665,46 @@ public class InGameHudMixin {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Resolves the best-fit tool family for {@code state} by consulting
+     * the vanilla {@link BlockTags} the block has been registered under.
+     *
+     * <p>Vanilla's data-driven mining system uses one of four mutually-
+     * exclusive {@code *_MINEABLE} tags per block plus an orthogonal
+     * tier tag ({@code NEEDS_DIAMOND_TOOL} / {@code NEEDS_IRON_TOOL} /
+     * {@code NEEDS_STONE_TOOL}). We walk these in priority order:
+     * <ol>
+     *   <li>If a tier tag matches, prefix it ({@code "Diamond "}, etc.).
+     *       Wooden / golden / netherite blocks have no needs-tag because
+     *       wood is the implicit floor and netherite never requires a
+     *       higher-than-diamond tier, so an unmarked block falls through
+     *       to the bare family name.</li>
+     *   <li>Pickaxe / axe / shovel / hoe in tag-registered order.
+     *       Sword fires last because {@code SWORD_EFFICIENT} is a
+     *       cosmetic speed-up (cobweb, leaves) rather than a true
+     *       requirement; if a block were somehow in both pickaxe and
+     *       sword tags, the pickaxe win is the user-expected answer.</li>
+     *   <li>Default "Hand" - dirt, sand, gravel, plants, etc. don't
+     *       benefit from any tool above bare-fists in vanilla.</li>
+     * </ol>
+     */
+    private static String phaze$resolveCorrectTool(BlockState state) {
+        String tier = "";
+        if (state.isIn(BlockTags.NEEDS_DIAMOND_TOOL)) {
+            tier = "Diamond ";
+        } else if (state.isIn(BlockTags.NEEDS_IRON_TOOL)) {
+            tier = "Iron ";
+        } else if (state.isIn(BlockTags.NEEDS_STONE_TOOL)) {
+            tier = "Stone ";
+        }
+        if (state.isIn(BlockTags.PICKAXE_MINEABLE)) return tier + "Pickaxe";
+        if (state.isIn(BlockTags.AXE_MINEABLE))     return tier + "Axe";
+        if (state.isIn(BlockTags.SHOVEL_MINEABLE))  return tier + "Shovel";
+        if (state.isIn(BlockTags.HOE_MINEABLE))     return tier + "Hoe";
+        if (state.isIn(BlockTags.SWORD_EFFICIENT))  return "Sword";
+        return "Hand";
     }
 
     private ItemStack getWailaIcon(MinecraftClient client) {
