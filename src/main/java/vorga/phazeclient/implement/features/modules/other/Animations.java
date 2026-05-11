@@ -701,32 +701,82 @@ public final class Animations extends Module {
     }
 
     /**
+     * Threshold (in 0..1 currentTabProgress space) below which the
+     * "tail fade" kicks in for Scale / Slide+Scale styles when the
+     * user has the full-length fade toggle DISABLED. Inside this
+     * window the alpha ramps linearly from 0 (at progress=0) to 1
+     * (at progress=TAIL); above the threshold alpha stays at 1.
+     *
+     * <p>This exists because a Scale animation without any fade
+     * "pops" out of existence at the very end of the close animation:
+     * the matrix scale clamps at 0.01 (so the list never goes truly
+     * singular for GL), which still renders a 1-pixel-tall speck at
+     * full opacity that disappears in a single frame when the
+     * animation finishes. The tail fade dissolves that speck instead
+     * of cutting it, while keeping the main bulk of the animation
+     * fully opaque per the user's "no fade during the slide" intent.
+     * 0.15 was chosen by trial: smaller values still showed a brief
+     * pop, larger values bled visible fade into the main animation.
+     */
+    private static final float TAB_TAIL_FADE_THRESHOLD = 0.15F;
+
+    /**
      * Alpha multiplier (0..1) that should be applied to the tab list while
-     * the slide is in progress. Returns 1 when fade is disabled or the
-     * module is off so the mixin can skip the shader-color dance.
+     * the slide is in progress. Returns 1 when there's no fade contribution
+     * so the mixin can skip the shader-color dance.
      *
      * <p>The alpha source depends on the active style so the dissolve
      * stays synced with whatever movement curve is on screen:
      * <ul>
      *   <li>Plain {@code Slide}: alpha mirrors the decay-driven offset
      *       (matches the legacy behaviour).</li>
-     *   <li>{@code Scale} / {@code Slide+Scale}: alpha follows the
-     *       chosen interpolation curve via {@link #currentTabProgress()}
-     *       so eg a Bounce scale gets a bouncing fade, an Overshoot
-     *       scale gets an overshoot fade, etc.</li>
+     *   <li>{@code Scale} / {@code Slide+Scale} with fade on: alpha
+     *       follows the chosen interpolation curve via
+     *       {@link #currentTabProgress()} so eg a Bounce scale gets a
+     *       bouncing fade, an Overshoot scale gets an overshoot fade,
+     *       etc.</li>
+     *   <li>{@code Scale} / {@code Slide+Scale} with fade off: alpha
+     *       stays at 1 for the bulk of the animation and ramps
+     *       linearly to 0 only inside the
+     *       {@link #TAB_TAIL_FADE_THRESHOLD tail window} near
+     *       progress=0, so the speck doesn't pop in/out but the user
+     *       still gets their "no fade during the slide" preference.
+     *       </li>
      * </ul>
      */
     public float currentTabAlpha() {
-        if (!isTabFadeEnabled()) {
+        if (!isTabSlideEnabled()) {
             return 1.0F;
         }
         if (isTabSlideStyle()) {
+            // Plain Slide always rides the decay-driven alpha because
+            // the tight 18-px translate can't carry the final dissolve
+            // by itself; the alpha drop is what makes the slide-out
+            // actually disappear instead of stopping abruptly at the
+            // 18-px stop.
             float alpha = 1.0F + tabCurrentOffset / TAB_SLIDE_TRAVEL;
             if (alpha < 0.0F) return 0.0F;
             if (alpha > 1.0F) return 1.0F;
             return alpha;
         }
-        return currentTabProgress();
+        // Scale / Slide+Scale styles
+        float progress = currentTabProgress();
+        if (tabFade.isValue()) {
+            // Full-length fade: alpha tracks the curve, identical to
+            // the previous behaviour.
+            return progress;
+        }
+        // Tail fade: keep alpha at 1 for the main animation, only
+        // fade inside the tail window so the speck at progress=0
+        // dissolves cleanly. The same window is hit on the open
+        // direction (progress climbs through 0..TAIL on its way up)
+        // which incidentally gives the open speck a fade-in too -
+        // intentional, since a popping-in speck reads as visual noise
+        // even when the user wants no main-animation fade.
+        if (progress < TAB_TAIL_FADE_THRESHOLD) {
+            return progress / TAB_TAIL_FADE_THRESHOLD;
+        }
+        return 1.0F;
     }
 
     /**
