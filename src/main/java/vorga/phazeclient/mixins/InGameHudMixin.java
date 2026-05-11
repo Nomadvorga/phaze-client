@@ -1215,9 +1215,21 @@ public class InGameHudMixin {
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
 
+        // Vertically centre the text block inside the rect. For the
+        // normal multi-row layout {@code (baseHeight - textBlockHeight)
+        // / 2} equals {@code paddingY}, so nothing changes; the
+        // difference only matters when Streamer Mode strips the X/Y/Z/C
+        // rows and a single Biome line is left rattling around in a
+        // 20 px tall rect - without this fix the line stayed glued to
+        // the top of the rect with a 6 px gap below it.
+        float textBlockHeight = lines.size() * lineHeight;
+        float textOffsetY = (baseHeight - textBlockHeight) * 0.5f;
+        if (textOffsetY < paddingY) {
+            textOffsetY = paddingY;
+        }
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
-            float textY = paddingY + i * lineHeight;
+            float textY = textOffsetY + i * lineHeight;
             if (module.showBiome.isValue() && line.startsWith("Biome: ")) {
                 String label = "Biome: ";
                 renderScaledHudTextColored(context, client, label, x, y, paddingX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), 0xFFFFFF);
@@ -1237,14 +1249,29 @@ public class InGameHudMixin {
             if (module.showAxisSigns.isValue()) {
                 String topSign = coordinatesTopSignCache;
                 String bottomSign = coordinatesBottomSignCache;
+                // The +/- axis-sign trio (top sign / facing / bottom
+                // sign) is normally laid out at a fixed 10 px offset
+                // above and below the facing letter, which produces a
+                // ~28 px tall stack that visibly overshoots a short
+                // rect (eg the 20 px Streamer Mode rect with just
+                // Biome + compass). Scale the offset so the stack
+                // always fits inside the rect with one pixel of
+                // breathing room top and bottom; for the normal tall
+                // layout we still cap at the original 10 px so the
+                // signs don't drift apart further than designed.
+                float maxStackHalf = baseHeight * 0.5f - 5.0f;
+                if (maxStackHalf < 0.0f) {
+                    maxStackHalf = 0.0f;
+                }
+                float signOffset = Math.min(10.0f, maxStackHalf);
                 if (!topSign.isEmpty()) {
                     float signWidth = getHudTextWidth(client, topSign, HUD_TEXT_SIZE);
-                    renderScaledHudText(context, client, topSign, x, y, facingCenterX - signWidth * 0.5f, facingY - 10.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+                    renderScaledHudText(context, client, topSign, x, y, facingCenterX - signWidth * 0.5f, facingY - signOffset, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
                 }
                 renderScaledHudText(context, client, facing, x, y, facingX, facingY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
                 if (!bottomSign.isEmpty()) {
                     float signWidth = getHudTextWidth(client, bottomSign, HUD_TEXT_SIZE);
-                    renderScaledHudText(context, client, bottomSign, x, y, facingCenterX - signWidth * 0.5f, facingY + 10.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+                    renderScaledHudText(context, client, bottomSign, x, y, facingCenterX - signWidth * 0.5f, facingY + signOffset, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
                 }
             } else {
                 renderScaledHudText(context, client, facing, x, y, facingX, facingY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
