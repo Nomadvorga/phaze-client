@@ -30,6 +30,11 @@ public final class CoordinatesHud extends RectHudModule {
         showDirection.setFullWidth(true);
         showAxisSigns.setFullWidth(true);
         setup(otherSection, showX, showY, showZ, showChunk, showBiome, showDirection, showAxisSigns);
+        // Coordinates lines are emitted as multi-line text and have
+        // never round-tripped through the [] wrap path, so the parent-
+        // registered Show Brackets toggle is meaningless here. Hide it
+        // from the panel so the user isn't presented with a no-op.
+        showBrackets.visible(() -> false);
     }
 
     @Override

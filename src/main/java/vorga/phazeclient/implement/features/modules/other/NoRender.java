@@ -76,6 +76,16 @@ public final class NoRender extends Module {
             "Skip the chunk-of-block particles that fly out when a block is broken"
     ).setValue(false);
 
+    public final BooleanSetting splashPotionParticles = new BooleanSetting(
+            "Splash Potion Particles",
+            "Skip the burst that fires when a splash potion bottle breaks (does not affect lingering or status-effect bubbles)"
+    ).setValue(false);
+
+    public final BooleanSetting foodParticles = new BooleanSetting(
+            "Food Particles",
+            "Skip the bite-of-item particles that fly out of the player's mouth while eating"
+    ).setValue(false);
+
     private NoRender() {
         super("no_render", "No Render", ModuleCategory.OTHER);
         glowing.setFullWidth(true);
@@ -90,7 +100,12 @@ public final class NoRender extends Module {
         potionParticles.visible(() -> !particles.isValue());
         breakBlockParticles.setFullWidth(true);
         breakBlockParticles.visible(() -> !particles.isValue());
-        setup(glowing, fire, particles, hitParticles, potionParticles, breakBlockParticles);
+        splashPotionParticles.setFullWidth(true);
+        splashPotionParticles.visible(() -> !particles.isValue());
+        foodParticles.setFullWidth(true);
+        foodParticles.visible(() -> !particles.isValue());
+        setup(glowing, fire, particles, hitParticles, potionParticles, breakBlockParticles,
+                splashPotionParticles, foodParticles);
     }
 
     public static NoRender getInstance() {
@@ -104,7 +119,7 @@ public final class NoRender extends Module {
 
     @Override
     public String getIcon() {
-        return "other.png";
+        return "no_render.png";
     }
 
     @Override

@@ -1,6 +1,7 @@
 package vorga.phazeclient.implement.features.modules.hud;
 
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
 public final class FpsHud extends RectHudModule {
     private static final FpsHud INSTANCE = new FpsHud();
@@ -8,6 +9,14 @@ public final class FpsHud extends RectHudModule {
     public static FpsHud getInstance() {
         return INSTANCE;
     }
+
+    /**
+     * Section header that groups all non-Background settings under
+     * a clearly-named "Other" block, keeping the reverse-order
+     * toggle visually separated from the Background / Text Shadow
+     * controls inherited from {@link RectHudModule}.
+     */
+    public final SectionSetting otherSection = new SectionSetting("Other");
 
     /**
      * Swap the {@code FPS} label position. Default OFF renders
@@ -18,7 +27,7 @@ public final class FpsHud extends RectHudModule {
     private FpsHud() {
         super("fps_hud", "FPS");
         reverseOrder.setFullWidth(true);
-        setup(reverseOrder);
+        setup(otherSection, reverseOrder);
     }
 
     @Override

@@ -94,6 +94,36 @@ public abstract class ParticleManagerNoRenderMixin {
                 return true;
             }
         }
+        if (mod.splashPotionParticles.isValue()) {
+            // The burst emitted when a splash potion bottle breaks.
+            // {@link ParticleTypes#EFFECT} covers regular splashes
+            // (slowness, weakness, water bottle, etc.) and
+            // {@link ParticleTypes#INSTANT_EFFECT} covers the
+            // instant healing / instant damage variants - both go
+            // through the same {@code addParticle} funnel via
+            // {@code PotionEntity#applySplash}. Lingering potions
+            // emit {@code area_effect_cloud} entity particles via a
+            // separate code path (entity render, not
+            // ParticleManager.addParticle), so they remain unaffected
+            // and the toggle stays specifically about splash impact.
+            if (type == ParticleTypes.EFFECT
+                    || type == ParticleTypes.INSTANT_EFFECT) {
+                return true;
+            }
+        }
+        if (mod.foodParticles.isValue()) {
+            // {@link ParticleTypes#ITEM} is the chewy item-shard
+            // particle vanilla emits via
+            // {@code LivingEntity#spawnItemParticles} when the player
+            // (or any LivingEntity) is mid-{@code eat} animation.
+            // Vanilla also uses this type for the splatter when an
+            // item entity is destroyed by fire / explosion, but that
+            // is rare enough that the user-facing label "Food
+            // Particles" still describes the dominant path.
+            if (type == ParticleTypes.ITEM) {
+                return true;
+            }
+        }
         return false;
     }
 

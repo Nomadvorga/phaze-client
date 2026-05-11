@@ -1,6 +1,7 @@
 package vorga.phazeclient.implement.features.modules.hud;
 
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
 public final class DayCounterHud extends RectHudModule {
     private static final DayCounterHud INSTANCE = new DayCounterHud();
@@ -8,6 +9,8 @@ public final class DayCounterHud extends RectHudModule {
     public static DayCounterHud getInstance() {
         return INSTANCE;
     }
+
+    public final SectionSetting otherSection = new SectionSetting("Other");
 
     /**
      * Swap the {@code Day} label position. Default OFF preserves the
@@ -21,7 +24,7 @@ public final class DayCounterHud extends RectHudModule {
     private DayCounterHud() {
         super("day_counter_hud", "Day Counter", 22.0f, 338.0f, 1.0f);
         reverseOrder.setFullWidth(true);
-        setup(reverseOrder);
+        setup(otherSection, reverseOrder);
     }
 
     @Override

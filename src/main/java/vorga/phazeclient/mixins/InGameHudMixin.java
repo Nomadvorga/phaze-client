@@ -151,7 +151,6 @@ public class InGameHudMixin {
     private static String coordinatesFacingCache = "";
     private static String coordinatesTopSignCache = "";
     private static String coordinatesBottomSignCache = "";
-    private static boolean coordinatesCacheInitialized = false;
     private static List<ItemStack> armorStacksCache = new ArrayList<>();
     private static List<String> armorDurabilityTextsCache = new ArrayList<>();
     private static List<StatusEffectInstance> potionEffectsCache = new ArrayList<>();
@@ -481,9 +480,14 @@ public class InGameHudMixin {
             return module.reverseOrder.isValue() ? "Speed: " + value : value;
         });
         final String speedTextWrapped = wrapTextWithBrackets(speedText, MovementSpeedHud.getInstance());
+        // Pass an explicit baseWidth derived from the actual text - the
+        // earlier 12-arg overload defaulted to {@code BASE_WIDTH} which
+        // is sized for short numeric HUDs and clipped longer strings
+        // such as "Speed: 1.23 m/s" once Reverse Order was enabled.
         renderBufferedHud(context, MovementSpeedHud.getInstance(), chatEditing, () ->
                 renderRectHud(context, client, MovementSpeedHud.getInstance(), speedTextWrapped, HUD_MOVEMENT_SPEED,
-                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(MovementSpeedHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(MovementSpeedHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                        getTextHudBaseWidth(client, speedTextWrapped), BASE_HEIGHT));
 
         ItemStack wailaIcon = getWailaIcon(client);
         String wailaText = getCachedHudText(WailaHud.getInstance(), HUD_WAILA, chatEditing, () -> {
@@ -1134,34 +1138,43 @@ public class InGameHudMixin {
             return;
         }
 
-        if (!coordinatesCacheInitialized) {
-            List<String> updatedLines = new ArrayList<>();
-            BlockPos pos = client.player.getBlockPos();
-            if (module.showX.isValue()) {
-                updatedLines.add("X: " + pos.getX());
-            }
-            if (module.showY.isValue()) {
-                updatedLines.add("Y: " + pos.getY());
-            }
-            if (module.showZ.isValue()) {
-                updatedLines.add("Z: " + pos.getZ());
-            }
-            if (module.showChunk.isValue()) {
-                updatedLines.add("C: " + ChunkSectionPos.getLocalCoord(pos.getX()) + "/" + ChunkSectionPos.getLocalCoord(pos.getZ()));
-            }
-            coordinatesBiomeNameCache = "";
-            coordinatesBiomeColorCache = 0xFFFF55;
-            if (module.showBiome.isValue()) {
-                coordinatesBiomeNameCache = getBiomeName(client, pos);
-                coordinatesBiomeColorCache = getBiomeColor(client, pos);
-                updatedLines.add("Biome: " + coordinatesBiomeNameCache);
-            }
-            coordinatesFacingCache = getFacing8Point(client.player.getYaw(0.0f));
-            coordinatesTopSignCache = getDirectionXSign(coordinatesFacingCache);
-            coordinatesBottomSignCache = getDirectionZSign(coordinatesFacingCache);
-            coordinatesLinesCache = updatedLines;
-            coordinatesCacheInitialized = true;
+        // Rebuild the line set every frame. Caching the list across
+        // frames silently broke the per-axis toggles (Show X / Y / Z /
+        // Biome): once initialised the cache was reused regardless of
+        // setting changes AND it never picked up the player's new
+        // position. The computations here are cheap enough (a single
+        // BlockPos read + at most one biome registry lookup) that
+        // recomputing per frame stays well under the HUD's frame
+        // budget while letting the toggles take immediate effect.
+        List<String> updatedLines = new ArrayList<>();
+        BlockPos pos = client.player.getBlockPos();
+        if (module.showX.isValue()) {
+            updatedLines.add("X: " + pos.getX());
         }
+        if (module.showY.isValue()) {
+            updatedLines.add("Y: " + pos.getY());
+        }
+        if (module.showZ.isValue()) {
+            updatedLines.add("Z: " + pos.getZ());
+        }
+        if (module.showChunk.isValue()) {
+            updatedLines.add("C: " + ChunkSectionPos.getLocalCoord(pos.getX()) + "/" + ChunkSectionPos.getLocalCoord(pos.getZ()));
+        }
+        // When Show Biome is OFF the row is omitted entirely - the
+        // earlier behaviour kept emitting an empty Biome line in a
+        // dimmed colour, which the user reasonably read as "the toggle
+        // is broken". Now the row only exists when the toggle is on.
+        coordinatesBiomeNameCache = "";
+        coordinatesBiomeColorCache = 0xFFFF55;
+        if (module.showBiome.isValue()) {
+            coordinatesBiomeNameCache = getBiomeName(client, pos);
+            coordinatesBiomeColorCache = getBiomeColor(client, pos);
+            updatedLines.add("Biome: " + coordinatesBiomeNameCache);
+        }
+        coordinatesFacingCache = getFacing8Point(client.player.getYaw(0.0f));
+        coordinatesTopSignCache = getDirectionXSign(coordinatesFacingCache);
+        coordinatesBottomSignCache = getDirectionZSign(coordinatesFacingCache);
+        coordinatesLinesCache = updatedLines;
 
         List<String> lines = coordinatesLinesCache;
         String biomeName = coordinatesBiomeNameCache;
@@ -1893,29 +1906,38 @@ public class InGameHudMixin {
     }
 
     private static String getSprintHudText(MinecraftClient client) {
+        // Sprint HUD now displays state without surrounding [] - the
+        // qualifier sources (Key Held / AutoSprint / Vanilla) live in
+        // round parens so the line reads naturally as one phrase.
         if (client.player == null || client.options == null) {
-            return "[Not Sprinting]";
+            return "Not Sprinting";
         }
         if (client.player.getAbilities().flying && client.options.sneakKey.isPressed()) {
-            return "[Flying Descending]";
+            return "Flying Descending";
         }
         if (client.player.getAbilities().flying) {
-            return "[Flying]";
+            return "Flying";
         }
         if (client.options.sneakKey.isPressed() || client.player.isSneaking()) {
-            return "[Sneaking (Key Held)]";
+            return "Sneaking (Key Held)";
         }
         if (client.options.sprintKey.isPressed()) {
-            return "[Sprinting (Key Held)]";
+            return "Sprinting (Key Held)";
         }
         if (client.player.isSprinting()) {
+            // Surface "(AutoSprint)" whenever the AutoSprint module is
+            // active so the user can see at a glance that the sprint
+            // they're observing is being sustained by the client and
+            // not by a held key. The {@code showInSprintHud} sub-toggle
+            // gates the indicator so it can be muted if the user
+            // prefers a generic "Sprinting" label.
             AutoSprint autoSprint = AutoSprint.getInstance();
             if (autoSprint.isEnabled() && autoSprint.showInSprintHud.isValue()) {
-                return "[Sprinting (AutoSprint)]";
+                return "Sprinting (AutoSprint)";
             }
-            return "[Sprinting (Vanilla)]";
+            return "Sprinting (Vanilla)";
         }
-        return "[Not Sprinting]";
+        return "Not Sprinting";
     }
 
     private static String getDayCounterText(MinecraftClient client) {

@@ -4,6 +4,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
 public final class ComboCounterHud extends RectHudModule {
     private static final ComboCounterHud INSTANCE = new ComboCounterHud();
@@ -11,6 +12,8 @@ public final class ComboCounterHud extends RectHudModule {
     public static ComboCounterHud getInstance() {
         return INSTANCE;
     }
+
+    public final SectionSetting otherSection = new SectionSetting("Other");
 
     /**
      * Toggle that swaps the order of the {@code Combo} label and the
@@ -28,7 +31,7 @@ public final class ComboCounterHud extends RectHudModule {
     private ComboCounterHud() {
         super("combo_counter_hud", "Combo Counter", 100.0f, 50.0f, 1.0f);
         reverseOrder.setFullWidth(true);
-        setup(reverseOrder);
+        setup(otherSection, reverseOrder);
     }
 
     public void onAttack(LivingEntity target) {

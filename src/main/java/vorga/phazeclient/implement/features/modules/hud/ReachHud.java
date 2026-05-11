@@ -6,6 +6,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
 import java.util.Locale;
 
@@ -36,6 +37,8 @@ public final class ReachHud extends RectHudModule {
      */
     private long lastHitTimeMillis = 0L;
 
+    public final SectionSetting otherSection = new SectionSetting("Other");
+
     /**
      * Swap the {@code Reach} label position. Default OFF renders the
      * minimal {@code "4 blocks"} form (back-compat with how the HUD
@@ -52,7 +55,7 @@ public final class ReachHud extends RectHudModule {
     private ReachHud() {
         super("reach_hud", "Reach HUD");
         reverseOrder.setFullWidth(true);
-        setup(reverseOrder);
+        setup(otherSection, reverseOrder);
     }
 
     @Override
