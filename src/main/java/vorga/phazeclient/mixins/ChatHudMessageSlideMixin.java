@@ -15,6 +15,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.base.util.animation.Interpolation;
 import vorga.phazeclient.helpers.ChatScrollState;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 
@@ -180,9 +181,16 @@ public abstract class ChatHudMessageSlideMixin {
 
         if (left) {
             float maxLeft = getWidth() * LEFT_DISPLACEMENT_SCALE;
+            // Reshape the 0..1 linear-time alpha through the user's
+            // chosen easing curve before mapping it to pixel travel.
+            // {@code Linear} reproduces the original behaviour, other
+            // curves give the slide overshoot / spring / bounce feel
+            // without changing the duration knob.
+            Interpolation interp = module.getChatLeftInterpolation();
+            float shaped = (float) interp.interpolate(alpha);
             // Negative because the row is sliding *from* the left:
-            // starts at -maxLeft and eases to 0 as alpha -> 1.
-            phaze$frameDx = -maxLeft * (1.0F - alpha);
+            // starts at -maxLeft and eases to 0 as shaped -> 1.
+            phaze$frameDx = -maxLeft * (1.0F - shaped);
             phaze$frameDy = 0.0F;
             if (Math.abs(phaze$frameDx) < 1.0F) {
                 return;
