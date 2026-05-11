@@ -329,16 +329,21 @@ public final class RemoteRulesService {
                 // API hasn't responded yet.
                 blocked = Collections.emptySet();
                 lastHost = host;
-                // Don't fetch for an empty host (singleplayer / not yet
-                // connected). Saves a TLS handshake and a guaranteed
-                // empty response. We *also* mark the snapshot fresh so
-                // the staleness check below doesn't keep retrying.
-                if (host.isEmpty()) {
-                    lastRefreshMs = now;
-                } else {
-                    fetchAsync(host);
-                }
-            } else if (stale && !host.isEmpty()) {
+                // Always fetch on host change, including when the host
+                // is empty (singleplayer / main menu). An empty-host
+                // poll still serves two purposes in one request: it
+                // refreshes the global online counter via the clientId
+                // heartbeat, and it confirms the empty ruleset for the
+                // current (non-)server. That's the "single request on
+                // game launch covers both rules and online users"
+                // behaviour the UI relies on - previously we'd skip
+                // the call on an empty host and the title-screen
+                // counter stayed stuck on "connecting..." forever.
+                fetchAsync(host);
+            } else if (stale) {
+                // Same reasoning as above: keep refreshing the online
+                // count even when the host is empty, so the counter
+                // stays alive while the player sits on the menu.
                 fetchAsync(host);
             }
         } catch (Throwable t) {
