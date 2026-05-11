@@ -2824,6 +2824,12 @@ public class InGameHudMixin {
         // Universal +4 px right-side padding so the WAILA text never sits
         // flush against the rect's right edge.
         baseWidth += 4.0f;
+        // Compensate for the +4 px icon-X nudge applied below (see
+        // {@code iconLocalX}). The text follows the icon and would
+        // otherwise overshoot the rect's right edge by exactly 4 px;
+        // padding the rect itself by +4 keeps both icon and text
+        // proportionally inside.
+        baseWidth += 4.0f;
         // Extra +2 px specifically for the "no target" pill - the empty
         // / "No target" copy is shorter than block-name text and the
         // user wants the rect to feel less cramped when nothing is
@@ -2832,6 +2838,21 @@ public class InGameHudMixin {
         // width.
         if (noTarget) {
             baseWidth += 2.0f;
+        }
+
+        // Visual top-edge lift for the targeting state. Vanilla anchors
+        // the rect at {@code module.getHudY()} as its top-left, which
+        // means we cannot grow the rect upward by changing baseHeight
+        // alone (that grows it downward). Instead we apply a matrix
+        // translate of {@code -2 px} on Y around the entire WAILA
+        // sub-render (rect + icon + text), which visually moves the
+        // top edge up by 2 px while leaving the saved hudY untouched.
+        // Drag/resize hit-tests still use the saved coord so the user's
+        // actual cursor target stays where they parked it.
+        boolean liftTop = !noTarget;
+        if (liftTop) {
+            context.getMatrices().push();
+            context.getMatrices().translate(0.0F, -2.0F, 0.0F);
         }
 
         // renderRectHud handles scaling internally, pass base dimensions
@@ -2845,6 +2866,13 @@ public class InGameHudMixin {
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
 
+        // Horizontal nudge of the icon by +4 px in HUD-local space, in
+        // both the "no target" and "targeting" states - shifts the icon
+        // away from the rect's left edge so it has a bit of breathing
+        // room. The text x-anchor still uses {@code iconOffset + 4} so
+        // text follows the icon's new x without overlapping it.
+        float iconLocalX = 1.0f + 4.0f;
+
         // Render icon - translate to its centred slot in HUD-local space
         // first, THEN scale the 16x16 sprite to {@code effectiveIconSize}.
         // Separating translate and scale lets us reason about position
@@ -2855,7 +2883,7 @@ public class InGameHudMixin {
             context.getMatrices().push();
             context.getMatrices().translate(x, y, HUD_RENDER_Z + 50.0f);
             context.getMatrices().scale(scale, scale, 1.0f);
-            context.getMatrices().translate(1.0f, iconLocalY, 0.0f);
+            context.getMatrices().translate(iconLocalX, iconLocalY, 0.0f);
             float iconDrawScale = effectiveIconSize / 16.0f;
             context.getMatrices().scale(iconDrawScale, iconDrawScale, 1.0f);
             // Disable blend to prevent blur from affecting icon
@@ -2875,15 +2903,32 @@ public class InGameHudMixin {
         // "no target" and "targeting", regardless of how many sub-toggles
         // are enabled. This is the single source of truth requested: "в
         // любых вкл/выкл оно должно быть нормального размера и по центру
-        // ректа по высоте".
+        // ректа по высоте". The "no target" pill receives an extra +1 px
+        // downward nudge per the user's typography preference - the
+        // single-word "No target" copy reads visually higher than the
+        // optical centre, so the +1 brings it down to the perceptual
+        // middle of the pill.
         float totalTextHeight = lines.length * lineHeight;
         float verticalOffset = (baseHeight - totalTextHeight) * 0.5f;
+        if (noTarget) {
+            verticalOffset += 1.0f;
+        }
+        // Text x-anchor follows the icon's new shifted column so the
+        // gap between icon and text stays constant. Original layout was
+        // {@code iconOffset + 4}; with the icon nudged by +4 px we add
+        // the same +4 to the text so the visual relationship between
+        // them is preserved.
+        float textXOffset = iconOffset + 4.0f + 4.0f;
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
-            renderScaledHudText(context, client, line, x, y, iconOffset + 4.0f, verticalOffset + (i * lineHeight), HUD_TEXT_SIZE, scale, true);
+            renderScaledHudText(context, client, line, x, y, textXOffset, verticalOffset + (i * lineHeight), HUD_TEXT_SIZE, scale, true);
         }
 
         context.getMatrices().pop();
+
+        if (liftTop) {
+            context.getMatrices().pop();
+        }
     }
 
     private void renderZoomLevel(DrawContext context, MinecraftClient client, float screenWidth, float screenHeight) {
