@@ -5,6 +5,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.implement.features.modules.other.ChangeHand;
 import vorga.phazeclient.implement.features.modules.other.FreeLook;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 import org.lwjgl.glfw.GLFW;
@@ -18,6 +19,16 @@ public class KeyboardZoomMixin {
         FreeLook freeLook = FreeLook.getInstance();
         if (freeLook != null && freeLook.isEnabled()) {
             freeLook.onBindStateChanged(key, action);
+        }
+
+        // Change Hand bind: flips vanilla MainArm on press. The
+        // module short-circuits internally when Upon Impact is on or
+        // the key is unbound, so we just forward every event here
+        // and don't cancel the original key dispatch - typing the
+        // bound letter into chat must still work normally.
+        ChangeHand changeHand = ChangeHand.getInstance();
+        if (changeHand != null && changeHand.isEnabled()) {
+            changeHand.onBindStateChanged(key, action);
         }
 
         // Zoom handling

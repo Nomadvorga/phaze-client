@@ -226,6 +226,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.NoRender.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.NoRender.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChangeHand.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChangeHand.getInstance());
+        }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {
         //     moduleProvider.getModules().add(ScoreboardHud.getInstance());
