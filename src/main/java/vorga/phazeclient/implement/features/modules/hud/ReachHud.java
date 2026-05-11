@@ -5,6 +5,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 
 import java.util.Locale;
 
@@ -35,12 +36,23 @@ public final class ReachHud extends RectHudModule {
      */
     private long lastHitTimeMillis = 0L;
 
+    /**
+     * Swap the {@code Reach} label position. Default OFF renders the
+     * minimal {@code "4 blocks"} form (back-compat with how the HUD
+     * has always looked); ON adds the {@code "Reach: "} prefix so the
+     * value reads as {@code "Reach: 4 blocks"}. The toggle is named
+     * "Reverse Order" for consistency with the rest of the HUD set.
+     */
+    public final BooleanSetting reverseOrder = new BooleanSetting("Reverse Order", "Add \"Reach:\" prefix instead of just \"X blocks\"").setValue(false);
+
     public static ReachHud getInstance() {
         return INSTANCE;
     }
 
     private ReachHud() {
         super("reach_hud", "Reach HUD");
+        reverseOrder.setFullWidth(true);
+        setup(reverseOrder);
     }
 
     @Override
@@ -102,9 +114,15 @@ public final class ReachHud extends RectHudModule {
         }
 
         float rounded = Math.round(lastReach);
+        String value;
         if (Math.abs(lastReach - rounded) < 0.005f) {
-            return (int) rounded + " blocks";
+            value = (int) rounded + " blocks";
+        } else {
+            value = String.format(Locale.US, "%.2f blocks", lastReach);
         }
-        return String.format(Locale.US, "%.2f blocks", lastReach);
+        // Optional "Reach: " prefix when the user wants the labelled
+        // form. Default OFF preserves the minimal value-only display
+        // the HUD has always shown.
+        return reverseOrder.isValue() ? "Reach: " + value : value;
     }
 }

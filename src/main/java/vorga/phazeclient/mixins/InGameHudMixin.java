@@ -356,7 +356,10 @@ public class InGameHudMixin {
             showHorizontalGuideThisFrame = false;
         }
 
-        String fpsText = getCachedHudText(FpsHud.getInstance(), HUD_FPS, chatEditing, () -> "FPS: " + client.getCurrentFps());
+        String fpsText = getCachedHudText(FpsHud.getInstance(), HUD_FPS, chatEditing, () -> {
+            int fps = client.getCurrentFps();
+            return FpsHud.getInstance().reverseOrder.isValue() ? fps + " FPS" : "FPS: " + fps;
+        });
         final String fpsTextWrapped = wrapTextWithBrackets(fpsText, FpsHud.getInstance());
         renderBufferedHud(context, FpsHud.getInstance(), chatEditing, () ->
                 renderRectHud(context, client, FpsHud.getInstance(), fpsTextWrapped, HUD_FPS,
@@ -471,7 +474,11 @@ public class InGameHudMixin {
             // If standing still, show 0
             if (speed < 0.01) speed = 0.0;
             
-            return module.getSpeedText(speed) + " m/s";
+            String value = module.getSpeedText(speed) + " m/s";
+            // Optional "Speed:" prefix when the user wants the
+            // labelled variant. Default OFF preserves the original
+            // value-only display.
+            return module.reverseOrder.isValue() ? "Speed: " + value : value;
         });
         final String speedTextWrapped = wrapTextWithBrackets(speedText, MovementSpeedHud.getInstance());
         renderBufferedHud(context, MovementSpeedHud.getInstance(), chatEditing, () ->
@@ -1245,7 +1252,13 @@ public class InGameHudMixin {
         }
 
         boolean local = client.isIntegratedServerRunning() || client.getCurrentServerEntry() == null;
-        String label = "Ping: ";
+        // {@code reverseOrder} swaps the HUD between the labelled
+        // "Ping: 50 ms" and the value-first "50 ms Ping" forms. The
+        // value half (the actual ping number with " ms" unit) is the
+        // colorised segment in both layouts; only its X anchor and the
+        // surrounding label string change.
+        boolean reversed = module.reverseOrder.isValue();
+        String label = reversed ? " Ping" : "Ping: ";
         String value = getCachedHudText(module, HUD_PING, chatEditing, () -> {
             if (local) {
                 module.resetPingCache();
@@ -1256,7 +1269,7 @@ public class InGameHudMixin {
             int displayPing = module.getCachedPing();
             return displayPing >= 0 ? displayPing + " ms" : "... ms";
         });
-        String fullText = label + value;
+        String fullText = reversed ? value + label : label + value;
         fullText = wrapTextWithBrackets(fullText, module);
         float baseWidth = Math.max(48.0f, getHudTextWidth(client, fullText, HUD_TEXT_SIZE) + 12.0f);
 
@@ -1288,7 +1301,12 @@ public class InGameHudMixin {
                 pingColor = 0xFFFFFF;
             }
         }
-        renderScaledHudTextColored(context, client, value, x, y, textX + labelWidth, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), pingColor);
+        // In reversed layout the value segment leads the line, so it
+        // sits flush at {@code textX}. In default layout the label
+        // takes the leading position and the value lives just after
+        // it (offset by {@code labelWidth}).
+        float valueX = reversed ? textX : textX + labelWidth;
+        renderScaledHudTextColored(context, client, value, x, y, valueX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), pingColor);
         context.getMatrices().pop();
     }
 
@@ -1901,10 +1919,21 @@ public class InGameHudMixin {
     }
 
     private static String getDayCounterText(MinecraftClient client) {
+        DayCounterHud module = DayCounterHud.getInstance();
         if (client.world == null) {
-            return "0 Days";
+            // Idle / pre-world state: keep the legacy "0 Days" text in
+            // the default order, but still respect the user's
+            // {@code reverseOrder} preference so the HUD doesn't flip
+            // formats the moment the world finishes loading.
+            return module.reverseOrder.isValue() ? "Day: 0" : "0 Days";
         }
         long days = Math.max(0L, client.world.getTime() / 24000L) + 1;
+        if (module.reverseOrder.isValue()) {
+            // Label-prefixed, plain-number form. We deliberately drop
+            // the singular/plural distinction here because "Day: 1"
+            // already reads naturally regardless of the count.
+            return "Day: " + days;
+        }
         return days + (days == 1L ? " Day" : " Days");
     }
 
