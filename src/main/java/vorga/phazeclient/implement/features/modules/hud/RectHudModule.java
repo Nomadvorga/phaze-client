@@ -65,7 +65,13 @@ public abstract class RectHudModule extends Module {
             .range(0, 32)
             .setValue(0)
             .visible(() -> background.isValue());
-    public final SectionSetting colorSection = new SectionSetting("Color Settings");
+    // The Color Settings divider is meaningful only when at least one
+    // of its children is visible, and every child is gated by
+    // {@code background.isValue()}. So when Background is off the whole
+    // section collapses, otherwise we'd render an empty header floating
+    // above nothing.
+    public final SectionSetting colorSection = new SectionSetting("Color Settings")
+            .visible(() -> background.isValue());
 
     private final HudBuffer hudBuffer = new HudBuffer();
 
@@ -93,7 +99,7 @@ public abstract class RectHudModule extends Module {
         colorBrightness.setFullWidth(true);
         backgroundOpacity.setFullWidth(true);
         backgroundBlurRadius.setFullWidth(true);
-        setup(mainSection, showBrackets, textShadow, background, colorSection, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius);
+        setup(mainSection, textShadow, background, showBrackets, colorSection, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius);
     }
 
     public float getHudX() {
