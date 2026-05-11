@@ -151,16 +151,6 @@ public final class Animations extends Module {
      *  current perspective (0 in first-person, {@link #F5_FULL_DISTANCE}
      *  in third-person). */
     private float f5TargetDistance = 0.0F;
-    /**
-     * Two-phase BACK ↔ FRONT transition flag. The straight rotation flip
-     * vanilla performs has no distance change to animate, so we synthesise
-     * one: target=0 (camera retracts into the player) and once we settle
-     * at zero we re-arm target={@link #F5_FULL_DISTANCE} so the camera
-     * emerges on the opposite side. Without this the second F5 press would
-     * snap instantly (BACK and FRONT both sit at distance 4), which
-     * defeated the user-visible point of "Smooth F5" on press #2.
-     */
-    private boolean f5PendingZoomOut = false;
     private long f5LastFrameNanos = 0L;
 
     private Animations() {
@@ -541,16 +531,14 @@ public final class Animations extends Module {
      *
      * <p>Transition detection:
      * <ul>
-     *   <li>FIRST → THIRD: snap current distance to 0, target {@link #F5_FULL_DISTANCE}.
-     *       The camera was at the player's eye, animate it backwards.</li>
-     *   <li>THIRD → FIRST: leave current distance alone (probably already
-     *       at full retract), target 0. The camera slides forward into
-     *       the player's head; the mixin keeps {@code thirdPerson=true}
-     *       throughout so vanilla actually moves the camera instead of
-     *       snapping to the eye position.</li>
-     *   <li>BACK ↔ FRONT: no distance change, no animation - both modes
-     *       sit at {@link #F5_FULL_DISTANCE}. Vanilla's view-flip is
-     *       instant by design and we mirror that.</li>
+     *   <li>Any → FIRST: snap to 0, no animation. The user wants the
+     *       third-press F5 exit to be instant.</li>
+     *   <li>FIRST → THIRD or BACK ↔ FRONT: snap current to 0 and animate
+     *       to {@link #F5_FULL_DISTANCE}. The camera emerges from the
+     *       player's eye in whichever third-person view vanilla just
+     *       flipped to. BACK↔FRONT shares the same arc as FIRST→THIRD
+     *       on purpose - the only visible difference between them is
+     *       the rotation vanilla applies before {@code clipToSpace}.</li>
      * </ul>
      *
      * <p>The frame-rate-independent decay uses the same
@@ -587,32 +575,27 @@ public final class Animations extends Module {
         }
 
         if (f5LastPerspective != currentPerspective) {
-            boolean prevFirst = f5LastPerspective.isFirstPerson();
             boolean curFirst = currentPerspective != null && currentPerspective.isFirstPerson();
-            if (prevFirst && !curFirst) {
-                // FIRST → THIRD_*: start zoom-out from the eye.
+            if (curFirst) {
+                // *** → FIRST: snap. No animation - the user explicitly
+                // wants the third-press exit to be instant, and once
+                // {@code f5CurrentDistance} settles at 0 the mixin's
+                // {@code isF5AnimationActive()} check reads false so
+                // vanilla's first-person path runs unmolested from the
+                // very next frame.
+                f5CurrentDistance = 0.0F;
+                f5TargetDistance = 0.0F;
+            } else {
+                // Every transition INTO third-person uses the same
+                // emergence anim: snap the camera to the player (0) and
+                // pull it out to {@link #F5_FULL_DISTANCE} in whichever
+                // perspective vanilla just flipped to. Covers
+                // FIRST→BACK, FIRST→FRONT, BACK↔FRONT identically -
+                // the visible difference between them is the rotation
+                // vanilla applies before {@code clipToSpace}, not the
+                // distance arc.
                 f5CurrentDistance = 0.0F;
                 f5TargetDistance = F5_FULL_DISTANCE;
-                f5PendingZoomOut = false;
-            } else if (!prevFirst && curFirst) {
-                // THIRD_* → FIRST: keep the current distance and slide back
-                // in. Mid-animation the mixin forces thirdPerson=true so the
-                // camera physically moves rather than vanilla snapping.
-                f5TargetDistance = 0.0F;
-                f5PendingZoomOut = false;
-            } else if (!prevFirst && !curFirst) {
-                // BACK ↔ FRONT (press #2 in the F5 cycle): both sides sit
-                // at full distance, so we synthesise a zoom-through. Pull
-                // the camera in to the player first; once we settle at 0
-                // the pending flag re-arms a zoom-out to F5_FULL_DISTANCE
-                // and vanilla's already-flipped perspective makes the
-                // camera emerge on the opposite side. Snap current to the
-                // full distance so a re-entry mid-slide (e.g. user mashing
-                // F5) doesn't start the new arc from a stale intermediate
-                // value.
-                f5CurrentDistance = F5_FULL_DISTANCE;
-                f5TargetDistance = 0.0F;
-                f5PendingZoomOut = true;
             }
             f5LastPerspective = currentPerspective;
         }
@@ -633,14 +616,6 @@ public final class Animations extends Module {
 
         if (Math.abs(f5CurrentDistance - f5TargetDistance) < F5_SETTLE_EPSILON) {
             f5CurrentDistance = f5TargetDistance;
-            // Second half of the BACK ↔ FRONT zoom-through: now that we
-            // bottomed out at the player we re-arm a zoom-out so the
-            // camera emerges behind/in front of the player (whichever
-            // perspective vanilla flipped to on the F5 press).
-            if (f5PendingZoomOut && f5TargetDistance == 0.0F) {
-                f5TargetDistance = F5_FULL_DISTANCE;
-                f5PendingZoomOut = false;
-            }
         }
         return f5CurrentDistance;
     }
