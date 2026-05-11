@@ -26,7 +26,13 @@ public final class WailaHud extends RectHudModule {
         showBreakTime.setFullWidth(true);
         alwaysShow.setFullWidth(true);
         showEntities.setFullWidth(true);
-        setup(showBrackets, infoSection, showIcon, showCorrectTool, showCoordinates, showBreakTime, alwaysShow, showEntities);
+        // {@code showBrackets} is already wired into the Main section by
+        // {@code RectHudModule}'s constructor (right after Background).
+        // Re-listing it here would have appended a duplicate entry that
+        // surfaced inside the Color Settings region of the panel; the
+        // child setup() call therefore covers ONLY the WAILA-specific
+        // info-display toggles.
+        setup(infoSection, showIcon, showCorrectTool, showCoordinates, showBreakTime, alwaysShow, showEntities);
     }
 
     @Override
