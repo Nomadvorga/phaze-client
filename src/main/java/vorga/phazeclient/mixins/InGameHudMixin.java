@@ -226,6 +226,23 @@ public class InGameHudMixin {
         Blur.INSTANCE.beginCachedFrame();
     }
 
+    /**
+     * Replace the vanilla top-right status-effect overlay whenever the
+     * client's own {@link PotionHud} module is enabled. Without this
+     * the user would see two effect lists at once - the new draggable
+     * Phaze HUD AND the stock icons baked into the top-right corner -
+     * which is confusing and steals corner real estate. Cancelling at
+     * HEAD short-circuits both the active-effect iteration and the
+     * sprite/text rendering, so this is also slightly cheaper than
+     * letting vanilla draw and then occluding on top.
+     */
+    @Inject(method = "renderStatusEffectOverlay", at = @At("HEAD"), cancellable = true)
+    private void phaze$suppressVanillaStatusEffectOverlay(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        if (PotionHud.getInstance().isEnabled()) {
+            ci.cancel();
+        }
+    }
+
     @Inject(method = "render", at = @At("TAIL"))
     private void renderCustomHudFallback(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
