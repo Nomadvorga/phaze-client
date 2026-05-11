@@ -17,11 +17,12 @@ import vorga.phazeclient.implement.features.modules.other.NoRender;
 
 /**
  * Drops particle creation requests at the {@link ParticleManager}
- * funnel. Both public {@code addParticle} overloads (the 7-arg
- * {@code (effect, x, y, z, vx, vy, vz)} and the 8-arg {@code (effect,
- * alwaysSpawn, x, y, z, vx, vy, vz)}) end up here in 1.21.4 and
- * forward to the private 9-arg path; targeting both publics keeps us
- * forward-compatible even if Mojang ever stops inlining the chain.
+ * funnel. In 1.21.4 the public surface is a single 7-arg
+ * {@code addParticle(ParticleEffect, double x, y, z, double vx, vy,
+ * vz)} (verified by {@code javap -p}); the older 8/9-arg overloads
+ * with {@code alwaysSpawn} / {@code canSpawnOnMinimal} flags were
+ * removed. Targeting just the 7-arg method covers every
+ * {@code World#addParticle} client-side call site.
  *
  * <p>Two gating modes:
  * <ul>
@@ -55,32 +56,6 @@ public abstract class ParticleManagerNoRenderMixin {
             cancellable = true,
             require = 0)
     private void phaze$cancelAdd7(ParticleEffect parameters,
-                                  double x, double y, double z,
-                                  double velocityX, double velocityY, double velocityZ,
-                                  CallbackInfoReturnable<Particle> cir) {
-        if (phaze$shouldCancel(parameters)) {
-            cir.setReturnValue(null);
-        }
-    }
-
-    @Inject(method = "addParticle(Lnet/minecraft/particle/ParticleEffect;ZDDDDDD)Lnet/minecraft/client/particle/Particle;",
-            at = @At("HEAD"),
-            cancellable = true,
-            require = 0)
-    private void phaze$cancelAdd8(ParticleEffect parameters, boolean alwaysSpawn,
-                                  double x, double y, double z,
-                                  double velocityX, double velocityY, double velocityZ,
-                                  CallbackInfoReturnable<Particle> cir) {
-        if (phaze$shouldCancel(parameters)) {
-            cir.setReturnValue(null);
-        }
-    }
-
-    @Inject(method = "addParticle(Lnet/minecraft/particle/ParticleEffect;ZZDDDDDD)Lnet/minecraft/client/particle/Particle;",
-            at = @At("HEAD"),
-            cancellable = true,
-            require = 0)
-    private void phaze$cancelAdd9(ParticleEffect parameters, boolean alwaysSpawn, boolean canSpawnOnMinimal,
                                   double x, double y, double z,
                                   double velocityX, double velocityY, double velocityZ,
                                   CallbackInfoReturnable<Particle> cir) {

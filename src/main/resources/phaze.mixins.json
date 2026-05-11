@@ -61,7 +61,7 @@
     "LivingEntityMixin",
     "PlayerEntityMixin",
     "TitleScreenOnlineCounterMixin",
-    "EntityRendererNoGlowMixin",
+    "MinecraftClientNoGlowMixin",
     "InGameOverlayRendererNoFireMixin",
     "ParticleManagerNoRenderMixin"
   ],
