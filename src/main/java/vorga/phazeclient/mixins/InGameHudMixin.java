@@ -64,6 +64,7 @@ import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.features.modules.other.HudOptimizer;
+import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -1135,6 +1136,14 @@ public class InGameHudMixin {
             float screenCenterY
     ) {
         if (!module.isEnabled() || client.player == null || client.world == null) {
+            return;
+        }
+        // Streamer Mode privacy gate: the entire Coordinates HUD is a
+        // position readout, so there is nothing meaningful to render
+        // when the user has asked us to hide coordinates. Bailing before
+        // the expensive per-frame line / biome rebuild keeps the cost
+        // to a single boolean read when the feature is on.
+        if (StreamerMode.getInstance().isHideCoordinatesEnabled()) {
             return;
         }
 
@@ -2692,7 +2701,12 @@ public class InGameHudMixin {
             // signed integers to match the screenshot the user shared
             // (e.g. "(-101, 71, -298)"). Single line, no axis labels -
             // the parens make the role unambiguous at a glance.
-            if (waila.showCoordinates.isValue()) {
+            // Streamer Mode veto: the Hide Coordinates toggle suppresses
+            // this line even when WAILA's own Show Coordinates setting
+            // is on, so the privacy feature wins over the per-HUD
+            // preference the user last chose for normal play.
+            if (waila.showCoordinates.isValue()
+                    && !StreamerMode.getInstance().isHideCoordinatesEnabled()) {
                 sb.append("\n(").append(pos.getX())
                   .append(", ").append(pos.getY())
                   .append(", ").append(pos.getZ())

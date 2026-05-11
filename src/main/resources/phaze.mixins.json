@@ -39,6 +39,8 @@
     "ItemEntityRendererPhysicsMixin",
     "CameraFreeLookMixin",
     "CameraSmoothF5Mixin",
+    "DebugHudCoordsMixin",
+    "TextFieldWidgetPasswordMixin",
     "PlayerInventoryPotionMixin",
     "KeyboardElytraUtilityMixin",
     "ClientPlayNetworkHandlerItemPickupMixin",
