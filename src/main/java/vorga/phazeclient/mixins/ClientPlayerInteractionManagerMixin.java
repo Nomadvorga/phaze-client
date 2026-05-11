@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.other.AutoEat;
 import vorga.phazeclient.implement.features.modules.other.AutoGG;
+import vorga.phazeclient.implement.features.modules.other.ChangeHand;
 import vorga.phazeclient.implement.features.modules.other.LockSlot;
 import vorga.phazeclient.implement.features.modules.other.ShiftTap;
 
@@ -40,6 +41,16 @@ public class ClientPlayerInteractionManagerMixin {
             if (autoGG != null) {
                 autoGG.recordAttack(victim);
             }
+        }
+
+        // Change Hand: flip the vanilla MainArm option on every
+        // successful attack against any entity (players AND mobs per
+        // the user spec - both should drive the alternating-slap
+        // tell). The module itself gates on its Upon Impact toggle,
+        // so disabled / bind-only mode is a quiet no-op here.
+        ChangeHand changeHand = ChangeHand.getInstance();
+        if (changeHand != null) {
+            changeHand.onAttackEntity();
         }
     }
 

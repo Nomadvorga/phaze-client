@@ -76,7 +76,11 @@ public final class StreamerMode extends Module {
     ).setValue(true);
 
     private StreamerMode() {
-        super("streamer_mode", "Streamer Mode", ModuleCategory.UTILITIES);
+        // Lives in OTHER because it sits next to NickHider / HideJoinLeave /
+        // ChatHelper - the cluster of cosmetic privacy / chat-control modules
+        // a streamer typically tweaks together. The previous UTILITIES slot
+        // was a leftover from when the module only did the F3 coord mask.
+        super("streamer_mode", "Streamer Mode", ModuleCategory.OTHER);
         hideCoordinates.setFullWidth(true);
         hidePasswords.setFullWidth(true);
         setup(generalSection, hideCoordinates, hidePasswords);
@@ -93,13 +97,7 @@ public final class StreamerMode extends Module {
 
     @Override
     public String getIcon() {
-        // Reuses the Nick Hider icon - both modules are conceptually
-        // about masking personal information from on-screen view, and a
-        // module without a custom png falls back to a Minecraft-namespace
-        // texture path that does not exist for the UTILITIES category
-        // (only 'other.png' / 'hud.png' / etc. ship in the vanilla
-        // assets), which would render as the missing-texture checkerboard.
-        return "nick_hider.png";
+        return "streamer_mode.png";
     }
 
     @Override
