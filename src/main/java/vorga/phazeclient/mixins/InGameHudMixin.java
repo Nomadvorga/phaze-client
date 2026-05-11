@@ -3050,10 +3050,17 @@ public class InGameHudMixin {
         // downward nudge per the user's typography preference - the
         // single-word "No target" copy reads visually higher than the
         // optical centre, so the +1 brings it down to the perceptual
-        // middle of the pill.
+        // middle of the pill. The targeting state was later given the
+        // same +1 nudge: block-name + tool/break/coord text was reading
+        // visually higher than centre on multi-line rects because the
+        // capital-letter baseline of vanilla's font sits slightly above
+        // the geometric line midpoint, so the +1 brings the perceived
+        // text mass into the rect's optical centre.
         float totalTextHeight = lines.length * lineHeight;
         float verticalOffset = (baseHeight - totalTextHeight) * 0.5f;
         if (noTarget) {
+            verticalOffset += 1.0f;
+        } else {
             verticalOffset += 1.0f;
         }
         // Text x-anchor follows the icon's new shifted column so the
