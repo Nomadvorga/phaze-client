@@ -235,8 +235,14 @@ public abstract class ChatHudMessageSlideMixin {
                                  Operation<Void> op,
                                  @Local ChatHudLine.Visible visible) {
         if (phaze$shouldShift(visible)) {
-            int dx = (int) phaze$frameDx;
-            int dy = (int) phaze$frameDy;
+            // Math.round instead of (int) cast: truncation snaps -0.5
+            // to 0 but +0.5 to 0 as well, leaving a 1-pixel asymmetry
+            // between the fill rect and the text glyphs when the shift
+            // straddles a half-pixel boundary. round() rounds both
+            // directions to the nearest int so bg and text track each
+            // other exactly across the entire slide.
+            int dx = Math.round(phaze$frameDx);
+            int dy = Math.round(phaze$frameDy);
             op.call(ctx, x1 + dx, y1 + dy, x2 + dx, y2 + dy, color);
         } else {
             op.call(ctx, x1, y1, x2, y2, color);
@@ -260,8 +266,8 @@ public abstract class ChatHudMessageSlideMixin {
                                 @Local ChatHudLine.Visible visible) {
         if (phaze$shouldShift(visible)) {
             return op.call(ctx, renderer, text,
-                    x + (int) phaze$frameDx,
-                    y + (int) phaze$frameDy,
+                    x + Math.round(phaze$frameDx),
+                    y + Math.round(phaze$frameDy),
                     color);
         }
         return op.call(ctx, renderer, text, x, y, color);

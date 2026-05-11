@@ -53,18 +53,27 @@ public final class Animations extends Module {
             "How quickly the tab list animates in/out. Higher = snappier."
     ).range(1, 30).step(0.5F).setValue(5);
     /**
-     * Easing curve for the Scale / Slide+Scale tab styles. The curve is
-     * applied to the {@code 0..1} time-based progress that drives the
-     * matrix scale and alpha; the plain Slide style ignores this and
-     * keeps its existing exponential-decay feel because it animates a
-     * different quantity (vertical translate) on a different code path.
-     * Default {@code Ease Out} reproduces the visual feel of the old
-     * decay-based animation so existing users see no regression.
+     * Easing curve for the OPEN direction of the Scale / Slide+Scale
+     * tab animations (the tab list scaling up from a speck to full
+     * size). Picked separately from the close direction because UI
+     * polish often calls for asymmetric feels: a snappy
+     * {@code Overshoot} entrance pairs nicely with a calmer
+     * {@code Ease Out} exit. The plain Slide style ignores this curve
+     * and runs on its independent decay-driven offset.
      */
-    public final SelectSetting tabInterpolation = new SelectSetting(
-            "Tab Interpolation",
-            "Easing curve for the Scale and Slide+Scale tab animations"
-    ).value(Interpolations.getAllNames()).selected("Ease Out");
+    public final SelectSetting tabInterpolationOpen = new SelectSetting(
+            "Tab Open Interpolation",
+            "Easing curve when the tab list opens (Scale / Slide+Scale styles)"
+    ).value(Interpolations.getAllNames()).selected("Default");
+    /**
+     * Easing curve for the CLOSE direction of the Scale / Slide+Scale
+     * tab animations (the tab list collapsing back to a speck). See
+     * {@link #tabInterpolationOpen} for why these are split.
+     */
+    public final SelectSetting tabInterpolationClose = new SelectSetting(
+            "Tab Close Interpolation",
+            "Easing curve when the tab list closes (Scale / Slide+Scale styles)"
+    ).value(Interpolations.getAllNames()).selected("Default");
 
     public final SectionSetting chatSection = new SectionSetting("Chat");
     public final BooleanSetting chatFade = new BooleanSetting(
@@ -108,7 +117,7 @@ public final class Animations extends Module {
     public final SelectSetting chatLeftInterpolation = new SelectSetting(
             "Left Slide Interpolation",
             "Easing curve for the Left-direction chat message slide"
-    ).value(Interpolations.getAllNames()).selected("Linear");
+    ).value(Interpolations.getAllNames()).selected("Default");
     public final BooleanSetting smoothInputField = new BooleanSetting(
             "Smooth Input Field",
             "Slide the chat input box up from below when the chat screen opens (fixed speed)"
@@ -148,7 +157,7 @@ public final class Animations extends Module {
     public final SelectSetting smoothF5Interpolation = new SelectSetting(
             "F5 Interpolation",
             "Easing curve for the camera zoom-out animation"
-    ).value(Interpolations.getAllNames()).selected("Ease Out");
+    ).value(Interpolations.getAllNames()).selected("Default");
 
     public final SectionSetting listsSection = new SectionSetting("Lists");
     public final BooleanSetting listSmoothScroll = new BooleanSetting(
@@ -243,13 +252,15 @@ public final class Animations extends Module {
         tabFade.visible(() -> tabSlide.isValue() && !isTabSlideStyle());
         tabSlideSpeed.setFullWidth(true);
         tabSlideSpeed.visible(tabSlide::isValue);
-        tabInterpolation.setFullWidth(true);
+        tabInterpolationOpen.setFullWidth(true);
+        tabInterpolationClose.setFullWidth(true);
         // Tab interpolation only applies to the Scale-based styles -
         // the plain Slide style runs on a separate decay-driven offset
-        // that doesn't read from the chosen curve. Hide the dropdown
+        // that doesn't read from the chosen curve. Hide the dropdowns
         // when Slide is selected so the user isn't presented with a
-        // no-op control.
-        tabInterpolation.visible(() -> tabSlide.isValue() && !isTabSlideStyle());
+        // pair of no-op controls.
+        tabInterpolationOpen.visible(() -> tabSlide.isValue() && !isTabSlideStyle());
+        tabInterpolationClose.visible(() -> tabSlide.isValue() && !isTabSlideStyle());
 
         chatFade.setFullWidth(true);
         chatSmoothScroll.setFullWidth(true);
@@ -284,7 +295,7 @@ public final class Animations extends Module {
         smoothF5Interpolation.visible(smoothF5::isValue);
 
         setup(
-                tabSection, tabSlide, tabAnimationType, tabFade, tabSlideSpeed, tabInterpolation,
+                tabSection, tabSlide, tabAnimationType, tabFade, tabSlideSpeed, tabInterpolationOpen, tabInterpolationClose,
                 chatSection, chatFade, chatSmoothScroll, chatMessageAnimationType, chatSmoothSpeed, chatLeftInterpolation, smoothInputField,
                 hotbarSection, hotbarSlide, hotbarRollover, hotbarSpeed,
                 cameraSection, smoothF5, smoothF5Speed, smoothF5Interpolation,
@@ -472,9 +483,16 @@ public final class Animations extends Module {
         return 3500.0F / v;
     }
 
-    /** Easing curve for the Scale / Slide+Scale tab animations. */
-    public Interpolation getTabInterpolation() {
-        return Interpolations.getByName(tabInterpolation.getSelected());
+    /** Easing curve for the OPEN direction of the Scale / Slide+Scale
+     *  tab animations. */
+    public Interpolation getTabInterpolationOpen() {
+        return Interpolations.getByName(tabInterpolationOpen.getSelected());
+    }
+
+    /** Easing curve for the CLOSE direction of the Scale / Slide+Scale
+     *  tab animations. */
+    public Interpolation getTabInterpolationClose() {
+        return Interpolations.getByName(tabInterpolationClose.getSelected());
     }
 
     /** Easing curve for the Left-direction chat message slide. */
@@ -558,13 +576,15 @@ public final class Animations extends Module {
             tabCurrentOffset = tabTargetOffset;
         }
 
-        // Parallel time-based linear progress for the Scale / Slide+Scale
+        // Parallel time-based progress for the Scale / Slide+Scale
         // styles. Kept independent of the decay-driven offset so plain
         // Slide users see no behavioural change while Scale styles get
-        // the chosen easing curve applied to a clean 0..1 timeline.
-        // Resuming mid-animation: when the target flips we lock in the
-        // current linear progress as the new arc's start, so the new
-        // direction picks up from wherever the eye last saw the tab.
+        // a clean 0..1 timeline reshaped through the user's chosen
+        // easing curve. Resuming mid-animation: when the target flips
+        // we lock in the current SHAPED progress as the new arc's
+        // start, so the new direction picks up from wherever the eye
+        // last saw the tab instead of snapping to the previous arc's
+        // theoretical end.
         if (keyPressed != tabAnimationTargetOpen || tabAnimationStartNanos == 0L) {
             tabAnimationStartProgress = tabLinearProgress;
             tabAnimationStartNanos = now;
@@ -576,9 +596,32 @@ public final class Animations extends Module {
         float linearT = (now - tabAnimationStartNanos) / 1_000_000.0F / duration;
         if (linearT < 0.0F) linearT = 0.0F;
         if (linearT > 1.0F) linearT = 1.0F;
-        tabLinearProgress = tabAnimationStartProgress + (endProgress - tabAnimationStartProgress) * linearT;
-        if (tabLinearProgress < 0.0F) tabLinearProgress = 0.0F;
-        if (tabLinearProgress > 1.0F) tabLinearProgress = 1.0F;
+        // Pick interpolation by direction: open-key-down uses Open,
+        // releasing the key uses Close. The split lets the user pair
+        // an Overshoot entrance with an Ease Out exit for that
+        // polished UI feel.
+        String interpName = keyPressed
+                ? tabInterpolationOpen.getSelected()
+                : tabInterpolationClose.getSelected();
+        if (Interpolations.DEFAULT_NAME.equals(interpName)) {
+            // "Default" short-circuits to the pre-interpolation
+            // behaviour: the Scale styles also follow the exp-decay
+            // offset, matching exactly what users saw before this
+            // feature shipped. We derive the 0..1 progress directly
+            // from the decay-driven {@code tabCurrentOffset} instead
+            // of the time-based {@code linearT} so the curve shape is
+            // identical to legacy.
+            float decayProgress = 1.0F + tabCurrentOffset / TAB_SLIDE_TRAVEL;
+            if (decayProgress < 0.0F) decayProgress = 0.0F;
+            if (decayProgress > 1.0F) decayProgress = 1.0F;
+            tabLinearProgress = decayProgress;
+        } else {
+            Interpolation interp = Interpolations.getByName(interpName);
+            float shapedT = (float) interp.interpolate(linearT);
+            tabLinearProgress = tabAnimationStartProgress + (endProgress - tabAnimationStartProgress) * shapedT;
+            if (tabLinearProgress < 0.0F) tabLinearProgress = 0.0F;
+            if (tabLinearProgress > 1.0F) tabLinearProgress = 1.0F;
+        }
 
         return tabCurrentOffset;
     }
@@ -611,22 +654,19 @@ public final class Animations extends Module {
 
     /**
      * Normalised open-progress in the range 0..1 used by the Scale /
-     * Slide+Scale tab styles to drive the matrix scale and alpha.
-     * Returns the user's chosen {@link #tabInterpolation easing curve}
-     * applied to the underlying time-based linear progress, so picking
-     * eg "Bounce" causes the tab list to bounce into place at any
-     * speed-slider value.
+     * Slide+Scale tab styles to drive the matrix scale and alpha. The
+     * value is already shaped by the user's chosen open- or close-
+     * direction easing curve inside {@link #tickTabSlide(boolean)},
+     * so picking eg "Bounce" for Open makes the tab list bounce into
+     * place. Clamped to 0..1 so curves with overshoot (Back /
+     * Overshoot / Elastic) don't drive the matrix scale negative or
+     * past the rect's allotted space.
      */
     public float currentTabProgress() {
-        Interpolation interp = getTabInterpolation();
-        float shaped = (float) interp.interpolate(tabLinearProgress);
-        // Interpolation curves can return values outside 0..1 (Back /
-        // Overshoot / Elastic by design); we clamp here because matrix
-        // scale below 0 inverts the rendered tab and scale above 1
-        // would draw beyond the rect's allotted space.
-        if (shaped < 0.0F) return 0.0F;
-        if (shaped > 1.0F) return 1.0F;
-        return shaped;
+        float p = tabLinearProgress;
+        if (p < 0.0F) return 0.0F;
+        if (p > 1.0F) return 1.0F;
+        return p;
     }
 
     /**
@@ -785,6 +825,33 @@ public final class Animations extends Module {
             f5LastPerspective = currentPerspective;
         }
 
+        String interpName = smoothF5Interpolation.getSelected();
+        long now = System.nanoTime();
+
+        if (Interpolations.DEFAULT_NAME.equals(interpName)) {
+            // "Default" short-circuits to the pre-interpolation exp-
+            // decay behaviour. Restored here so users who don't want
+            // the chosen-curve feel can pick the option named
+            // "Default" and get exactly what shipped before this
+            // module gained interpolation choice.
+            float dt;
+            if (f5LastFrameNanos == 0L) {
+                dt = 1.0F / 60.0F;
+            } else {
+                dt = (now - f5LastFrameNanos) / 1_000_000_000.0F;
+                if (dt > 0.25F) dt = 0.25F;
+            }
+            f5LastFrameNanos = now;
+            float smoothness = smoothnessForSpeed(smoothF5Speed.getValue());
+            float decay = (float) Math.pow(smoothness, dt);
+            f5CurrentDistance = (f5CurrentDistance - f5TargetDistance) * decay + f5TargetDistance;
+            if (Math.abs(f5CurrentDistance - f5TargetDistance) < F5_SETTLE_EPSILON) {
+                f5CurrentDistance = f5TargetDistance;
+                f5AnimationStartNanos = 0L;
+            }
+            return f5CurrentDistance;
+        }
+
         // No arc in progress (we either snapped to FIRST or have
         // already settled at the target on a previous frame).
         if (f5AnimationStartNanos == 0L) {
@@ -792,7 +859,6 @@ public final class Animations extends Module {
             return f5CurrentDistance;
         }
 
-        long now = System.nanoTime();
         f5LastFrameNanos = now;
         float duration = f5AnimationDurationMs();
         if (duration < 1.0F) duration = 1.0F;
@@ -800,7 +866,7 @@ public final class Animations extends Module {
         if (linearT < 0.0F) linearT = 0.0F;
         if (linearT > 1.0F) linearT = 1.0F;
 
-        Interpolation interp = getSmoothF5Interpolation();
+        Interpolation interp = Interpolations.getByName(interpName);
         float shapedT = (float) interp.interpolate(linearT);
         f5CurrentDistance = f5AnimationStartDistance + (f5TargetDistance - f5AnimationStartDistance) * shapedT;
 
