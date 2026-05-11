@@ -45,7 +45,7 @@ public final class AspectRatio extends Module {
     public final ValueSetting factor = new ValueSetting(
             "Aspect Factor",
             "Manual aspect ratio; 1.0 = square, >1 stretches horizontally, <1 squeezes."
-    ).range(0.5F, 1.5F).step(0.01F).setValue(1.0F);
+    ).range(0.5F, 4.0F).step(0.01F).setValue(1.0F);
 
     private AspectRatio() {
         super("aspect_ratio", "Aspect Ratio", ModuleCategory.OTHER);
