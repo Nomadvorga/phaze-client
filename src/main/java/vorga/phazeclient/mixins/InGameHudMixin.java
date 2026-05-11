@@ -1138,14 +1138,6 @@ public class InGameHudMixin {
         if (!module.isEnabled() || client.player == null || client.world == null) {
             return;
         }
-        // Streamer Mode privacy gate: the entire Coordinates HUD is a
-        // position readout, so there is nothing meaningful to render
-        // when the user has asked us to hide coordinates. Bailing before
-        // the expensive per-frame line / biome rebuild keeps the cost
-        // to a single boolean read when the feature is on.
-        if (StreamerMode.getInstance().isHideCoordinatesEnabled()) {
-            return;
-        }
 
         // Rebuild the line set every frame. Caching the list across
         // frames silently broke the per-axis toggles (Show X / Y / Z /
@@ -1157,16 +1149,24 @@ public class InGameHudMixin {
         // budget while letting the toggles take immediate effect.
         List<String> updatedLines = new ArrayList<>();
         BlockPos pos = client.player.getBlockPos();
-        if (module.showX.isValue()) {
+        // Streamer Mode suppresses only the position-revealing rows
+        // (X / Y / Z / Chunk). Biome and Direction stay visible because
+        // they do not leak the player's absolute location - biome is a
+        // world-type hint and the direction indicator is just yaw. The
+        // rect keeps rendering with whatever remains, instead of
+        // collapsing entirely, so the user still sees the HUD during a
+        // stream just without the coord axes.
+        boolean hideCoords = StreamerMode.getInstance().isHideCoordinatesEnabled();
+        if (module.showX.isValue() && !hideCoords) {
             updatedLines.add("X: " + pos.getX());
         }
-        if (module.showY.isValue()) {
+        if (module.showY.isValue() && !hideCoords) {
             updatedLines.add("Y: " + pos.getY());
         }
-        if (module.showZ.isValue()) {
+        if (module.showZ.isValue() && !hideCoords) {
             updatedLines.add("Z: " + pos.getZ());
         }
-        if (module.showChunk.isValue()) {
+        if (module.showChunk.isValue() && !hideCoords) {
             updatedLines.add("C: " + ChunkSectionPos.getLocalCoord(pos.getX()) + "/" + ChunkSectionPos.getLocalCoord(pos.getZ()));
         }
         // When Show Biome is OFF the row is omitted entirely - the
