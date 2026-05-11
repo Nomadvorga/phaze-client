@@ -36,6 +36,33 @@ public class InGameHudSaturationMixin {
     @Unique
     private final HeldFoodCache heldFood = new HeldFoodCache();
 
+    /**
+     * Latched HEAD-state for the air-bubble row lift. We can't rely on
+     * recomputing the condition at RETURN because someone could flip
+     * the saturation toggle between HEAD and RETURN of the same frame
+     * (config reload, GUI interaction) and we'd end up with an
+     * unbalanced matrix stack - {@code pop} called without a matching
+     * {@code push} blows up the next frame's MVP. Latching once at
+     * HEAD ensures pop happens iff push happened.
+     */
+    @Unique
+    private boolean phaze$bubblesLifted = false;
+
+    /**
+     * Vertical lift applied to the vanilla air-bubble row when the
+     * {@link Saturation} module is rendering the "Second Hunger Bar"
+     * style. Vanilla draws hunger at {@code y=top} and bubbles at
+     * {@code y=top-10}. Our second-hunger overlay (see {@link
+     * #drawSaturationOverlay}) also sits at {@code y=top-10}, so the
+     * two visuals collide the moment the player goes underwater and
+     * the bubble row turns on. Shifting bubbles up by exactly one
+     * bar-height (10 px in the vanilla atlas) puts them on the row
+     * directly above the saturation overlay, mirroring how vanilla's
+     * armour bar already stacks two rows over the health bar.
+     */
+    @Unique
+    private static final int PHAZE_BUBBLE_LIFT_PX = 10;
+
     @Inject(method = "renderStatusBars", at = @At("TAIL"))
     private void onRenderStatusBars(DrawContext context, CallbackInfo ci) {
         if (!Saturation.getInstance().isEnabled()) {
@@ -76,6 +103,55 @@ public class InGameHudSaturationMixin {
 
         // Flash animation for held food
         onClientTick();
+    }
+
+    /**
+     * Push a Y-translation onto the GUI matrix stack right before
+     * vanilla renders the air-bubble row, so the bubbles draw {@value
+     * #PHAZE_BUBBLE_LIFT_PX} px higher than usual. Only applied when
+     * the user is actually running the "Second Hunger Bar" saturation
+     * style - "Yellow Bar" overlays the existing hunger row in-place
+     * and doesn't collide with bubbles, so no lift is needed there.
+     *
+     * <p>{@code renderAirBubbles} is its own private method on
+     * {@code InGameHud} in 1.21.4 (broken out from the giant
+     * {@code renderStatusBars} body in 24w03a), which makes this a
+     * clean target: HEAD/RETURN bracketing covers every
+     * {@code drawGuiTexture} call inside without us having to
+     * enumerate them individually.
+     */
+    @Inject(method = "renderAirBubbles", at = @At("HEAD"))
+    private void phaze$liftAirBubblesHead(DrawContext context, PlayerEntity player,
+                                          int heartCount, int maxAirBubbles, int top,
+                                          CallbackInfo ci) {
+        if (phaze$shouldLiftBubbles()) {
+            context.getMatrices().push();
+            context.getMatrices().translate(0.0F, -PHAZE_BUBBLE_LIFT_PX, 0.0F);
+            phaze$bubblesLifted = true;
+        }
+    }
+
+    @Inject(method = "renderAirBubbles", at = @At("RETURN"))
+    private void phaze$liftAirBubblesReturn(DrawContext context, PlayerEntity player,
+                                            int heartCount, int maxAirBubbles, int top,
+                                            CallbackInfo ci) {
+        if (phaze$bubblesLifted) {
+            context.getMatrices().pop();
+            phaze$bubblesLifted = false;
+        }
+    }
+
+    @Unique
+    private static boolean phaze$shouldLiftBubbles() {
+        Saturation sat = Saturation.getInstance();
+        if (sat == null || !sat.isEnabled()) {
+            return false;
+        }
+        // {@code Yellow Bar} draws on the existing hunger row in-place,
+        // so the bubble row at {@code top-10} is unobstructed. Only the
+        // {@code Second Hunger Bar} style occupies the bubble Y, and
+        // that's the only case we lift for.
+        return "Second Hunger Bar".equals(sat.style.getSelected());
     }
 
     @Unique
