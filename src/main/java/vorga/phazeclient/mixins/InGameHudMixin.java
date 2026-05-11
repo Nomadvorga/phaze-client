@@ -1264,14 +1264,25 @@ public class InGameHudMixin {
                     maxStackHalf = 0.0f;
                 }
                 float signOffset = Math.min(10.0f, maxStackHalf);
+                // Streamer Mode also shrinks the actual glyph size of
+                // the +/- signs (not just their spacing). The default
+                // HUD_TEXT_SIZE is calibrated for the ~50 px tall
+                // four-row rect; shrinking the rect to just Biome +
+                // compass leaves the +/- looking comically large
+                // relative to the column. 5 px (≈63% of 8) keeps the
+                // glyphs visibly recognisable as +/- without
+                // dominating the column. The central facing letter
+                // stays at HUD_TEXT_SIZE because it carries the
+                // primary semantic.
+                float signTextSize = hideCoords ? 5.0f : HUD_TEXT_SIZE;
                 if (!topSign.isEmpty()) {
-                    float signWidth = getHudTextWidth(client, topSign, HUD_TEXT_SIZE);
-                    renderScaledHudText(context, client, topSign, x, y, facingCenterX - signWidth * 0.5f, facingY - signOffset, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+                    float signWidth = getHudTextWidth(client, topSign, signTextSize);
+                    renderScaledHudText(context, client, topSign, x, y, facingCenterX - signWidth * 0.5f, facingY - signOffset, signTextSize, scale, module.textShadow.isValue());
                 }
                 renderScaledHudText(context, client, facing, x, y, facingX, facingY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
                 if (!bottomSign.isEmpty()) {
-                    float signWidth = getHudTextWidth(client, bottomSign, HUD_TEXT_SIZE);
-                    renderScaledHudText(context, client, bottomSign, x, y, facingCenterX - signWidth * 0.5f, facingY + signOffset, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+                    float signWidth = getHudTextWidth(client, bottomSign, signTextSize);
+                    renderScaledHudText(context, client, bottomSign, x, y, facingCenterX - signWidth * 0.5f, facingY + signOffset, signTextSize, scale, module.textShadow.isValue());
                 }
             } else {
                 renderScaledHudText(context, client, facing, x, y, facingX, facingY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
@@ -2959,10 +2970,16 @@ public class InGameHudMixin {
         // Extra +2 px specifically for the "no target" pill - the empty
         // / "No target" copy is shorter than block-name text and the
         // user wants the rect to feel less cramped when nothing is
-        // selected. The targeting state already has +0 on top of the
-        // universal +4 because block-name text already gives it visual
-        // width.
+        // selected.
         if (noTarget) {
+            baseWidth += 2.0f;
+        } else {
+            // And another +2 px on the targeting state per the user's
+            // follow-up request: block-name text plus the optional
+            // tool / break-time / coord lines were sitting flush
+            // against the rect's right edge on long block names like
+            // "Cracked Polished Blackstone Bricks", which read as a
+            // visual cramp rather than a tight design choice.
             baseWidth += 2.0f;
         }
 
