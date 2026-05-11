@@ -14,12 +14,19 @@ public final class MovementSpeedHud extends RectHudModule {
     public final SelectSetting roundTo = new SelectSetting("Round To", "Decimal places for speed display")
             .value("Nearest", "1 Decimal", "2 Decimals", "3 Decimals")
             .selected("2 Decimals");
+    /**
+     * Swap the {@code Speed} label position. Default OFF preserves
+     * the original {@code "1.23 m/s"} form; ON renders the labelled
+     * variant {@code "Speed: 1.23 m/s"}.
+     */
+    public final BooleanSetting reverseOrder = new BooleanSetting("Reverse Order", "Add \"Speed:\" prefix instead of just \"X m/s\"").setValue(false);
 
     private MovementSpeedHud() {
         super("movement_speed_hud", "Movement Speed", 22.0f, 510.0f, 1.0f);
         onlyUseGroundSpeed.setFullWidth(true);
         roundTo.setFullWidth(true);
-        setup(onlyUseGroundSpeed, roundTo);
+        reverseOrder.setFullWidth(true);
+        setup(onlyUseGroundSpeed, roundTo, reverseOrder);
     }
 
     @Override

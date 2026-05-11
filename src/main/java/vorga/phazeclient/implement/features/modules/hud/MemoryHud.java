@@ -13,10 +13,16 @@ public final class MemoryHud extends RectHudModule {
     public final SelectSetting displayMode = new SelectSetting("Display Mode", "Memory display format")
             .value("Percentage", "Megabytes", "Gigabytes");
     public final BooleanSetting colorBasedOnUsage = new BooleanSetting("Color Based On Usage", "Change color based on memory usage").setValue(true);
+    /**
+     * Swap the {@code Mem} label position. Default OFF renders
+     * {@code "Mem: 50%"}; ON renders {@code "50% Mem"}.
+     */
+    public final BooleanSetting reverseOrder = new BooleanSetting("Reverse Order", "Show value before label, e.g. \"50% Mem\" instead of \"Mem: 50%\"").setValue(false);
 
     private MemoryHud() {
         super("memory_hud", "Memory HUD", 100.0f, 50.0f, 1.0f);
-        setup(displayMode, colorBasedOnUsage);
+        reverseOrder.setFullWidth(true);
+        setup(displayMode, colorBasedOnUsage, reverseOrder);
     }
 
     public String getMemoryText() {
@@ -27,15 +33,20 @@ public final class MemoryHud extends RectHudModule {
         long maxMemory = runtime.maxMemory();
 
         String mode = displayMode.getSelected();
-        
+
+        // Build the unit-suffixed numeric portion first so the
+        // "Reverse Order" branch can decide where to glue the "Mem"
+        // label without duplicating the formatting code.
+        String value;
         if (mode.equals("Percentage")) {
             double percentage = (usedMemory * 100.0) / maxMemory;
-            return String.format("Mem: %.1f%%", percentage);
+            value = String.format("%.1f%%", percentage);
         } else if (mode.equals("Megabytes")) {
-            return String.format("Mem: %d/%d MB", usedMemory / (1024 * 1024), maxMemory / (1024 * 1024));
+            value = String.format("%d/%d MB", usedMemory / (1024 * 1024), maxMemory / (1024 * 1024));
         } else {
-            return String.format("Mem: %.2f/%.2f GB", usedMemory / (1024.0 * 1024 * 1024), maxMemory / (1024.0 * 1024 * 1024));
+            value = String.format("%.2f/%.2f GB", usedMemory / (1024.0 * 1024 * 1024), maxMemory / (1024.0 * 1024 * 1024));
         }
+        return reverseOrder.isValue() ? value + " Mem" : "Mem: " + value;
     }
 
     public int getMemoryColor() {
