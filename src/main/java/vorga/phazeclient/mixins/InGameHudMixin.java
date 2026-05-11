@@ -68,6 +68,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -185,6 +186,35 @@ public class InGameHudMixin {
     private static boolean inBatchPass = false;
     /** When true, only blur HUDs are rendered in the current renderHudInternal call (direct main-FB pass). */
     private static boolean inBlurPass = false;
+    /**
+     * Last observed {@link RectHudModule#hasActiveBackgroundBlur()} value per
+     * HUD instance. Used to detect the exact frame a HUD migrates between the
+     * batched-FBO pass and the direct-blur pass (or vice-versa) so we can
+     * force-invalidate {@link BatchedHudBuffer} and avoid the 1-frame
+     * disappear / black flash the user reported:
+     *
+     * <ul>
+     *   <li>Blur turned ON: the HUD was inside the cached FBO this frame
+     *       but is excluded from the next Pass 1 because it now belongs to
+     *       Pass 2. Without invalidation the cache keeps blitting the
+     *       no-blur version while Pass 2 also draws the blurred version on
+     *       top - briefly stamping two copies until the cache naturally
+     *       expires (up to {@code 1000/refreshRate} ms).</li>
+     *   <li>Blur turned OFF: the HUD just moved from Pass 2 (direct draw)
+     *       into Pass 1 (cache). Pass 1 may not run this frame because the
+     *       cache is still fresh from before the toggle, so the HUD is
+     *       absent from the cache AND skipped by Pass 2 -> 1 frame of
+     *       nothing.</li>
+     * </ul>
+     *
+     * <p>Identity-keyed because every HUD module is a process-wide
+     * singleton; we never want to coalesce two distinct HUD instances.
+     * {@code Object} key (not {@code RectHudModule}) so the same path
+     * also catches {@code ArmorHud}, which extends {@code Module}
+     * directly but exposes the same {@code hasActiveBackgroundBlur}
+     * surface.
+     */
+    private static final Map<Object, Boolean> PHAZE_LAST_BLUR_STATE = new IdentityHashMap<>();
     private static float directionDisplayYaw = Float.NaN;
     private static final long SESSION_START_MS = System.currentTimeMillis();
 
@@ -459,11 +489,33 @@ public class InGameHudMixin {
     }
 
     private void renderBufferedHud(DrawContext context, RectHudModule module, boolean chatEditing, Runnable renderLogic) {
+        phaze$trackBlurStateChange(module, module.hasActiveBackgroundBlur());
         if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
         renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
     }
 
+    /**
+     * Drops the batched-HUD cache the first frame a module's blur-state
+     * flips. Otherwise the cache from the previous frame still believes
+     * the HUD was in / out of Pass 1, and the visual lags by one full
+     * refresh cycle - manifesting as the disappear/black-flash reported
+     * by the user when they toggled blur on a HUD.
+     *
+     * <p>Cheap enough to call from every {@code renderBufferedHud}
+     * invocation: the map probe is O(1) identity-hash, the put is a
+     * single-slot rewrite, and the {@code !=} comparison is two
+     * autoboxed-bool reads (the JIT will inline-eliminate the autobox
+     * after warm-up).
+     */
+    private static void phaze$trackBlurStateChange(Object module, boolean current) {
+        Boolean prev = PHAZE_LAST_BLUR_STATE.put(module, current);
+        if (prev != null && prev != current) {
+            BatchedHudBuffer.INSTANCE.invalidate();
+        }
+    }
+
     private void renderBufferedHud(DrawContext context, ArmorHud module, boolean chatEditing, Runnable renderLogic) {
+        phaze$trackBlurStateChange(module, module.hasActiveBackgroundBlur());
         if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
         renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
     }
@@ -2292,7 +2344,14 @@ public class InGameHudMixin {
                 || SessionTimeHud.getInstance().isEnabled()
                 || MemoryHud.getInstance().isEnabled()
                 || ComboCounterHud.getInstance().isEnabled()
-                || ServerAddressHud.getInstance().isEnabled();
+                || ServerAddressHud.getInstance().isEnabled()
+                // Missing entries caused the parent dispatch to early-return
+                // when MovementSpeedHud or WailaHud was the only HUD enabled,
+                // making the HUD silently invisible. They render through the
+                // same renderBufferedHud path as the others, so they have to
+                // be counted here to unblock the dispatch.
+                || MovementSpeedHud.getInstance().isEnabled()
+                || WailaHud.getInstance().isEnabled();
     }
 
     private static boolean isAnyHudInteractionActive() {
@@ -2685,6 +2744,12 @@ public class InGameHudMixin {
             baseWidth += 2.0f;
             baseHeight += 2.0f;
         }
+        // Universal +4 px right-side padding applied to both the
+        // "no target" and "targeting" states - keeps the WAILA text
+        // from running flush against the rect's right edge in both
+        // layouts. Width-only bump (no height change) so the rect
+        // stays at vanilla heights and only grows horizontally.
+        baseWidth += 4.0f;
         
         // renderRectHud handles scaling internally, pass base dimensions
         renderRectHud(context, client, module, "", hudIndex,
