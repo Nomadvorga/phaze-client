@@ -36,14 +36,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <h3>Lifecycle</h3>
  * Singleton; {@link #start()} is called once from {@link
- * vorga.phazeclient.core.Main#onInitialize()}. From there a daemon
- * scheduler runs every {@value #HEARTBEAT_SECONDS} seconds and either:
+ * vorga.phazeclient.core.Main#onInitialize()}. From there:
  * <ul>
- *   <li>refreshes immediately if the player switched servers (host
- *       change), <strong>or</strong></li>
- *   <li>refreshes periodically every {@value #REFRESH_INTERVAL_SECONDS}
- *       seconds even if the host is the same, so admin edits propagate
- *       within a minute without the player having to reconnect.</li>
+ *   <li>An <strong>immediate</strong> fetch fires at startup so the
+ *       first set of remote rules is applied as soon as the player
+ *       lands on the main menu (or directly into a world, when the
+ *       game was launched via {@code --server}).</li>
+ *   <li>Then a daemon scheduler runs every {@value #HEARTBEAT_SECONDS}
+ *       seconds and refreshes if the snapshot is stale.</li>
+ *   <li>Server-change responsiveness is handled out-of-band by
+ *       {@link vorga.phazeclient.mixins.ClientPlayerEntityMixin}: when
+ *       it observes the host change it calls {@link #requestRefresh()},
+ *       so locks for the new server take effect within one tick instead
+ *       of waiting for the next 60-second heartbeat.</li>
  * </ul>
  *
  * <h3>Fail-open</h3>
@@ -80,8 +85,21 @@ public final class RemoteRulesService {
      */
     private static final String DEFAULT_API_BASE = "https://phaze-rules.49814981dany.workers.dev";
 
-    /** How often the heartbeat thread runs (cheap host-equality check + maybe-refresh). */
-    private static final long HEARTBEAT_SECONDS = 5L;
+    /**
+     * Period for the staleness-refresh loop. With the heartbeat and the
+     * minimum-refresh-interval unified into a single value, the
+     * scheduler does exactly one network call per cycle whenever the
+     * cached snapshot exists and the host is non-empty; admin edits
+     * propagate within ~one period without the player reconnecting.
+     *
+     * <p>Server-change responsiveness is NOT handled here - the
+     * heartbeat would observe it on its next tick (up to 60 s of lag).
+     * Instead, {@link vorga.phazeclient.mixins.ClientPlayerEntityMixin}
+     * watches the host string on every client tick and calls
+     * {@link #requestRefresh()} the moment it changes, which forces an
+     * immediate out-of-band fetch independently of this period.
+     */
+    private static final long HEARTBEAT_SECONDS = 60L;
 
     /** Min interval between actual HTTP refreshes when the host hasn't changed. */
     private static final long REFRESH_INTERVAL_SECONDS = 60L;
@@ -246,9 +264,15 @@ public final class RemoteRulesService {
         if (!started.compareAndSet(false, true)) {
             return;
         }
+        // Immediate first fetch (initialDelay=0) so the very first
+        // ruleset is applied the moment the mod finishes initialising
+        // - the player should not see a 60-second window where the
+        // server-disable list is empty. Subsequent runs fire on the
+        // 60-second heartbeat. Server-change responsiveness is added
+        // on top by ClientPlayerEntityMixin via requestRefresh().
         scheduler.scheduleWithFixedDelay(
                 this::heartbeat,
-                /* initialDelay */ 1L,
+                /* initialDelay */ 0L,
                 /* period       */ HEARTBEAT_SECONDS,
                 TimeUnit.SECONDS
         );
