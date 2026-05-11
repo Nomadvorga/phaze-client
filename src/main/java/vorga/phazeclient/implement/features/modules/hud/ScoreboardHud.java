@@ -20,7 +20,7 @@ public final class ScoreboardHud extends RectHudModule {
         super("scoreboard_hud", "Scoreboard", 0.0f, 0.0f, 1.5f);
         showNumbers.setFullWidth(true);
         showTitle.setFullWidth(true);
-        setup(showBrackets, otherSection, showNumbers, showTitle);
+        setup(otherSection, showNumbers, showTitle);
     }
 
     @Override

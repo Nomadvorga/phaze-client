@@ -59,7 +59,7 @@ public abstract class RectHudModule extends Module {
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundOpacity = new ValueSetting("Background Opacity", "Custom background opacity")
             .range(0, 100)
-            .setValue(40)
+            .setValue(50)
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundBlurRadius = new ValueSetting("Background Blur Radius", "Blur radius for HUD background")
             .range(0, 32)
@@ -155,7 +155,12 @@ public abstract class RectHudModule extends Module {
 
     public int getResolvedBackgroundColor(MinecraftClient client) {
         if (isVanillaPreset()) {
-            return client.options.getTextBackgroundColor(0.4F);
+            // Vanilla preset opacity raised from 40% to 50% so the Vanilla
+            // look matches the new default of the custom-preset opacity
+            // slider. Users were getting a darker / more opaque rect when
+            // switching presets, which was jarring; unifying the default
+            // means both code paths render with the same visual weight.
+            return client.options.getTextBackgroundColor(0.5F);
         }
         var palette = MenuPalettes.byName(backgroundPreset.getSelected());
         int presetColor = adjustBrightness(palette.chipActive(), colorBrightness.getValue() / 100.0f);

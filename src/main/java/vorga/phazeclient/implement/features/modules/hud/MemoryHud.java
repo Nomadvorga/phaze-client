@@ -16,7 +16,7 @@ public final class MemoryHud extends RectHudModule {
 
     private MemoryHud() {
         super("memory_hud", "Memory HUD", 100.0f, 50.0f, 1.0f);
-        setup(showBrackets, displayMode, colorBasedOnUsage);
+        setup(displayMode, colorBasedOnUsage);
     }
 
     public String getMemoryText() {

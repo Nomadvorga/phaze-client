@@ -43,7 +43,7 @@ public final class NametagHud extends RectHudModule {
         toggleMessage.setFullWidth(true);
         hideInF1.setFullWidth(true);
         replaceOwnNameColor.setFullWidth(true);
-        setup(showBrackets, nametagSection, nametagTextShadow, thirdPersonNametag, toggleMessage, hideInF1, replaceOwnNameColor);
+        setup(nametagSection, nametagTextShadow, thirdPersonNametag, toggleMessage, hideInF1, replaceOwnNameColor);
     }
 
     /**
