@@ -103,7 +103,7 @@ public final class Animations extends Module {
     public final BooleanSetting smoothF5 = new BooleanSetting(
             "Smooth F5",
             "Smoothly slide the camera out behind the player when toggling third person, and back in when returning to first person"
-    ).setValue(false);
+    ).setValue(true);
     public final ValueSetting smoothF5Speed = new ValueSetting(
             "F5 Animation Speed",
             "How quickly the camera zooms in / out on perspective toggle. Higher = snappier."
@@ -151,6 +151,16 @@ public final class Animations extends Module {
      *  current perspective (0 in first-person, {@link #F5_FULL_DISTANCE}
      *  in third-person). */
     private float f5TargetDistance = 0.0F;
+    /**
+     * Two-phase BACK ↔ FRONT transition flag. The straight rotation flip
+     * vanilla performs has no distance change to animate, so we synthesise
+     * one: target=0 (camera retracts into the player) and once we settle
+     * at zero we re-arm target={@link #F5_FULL_DISTANCE} so the camera
+     * emerges on the opposite side. Without this the second F5 press would
+     * snap instantly (BACK and FRONT both sit at distance 4), which
+     * defeated the user-visible point of "Smooth F5" on press #2.
+     */
+    private boolean f5PendingZoomOut = false;
     private long f5LastFrameNanos = 0L;
 
     private Animations() {
@@ -583,13 +593,27 @@ public final class Animations extends Module {
                 // FIRST → THIRD_*: start zoom-out from the eye.
                 f5CurrentDistance = 0.0F;
                 f5TargetDistance = F5_FULL_DISTANCE;
+                f5PendingZoomOut = false;
             } else if (!prevFirst && curFirst) {
                 // THIRD_* → FIRST: keep the current distance and slide back
                 // in. Mid-animation the mixin forces thirdPerson=true so the
                 // camera physically moves rather than vanilla snapping.
                 f5TargetDistance = 0.0F;
+                f5PendingZoomOut = false;
+            } else if (!prevFirst && !curFirst) {
+                // BACK ↔ FRONT (press #2 in the F5 cycle): both sides sit
+                // at full distance, so we synthesise a zoom-through. Pull
+                // the camera in to the player first; once we settle at 0
+                // the pending flag re-arms a zoom-out to F5_FULL_DISTANCE
+                // and vanilla's already-flipped perspective makes the
+                // camera emerge on the opposite side. Snap current to the
+                // full distance so a re-entry mid-slide (e.g. user mashing
+                // F5) doesn't start the new arc from a stale intermediate
+                // value.
+                f5CurrentDistance = F5_FULL_DISTANCE;
+                f5TargetDistance = 0.0F;
+                f5PendingZoomOut = true;
             }
-            // BACK ↔ FRONT: no distance animation, both stay at full retract.
             f5LastPerspective = currentPerspective;
         }
 
@@ -609,6 +633,14 @@ public final class Animations extends Module {
 
         if (Math.abs(f5CurrentDistance - f5TargetDistance) < F5_SETTLE_EPSILON) {
             f5CurrentDistance = f5TargetDistance;
+            // Second half of the BACK ↔ FRONT zoom-through: now that we
+            // bottomed out at the player we re-arm a zoom-out so the
+            // camera emerges behind/in front of the player (whichever
+            // perspective vanilla flipped to on the F5 press).
+            if (f5PendingZoomOut && f5TargetDistance == 0.0F) {
+                f5TargetDistance = F5_FULL_DISTANCE;
+                f5PendingZoomOut = false;
+            }
         }
         return f5CurrentDistance;
     }
