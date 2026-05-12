@@ -115,7 +115,11 @@ public final class ArmorHud extends Module {
      * freeze the world behind it between refreshes.
      */
     public boolean hasActiveBackgroundBlur() {
-        return background.isValue() && backgroundBlurRadius.getInt() > 0;
+        // Float comparison instead of getInt(): mirrors RectHudModule -
+        // see that class's javadoc for why aligning with the renderer's
+        // getValue() > 0.0f gate is required to avoid the imprinted-HUD
+        // ghost.
+        return background.isValue() && backgroundBlurRadius.getValue() > 0.0f;
     }
 
     public float getHudX() {

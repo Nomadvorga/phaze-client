@@ -72,9 +72,9 @@ public class SelectComponent extends AbstractSettingComponent {
         textOffsetAnimation.setDirection(isModified ? Direction.FORWARDS : Direction.BACKWARDS);
         resetIconAnimation.setDirection(isModified ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        float textOffsetProgress = textOffsetAnimation.getOutput().floatValue();
+        float textOffsetProgress = textOffsetAnimation.getOutputFloat();
         float animatedTextOffset = ResetIconComponent.getTextOffset() * textOffsetProgress;
-        float resetIconAlpha = resetIconAnimation.getOutput().floatValue();
+        float resetIconAlpha = resetIconAnimation.getOutputFloat();
 
         MatrixStack matrices = context.getMatrices();
 
@@ -141,7 +141,7 @@ public class SelectComponent extends AbstractSettingComponent {
 
         boolean leftHovered = MathUtil.isHovered(mouseX, mouseY, boxX, boxY, ARROW_HIT_WIDTH, SELECT_BOX_HEIGHT);
         leftHoverAnimation.setDirection(leftHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        float leftProgress = leftHoverAnimation.getOutput().floatValue();
+        float leftProgress = leftHoverAnimation.getOutputFloat();
         float leftAlpha = (0.7F + 0.3F * leftProgress) * currentAlpha;
         int leftColor = MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, leftAlpha);
         MsdfRenderer.renderText(
@@ -157,7 +157,7 @@ public class SelectComponent extends AbstractSettingComponent {
 
         boolean rightHovered = MathUtil.isHovered(mouseX, mouseY, boxX + boxWidth - ARROW_HIT_WIDTH, boxY, ARROW_HIT_WIDTH, SELECT_BOX_HEIGHT);
         rightHoverAnimation.setDirection(rightHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        float rightProgress = rightHoverAnimation.getOutput().floatValue();
+        float rightProgress = rightHoverAnimation.getOutputFloat();
         float rightAlpha = (0.7F + 0.3F * rightProgress) * currentAlpha;
         int rightColor = MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, rightAlpha);
         float rightArrowWidth = MsdfFonts.bold().getWidth(">", ARROW_TEXT_SIZE);
@@ -172,7 +172,7 @@ public class SelectComponent extends AbstractSettingComponent {
                 0.0F
         );
 
-        float progress = transitionAnimation.getOutput().floatValue();
+        float progress = transitionAnimation.getOutputFloat();
         float textAreaX = boxX + ARROW_HIT_WIDTH;
         float textAreaWidth = boxWidth - ARROW_HIT_WIDTH * 2;
         float textY = MenuStyle.centerMsdfTextY(VALUE_TEXT_SIZE, boxY, SELECT_BOX_HEIGHT);

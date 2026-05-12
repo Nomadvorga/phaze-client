@@ -34,7 +34,7 @@ public abstract class AbstractSettingComponent extends AbstractComponent {
         } else {
             visibilityAnimation.setDirection(isVisible ? Direction.FORWARDS : Direction.BACKWARDS);
         }
-        currentAlpha = visibilityAnimation.getOutput().floatValue() * externalAlpha;
+        currentAlpha = visibilityAnimation.getOutputFloat() * externalAlpha;
     }
 
     public void setExternalAlpha(float externalAlpha) {
@@ -42,7 +42,11 @@ public abstract class AbstractSettingComponent extends AbstractComponent {
     }
 
     public double getVisibilityProgress() {
-        return visibilityAnimation.getOutput();
+        // Use the primitive-double accessor so we don't allocate a
+        // Double wrapper just to immediately unbox it on assignment.
+        // This getter is read every frame by every visible setting
+        // component during {@code MenuScreen.render}.
+        return visibilityAnimation.getOutputDouble();
     }
 
     public boolean shouldSkipRender() {
@@ -101,11 +105,11 @@ public abstract class AbstractSettingComponent extends AbstractComponent {
             textOffsetInitialized = true;
         }
         textOffsetAnimation.setDirection(modified ? Direction.FORWARDS : Direction.BACKWARDS);
-        return ResetIconComponent.getTextOffset() * textOffsetAnimation.getOutput().floatValue();
+        return ResetIconComponent.getTextOffset() * textOffsetAnimation.getOutputFloat();
     }
 
     protected float animatedCardHover(boolean hovered) {
         cardHoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        return cardHoverAnimation.getOutput().floatValue();
+        return cardHoverAnimation.getOutputFloat();
     }
 }

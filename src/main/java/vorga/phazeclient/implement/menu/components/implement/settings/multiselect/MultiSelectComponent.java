@@ -207,8 +207,8 @@ public class MultiSelectComponent extends AbstractSettingComponent {
 
 
     private void renderSelectList(DrawContext context, Matrix4f positionMatrix, int mouseX, int mouseY, float delta) {
-        float opacity = alphaAnimation.getOutput().floatValue() * currentAlpha;
-        float slideProgress = slideAnimation.getOutput().floatValue();
+        float opacity = alphaAnimation.getOutputFloat() * currentAlpha;
+        float slideProgress = slideAnimation.getOutputFloat();
 
         float animatedHeight = dropDownListHeight * slideProgress;
         float animatedY = dropDownListY;
@@ -243,16 +243,16 @@ public class MultiSelectComponent extends AbstractSettingComponent {
 
 
     private boolean isHoveredList(double mouseX, double mouseY) {
-        float slideProgress = slideAnimation.getOutput().floatValue();
+        float slideProgress = slideAnimation.getOutputFloat();
         float animatedHeight = dropDownListHeight * slideProgress;
         return MathUtil.isHovered(mouseX, mouseY, dropdownListX, dropDownListY - 16, dropDownListWidth, animatedHeight + 16);
     }
 
     public float getExpandedHeight() {
-        if (!open || slideAnimation.getOutput().floatValue() < 0.01f) {
+        if (!open || slideAnimation.getOutputFloat() < 0.01f) {
             return height;
         }
-        float slideProgress = slideAnimation.getOutput().floatValue();
+        float slideProgress = slideAnimation.getOutputFloat();
         float dropdownHeight = dropDownListHeight * slideProgress;
         return height + 2 + dropdownHeight;
     }

@@ -76,9 +76,9 @@ public class ValueComponent extends AbstractSettingComponent {
         textOffsetAnimation.setDirection(isModified ? Direction.FORWARDS : Direction.BACKWARDS);
         resetIconAnimation.setDirection(isModified ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        float textOffsetProgress = textOffsetAnimation.getOutput().floatValue();
+        float textOffsetProgress = textOffsetAnimation.getOutputFloat();
         float animatedTextOffset = ResetIconComponent.getTextOffset() * textOffsetProgress;
-        float resetIconAlpha = resetIconAnimation.getOutput().floatValue();
+        float resetIconAlpha = resetIconAnimation.getOutputFloat();
 
         MatrixStack matrices = context.getMatrices();
 

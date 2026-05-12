@@ -144,7 +144,15 @@ public abstract class RectHudModule extends Module {
      * freeze the world behind it between refreshes.
      */
     public boolean hasActiveBackgroundBlur() {
-        return background.isValue() && backgroundBlurRadius.getInt() > 0;
+        // Float comparison instead of getInt(): the renderRectHud blur
+        // gate uses backgroundBlurRadius.getValue() > 0.0f, and the two
+        // paths MUST agree on whether a HUD is blur-active. A truncated
+        // getInt() would round 0 < r < 1 down to 0 and falsely report
+        // "no blur" here while the renderer still spawns the blur pass
+        // - which would then land the HUD in BOTH the cached FBO (Pass 1
+        // thinks no blur) AND the live blur pass (Pass 2 still draws),
+        // producing the imprinted-HUD ghost.
+        return background.isValue() && backgroundBlurRadius.getValue() > 0.0f;
     }
 
     public void resetHudTransform() {

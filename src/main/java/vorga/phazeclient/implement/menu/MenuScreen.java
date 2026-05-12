@@ -148,17 +148,37 @@ public class MenuScreen extends Screen implements QuickImports {
         float scaleAnimation = getScaleAnimation();
         float alphaAnimation = getAlphaAnimation();
         MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> renderGuiRegionBlur(context));
-        MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> {
-            boolean moduleDetailOpen = moduleDetailComponent.isOpen();
-            for (AbstractComponent component : components) {
-                if (moduleDetailOpen && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
-                    continue;
+
+        // Open a BatchedRectangle scope for the entire component +
+        // window-manager render pass. While this scope is active,
+        // every {@code rectangle.render(props)} from any sub-component
+        // (cards, settings, color pickers, search bar, sidebar, etc.)
+        // routes into a shared BufferBuilder instead of issuing its
+        // own draw call. The flush hooks installed in MsdfRenderer,
+        // Image, FontRenderer.drawGlyphs, Blur and ScissorManager
+        // drain the queue at every text/image/blur/scissor boundary
+        // so the on-screen draw order is identical to the legacy
+        // eager path - cards still appear under text, hover overlays
+        // still appear over base fills, scissor clipping is honored,
+        // etc. The outermost endScope() at the bottom of this lambda
+        // performs the final drain so nothing leaks past the menu's
+        // matrix-pop into whatever renders next on the frame.
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.beginScope();
+        try {
+            MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> {
+                boolean moduleDetailOpen = moduleDetailComponent.isOpen();
+                for (AbstractComponent component : components) {
+                    if (moduleDetailOpen && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
+                        continue;
+                    }
+                    component.globalAlpha = alphaAnimation;
+                    component.render(context, overlayMouseX, overlayMouseY, delta);
                 }
-                component.globalAlpha = alphaAnimation;
-                component.render(context, overlayMouseX, overlayMouseY, delta);
-            }
-            windowManager.render(context, overlayMouseX, overlayMouseY, delta);
-        });
+                windowManager.render(context, overlayMouseX, overlayMouseY, delta);
+            });
+        } finally {
+            vorga.phazeclient.api.system.shape.batched.BatchedRectangle.endScope();
+        }
         context.getMatrices().pop();
     }
 
@@ -195,8 +215,8 @@ public class MenuScreen extends Screen implements QuickImports {
         horizontalGuideAnimation.setDirection(nearHorizontalCenter ? FORWARDS : BACKWARDS);
         verticalGuideAnimation.setDirection(nearVerticalCenter ? FORWARDS : BACKWARDS);
 
-        float horizontalAlpha = horizontalGuideAnimation.getOutput().floatValue() * 0.5F;
-        float verticalAlpha = verticalGuideAnimation.getOutput().floatValue() * 0.5F;
+        float horizontalAlpha = horizontalGuideAnimation.getOutputFloat() * 0.5F;
+        float verticalAlpha = verticalGuideAnimation.getOutputFloat() * 0.5F;
 
         RenderSystem.disableScissor();
         if (horizontalAlpha > 0.0F) {
@@ -245,11 +265,11 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     public float getScaleAnimation() {
-        return animation.getOutput().floatValue();
+        return animation.getOutputFloat();
     }
 
     public float getAlphaAnimation() {
-        float progress = animation.getOutput().floatValue();
+        float progress = animation.getOutputFloat();
         return progress * progress;
     }
 

@@ -22,6 +22,8 @@ public class InvertedArc implements Shape, QuickImports {
 
     @Override
     public void render(ShapeProperties shape) {
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
+
         RenderSystem.enableBlend();
         RenderSystem.blendFuncSeparate(
                 GlStateManager.SrcFactor.ONE_MINUS_DST_COLOR,

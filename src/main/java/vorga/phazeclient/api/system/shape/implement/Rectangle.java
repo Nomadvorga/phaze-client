@@ -12,6 +12,7 @@ import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.api.system.shape.Shape;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
@@ -22,6 +23,23 @@ public class Rectangle implements Shape, QuickImports {
 
     @Override
     public void render(ShapeProperties shape) {
+        // Fast batched path: if a BatchedRectangle scope is open
+        // (currently entered for menu rendering only), defer this rect
+        // into the shared BufferBuilder instead of issuing its own
+        // BufferBuilder.begin -> 8 uniform sets -> drawWithGlobalProgram
+        // -> disableBlend cycle. Outside of a batching scope (HUD,
+        // standalone components, etc.) we keep the original eager path
+        // below so unrelated callers see no behavioral change. The
+        // batched path produces pixel-identical output - same SDF math,
+        // same gradient bilinear, same outline blend - because
+        // BatchedRectangle replicates Rectangle's per-rect math and
+        // the round_batched shader is a direct port of round.fsh with
+        // the uniforms reshaped as per-vertex attributes.
+        if (BatchedRectangle.isBatching()) {
+            BatchedRectangle.submit(shape);
+            return;
+        }
+
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.enableDepthTest();
@@ -48,7 +66,15 @@ public class Rectangle implements Shape, QuickImports {
 
         if (shader == null) return;
         shader.getUniformOrDefault("size").set(width, height);
-        shader.getUniformOrDefault("location").set(pos.x, window().getHeight() - height - pos.y);
+        // Use the cross-cutting active render-target FB height instead
+        // of the raw main-window value: while CardSnapshotCache has
+        // bound a card snapshot FBO, gl_FragCoord ranges over the
+        // small card box and the SDF location uniform must match.
+        // This eager path normally only runs when BatchedRectangle is
+        // disabled (Sodium / Iris claimed all GENERIC vertex slots),
+        // but FBO capture still routes through here in that fallback
+        // mode and would otherwise punch out every fragment.
+        shader.getUniformOrDefault("location").set(pos.x, BatchedRectangle.getActiveFbHeight() - height - pos.y);
         shader.getUniformOrDefault("radius").set(round);
         shader.getUniformOrDefault("softness").set(softness);
         shader.getUniformOrDefault("thickness").set(thickness);

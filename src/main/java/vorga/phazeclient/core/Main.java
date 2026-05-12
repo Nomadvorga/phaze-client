@@ -229,6 +229,18 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChangeHand.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChangeHand.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HitRange.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HitRange.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AucHelper.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AucHelper.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoRespawn.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoRespawn.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.MaceIndicator.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.MaceIndicator.getInstance());
+        }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {
         //     moduleProvider.getModules().add(ScoreboardHud.getInstance());

@@ -50,7 +50,7 @@ public class SelectedButton extends AbstractComponent {
 
         alphaAnimation.setDirection(setting.getSelected().contains(text) ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        float opacity = alphaAnimation.getOutput().floatValue();
+        float opacity = alphaAnimation.getOutputFloat();
         int selectedOpacity = MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, opacity * alpha);
 
         if (!alphaAnimation.isFinished(Direction.BACKWARDS)) {

@@ -65,6 +65,8 @@ import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.features.modules.other.HudOptimizer;
 import vorga.phazeclient.implement.features.modules.other.StreamerMode;
+import vorga.phazeclient.core.Main;
+import vorga.phazeclient.api.feature.module.Module;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -257,6 +259,24 @@ public class InGameHudMixin {
             } else {
                 BatchedHudBuffer.INSTANCE.setTargetFps(HudOptimizer.getInstance().refreshRate.getInt());
                 boolean chatEditing = client.currentScreen instanceof ChatScreen;
+
+                // Pre-scan EVERY HUD's blur state BEFORE we decide whether
+                // Pass 1 needs to refresh. The per-renderBufferedHud
+                // trackBlurStateChange that lives inside Pass 1 / Pass 2
+                // is too late to repair the THIS-frame visual: by the
+                // time it invalidates the cache, blit() has already
+                // stamped the previous frame's pre-flip HUD onto the
+                // main framebuffer, while Pass 2 then redraws the
+                // post-flip (blurred) version on top - that's the
+                // "imprinted" ghost the user reports across every HUD
+                // the first frame after a blur toggle (or any other
+                // setting change that crosses the hasActiveBackgroundBlur
+                // boundary). Walking the module list once here flips
+                // BatchedHudBuffer to dirty BEFORE shouldRefresh is
+                // sampled, so the cache is rebuilt on this frame and
+                // blit shows fresh content matching what Pass 2 draws.
+                phaze$prescanBlurStateFlips();
+
                 boolean shouldRefresh = chatEditing || BatchedHudBuffer.INSTANCE.shouldRefresh(false);
 
                 // Pass 1 — refresh frames only: render NON-blur HUDs into the
@@ -541,6 +561,57 @@ public class InGameHudMixin {
         Boolean prev = PHAZE_LAST_BLUR_STATE.put(module, current);
         if (prev != null && prev != current) {
             BatchedHudBuffer.INSTANCE.invalidate();
+        }
+    }
+
+    /**
+     * Walks every registered HUD module BEFORE Pass 1 decides whether to
+     * refresh the batched FBO, comparing the current
+     * {@code hasActiveBackgroundBlur()} value against the last value that
+     * was recorded in {@link #PHAZE_LAST_BLUR_STATE}. Any HUD whose blur
+     * state has crossed the Pass-1/Pass-2 boundary forces an immediate
+     * cache invalidation, so the very next {@code shouldRefresh} check
+     * resolves to {@code true} and Pass 1 rebuilds the FBO with the
+     * post-flip pass split.
+     *
+     * <p>The per-{@code renderBufferedHud} {@link #phaze$trackBlurStateChange}
+     * call still exists as a defence in depth, but it runs AFTER the
+     * frame's {@code blit()} - too late to repair this frame's visual.
+     * The pre-scan here is what actually prevents the user-visible
+     * "imprinted HUD" ghost on the first frame after any blur toggle:
+     * without it, the stale cache (rendered with the old pass split)
+     * blits to the screen and Pass 2 then redraws the post-flip HUD on
+     * top, stamping every affected HUD twice for one frame.
+     *
+     * <p>Filtering by {@code instanceof} restricts the walk to the two
+     * HUD types that surface {@code hasActiveBackgroundBlur}
+     * ({@link RectHudModule} + {@link ArmorHud}). Modules without a
+     * blur surface (e.g. {@code TabHud}, {@code NametagHud},
+     * {@code Animations}) don't participate in the Pass split, so
+     * skipping them costs nothing and keeps the per-frame walk cheap.
+     */
+    private static void phaze$prescanBlurStateFlips() {
+        Main main = Main.getInstance();
+        if (main == null) {
+            return;
+        }
+        var provider = main.getModuleProvider();
+        if (provider == null) {
+            return;
+        }
+        for (Module module : provider.getModules()) {
+            boolean current;
+            if (module instanceof RectHudModule rectModule) {
+                current = rectModule.hasActiveBackgroundBlur();
+            } else if (module instanceof ArmorHud armorModule) {
+                current = armorModule.hasActiveBackgroundBlur();
+            } else {
+                continue;
+            }
+            Boolean prev = PHAZE_LAST_BLUR_STATE.put(module, current);
+            if (prev != null && prev != current) {
+                BatchedHudBuffer.INSTANCE.invalidate();
+            }
         }
     }
 

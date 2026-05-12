@@ -134,7 +134,7 @@ public class BackgroundComponent extends AbstractComponent {
         Animation hoverAnimation = topTabHoverAnimations.computeIfAbsent(label, ignored -> new DecelerateAnimation().setMs(180).setValue(1));
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        float hoverProgress = hoverAnimation.getOutput().floatValue();
+        float hoverProgress = hoverAnimation.getOutputFloat();
         float activeProgress = active ? 1.0F : 0.0F;
 
         int baseTabColor = MenuStyle.PANEL_CHIP;
@@ -175,7 +175,7 @@ public class BackgroundComponent extends AbstractComponent {
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, buttonX, buttonY, buttonWidth, FOOTER_BUTTON_HEIGHT);
         saveConfigHoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        float hoverProgress = saveConfigHoverAnimation.getOutput().floatValue();
+        float hoverProgress = saveConfigHoverAnimation.getOutputFloat();
 
         rectangle.render(ShapeProperties.create(matrix, buttonX, buttonY, buttonWidth, FOOTER_BUTTON_HEIGHT)
                 .round(2).thickness(2.0F)
@@ -235,8 +235,8 @@ public class BackgroundComponent extends AbstractComponent {
             rowHoverAnimation.setDirection(rowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
             deleteHoverAnimation.setDirection(deleteHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
-            float rowHoverProgress = rowHoverAnimation.getOutput().floatValue();
-            float deleteHoverProgress = deleteHoverAnimation.getOutput().floatValue();
+            float rowHoverProgress = rowHoverAnimation.getOutputFloat();
+            float deleteHoverProgress = deleteHoverAnimation.getOutputFloat();
 
             int baseRowColor = active ? MenuStyle.PANEL_ROW_ACTIVE : MenuStyle.PANEL_ROW;
             int rowColor = MenuStyle.mix(baseRowColor, MenuStyle.TEXT_PRIMARY, 0.07F * rowHoverProgress);
@@ -306,7 +306,7 @@ public class BackgroundComponent extends AbstractComponent {
         float newConfigY = footerStartY() - 5.0F - FOOTER_BUTTON_HEIGHT - buttonGap;
         boolean newConfigHovered = MathUtil.isHovered(mouseX, mouseY, footerX, newConfigY, footerWidth, FOOTER_BUTTON_HEIGHT);
         saveConfigHoverAnimation.setDirection(newConfigHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        float newConfigHoverProgress = saveConfigHoverAnimation.getOutput().floatValue();
+        float newConfigHoverProgress = saveConfigHoverAnimation.getOutputFloat();
 
         rectangle.render(ShapeProperties.create(matrix, footerX, newConfigY, footerWidth, FOOTER_BUTTON_HEIGHT)
                 .round(2).thickness(2.0F)
@@ -328,7 +328,7 @@ public class BackgroundComponent extends AbstractComponent {
         float editHudY = footerStartY() - 5.0F;
         boolean editHovered = MathUtil.isHovered(mouseX, mouseY, footerX, editHudY, footerWidth, FOOTER_BUTTON_HEIGHT);
         editHudHoverAnimation.setDirection(editHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        float editHoverProgress = editHudHoverAnimation.getOutput().floatValue();
+        float editHoverProgress = editHudHoverAnimation.getOutputFloat();
 
         rectangle.render(ShapeProperties.create(matrix, footerX, editHudY, footerWidth, FOOTER_BUTTON_HEIGHT)
                 .round(2).thickness(2.0F)

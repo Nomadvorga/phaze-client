@@ -34,9 +34,9 @@ public class CheckboxComponent extends AbstractSettingComponent {
 
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        float hoverProgress = hoverAnimation.getOutput().floatValue();
+        float hoverProgress = hoverAnimation.getOutputFloat();
         activeAnimation.setDirection(setting.isValue() ? Direction.FORWARDS : Direction.BACKWARDS);
-        float activeProgress = activeAnimation.getOutput().floatValue();
+        float activeProgress = activeAnimation.getOutputFloat();
 
         String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 30 - textOffset), 14);
         float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);

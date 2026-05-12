@@ -285,6 +285,13 @@ public class FontRenderer implements QuickImports {
     }
 
     private void drawGlyphs(MatrixStack matrix, double x, double y) {
+        // All FontRenderer.drawXxx variants funnel through here for the
+        // actual GPU submission; flushing the BatchedRectangle queue
+        // before the glyph BufferBuilder begins keeps draw order
+        // consistent (text on top of rects) and avoids double-open
+        // tessellator state.
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
+
         matrix.push();
         matrix.translate(x, y - 3F, 0);
         matrix.scale(0.5F, 0.5F, 1);
