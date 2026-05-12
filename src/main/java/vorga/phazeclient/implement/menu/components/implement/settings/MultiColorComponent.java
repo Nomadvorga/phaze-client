@@ -102,7 +102,24 @@ public class MultiColorComponent extends AbstractSettingComponent {
                             windowManager.delete(existingWindow);
                         } else {
 
-                            int windowWidth = 150;
+                            // Width bumped from the legacy 150 to make
+                            // room for the two vertical sliders Phaze
+                            // now stacks to the right of the saturation /
+                            // brightness picker, plus each slider's
+                            // left-pointing triangle indicator stuck
+                            // to its right edge. Layout walk:
+                            //   x+6..x+144     picker (138 px)
+                            //   x+148..x+154   hue strip      (6 px)
+                            //   x+154..x+160   hue triangle   (6 px)
+                            //   x+162..x+168   alpha strip    (6 px)
+                            //   x+168..x+174   alpha triangle (6 px)
+                            // Plus a 4 px right margin so the alpha
+                            // triangle doesn't graze the rounded
+                            // window border. SaturationComponent and
+                            // AlphaComponent reference these exact X
+                            // values - changing one without updating
+                            // the others will misalign the strips.
+                            int windowWidth = 178;
                             int windowHeight = 165;
 
                             int windowX = (int) (mouseX + 10);

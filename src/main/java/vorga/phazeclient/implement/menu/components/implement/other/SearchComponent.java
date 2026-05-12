@@ -78,16 +78,15 @@ public class SearchComponent extends AbstractComponent {
 
         selectAnimation.setDirection(isSearchSelected ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        float hoverProgress = hoverAnimation.getOutput().floatValue();
-        float selectProgress = selectAnimation.getOutput().floatValue();
+        float hoverProgress = hoverAnimation.getOutputFloat();
+        float selectProgress = selectAnimation.getOutputFloat();
 
         int outlineColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, selectProgress);
         outlineColor = MenuStyle.mix(outlineColor, MenuStyle.CHIP_ACTIVE, hoverProgress * 0.5F);
         int iconColor = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, selectProgress);
-        int chipColor = MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.1F);
 
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
-                .round(2).thickness(2.0F).softness(1).outlineColor(applyGlobalAlpha(outlineColor)).color(applyGlobalAlpha(chipColor)).build());
+                .round(2).thickness(3.0F).softness(1).outlineColor(applyGlobalAlpha(outlineColor)).color(0).build());
 
         float iconX;
         float iconY = y + (height - ICON_SIZE) / 2;

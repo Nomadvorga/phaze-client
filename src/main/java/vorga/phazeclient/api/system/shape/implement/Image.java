@@ -5,6 +5,7 @@ import lombok.Setter;
 import lombok.experimental.Accessors;
 import vorga.phazeclient.api.system.shape.Shape;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
@@ -18,6 +19,13 @@ public class Image implements Shape, QuickImports {
 
     @Override
     public void render(ShapeProperties shape) {
+        // Drain pending batched rects so this textured quad lands ABOVE
+        // them in draw order. The image draw uses its own
+        // POSITION_TEXTURE_COLOR BufferBuilder which would otherwise
+        // collide with the BatchedRectangle's currently-open
+        // POSITION+GENERIC builder on the shared Tessellator.
+        BatchedRectangle.flushIfBatching();
+
         MatrixStack matrix = shape.getMatrix();
 
         RenderSystem.enableBlend();

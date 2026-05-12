@@ -63,7 +63,7 @@ public abstract class AbstractWindow extends AbstractComponent {
             y = Math.max(0, Math.min(y, screenHeight - height));
         }
 
-        float scale = scaleAnimation.getOutput().floatValue();
+        float scale = scaleAnimation.getOutputFloat();
         float alpha = scale * scale;
         MathUtil.scale(context.getMatrices(), x + width / 2, y + height / 2, scale, () -> {
             this.globalAlpha = alpha;

@@ -71,3 +71,21 @@ accessible field net/minecraft/client/model/ModelPart pivotY F
 # Motion Blur shader access
 accessible method net/minecraft/client/render/GameRenderer getFov (Lnet/minecraft/client/render/Camera;FZ)F
 accessible class net/minecraft/client/gl/ShaderLoader$Cache
+
+# HitRange custom RenderLayer construction (port of uku3lig/hitrange).
+# RenderLayer.of(...) is package-private in vanilla and the MultiPhase /
+# MultiPhaseParameters inner classes are non-public; the upstream mod
+# uses the same widener entries to bake its translucent line / quad /
+# triangle-fan layers for the hit-range circle.
+accessible class net/minecraft/client/render/RenderLayer$MultiPhase
+accessible class net/minecraft/client/render/RenderLayer$MultiPhaseParameters
+accessible method net/minecraft/client/render/RenderLayer of (Ljava/lang/String;Lnet/minecraft/client/render/VertexFormat;Lnet/minecraft/client/render/VertexFormat$DrawMode;IZZLnet/minecraft/client/render/RenderLayer$MultiPhaseParameters;)Lnet/minecraft/client/render/RenderLayer$MultiPhase;
+
+# Batched rectangle renderer needs raw write access to BufferBuilder's
+# per-element memory pointer for our custom GENERIC vertex attributes
+# (RectBase, RectSize, Radius, Params, OutlineColor). Vanilla's helper
+# methods cover only POSITION/COLOR/UV/NORMAL, so for our SDF data we
+# bypass them by calling beginElement(VertexFormatElement) and writing
+# the floats directly via MemoryUtil at the returned pointer - same
+# pattern vanilla uses internally for its own vertex(...) overloads.
+accessible method net/minecraft/client/render/BufferBuilder beginElement (Lnet/minecraft/client/render/VertexFormatElement;)J

@@ -27,13 +27,38 @@ public class CategoryContainerComponent extends AbstractComponent {
     );
 
     private final List<CategoryComponent> categoryComponents = new ArrayList<>();
+    /**
+     * Lazy memoization of {@link #getTotalWidth()}. The chip labels
+     * are immutable constants ("ALL", "HUD", "UTILITIES", "OTHER")
+     * pulled from {@link CategoryComponent#getTabLabel}, which never
+     * mutate at runtime, so the sum of their MSDF widths plus padding
+     * / gap is also constant for the lifetime of the menu. The legacy
+     * implementation re-walked every frame from {@link MenuScreen#render},
+     * which after the MsdfFont width cache is mostly hashmap hits but
+     * still 4 lookups + arithmetic per frame for a value that
+     * effectively never changes. Reset to {@code -1} in
+     * {@link #initializeCategoryComponents} so palette / language
+     * switches that rebuild the list re-evaluate once.
+     */
+    private float cachedTotalWidth = -1.0F;
 
     public void initializeCategoryComponents() {
+        // Drop every per-card FBO before the old ModuleComponent
+        // instances are dereferenced - the FBO color attachments are
+        // GL-allocated VRAM that won't be reclaimed by the JVM GC, so
+        // failing to call clearAll here would slowly leak ~750 KB per
+        // module across menu rebuilds (preload, post-config-reload,
+        // etc.) until the process exits.
+        vorga.phazeclient.api.system.snapshot.CardSnapshotCache.clearAll();
         categoryComponents.clear();
         CHIP_CATEGORIES.stream().map(CategoryComponent::new).forEach(categoryComponents::add);
+        cachedTotalWidth = -1.0F;
     }
 
     public float getTotalWidth() {
+        if (cachedTotalWidth >= 0.0F) {
+            return cachedTotalWidth;
+        }
         float total = 0.0F;
         for (int i = 0; i < categoryComponents.size(); i++) {
             String label = categoryComponents.get(i).getTabLabel();
@@ -42,6 +67,7 @@ public class CategoryContainerComponent extends AbstractComponent {
                 total += CHIP_GAP;
             }
         }
+        cachedTotalWidth = total;
         return total;
     }
 

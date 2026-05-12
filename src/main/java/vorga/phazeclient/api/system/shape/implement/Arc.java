@@ -22,6 +22,12 @@ public class Arc implements Shape, QuickImports {
 
     @Override
     public void render(ShapeProperties shape) {
+        // Arc opens its own Tessellator BufferBuilder; the shared
+        // Tessellator only allows ONE active buffer, so any pending
+        // BatchedRectangle batch must flush first or its tessellator
+        // .begin() would collide with ours.
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
+
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.enableDepthTest();

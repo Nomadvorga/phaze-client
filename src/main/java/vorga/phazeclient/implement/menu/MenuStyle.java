@@ -14,6 +14,17 @@ public final class MenuStyle {
     private static MenuPalette targetPalette = MenuPalettes.LUNAR_BLUE;
     private static final Animation themeAnimation = new DecelerateAnimation().setMs(TRANSITION_MS).setValue(1);
     private static String appliedPaletteName = currentPalette.name();
+    /**
+     * Latched once {@link #apply} finishes a transition (progress
+     * reaches 1.0). While set, subsequent {@code apply()} calls with
+     * the SAME palette name short-circuit and skip the 20+ {@code mix}
+     * / palette-getter calls. {@code apply()} runs every frame the
+     * menu is open, so before this latch the menu burned ~20 channel
+     * blends per frame even when nothing visually changed - now it
+     * pays that cost only during the 300 ms theme-fade window plus
+     * one trailing frame to commit the final values.
+     */
+    private static boolean paletteStable = false;
 
     private MenuStyle() {
     }
@@ -52,9 +63,22 @@ public final class MenuStyle {
             appliedPaletteName = newName;
             themeAnimation.setDirection(Direction.FORWARDS);
             themeAnimation.reset();
+            paletteStable = false;
         }
 
-        float progress = themeAnimation.getOutput().floatValue();
+        // Stable-palette fast path: no transition is in flight and the
+        // requested palette matches what we last fully committed, so
+        // every {@code MenuStyle.PANEL_*} / {@code TEXT_*} / etc. is
+        // already at its target value. Skipping returns immediately
+        // without running the 20+ palette-getter + per-channel mix /
+        // assignment block below, which {@code MenuScreen.render}
+        // invokes every frame the menu is open.
+        if (paletteStable) {
+            currentPalette = newPalette;
+            return;
+        }
+
+        float progress = themeAnimation.getOutputFloat();
         currentPalette = newPalette;
 
         if (progress < 1.0F) {
@@ -105,6 +129,11 @@ public final class MenuStyle {
             CHIP_ACTIVE = targetPalette.chipActive();
             CHIP_NEW = targetPalette.chipNew();
             ACCENT_GREEN = targetPalette.accentGreen();
+            // Final values are now committed - flip the latch so all
+            // subsequent calls with the same palette short-circuit at
+            // the top of apply() instead of repeating these
+            // pass-through assignments every frame.
+            paletteStable = true;
         }
     }
 

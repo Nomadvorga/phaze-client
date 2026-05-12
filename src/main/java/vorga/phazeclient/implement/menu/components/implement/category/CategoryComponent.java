@@ -266,8 +266,8 @@ public class CategoryComponent extends AbstractComponent {
         boolean isHovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        float hoverProgress = hoverAnimation.getOutput().floatValue();
-        float selectionProgress = selectionAnimation.getOutput().floatValue();
+        float hoverProgress = hoverAnimation.getOutputFloat();
+        float selectionProgress = selectionAnimation.getOutputFloat();
 
         String label = getTabLabel();
         int accentColor = label.equals("NEW") ? MenuStyle.CHIP_NEW : MenuStyle.CHIP_ACTIVE;
@@ -297,7 +297,16 @@ public class CategoryComponent extends AbstractComponent {
 
     private boolean shouldRenderContentForCurrentCategory(ModuleCategory currentCategory) {
         if (currentCategory == ModuleCategory.SEARCH) {
-            return true; // Show all modules in search mode
+            // Every CategoryComponent ({ALL, HUD, UTILITIES, OTHER}) shares
+            // the SAME backing module list (initialize() does not filter by
+            // this.category - see line 92-98), so letting all four render
+            // in SEARCH mode would draw every matching card 4x at the same
+            // grid coordinates. The visible result was text glyphs blending
+            // over themselves (apparent "bolding"/thickening) and the card
+            // outline being stroked 4x (apparent widening). Pin search-mode
+            // rendering to a single CategoryComponent (ALL) so each matching
+            // card is drawn exactly once.
+            return category == ModuleCategory.ALL;
         }
         return category == currentCategory;
     }

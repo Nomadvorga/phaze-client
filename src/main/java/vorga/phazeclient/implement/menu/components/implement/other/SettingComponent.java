@@ -29,7 +29,7 @@ public class SettingComponent extends AbstractComponent {
             rotationAnimation.setDirection(Direction.BACKWARDS);
         }
 
-        float rotationProgress = rotationAnimation.getOutput().floatValue();
+        float rotationProgress = rotationAnimation.getOutputFloat();
         float rotationAngle = 90 + (rotationProgress * 360);
 
         float centerX = x + buttonSize / 2f;

@@ -14,6 +14,7 @@ import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 
 public final class MsdfRenderer {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
@@ -34,9 +35,25 @@ public final class MsdfRenderer {
 
     public static void renderText(MsdfFont font, String text, float size, int color, Matrix4f matrix, float x, float y, float z, float thickness, float smoothness) {
         if (msdfFailed || font == null) {
+            // Fallback uses vanilla TextRenderer which immediately
+            // submits its own draw call against the same render thread
+            // - the batched rect queue must be drained first or those
+            // pending rects would render over (i.e. after) the
+            // fallback text. Same reason as the non-fallback path
+            // below: any draw that emits its own primitives into the
+            // current GL pipeline has to come AFTER our cached batch.
+            BatchedRectangle.flushIfBatching();
             fallback(text, color, matrix, x, y);
             return;
         }
+
+        // Flush pending rects before MSDF text so the rasterizer order
+        // matches the call order: text always paints OVER previously
+        // submitted rectangles, never under them. Without this flush
+        // the BufferBuilder.begin below would steal the tessellator
+        // from our pending rect batch and Tessellator.getInstance()
+        // would assert (only one buffer can be open at a time).
+        BatchedRectangle.flushIfBatching();
 
         try {
             RenderSystem.enableBlend();

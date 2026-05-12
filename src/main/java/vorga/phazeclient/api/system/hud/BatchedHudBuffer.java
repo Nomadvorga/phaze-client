@@ -130,6 +130,51 @@ public final class BatchedHudBuffer {
         MinecraftClient mc = MinecraftClient.getInstance();
         realMainFramebuffer = mc != null ? mc.getFramebuffer() : null;
 
+        // Defensive GL-state reset before clearing the cached FBO.
+        // glClear is gated by THREE pieces of state that vanilla MC and
+        // Phaze freely toggle during world / vanilla-HUD rendering:
+        //
+        //   1. GL_SCISSOR_TEST + glScissor(...). When enabled, glClear
+        //      only touches pixels INSIDE the scissor box. If anything
+        //      upstream (vanilla chat clipping in some 1.21.x builds,
+        //      ScissorManager paths from menu/tooltip rendering that
+        //      didn't fully unwind, OR a future feature that forgets to
+        //      pop) leaves a scissor smaller than the framebuffer
+        //      enabled, our (0,0,0,0) clear only erases that sub-region
+        //      and pixels OUTSIDE it keep the previous frame's HUD
+        //      contents.
+        //
+        //   2. glColorMask. If any channel was disabled (e.g. an alpha-
+        //      only stencil pass that masked RGB) the corresponding
+        //      channels are skipped during the clear, leaving stale
+        //      values that "burn through" subsequent renders.
+        //
+        //   3. glDepthMask. SimpleFramebuffer.clear() always issues a
+        //      depth-buffer-bit clear when depth attachment is present,
+        //      but a depthMask(false) leftover would silently no-op it,
+        //      causing later depth-tested HUD geometry to either reject
+        //      every pixel or accumulate Z-fight against last frame's
+        //      depth values.
+        //
+        // The user-visible failure mode of (1) is exactly what the
+        // current ticket describes: when the HUD text changes, the OLD
+        // glyph shapes "burn through" the HUD background because the
+        // FBO's old text pixels were never cleared - the new bg-fill
+        // alpha-blends over them but, with TRANSLUCENT_TRANSPARENCY's
+        // alpha = src.alpha + dst.alpha*(1-src.alpha), bg-fill at
+        // alpha=0.5 over an old-text pixel at alpha=1.0 yields
+        // result.alpha=1.0, locking the old glyph mask into the FBO
+        // forever and producing the user's "the background becomes
+        // transparent in the shape of old digits" effect.
+        //
+        // Forcing the three masks open + scissor disabled here costs a
+        // handful of GL state-cache writes per cache refresh (i.e. once
+        // every ~33 ms at the default 30 Hz) and absolutely guarantees
+        // glClear hits every pixel of the FBO.
+        GlStateManager._disableScissorTest();
+        GlStateManager._colorMask(true, true, true, true);
+        GlStateManager._depthMask(true);
+
         fbo.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         fbo.clear();
         fbo.beginWrite(false);

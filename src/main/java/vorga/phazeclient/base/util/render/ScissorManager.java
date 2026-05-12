@@ -14,6 +14,17 @@ public class ScissorManager implements QuickImports {
     Stack<Scissor> scissorStack = new Stack<>();
 
     public void push(Matrix4f matrix4f, float x, float y, float width, float height) {
+        // Drain any pending batched rectangles BEFORE the scissor box
+        // changes. glClear and rasterization are both gated by the
+        // current scissor; if we left rects queued they would either
+        // be clipped to the new (potentially smaller) scissor when
+        // flushed later or rasterize against the wrong clip box. The
+        // legacy eager Rectangle.render path implicitly issued every
+        // rect immediately so the scissor active at submit time was
+        // ALWAYS the scissor active at draw time - this flush keeps
+        // that invariant under the deferred batched path.
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
+
         Vector3f pos = matrix4f.transformPosition(x,y,0, new Vector3f());
         Vector3f size = matrix4f.getScale(new Vector3f()).mul(width, height, 0);
 
@@ -37,6 +48,10 @@ public class ScissorManager implements QuickImports {
     }
 
     public void pop() {
+        // Same reasoning as push(): rects submitted under this scissor
+        // must rasterize before the scissor pops to a wider box.
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
+
         if (!scissorStack.isEmpty()) {
             scissorStack.pop();
             if (scissorStack.isEmpty()) {

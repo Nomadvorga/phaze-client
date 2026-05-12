@@ -125,7 +125,7 @@ public class ModuleDetailComponent extends AbstractComponent {
             return;
         }
 
-        float anim = openAnimation.getOutput().floatValue() * globalAlpha;
+        float anim = openAnimation.getOutputFloat() * globalAlpha;
         renderHeader(context, mouseX, mouseY, anim);
         renderDescription(context, anim);
         renderSettingsPanel(context, mouseX, mouseY, delta, anim);
@@ -195,7 +195,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         float panelWidth = settingsPanelWidth();
         float panelHeight = settingsPanelHeight();
 
-        float fadeProgress = fadeAnimation.getOutput().floatValue();
+        float fadeProgress = fadeAnimation.getOutputFloat();
         float panelAlpha = Math.max(0.0F, Math.min(1.0F, fadeProgress * anim));
 
         float innerX = panelX + 2.0F;

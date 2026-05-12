@@ -45,7 +45,7 @@ public class ResetIconComponent implements QuickImports {
 
     public void render(MatrixStack matrix) {
         visibilityAnimation.setDirection(isModified ? Direction.FORWARDS : Direction.BACKWARDS);
-        float visible = visibilityAnimation.getOutput().floatValue();
+        float visible = visibilityAnimation.getOutputFloat();
         float iconAlpha = alpha * visible;
         if (iconAlpha <= 0.01f) {
             return;

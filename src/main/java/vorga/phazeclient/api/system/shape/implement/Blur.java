@@ -84,6 +84,37 @@ public class Blur implements Shape {
         hudBatchMaskShader = null;
     }
 
+    /**
+     * Manually trigger the per-frame world-input snapshot used by every
+     * cached HUD blur. Intended to be called from the HUD render pipeline
+     * BEFORE {@code BatchedHudBuffer.blit()} runs, so that the snapshot
+     * captures only world + vanilla HUD pixels and NOT the cached Phaze
+     * HUDs that {@code blit} is about to stamp into the main framebuffer.
+     *
+     * <p>Why this matters: without an explicit pre-blit capture, the first
+     * blur HUD in Pass 2 lazily kicks off {@link #captureWorldInput} on
+     * demand. By that point the main framebuffer already contains the
+     * blitted batched-FBO contents, so the snapshot ends up baking in
+     * every non-blur HUD that just got blitted. Any blur HUD whose rect
+     * overlaps a cached HUD's position then renders a backdrop that
+     * shows a blurred copy of that cached HUD behind itself - and the
+     * cache content is one refresh cycle stale, so the user sees the
+     * previous HUD value visibly "imprinted" behind the current one
+     * even when nothing actually moved.
+     *
+     * <p>Calling this method up-front sets {@code cachedFramePrepared = true},
+     * so the in-Pass-2 lazy capture inside {@link #prepareFramebuffers}
+     * short-circuits and every blur HUD reuses the clean pre-blit
+     * snapshot.
+     */
+    public void captureBaseFrameForBlur() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
+            return;
+        }
+        prepareFramebuffers(client, true, false);
+    }
+
     public void endCachedFrame() {
         if (hudBatchStateApplied) {
             RenderSystem.enableDepthTest();
@@ -263,6 +294,16 @@ public class Blur implements Shape {
         if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
             return;
         }
+
+        // Drain pending batched rects BEFORE the blur shader captures
+        // the framebuffer. Blur reads the current main FB color as
+        // input - any rects still sitting in the BatchedRectangle
+        // BufferBuilder have not actually rasterized yet, so without a
+        // flush the blur input would miss them and they would later
+        // composite on TOP of the blur (wrong layering: a card's blur
+        // backdrop should sample the world AND any earlier-submitted
+        // GUI panels behind it, not skip over them).
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
 
         if (!prepareFramebuffers(client, cacheFrame, true)) {
             return;

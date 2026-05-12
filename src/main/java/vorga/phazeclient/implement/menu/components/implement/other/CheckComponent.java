@@ -43,10 +43,10 @@ public class CheckComponent extends AbstractComponent {
         MatrixStack matrix = context.getMatrices();
         toggleAnimation.setDirection(state ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        float progress = toggleAnimation.getOutput().floatValue();
+        float progress = toggleAnimation.getOutputFloat();
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, TOGGLE_WIDTH, TOGGLE_HEIGHT);
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        float hoverProgress = hoverAnimation.getOutput().floatValue();
+        float hoverProgress = hoverAnimation.getOutputFloat();
 
         int background = state ? MenuStyle.mix(MenuStyle.CHIP_ACTIVE, MenuStyle.ACCENT_GREEN, 0.22F) : MenuStyle.pill(false);
         background = MenuStyle.mix(background, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.035F);
