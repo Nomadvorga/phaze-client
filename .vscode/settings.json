@@ -1,3 +1,4 @@
 {
-    "workbench.colorTheme": "Kiro Dark"
+    "workbench.colorTheme": "Kiro Dark",
+    "java.configuration.updateBuildConfiguration": "interactive"
 }

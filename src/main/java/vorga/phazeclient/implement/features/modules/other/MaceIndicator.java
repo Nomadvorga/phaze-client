@@ -94,6 +94,16 @@ public final class MaceIndicator extends Module {
             return 0;
         }
 
+        // Gate the entire overlay on "is a mace the currently held
+        // item?". Attack cooldown only ticks against the item that's
+        // actually equipped, so highlighting a mace stashed in slot 5
+        // while the player wields a sword in slot 1 would show a
+        // bogus reading driven by the sword's cooldown - not useful.
+        ItemStack held = p.getMainHandStack();
+        if (held == null || !held.isOf(Items.MACE)) {
+            return 0;
+        }
+
         float charge = chargeOf(p);
         int rgb;
         if (charge <= 0.30F) {

@@ -19,3 +19,6 @@ jdk-*/
 
 .claude/
 claude_launcher.exe
+
+# Iris (and other) compile-only jars - large, version-specific, not committed
+libs-compileonly/

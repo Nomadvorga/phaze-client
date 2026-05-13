@@ -8,11 +8,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import net.minecraft.client.MinecraftClient;
+import vorga.phazeclient.api.feature.module.Module;
+import vorga.phazeclient.api.feature.module.ModuleCategory;
+import vorga.phazeclient.core.Main;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
@@ -22,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -152,6 +157,17 @@ public final class RemoteRulesService {
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
+
+    /**
+     * Set after the manifest has been pushed once for this JVM. The
+     * mod's module list is statically registered in
+     * {@code Main#onInitialize}, so a single successful POST per
+     * launch keeps the dashboard's catalog fresh - retrying every
+     * heartbeat would just spam the API with identical payloads.
+     * Failed uploads roll the flag back to false so the next
+     * heartbeat re-tries.
+     */
+    private final AtomicBoolean manifestUploaded = new AtomicBoolean(false);
 
     private final String apiBase;
     private final boolean enabled;
@@ -455,6 +471,126 @@ public final class RemoteRulesService {
         if (host == null ? lastHost == null : host.equals(lastHost)) {
             blocked = Collections.unmodifiableSet(next);
             lastRefreshMs = System.currentTimeMillis();
+        }
+
+        // Fire the manifest upload from the same thread (it's already
+        // a daemon poller, blocking it on a quick POST is fine) -
+        // exactly once per JVM. The dashboard's chip palette is
+        // populated from this catalog, so anything later than the
+        // first heartbeat is acceptable; doing it after the rules
+        // fetch instead of before keeps the rules path (the safety-
+        // critical one) completely decoupled from this best-effort
+        // metadata upload.
+        if (manifestUploaded.compareAndSet(false, true)) {
+            try {
+                pushManifest();
+            } catch (Throwable t) {
+                // Roll back the flag so a future heartbeat retries.
+                manifestUploaded.set(false);
+                LOG.warn("manifest upload failed: {}", t.toString());
+            }
+        }
+    }
+
+    /**
+     * Posts the local module list to {@code POST /api/manifest} so
+     * the admin dashboard's chip palette stays in sync with whatever
+     * modules this client actually exposes. Body shape matches the
+     * worker's zod schema in
+     * {@code phaze-rules-admin/functions/_lib/routes/public.ts}:
+     *
+     * <pre>
+     * {
+     *   "clientId": "uuid",
+     *   "modules": [
+     *     { "id": "auto_eat", "name": "Auto Eat", "category": "UTILITIES" },
+     *     ...
+     *   ]
+     * }
+     * </pre>
+     *
+     * <p>Failure modes are all swallowed by the caller -
+     * {@link #fetch(String)} - because the catalog is purely
+     * advisory. Network errors, 4xx, missing module provider on
+     * a startup race, all of them just result in a retry on the
+     * next heartbeat.
+     */
+    private void pushManifest() throws IOException {
+        Main main = Main.getInstance();
+        if (main == null || main.getModuleProvider() == null) {
+            // Module registry hasn't initialised yet (very early
+            // startup or a rare init order quirk). Throw so the
+            // caller rolls the once-flag back; we'll retry on the
+            // next heartbeat when the provider exists.
+            throw new IOException("module provider not ready");
+        }
+        List<Module> modules = main.getModuleProvider().getModules();
+        if (modules == null || modules.isEmpty()) {
+            throw new IOException("no modules registered");
+        }
+
+        // Build the JSON body manually instead of pulling in a
+        // serialiser dependency. The shape is small and stable.
+        JsonObject body = new JsonObject();
+        body.addProperty("clientId", clientId);
+        JsonArray arr = new JsonArray();
+        for (Module m : modules) {
+            if (m == null) continue;
+            String id = m.getIdentifier();
+            if (id == null || id.isEmpty()) continue;
+            JsonObject entry = new JsonObject();
+            entry.addProperty("id", id.toLowerCase());
+            // visibleName is the human label shown in the GUI; the
+            // mod sets it equal to `name` when no explicit override
+            // is provided, which is fine.
+            String visible = m.getVisibleName();
+            if (visible != null && !visible.isEmpty()) {
+                entry.addProperty("name", visible);
+            } else {
+                entry.add("name", com.google.gson.JsonNull.INSTANCE);
+            }
+            ModuleCategory cat = m.getCategory();
+            if (cat != null) {
+                entry.addProperty("category", cat.name());
+            } else {
+                entry.add("category", com.google.gson.JsonNull.INSTANCE);
+            }
+            arr.add(entry);
+        }
+        body.add("modules", arr);
+
+        URI uri = URI.create(apiBase + "/api/manifest");
+        HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
+        try {
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            // Same browser-shaped UA as fetch() - some Cloudflare
+            // edge filters reject Java/Apache user agents.
+            conn.setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    + "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    + "Chrome/126.0.0.0 Safari/537.36");
+            conn.setDoOutput(true);
+            conn.setInstanceFollowRedirects(true);
+
+            byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(payload);
+            }
+
+            int status = conn.getResponseCode();
+            if (status != 204 && status != 200) {
+                // Throw so the once-flag rolls back and a future
+                // heartbeat retries (route returned 4xx/5xx, which
+                // can be transient on cold worker boots).
+                throw new IOException("manifest POST returned " + status);
+            }
+        } finally {
+            conn.disconnect();
         }
     }
 
