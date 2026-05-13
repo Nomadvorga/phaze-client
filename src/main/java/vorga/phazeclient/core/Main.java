@@ -241,6 +241,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.MaceIndicator.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.MaceIndicator.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChunkAnimator.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChunkAnimator.getInstance());
+        }
 // TODO: ScoreboardHud temporarily disabled for debugging
         // if (moduleProvider.get(ScoreboardHud.class) == null) {
         //     moduleProvider.getModules().add(ScoreboardHud.getInstance());

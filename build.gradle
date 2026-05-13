@@ -14,6 +14,16 @@ base {
 repositories {
     mavenCentral()
     maven { url 'https://jitpack.io' }
+    // Modrinth Maven - hosts Sodium jars for compile-time references.
+    // We only need Sodium's public renderer classes at compile time
+    // (DefaultChunkRenderer, RenderRegion, ChunkShaderInterface) for
+    // the optional Sodium-compat mixin; no Sodium code is bundled.
+    maven {
+        url 'https://api.modrinth.com/maven'
+        content {
+            includeGroup 'maven.modrinth'
+        }
+    }
 }
 
 loom {
@@ -30,6 +40,26 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Sodium 0.6.13+mc1.21.4 - compile-only, no runtime bundling.
+    // Pulled in so the optional Sodium-compat mixin
+    // (sodium.DefaultChunkRendererChunkAnimatorMixin) can compile
+    // against Sodium's public renderer classes. At runtime the mixin
+    // is only loaded when FabricLoader reports Sodium as present
+    // (see PhazeMixinPlugin), so users without Sodium are unaffected.
+    modCompileOnly "maven.modrinth:sodium:mc1.21.4-0.6.13-fabric"
+
+    // Iris 1.8.8+mc1.21.4 - compile-only via local jar in
+    // libs-compileonly/. Modrinth's maven version slug for Iris is
+    // unstable across uploads, so the local file is the most
+    // reliable way to satisfy loom's @Mixin(targets = "...") class
+    // existence check at compile time. The jar is NEVER bundled
+    // into the output (compileOnly, not implementation, and the
+    // libImpl bundling fileTree below excludes this directory).
+    // At runtime the iris.* mixin is gated by
+    // FabricLoader.isModLoaded("iris") via PhazeMixinPlugin, so
+    // users without Iris are unaffected.
+    compileOnly fileTree(dir: 'libs-compileonly', include: ['*.jar'])
 
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
