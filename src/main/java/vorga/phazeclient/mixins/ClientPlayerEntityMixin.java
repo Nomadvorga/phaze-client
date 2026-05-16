@@ -14,11 +14,13 @@ import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
 import vorga.phazeclient.implement.features.modules.other.AutoNear;
 import vorga.phazeclient.implement.features.modules.other.AutoReissue;
+import vorga.phazeclient.implement.features.modules.other.BattleInfo;
 import vorga.phazeclient.implement.features.modules.other.FreeLook;
 import vorga.phazeclient.implement.features.modules.other.LockSlot;
 import vorga.phazeclient.implement.features.modules.other.MouseClicker;
 import vorga.phazeclient.implement.features.modules.other.PotionAuto;
 import vorga.phazeclient.implement.features.modules.other.ShiftTap;
+import vorga.phazeclient.implement.features.modules.other.TotemTracker;
 
 @Mixin(ClientPlayerEntity.class)
 public class ClientPlayerEntityMixin {
@@ -49,6 +51,15 @@ public class ClientPlayerEntityMixin {
         FreeLook.getInstance().tick();
         AutoReissue.getInstance().tick();
         MouseClicker.getInstance().onTick();
+        // Battle Info samples per-tick metrics (ping / saturation /
+        // combo timeout) - cheap enough to run unconditionally; the
+        // module returns immediately when disabled, see
+        // {@code BattleInfo.tick}.
+        BattleInfo.getInstance().tick();
+        // Totem Tracker prunes stale per-player counters once per
+        // tick. Also a no-op when disabled or when the user-set
+        // reset cooldown is 0 (the default).
+        TotemTracker.getInstance().pruneStaleEntries();
     }
 
     /**

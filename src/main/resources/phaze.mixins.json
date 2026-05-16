@@ -49,6 +49,7 @@
     "ChatHudAccessor",
     "ChatHudCollapseMixin",
     "ChatHudNickHiderMixin",
+    "ChatHudTranslatorMixin",
     "ChatHudFadeInMixin",
     "HandledScreenShulkerPreviewMixin",
     "HandledScreenItemScrollerMixin",
@@ -81,7 +82,10 @@
     "HeldItemRendererHandTweaksMixin",
     "LivingEntityRendererHitRangeMixin",
     "MinecraftClientHitRangeMixin",
-    "WorldRendererHitRangeMixin"
+    "WorldRendererHitRangeMixin",
+    "CameraNoFluidMixin",
+    "LivingEntityTotemTrackerMixin",
+    "EntityRendererTotemNametagMixin"
   ],
   "injectors": {
     "defaultRequire": 0

@@ -14,7 +14,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.other.AutoEat;
 import vorga.phazeclient.implement.features.modules.other.AutoGG;
+import vorga.phazeclient.implement.features.modules.other.BattleInfo;
 import vorga.phazeclient.implement.features.modules.other.ChangeHand;
+import vorga.phazeclient.implement.features.modules.other.HealthIndicator;
 import vorga.phazeclient.implement.features.modules.other.LockSlot;
 import vorga.phazeclient.implement.features.modules.other.ShiftTap;
 
@@ -41,6 +43,17 @@ public class ClientPlayerInteractionManagerMixin {
             if (autoGG != null) {
                 autoGG.recordAttack(victim);
             }
+            // Health Indicator: stamp the same victim so the HUD
+            // widget knows which player's HP to surface for the next
+            // {@code targetDelay} seconds. Module gates itself on
+            // {@code isEnabled} when the HUD renderer reads back the
+            // tracked target, so we don't gate the write here - that
+            // way a mid-fight enable immediately surfaces the live
+            // target instead of waiting for the next hit.
+            HealthIndicator healthIndicator = HealthIndicator.getInstance();
+            if (healthIndicator != null) {
+                healthIndicator.recordAttack(victim);
+            }
         }
 
         // Change Hand: flip the vanilla MainArm option on every
@@ -51,6 +64,14 @@ public class ClientPlayerInteractionManagerMixin {
         ChangeHand changeHand = ChangeHand.getInstance();
         if (changeHand != null) {
             changeHand.onAttackEntity();
+        }
+
+        // Battle Info: feed reach / damage / combo samples on every
+        // outgoing attack. Module is enabled-gated internally so we
+        // can call unconditionally without an extra null check.
+        BattleInfo battleInfo = BattleInfo.getInstance();
+        if (battleInfo != null) {
+            battleInfo.recordAttack(player, target);
         }
     }
 
