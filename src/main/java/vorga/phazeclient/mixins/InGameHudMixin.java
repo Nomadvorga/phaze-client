@@ -57,6 +57,7 @@ import vorga.phazeclient.implement.features.modules.hud.MemoryHud;
 import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
 import vorga.phazeclient.implement.features.modules.hud.ServerAddressHud;
 import vorga.phazeclient.implement.features.modules.hud.WailaHud;
+import vorga.phazeclient.implement.features.modules.other.HealthIndicator;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
@@ -118,7 +119,10 @@ public class InGameHudMixin {
     private static final int HUD_SERVER_ADDRESS = 17;
     private static final int HUD_MOVEMENT_SPEED = 18;
     private static final int HUD_WAILA = 19;
-    private static final int RECT_HUD_COUNT = 20;
+    private static final int HUD_HEALTH_INDICATOR = 20;
+    private static final int HUD_BATTLE_INFO = 21;
+    private static final int HUD_CONSUMABLE = 22;
+    private static final int RECT_HUD_COUNT = 23;
     private static final int HUD_ARMOR_BLUR_SLOT = 15;
     private static final int KEYSTROKE_W = 0;
     private static final int KEYSTROKE_A = 1;
@@ -282,6 +286,28 @@ public class InGameHudMixin {
                 // Pass 1 — refresh frames only: render NON-blur HUDs into the
                 // batched FBO at the throttled refresh rate.
                 if (shouldRefresh) {
+                    // Flush vanilla's pending deferred draws onto the
+                    // REAL main framebuffer before we switch the bound
+                    // framebuffer to our FBO. {@code InGameHud.render}
+                    // is just {@code layeredDrawer.render}; each layer
+                    // (renderChat in particular) queues
+                    // {@code drawTextWithShadow} / {@code fill} into the
+                    // shared {@code DrawContext} buffer but never
+                    // flushes them itself - vanilla relies on a later
+                    // implicit flush. Without this explicit flush our
+                    // {@code context.draw()} inside the capture phase
+                    // (below) would dump ALL of vanilla's accumulated
+                    // chat draws into the captured FBO, where they get
+                    // stamped onto the throttled cache. On subsequent
+                    // frames the {@code BLIT} overlays that frozen chat
+                    // state - producing the dark "phantom rows" the
+                    // user reported above the live chat and the blink
+                    // when the cache rebuilds at the throttle interval
+                    // (30 ms by default) while real chat updates every
+                    // frame. Flushing here pushes vanilla's chat onto
+                    // the main framebuffer where it belongs, and the
+                    // FBO ends up containing ONLY our own HUD widgets.
+                    context.draw();
                     inBatchPass = true;
                     BatchedHudBuffer.INSTANCE.beginCapture();
                     renderHudInternal(context);
@@ -519,6 +545,69 @@ public class InGameHudMixin {
         renderBufferedHud(context, WailaHud.getInstance(), chatEditing, () ->
                 renderWailaHud(context, client, WailaHud.getInstance(), wailaTextWrapped, wailaIcon, HUD_WAILA,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(WailaHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        // Health Indicator: lives in ModuleCategory.OTHER but extends
+        // RectHudModule, so it rides the exact same renderRectHud
+        // pipeline as every other draggable widget. The render lambda
+        // returns early when there's nothing to show so an idle
+        // indicator doesn't steal mouse interactions during normal
+        // gameplay - in chatEditing mode we substitute the static
+        // placeholder "20" so the rect stays visible and grabbable
+        // even when the player isn't currently in a fight.
+        final HealthIndicator healthIndicator = HealthIndicator.getInstance();
+        renderBufferedHud(context, healthIndicator, chatEditing, () -> {
+            String hpText;
+            if (chatEditing) {
+                hpText = healthIndicator.getPlaceholderText();
+            } else {
+                hpText = healthIndicator.getDisplayText();
+                if (hpText.isEmpty()) {
+                    return;
+                }
+            }
+            String wrappedHpText = wrapTextWithBrackets(hpText, healthIndicator);
+            renderRectHud(context, client, healthIndicator, wrappedHpText, HUD_HEALTH_INDICATOR,
+                    chatEditing, mouseX, mouseY, mouseDown, getHudDelta(healthIndicator, chatEditing, deltaSeconds),
+                    inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                    getTextHudBaseWidth(client, wrappedHpText), BASE_HEIGHT);
+        });
+
+        // Battle Info: same single-line text-rect path as the health
+        // indicator. Per-frame {@code getDisplayText()} build is cheap
+        // (just stitches a handful of cached String.format outputs)
+        // so we don't bother caching at the {@code getCachedHudText}
+        // layer; the rect-render lambda short-circuits on empty text
+        // when no metric is enabled.
+        final vorga.phazeclient.implement.features.modules.other.BattleInfo battleInfo =
+                vorga.phazeclient.implement.features.modules.other.BattleInfo.getInstance();
+        renderBufferedHud(context, battleInfo, chatEditing, () -> {
+            String biText;
+            if (chatEditing) {
+                biText = battleInfo.getPlaceholderText();
+            } else {
+                biText = battleInfo.getDisplayText();
+                if (biText.isEmpty()) {
+                    return;
+                }
+            }
+            String wrappedBiText = wrapTextWithBrackets(biText, battleInfo);
+            renderRectHud(context, client, battleInfo, wrappedBiText, HUD_BATTLE_INFO,
+                    chatEditing, mouseX, mouseY, mouseDown, getHudDelta(battleInfo, chatEditing, deltaSeconds),
+                    inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                    getTextHudBaseWidth(client, wrappedBiText), BASE_HEIGHT);
+        });
+
+        // Consumable: dedicated render path (icons-not-text) wired
+        // through the same buffered pipeline so it gets the cached
+        // FBO / direct-blur split for free. The custom path knows
+        // how to size itself from the icon grid layout the module
+        // computes.
+        final vorga.phazeclient.implement.features.modules.other.Consumable consumable =
+                vorga.phazeclient.implement.features.modules.other.Consumable.getInstance();
+        renderBufferedHud(context, consumable, chatEditing, () ->
+                renderConsumableHud(context, client, consumable, HUD_CONSUMABLE,
+                        chatEditing, mouseX, mouseY, mouseDown, getHudDelta(consumable, chatEditing, deltaSeconds),
+                        inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
         // TODO: Scoreboard HUD temporarily disabled for debugging
         // renderBufferedHud(context, ScoreboardHud.getInstance(), chatEditing, () ->
@@ -873,6 +962,14 @@ public class InGameHudMixin {
         if (module instanceof MemoryHud) {
             MemoryHud memoryHud = (MemoryHud) module;
             textColor = memoryHud.getMemoryColor();
+        } else if (module instanceof HealthIndicator) {
+            // HealthIndicator picks its colour from the victim's current
+            // HP (matching the original mod's red/gold/yellow/green/dark-
+            // green table). The method internally returns the white
+            // sentinel HUD_TEXT_COLOR when Color By HP is off OR when no
+            // target is tracked, so this branch transparently degrades
+            // to the inherited default in those cases.
+            textColor = ((HealthIndicator) module).getCurrentHpColor();
         }
 
         renderScaledHudTextColored(context, client, text, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
@@ -1182,6 +1279,213 @@ public class InGameHudMixin {
             context.fill(hX, hY, hX + handleSize, hY + handleSize, handleColor);
 
             if (hoveredHandle || armorResizing) {
+                int borderColor = withAlpha(0xFFFFFF, 220);
+                drawOutlineNoOverlap(context, hX - 1, hY - 1, handleSize + 2, handleSize + 2, borderColor);
+            }
+            context.getMatrices().pop();
+        }
+
+        context.getMatrices().pop();
+    }
+
+    /**
+     * Custom render path for the {@code Consumable} module - rect HUD
+     * background reused via {@link RectHudModule#getResolvedBackgroundColor}
+     * but populated with {@link DrawContext#drawItem} icons rather
+     * than text. Mirrors the structure of
+     * {@link #renderArmorHud} (drag / resize / hover outline /
+     * resize handle) but compresses the parts that don't apply to
+     * a fixed-grid icon list (no text-on-left flip, no per-row
+     * durability strings, no armor blur slot - Consumable uses its
+     * own RECT_DRAGGING slot instead).
+     */
+    private void renderConsumableHud(
+            DrawContext context,
+            MinecraftClient client,
+            vorga.phazeclient.implement.features.modules.other.Consumable module,
+            int hudIndex,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        if (!module.isEnabled() || client.player == null) {
+            return;
+        }
+
+        vorga.phazeclient.implement.features.modules.other.Consumable.Layout layout = module.computeLayout(chatEditing);
+        if (layout.entries().isEmpty()) {
+            return;
+        }
+
+        float baseWidth = layout.baseWidth();
+        float baseHeight = layout.baseHeight();
+
+        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
+        module.setHudScale(scale);
+        float hudWidth = baseWidth * scale;
+        float hudHeight = baseHeight * scale;
+
+        float maxX = Math.max(0.0f, screenWidth - hudWidth);
+        float maxY = Math.max(0.0f, screenHeight - hudHeight);
+        float x = MathHelper.clamp(module.getHudX(), 0.0f, maxX);
+        float y = MathHelper.clamp(module.getHudY(), 0.0f, maxY);
+        module.setHudX(x);
+        module.setHudY(y);
+
+        int handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
+        float handleX = x + hudWidth - handleSize / 2.0f;
+        float handleY = y + hudHeight - handleSize / 2.0f;
+        boolean hovered = false;
+        boolean hoveredHandle = false;
+        boolean nearHud = false;
+
+        if (!chatEditing) {
+            RECT_DRAGGING[hudIndex] = false;
+            RECT_RESIZING[hudIndex] = false;
+            RECT_HOVER_PROGRESS[hudIndex] = approachExp(RECT_HOVER_PROGRESS[hudIndex], 0.0f, 10.0f, deltaSeconds);
+        } else {
+            hovered = isHovered(mouseX, mouseY, x, y, hudWidth, hudHeight);
+            hoveredHandle = isHovered(mouseX, mouseY, handleX, handleY, handleSize, handleSize);
+            nearHud = isNearRect(mouseX, mouseY, x, y, hudWidth, hudHeight, Math.max(14.0f, 12.0f * scale));
+            if (!mouseDown) {
+                RECT_DRAGGING[hudIndex] = false;
+                RECT_RESIZING[hudIndex] = false;
+            } else if (!wasMouseDown && !isAnyHudInteractionActive()) {
+                if (hoveredHandle) {
+                    RECT_RESIZING[hudIndex] = true;
+                    RECT_RESIZE_START_WIDTH[hudIndex] = scale;
+                    RECT_RESIZE_START_MOUSE_X[hudIndex] = (float) mouseX;
+                    RECT_RESIZE_START_MOUSE_Y[hudIndex] = (float) mouseY;
+                } else if (hovered) {
+                    RECT_DRAGGING[hudIndex] = true;
+                    RECT_DRAG_OFFSET_X[hudIndex] = (float) mouseX - x;
+                    RECT_DRAG_OFFSET_Y[hudIndex] = (float) mouseY - y;
+                }
+            }
+
+            if (mouseDown) {
+                if (RECT_DRAGGING[hudIndex]) {
+                    float newX = MathHelper.clamp((float) mouseX - RECT_DRAG_OFFSET_X[hudIndex], 0.0f, maxX);
+                    float newY = MathHelper.clamp((float) mouseY - RECT_DRAG_OFFSET_Y[hudIndex], 0.0f, maxY);
+                    float centerX = newX + hudWidth * 0.5f;
+                    float centerY = newY + hudHeight * 0.5f;
+                    if (Math.abs(centerX - screenCenterX) <= GUIDE_SNAP_RADIUS) {
+                        newX = MathHelper.clamp(screenCenterX - hudWidth * 0.5f, 0.0f, maxX);
+                        showVerticalGuideThisFrame = true;
+                    }
+                    if (Math.abs(centerY - screenCenterY) <= GUIDE_SNAP_RADIUS) {
+                        newY = MathHelper.clamp(screenCenterY - hudHeight * 0.5f, 0.0f, maxY);
+                        showHorizontalGuideThisFrame = true;
+                    }
+                    module.setHudX(newX);
+                    module.setHudY(newY);
+                    x = newX;
+                    y = newY;
+                    handleX = x + hudWidth - handleSize / 2.0f;
+                    handleY = y + hudHeight - handleSize / 2.0f;
+                } else if (RECT_RESIZING[hudIndex]) {
+                    float deltaX = (float) mouseX - RECT_RESIZE_START_MOUSE_X[hudIndex];
+                    float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
+                    float delta = (deltaX + deltaY) * 0.5f;
+                    float newScale = RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9f) / BASE_WIDTH;
+                    newScale = MathHelper.clamp(newScale, module.getMinHudScale(), module.getMaxHudScale());
+                    module.setHudScale(newScale);
+                    scale = newScale;
+                    hudWidth = baseWidth * scale;
+                    hudHeight = baseHeight * scale;
+                    maxX = Math.max(0.0f, screenWidth - hudWidth);
+                    maxY = Math.max(0.0f, screenHeight - hudHeight);
+                    x = MathHelper.clamp(module.getHudX(), 0.0f, maxX);
+                    y = MathHelper.clamp(module.getHudY(), 0.0f, maxY);
+                    module.setHudX(x);
+                    module.setHudY(y);
+                    handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
+                    handleX = x + hudWidth - handleSize / 2.0f;
+                    handleY = y + hudHeight - handleSize / 2.0f;
+                }
+            }
+
+            if (RECT_DRAGGING[hudIndex]) {
+                float centerX = x + hudWidth * 0.5f;
+                float centerY = y + hudHeight * 0.5f;
+                if (Math.abs(centerX - screenCenterX) <= GUIDE_SNAP_RADIUS) {
+                    showVerticalGuideThisFrame = true;
+                }
+                if (Math.abs(centerY - screenCenterY) <= GUIDE_SNAP_RADIUS) {
+                    showHorizontalGuideThisFrame = true;
+                }
+            }
+
+            RECT_HOVER_PROGRESS[hudIndex] = approachExp(RECT_HOVER_PROGRESS[hudIndex], hovered ? 1.0f : 0.0f, 10.0f, deltaSeconds);
+        }
+
+        int hoverOutlineThickness = Math.max(1, Math.round(2.0f / Math.max(1.0f, scale)));
+
+        context.getMatrices().push();
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().push();
+        context.getMatrices().translate(x, y, HUD_RENDER_Z);
+        context.getMatrices().scale(scale, scale, 1.0f);
+
+        if (module.background.isValue()) {
+            int targetBgColor = module.getResolvedBackgroundColor(client);
+            if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
+                RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
+                RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
+            } else {
+                RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
+            }
+            int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
+            if (chatEditing) {
+                int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
+                bgColor = blendARGB(bgColor, hoverFill);
+            }
+            context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
+            context.draw();
+        }
+
+        // Icon pass: drawItem internally pushes its own
+        // model-view stack so we don't have to translate per-icon.
+        // Padding mirrors the value computeLayout sized the rect to.
+        float padding = 3.0f;
+        float itemSize = 18.0f;
+        for (vorga.phazeclient.implement.features.modules.other.Consumable.IconEntry entry : layout.entries()) {
+            int iconX = Math.round(padding + entry.col() * itemSize);
+            int iconY = Math.round(padding + entry.row() * itemSize);
+            context.drawItem(entry.stack(), iconX, iconY);
+            if (module.showCount.isValue()) {
+                // drawItemInSlot is the vanilla helper that paints
+                // the small bottom-right stack count number with
+                // the correct shadow / scale baked in. Passing a
+                // null label uses the stack's own count, which is
+                // already pre-baked into the IconEntry's stack
+                // copy.
+                context.drawStackOverlay(client.textRenderer, entry.stack(), iconX, iconY);
+            }
+        }
+        context.getMatrices().pop();
+
+        if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05f) {
+            int borderColor = withAlpha(0xFFFFFF, (int) (160.0f * RECT_HOVER_PROGRESS[hudIndex]));
+            drawOuterOutline(context, x, y, hudWidth, hudHeight, hoverOutlineThickness, borderColor);
+        }
+
+        boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hovered || nearHud);
+        if (showResizeHandle) {
+            context.getMatrices().push();
+            context.getMatrices().translate(0.0f, 0.0f, HANDLE_RENDER_Z);
+            int hX = Math.round(handleX);
+            int hY = Math.round(handleY);
+            int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
+            context.fill(hX, hY, hX + handleSize, hY + handleSize, handleColor);
+            if (hoveredHandle || RECT_RESIZING[hudIndex]) {
                 int borderColor = withAlpha(0xFFFFFF, 220);
                 drawOutlineNoOverlap(context, hX - 1, hY - 1, handleSize + 2, handleSize + 2, borderColor);
             }
@@ -2555,7 +2859,10 @@ public class InGameHudMixin {
                 // same renderBufferedHud path as the others, so they have to
                 // be counted here to unblock the dispatch.
                 || MovementSpeedHud.getInstance().isEnabled()
-                || WailaHud.getInstance().isEnabled();
+                || WailaHud.getInstance().isEnabled()
+                || HealthIndicator.getInstance().isEnabled()
+                || vorga.phazeclient.implement.features.modules.other.BattleInfo.getInstance().isEnabled()
+                || vorga.phazeclient.implement.features.modules.other.Consumable.getInstance().isEnabled();
     }
 
     private static boolean isAnyHudInteractionActive() {
@@ -2576,6 +2883,9 @@ public class InGameHudMixin {
                 || RECT_DRAGGING[HUD_COMBO] || RECT_RESIZING[HUD_COMBO]
                 || RECT_DRAGGING[HUD_SERVER_ADDRESS] || RECT_RESIZING[HUD_SERVER_ADDRESS]
                 || RECT_DRAGGING[HUD_SCOREBOARD] || RECT_RESIZING[HUD_SCOREBOARD]
+                || RECT_DRAGGING[HUD_HEALTH_INDICATOR] || RECT_RESIZING[HUD_HEALTH_INDICATOR]
+                || RECT_DRAGGING[HUD_BATTLE_INFO] || RECT_RESIZING[HUD_BATTLE_INFO]
+                || RECT_DRAGGING[HUD_CONSUMABLE] || RECT_RESIZING[HUD_CONSUMABLE]
                 || armorDragging || armorResizing;
     }
 
@@ -2773,13 +3083,18 @@ public class InGameHudMixin {
         renderRectHud(context, client, module, text, hudIndex,
                 chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
                 getTextHudBaseWidth(client, text), BASE_HEIGHT);
-        
-        // Render server icon if enabled
+
+        // Server icon is drawn AFTER renderRectHud so it overlays nothing
+        // important and so module.getHudX/Y read the post-clamp / post-
+        // drag positions that renderRectHud has just written back. The
+        // icon hugs the rect's left edge at the same Y and is sized 1:1
+        // to the rect's rendered height (BASE_HEIGHT * scale), per the
+        // user's spec - "to the left of the IP, square, same size as
+        // the rect Y dimension".
         if (module.displayServerIcon.isValue()) {
             float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-            float x = MathHelper.clamp(module.getHudX(), 0.0f, screenWidth - getTextHudBaseWidth(client, text));
-            float y = MathHelper.clamp(module.getHudY(), 0.0f, screenHeight - BASE_HEIGHT);
-            module.renderServerIcon(context, (int)x + 2, (int)(y + 2), scale);
+            float hudHeight = BASE_HEIGHT * scale;
+            module.renderServerIcon(context, module.getHudX(), module.getHudY(), hudHeight, inverseGuiScale);
         }
     }
 

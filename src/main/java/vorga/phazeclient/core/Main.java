@@ -175,6 +175,24 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(MotionBlur.class) == null) {
             moduleProvider.getModules().add(MotionBlur.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HealthIndicator.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HealthIndicator.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Translator.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Translator.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.NoFluid.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.NoFluid.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.TotemTracker.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.TotemTracker.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.BattleInfo.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.BattleInfo.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Consumable.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Consumable.getInstance());
+        }
         if (moduleProvider.get(ItemPhysics.class) == null) {
             moduleProvider.getModules().add(ItemPhysics.getInstance());
         }
@@ -259,6 +277,22 @@ public class Main implements ModInitializer {
         vorga.phazeclient.api.feature.module.setting.Setting.setGlobalChangeListener(
                 setting -> configManager.markDirty()
         );
+        // Module enable / disable + keybind changes go through a
+        // separate state-change channel (Module.notifyStateChange);
+        // wire it to the same dirty flag so toggling a module from the
+        // GUI / a hotkey is persisted by the next flushIfDirty tick.
+        // Without this, the `globalStateChangeListener` is null, so
+        // toggling a module never marks the config dirty, and on a
+        // crash within ~250ms of the toggle (or before the user makes
+        // any OTHER auto-saved change), the enabled state on disk
+        // remains stale - the exact "modules turn off on crash"
+        // symptom users hit. Hooking it AFTER loadCurrentConfig is
+        // critical: load-time setStateSilent calls would otherwise
+        // immediately re-mark the config dirty and trigger a save
+        // pass that overwrites the just-loaded data.
+        vorga.phazeclient.api.feature.module.Module.setGlobalStateChangeListener(
+                module -> configManager.markDirty()
+        );
         configManager.enableAutoSave();
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
                 client -> configManager.flushIfDirty()
@@ -272,6 +306,23 @@ public class Main implements ModInitializer {
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(
                 client -> configManager.saveCurrentConfig()
         );
+
+        // JVM shutdown hook as the final safety net. CLIENT_STOPPING
+        // only fires on a clean Minecraft shutdown path; it gets
+        // skipped entirely when the game crashes with an uncaught
+        // exception (the more common case for users reporting "my
+        // settings reset after a crash"). Shutdown hooks fire on most
+        // JVM exit paths INCLUDING uncaught exception crashes and the
+        // window-close X button, so adding one catches the crash case
+        // the lifecycle event misses. We swallow exceptions because
+        // we're already inside a shutdown sequence and have nothing
+        // useful to do with an error here.
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                configManager.saveCurrentConfig();
+            } catch (Throwable ignored) {
+            }
+        }, "Phaze-ShutdownSave"));
 
         discordManager.init();
 
