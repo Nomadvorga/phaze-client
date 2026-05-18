@@ -19,4 +19,16 @@ public interface ChatHudAccessor {
 
     @Accessor("visibleMessages")
     List<ChatHudLine.Visible> phaze$getVisibleMessages();
+
+    /**
+     * Sent-message history (the strings recalled by Up/Down in the
+     * chat input). Exposed so the Longer Chat History toggle can
+     * proactively trim this buffer back down to the new cap when the
+     * user disables the feature - vanilla only trims on the next
+     * {@code addToMessageHistory}, which means a user with a 1000-
+     * deep history would still see all 1000 entries until they sent
+     * the next message.
+     */
+    @Accessor("messageHistory")
+    net.minecraft.util.collection.ArrayListDeque<String> phaze$getMessageHistory();
 }

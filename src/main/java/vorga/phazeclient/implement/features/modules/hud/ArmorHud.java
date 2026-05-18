@@ -18,7 +18,7 @@ public final class ArmorHud extends Module {
     private static final float MIN_HUD_SCALE = 0.5f;
     private static final float MAX_HUD_SCALE = 5.0f;
 
-    public final SectionSetting mainSection = new SectionSetting("Main");
+    public final SectionSetting mainSection = new SectionSetting("General");
     public final BooleanSetting textShadow = new BooleanSetting("Text Shadow", "Draw text with vanilla shadow").setValue(true);
     public final BooleanSetting background = new BooleanSetting("Background", "Draw scoreboard-style background").setValue(false);
     public final SelectSetting backgroundPreset = new SelectSetting("Background Preset", "Choose preset background style")
@@ -67,6 +67,24 @@ public final class ArmorHud extends Module {
             .value("Units", "Percent")
             .selected("Units");
 
+    /**
+     * Color the durability number red/yellow/green based on remaining
+     * percentage. Boundaries match the user spec exactly:
+     * <ul>
+     *   <li>&gt; 75% durability: green - "fresh"</li>
+     *   <li>26-75% durability: yellow - "halfway"</li>
+     *   <li>&le; 25% durability: red - "needs replacement"</li>
+     * </ul>
+     * Default OFF so users get the historical white-on-background
+     * look unless they opt in. Note that the directionality is the
+     * inverse of the Cooldowns module (high = good for armor, high
+     * = bad for cooldown), so the colour stops are reversed.
+     */
+    public final BooleanSetting colorByDurability = new BooleanSetting(
+            "Color By Durability",
+            "Color the durability number red/yellow/green based on remaining armor percentage"
+    ).setValue(false);
+
     private final HudBuffer hudBuffer = new HudBuffer();
 
     private float hudX = DEFAULT_HUD_X;
@@ -87,7 +105,8 @@ public final class ArmorHud extends Module {
         backgroundOpacity.setFullWidth(true);
         backgroundBlurRadius.setFullWidth(true);
         durabilityMode.setFullWidth(true);
-        setup(mainSection, textShadow, background, colorSection, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, otherSection, durabilityMode);
+        colorByDurability.setFullWidth(true);
+        setup(mainSection, textShadow, background, colorSection, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, otherSection, durabilityMode, colorByDurability);
     }
 
     @Override
@@ -166,6 +185,31 @@ public final class ArmorHud extends Module {
             return percent + "%";
         }
         return String.valueOf(remaining);
+    }
+
+    /**
+     * Returns the colour the durability number should render in for
+     * the given (remaining, max) pair. Returns {@code 0xFFFFFFFF}
+     * when {@link #colorByDurability} is off so the caller can use
+     * the result unconditionally as the text colour. The thresholds
+     * are read on a 0..100 scale to match the user-supplied spec
+     * verbatim.
+     */
+    public int colorForDurability(int remaining, int max) {
+        if (!colorByDurability.isValue()) {
+            return 0xFFFFFFFF;
+        }
+        if (max <= 0) {
+            return 0xFFFFFFFF;
+        }
+        float ratio = (float) remaining / (float) max;
+        if (ratio > 0.75F) {
+            return 0xFF55FF55; // green
+        }
+        if (ratio > 0.25F) {
+            return 0xFFFFAA00; // yellow
+        }
+        return 0xFFFF5555; // red
     }
 
     public int getResolvedBackgroundColor(net.minecraft.client.MinecraftClient client) {

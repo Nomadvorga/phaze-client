@@ -23,7 +23,7 @@ public final class HitColor extends vorga.phazeclient.api.feature.module.Module 
             .onChange(value -> OverlayReloadListener.event());
 
     private HitColor() {
-        super("hitcolor", "HitColor", ModuleCategory.UTILITIES);
+        super("hitcolor", "HitColor", ModuleCategory.OTHER);
         showDamageInArmor.setFullWidth(true);
         customHitcolor.setFullWidth(true);
         hitcolor.setFullWidth(true);

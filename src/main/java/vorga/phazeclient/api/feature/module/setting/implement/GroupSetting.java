@@ -79,7 +79,8 @@ public class GroupSetting extends Setting {
     @Override
     public void reset() {
         if (defaultValue != null) {
-            this.value = defaultValue;
+            // setValue handles notifyChange + the dirty-flag plumbing.
+            setValue(defaultValue);
         }
 
         for (Setting subSetting : subSettings) {

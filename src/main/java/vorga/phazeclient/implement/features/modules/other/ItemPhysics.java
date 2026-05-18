@@ -9,7 +9,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 public final class ItemPhysics extends Module {
     private static final ItemPhysics INSTANCE = new ItemPhysics();
 
-    public final SectionSetting mainSection = new SectionSetting("Main");
+    public final SectionSetting mainSection = new SectionSetting("General");
     public final ValueSetting rotationSpeed = new ValueSetting("Rotation Speed", "Rotation speed in air").range(0.1f, 5.0f).setValue(1.0f);
 
     private ItemPhysics() {

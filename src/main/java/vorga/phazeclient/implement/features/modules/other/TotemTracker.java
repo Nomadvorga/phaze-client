@@ -206,7 +206,7 @@ public final class TotemTracker extends Module {
             // Compose a coloured chat row: gold {prefix}, white name,
             // gray descriptor, red {-N}. Goes through the local
             // chat-message path so it doesn't leak to the server.
-            MutableText line = Text.literal("[Totem] ").formatted(Formatting.GOLD)
+            MutableText line = Text.literal("[Phaze] ").formatted(Formatting.GOLD)
                     .append(Text.literal(name).formatted(Formatting.WHITE))
                     .append(Text.literal(" lost a totem ").formatted(Formatting.GRAY))
                     .append(Text.literal("(-" + newCount + ")").formatted(Formatting.RED));

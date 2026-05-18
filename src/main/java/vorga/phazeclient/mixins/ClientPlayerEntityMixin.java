@@ -11,10 +11,10 @@ import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.base.util.RemoteRulesService;
 import vorga.phazeclient.base.util.ServerUtil;
 import vorga.phazeclient.core.Main;
+import vorga.phazeclient.implement.features.modules.hud.BattleInfo;
 import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
 import vorga.phazeclient.implement.features.modules.other.AutoNear;
 import vorga.phazeclient.implement.features.modules.other.AutoReissue;
-import vorga.phazeclient.implement.features.modules.other.BattleInfo;
 import vorga.phazeclient.implement.features.modules.other.FreeLook;
 import vorga.phazeclient.implement.features.modules.other.LockSlot;
 import vorga.phazeclient.implement.features.modules.other.MouseClicker;
@@ -60,6 +60,30 @@ public class ClientPlayerEntityMixin {
         // tick. Also a no-op when disabled or when the user-set
         // reset cooldown is 0 (the default).
         TotemTracker.getInstance().pruneStaleEntries();
+        // Trap Timer fires its expiry chat notification when the
+        // millis stopwatch crosses the configured duration. Cheap
+        // when disabled / inactive (early return inside the module).
+        vorga.phazeclient.implement.features.modules.other.TrapTimer.getInstance().tick();
+        // FT helper prunes its dead / removed tracked snowballs
+        // once per tick so the renderer never has to filter (formerly
+        // a separate SnowballTracker module, merged into FT helper
+        // because the two were always used together for the
+        // "снежок заморозки" indicator).
+        vorga.phazeclient.implement.features.modules.other.FTHelper.getInstance().tickTrackedSnowballs();
+        // Predictions: tick the projectile-trail trackers so each
+        // live projectile gets its current position appended to the
+        // trail. Cheap when disabled (early return inside).
+        vorga.phazeclient.implement.features.modules.other.Predictions.getInstance().tickTrails();
+        // TPS HUD samples the world-time advancement here so the
+        // tick boundary is the natural sample point. The module
+        // gates internally on isEnabled() and self-throttles to a
+        // 200ms interval, so calling unconditionally is cheap.
+        net.minecraft.client.MinecraftClient mc =
+                net.minecraft.client.MinecraftClient.getInstance();
+        if (mc != null && mc.world != null) {
+            vorga.phazeclient.implement.features.modules.hud.TpsHud.getInstance()
+                    .recordSample(mc.world.getTime());
+        }
     }
 
     /**

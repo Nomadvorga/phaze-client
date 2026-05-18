@@ -82,14 +82,21 @@ public class AlphaComponent extends AbstractComponent {
         // Left-pointing triangle indicator anchored at the slider's
         // right edge; identical visual language to SaturationComponent
         // so the two strips read as a paired control. The apex Y
-        // tracks setting.getAlpha() in [0, 1] from top to bottom.
-        float apexY = clamp(Y + H * setting.getAlpha(), Y, Y + H);
+        // tracks setting.getAlpha() in [0, 1] from BOTTOM (alpha=0)
+        // to TOP (alpha=1), matching the gradient: full-opacity at
+        // the top of the strip, fully transparent at the bottom.
+        float apexY = clamp(Y + H * (1.0F - setting.getAlpha()), Y, Y + H);
         float triX = X + W;
         float triY = apexY - INDICATOR_SIZE / 2.0F;
         renderLeftPointingTriangle(matrix, "textures/color_picker/triangle.png", triX, triY, INDICATOR_SIZE, INDICATOR_SIZE, applyGlobalAlpha(0xFFFFFFFF));
 
         if (alphaDragging) {
-            setting.setAlpha(clamp((float) (mouseY - Y) / H, 0, 1));
+            // Drag UP raises alpha (toward 1.0 = opaque), drag DOWN
+            // lowers alpha (toward 0 = transparent) - same visual
+            // direction as the indicator above. Without the (1 -)
+            // inversion the slider would be upside-down relative to
+            // the gradient, which is the bug the user reported.
+            setting.setAlpha(clamp(1.0F - (float) (mouseY - Y) / H, 0, 1));
         }
     }
 
