@@ -44,6 +44,18 @@ public abstract class KeyboardChunkAnimatorResetMixin {
             )
     )
     private void phaze$chunkAnimatorOnF3A(int key, CallbackInfoReturnable<Boolean> cir) {
-        ChunkAnimator.getInstance().resetTracker();
+        // onF3AReload() does TWO things that resetTracker() doesn't:
+        //   1. Walks the player's render distance and seeds
+        //      pendingAnimationKeys with every currently-loaded
+        //      column. Required because the new CHUNK_LOAD-based
+        //      gate inside writeRegionSectionYOffsets skips columns
+        //      that aren't in pending - and F3+A doesn't fire
+        //      CHUNK_LOAD (the WorldChunk objects don't reload, only
+        //      Sodium's GPU geometry does).
+        //   2. Wipes firstSeenMs / playerYAtRegister so the
+        //      elapsed-time steady-state branch can't short-circuit
+        //      the next frame with an "animation already complete"
+        //      0 offset.
+        ChunkAnimator.getInstance().onF3AReload();
     }
 }

@@ -21,7 +21,7 @@ public abstract class RectHudModule extends Module {
     private final float defaultHudY;
     private final float defaultHudScale;
 
-    public final SectionSetting mainSection = new SectionSetting("Main");
+    public final SectionSetting mainSection = new SectionSetting("General");
     public final BooleanSetting textShadow = new BooleanSetting("Text Shadow", "Draw text with vanilla shadow").setValue(true);
     public final BooleanSetting background = new BooleanSetting("Background", "Draw scoreboard-style background").setValue(true);
     public final BooleanSetting showBrackets = new BooleanSetting("Show Brackets", "Show brackets around text when background is disabled").setValue(false).visible(() -> !background.isValue());
@@ -84,7 +84,21 @@ public abstract class RectHudModule extends Module {
     }
 
     protected RectHudModule(String name, String visibleName, float defaultHudX, float defaultHudY, float defaultHudScale) {
-        super(name, visibleName, ModuleCategory.HUD, true, false);
+        this(name, visibleName, ModuleCategory.HUD, defaultHudX, defaultHudY, defaultHudScale);
+    }
+
+    /**
+     * Category-customisable variant of the standard {@code RectHudModule}
+     * constructor. Modules that want to inherit the full drag / resize /
+     * background / blur pipeline but show up in a non-HUD tab of the
+     * client menu (e.g. {@code OTHER}) should call this overload and pass
+     * the desired {@link ModuleCategory}. All other behaviour matches the
+     * 5-arg constructor exactly - the shared body is delegated, so any
+     * future change to the inherited setting wiring only needs to be
+     * applied here.
+     */
+    protected RectHudModule(String name, String visibleName, ModuleCategory category, float defaultHudX, float defaultHudY, float defaultHudScale) {
+        super(name, visibleName, category, true, false);
         this.defaultHudX = defaultHudX;
         this.defaultHudY = defaultHudY;
         this.defaultHudScale = defaultHudScale;

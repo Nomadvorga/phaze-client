@@ -11,7 +11,7 @@ import vorga.phazeclient.api.system.motionblur.Shader;
 public final class MotionBlur extends Module {
     private static final MotionBlur INSTANCE = new MotionBlur();
 
-    public final SectionSetting mainSection = new SectionSetting("Main");
+    public final SectionSetting mainSection = new SectionSetting("General");
     public final ValueSetting strength = new ValueSetting("Strength", "Motion blur strength").range(-2.0f, 2.0f).setValue(-0.8f);
     public final BooleanSetting useRRC = new BooleanSetting("Refresh Rate Scaling", "Scale strength based on refresh rate").setValue(true);
     public final ValueSetting quality = new ValueSetting("Quality", "Quality level (0=Low, 1=Medium, 2=High, 3=Ultra)").range(0, 3).setValue(2);

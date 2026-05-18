@@ -9,7 +9,7 @@ import vorga.phazeclient.api.system.colorcorrection.ColorCorrectionShader;
 public final class ColorCorrection extends Module {
     private static final ColorCorrection INSTANCE = new ColorCorrection();
 
-    public final SectionSetting mainSection = new SectionSetting("Main");
+    public final SectionSetting mainSection = new SectionSetting("General");
     public final ValueSetting brightness = new ValueSetting("Brightness", "Adjust brightness").range(-1.0f, 1.0f).setValue(0.0f);
     public final ValueSetting contrast = new ValueSetting("Contrast", "Adjust contrast").range(0.0f, 3.0f).setValue(1.0f);
     public final ValueSetting saturation = new ValueSetting("Saturation", "Adjust saturation").range(0.0f, 3.0f).setValue(1.0f);

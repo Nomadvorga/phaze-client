@@ -35,7 +35,10 @@ public abstract class MinecraftClientNoGlowMixin {
             cancellable = true)
     private void phaze$skipGlowOutline(Entity entity, CallbackInfoReturnable<Boolean> cir) {
         NoRender mod = NoRender.getInstance();
-        if (mod != null && mod.isEnabled() && mod.glowing.isValue()) {
+        if (mod == null || !mod.isEnabled()) {
+            return;
+        }
+        if (mod.glowing.isValue()) {
             cir.setReturnValue(false);
         }
     }

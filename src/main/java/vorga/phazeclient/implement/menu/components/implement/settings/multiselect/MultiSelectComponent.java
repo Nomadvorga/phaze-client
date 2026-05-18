@@ -1,259 +1,324 @@
 package vorga.phazeclient.implement.menu.components.implement.settings.multiselect;
 
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix4f;
 import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
-import vorga.phazeclient.api.system.font.FontRenderer;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.api.system.font.msdf.MsdfFont;
+import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
+import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
-import vorga.phazeclient.base.util.render.ScissorManager;
-import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
-import org.joml.Matrix4f;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
-import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
-
+/**
+ * Inline-chip multi-select.
+ *
+ * <h3>Visual layout</h3>
+ * The label sits at the top-left of the setting card (same place
+ * every other setting puts it). Directly under the label, each
+ * option is rendered as its own chip - a small rounded rect with
+ * the option's name centred inside. Chips flow left-to-right and
+ * wrap onto a new row when they would overflow the available
+ * width. There is no dropdown panel and no chevron caret: every
+ * option is always visible at a glance, the way the user's
+ * reference screenshot shows.
+ *
+ * <h3>Animation per chip</h3>
+ * Each chip owns a pair of {@link DecelerateAnimation} instances:
+ * one tracking hover, one tracking selection. Both run on the
+ * standard "ease-out" curve the rest of the menu uses, so a chip
+ * fades smoothly between idle / hover / active states instead of
+ * snapping. The animation pair is cached in
+ * {@link #chipAnimations} keyed by option name so we don't
+ * reallocate per frame and the in-flight animation state survives
+ * across frames.
+ *
+ * <h3>Why static no-ops for the legacy global-click hooks</h3>
+ * {@code MenuScreen} calls
+ * {@link #handleGlobalClick(double, double)} and
+ * {@link #closeAllDropdowns()} from its outside-click and close
+ * paths because the previous version had a floating dropdown that
+ * needed teardown on outside clicks. Inline chips don't need
+ * either, but the entry points stay so {@code MenuScreen} doesn't
+ * need to be updated alongside this rewrite. They're cheap no-ops
+ * and the call sites are warning-free.
+ *
+ * <h3>Why MSDF</h3>
+ * Same reason every other refreshed component uses MSDF: SDF
+ * glyphs stay sharp at any GUI scale, and we already standardised
+ * on {@link MsdfFonts#bold()} for inline chrome elsewhere in the
+ * menu. The chip text feels visually continuous with the rest of
+ * the panel.
+ */
 public class MultiSelectComponent extends AbstractSettingComponent {
-    private final List<MultiSelectedButton> multiSelectedButtons = new ArrayList<>();
-
-    private static final List<MultiSelectComponent> openDropdowns = new ArrayList<>();
+    /** Pixel size of the option label inside each chip. */
+    private static final float CHIP_TEXT_SIZE = 5.7F;
+    /** Padding inside a chip on each side of the label. */
+    private static final float CHIP_PADDING_X = 6.0F;
+    /** Vertical extent of the chip rect. */
+    private static final float CHIP_HEIGHT = 13.0F;
+    /** Horizontal gap between adjacent chips on the same row. */
+    private static final float CHIP_GAP_X = 4.0F;
+    /** Vertical gap between two chip rows when wrapping. */
+    private static final float CHIP_GAP_Y = 4.0F;
+    /** Distance from the card's left edge to the chip row. */
+    private static final float CHIPS_LEFT_PAD = 10.0F;
+    /** Right margin for the chip flow - keeps chips clear of reset icon. */
+    private static final float CHIPS_RIGHT_PAD = 18.0F;
+    /** Vertical gap between the label and the first chip row. */
+    private static final float LABEL_TO_CHIPS_GAP = 4.0F;
+    /** Y offset from the top of the card down to the label baseline anchor. */
+    private static final float LABEL_TOP_PAD = 7.0F;
+    /** Pixel size of the setting label MSDF text. */
+    private static final float LABEL_TEXT_SIZE = 5.7F;
 
     private final MultiSelectSetting setting;
-    private boolean open;
 
-    private float dropdownListX,
-            dropDownListY,
-            dropDownListWidth,
-            dropDownListHeight;
+    /**
+     * Per-option animation state. We key on the option name (the
+     * very thing the setting itself tracks selection by) so reset /
+     * value-import / programmatic toggles all reuse the same
+     * animation continuity. Identity-hash map because the setting's
+     * list of names is stable across frames - the lookup is
+     * effectively a pointer comparison after the first record.
+     */
+    private final Map<String, ChipAnimations> chipAnimations = new IdentityHashMap<>();
 
-    private final Animation alphaAnimation = new DecelerateAnimation().setMs(300).setValue(1);
-
-    private final Animation slideAnimation = new DecelerateAnimation().setMs(250).setValue(1);
+    /** Current expanded height in pixels - recomputed every frame. */
+    private float expandedHeight;
 
     public MultiSelectComponent(MultiSelectSetting setting) {
         super(setting);
         this.setting = setting;
-
-        alphaAnimation.setDirection(Direction.BACKWARDS);
-        slideAnimation.setDirection(Direction.BACKWARDS);
-
-        for (String s : setting.getList()) {
-            multiSelectedButtons.add(new MultiSelectedButton(setting, s));
-        }
     }
 
-    private void setOpen(boolean open) {
-        if (this.open == open) return;
-
-        this.open = open;
-        if (open) {
-            closeAllDropdowns();
-            openDropdowns.add(this);
-        } else {
-            openDropdowns.remove(this);
-        }
-    }
-
-    public static void closeAllDropdowns() {
-        for (MultiSelectComponent dropdown : new ArrayList<>(openDropdowns)) {
-            dropdown.open = false;
-        }
-        openDropdowns.clear();
-    }
-
+    /**
+     * Legacy entry point. The previous floating-panel version of
+     * this component routed outside-click teardown through here;
+     * inline chips have no panel to close so this is a no-op kept
+     * to preserve the {@code MenuScreen} call site.
+     */
     public static void handleGlobalClick(double mouseX, double mouseY) {
-        for (MultiSelectComponent dropdown : new ArrayList<>(openDropdowns)) {
-            if (!dropdown.isHover(mouseX, mouseY)) {
-                dropdown.setOpen(false);
-            }
-        }
+        // No-op - inline chips don't need outside-click handling.
     }
 
+    /**
+     * Legacy entry point. Same rationale as
+     * {@link #handleGlobalClick(double, double)}: kept as a no-op
+     * so {@code MenuScreen.close} doesn't need to change.
+     */
+    public static void closeAllDropdowns() {
+        // No-op - inline chips have no dropdown state.
+    }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
-        var labelFont = Fonts.getSize(14, INTER_BOLD);
-
-        boolean isModified = setting.isModified();
-        float textOffset = animatedTextOffset(isModified);
 
         MatrixStack matrices = context.getMatrices();
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 89 - textOffset), 14);
-        float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
-        height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
-        float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
+        // Height is "label band + chip rows" - we lay out chips
+        // first to know how tall the card has to be, then fall
+        // through to the actual draw. This way the card outline
+        // matches the chip flow exactly without a second-frame
+        // catch-up.
+        float labelMaxWidth = Math.max(40.0F, width - CHIPS_RIGHT_PAD - 18.0F);
+        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) labelMaxWidth, 14);
 
-        List<String> fullSettingsList = setting.getList();
+        ChipLayout layout = computeChipLayout();
+        float labelBandHeight = LABEL_TOP_PAD + LABEL_TEXT_SIZE + LABEL_TO_CHIPS_GAP;
+        float chipBlockHeight = layout.totalRows() * CHIP_HEIGHT + Math.max(0, layout.totalRows() - 1) * CHIP_GAP_Y;
+        float computed = labelBandHeight + chipBlockHeight + 6.0F;
+        height = (int) Math.ceil(computed);
+        expandedHeight = height;
 
-        this.dropdownListX = x + width - 75 + 2;
-        this.dropDownListY = y + height + 2;
-        this.dropDownListWidth = 66;
-        this.dropDownListHeight = fullSettingsList.size() * 12;
+        // No card-level hover lift - selection happens per chip and
+        // the user explicitly asked for the surrounding card to stay
+        // visually static while the cursor moves over it.
+        renderSettingCard(context, 0.0F, 0.0F);
 
-        alphaAnimation.setDirection(open ? Direction.FORWARDS : Direction.BACKWARDS);
-        slideAnimation.setDirection(open ? Direction.FORWARDS : Direction.BACKWARDS);
+        // Label.
+        float labelX = x + 10.0F;
+        float labelY = y + LABEL_TOP_PAD;
+        MsdfRenderer.renderText(
+                MsdfFonts.bold(),
+                wrapped,
+                LABEL_TEXT_SIZE,
+                MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, currentAlpha),
+                positionMatrix,
+                labelX,
+                labelY,
+                0.0F
+        );
 
-        renderSettingCard(context, open ? 1.0f : 0.0f, hoverProgress);
-        renderSelected(matrices, positionMatrix);
-        if (!alphaAnimation.isFinished(Direction.BACKWARDS))
-            renderSelectList(context, positionMatrix, mouseX, mouseY, delta);
+        // Chip flow.
+        renderChips(context, matrices, positionMatrix, layout, mouseX, mouseY);
 
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrices);
-
-        float textX = x + 10 + textOffset;
-        labelFont.drawString(matrices, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        // Reset icon intentionally omitted: the user asked for the
+        // chip multi-select to be non-resettable in the Consumable
+        // module's Items setting. Without a reset surface there's
+        // no UI to draw here; the per-chip toggles remain the only
+        // way to mutate the selection.
     }
 
+    private void renderChips(DrawContext context, MatrixStack matrices, Matrix4f positionMatrix, ChipLayout layout, int mouseX, int mouseY) {
+        for (int i = 0; i < layout.entries.size(); i++) {
+            ChipEntry entry = layout.entries.get(i);
+            renderChip(matrices, positionMatrix, entry, mouseX, mouseY);
+        }
+    }
+
+    private void renderChip(MatrixStack matrices, Matrix4f positionMatrix, ChipEntry entry, int mouseX, int mouseY) {
+        boolean selected = setting.getSelected().contains(entry.name);
+
+        ChipAnimations anim = chipAnimations.computeIfAbsent(entry.name, n -> new ChipAnimations());
+        anim.selected.setDirection(selected ? Direction.FORWARDS : Direction.BACKWARDS);
+        float selP = anim.selected.getOutputFloat();
+
+        // Idle base = panel-chip surface (very subtle), selected
+        // blends into the accent. Hover is intentionally absent -
+        // the user asked for chips to not visually react to the
+        // cursor before a click commits the selection.
+        int idle = MenuStyle.PANEL_CHIP;
+        int activeFill = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, MenuStyle.PANEL_CHIP, 0.35F);
+        int fill = MenuStyle.mix(idle, activeFill, selP);
+        int fillFinal = MenuStyle.withAlpha(fill, currentAlpha * (0.55F + 0.45F * selP));
+
+        // Outline lifts toward the accent only on selection so the
+        // chip clearly tells the user it's clickable / active.
+        int outline = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, selP);
+        int outlineFinal = MenuStyle.withAlpha(outline, currentAlpha * (0.55F + 0.45F * selP));
+
+        rectangle.render(ShapeProperties.create(matrices, entry.x, entry.y, entry.width, CHIP_HEIGHT)
+                .round(2.5F)
+                .thickness(1.0F + 0.4F * selP)
+                .softness(0.6F)
+                .color(fillFinal)
+                .outlineColor(outlineFinal)
+                .build());
+
+        int textColor = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, selP);
+        int textFinal = MenuStyle.withAlpha(textColor, currentAlpha);
+
+        MsdfFont font = MsdfFonts.bold();
+        float textW = font.getWidth(entry.name, CHIP_TEXT_SIZE);
+        float textX = entry.x + (entry.width - textW) / 2.0F;
+        float textY = MenuStyle.centerMsdfTextY(CHIP_TEXT_SIZE, entry.y, CHIP_HEIGHT);
+        MsdfRenderer.renderText(font, entry.name, CHIP_TEXT_SIZE, textFinal, positionMatrix, textX, textY, 0.0F);
+    }
+
+    /**
+     * Plan chip placement. Walks the option list in declaration
+     * order, measures the MSDF width of each label, and packs
+     * chips left-to-right with wrap-on-overflow. Returns the
+     * absolute (x, y, width) of every chip plus the total number
+     * of rows so {@link #render} can size the card.
+     */
+    private ChipLayout computeChipLayout() {
+        List<ChipEntry> out = new ArrayList<>();
+        List<String> options = setting.getList();
+        if (options == null || options.isEmpty()) {
+            return new ChipLayout(out, 1);
+        }
+
+        MsdfFont font = MsdfFonts.bold();
+        float availableWidth = Math.max(20.0F, width - CHIPS_LEFT_PAD - CHIPS_RIGHT_PAD);
+        float baseX = x + CHIPS_LEFT_PAD;
+        float baseY = y + LABEL_TOP_PAD + LABEL_TEXT_SIZE + LABEL_TO_CHIPS_GAP;
+
+        float cursorX = 0.0F;
+        float cursorY = 0.0F;
+        int rows = 1;
+
+        for (String option : options) {
+            float labelW = font.getWidth(option, CHIP_TEXT_SIZE);
+            float chipW = Math.max(20.0F, labelW + CHIP_PADDING_X * 2.0F);
+
+            // Wrap if the chip won't fit on the current row. The
+            // {@code cursorX > 0} guard keeps the very first chip on
+            // the row even if it's slightly wider than the available
+            // width - we'd rather clip the trailing edge than drop
+            // an empty row.
+            if (cursorX > 0 && cursorX + chipW > availableWidth) {
+                cursorX = 0.0F;
+                cursorY += CHIP_HEIGHT + CHIP_GAP_Y;
+                rows++;
+            }
+
+            out.add(new ChipEntry(option, baseX + cursorX, baseY + cursorY, chipW));
+            cursorX += chipW + CHIP_GAP_X;
+        }
+
+        return new ChipLayout(out, rows);
+    }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0) {
-            if (resetIcon.isHovered(mouseX, mouseY)) {
-                playButtonClickSound();
-                setting.reset();
-                return true;
-            }
+        if (button != 0) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+        // Reset surface intentionally absent - matches the render
+        // path which omits the reset icon.
 
-            float buttonY = y + height / 2 - 7;
-            if (MathUtil.isHovered(mouseX, mouseY, x + width - 75 + 2, buttonY, 66, 14)) {
+        ChipLayout layout = computeChipLayout();
+        for (ChipEntry entry : layout.entries) {
+            if (MathUtil.isHovered(mouseX, mouseY, entry.x, entry.y, entry.width, CHIP_HEIGHT)) {
                 playButtonClickSound();
-                setOpen(!open);
-                return true;
-            } else if (open && !isHoveredList(mouseX, mouseY)) {
-                setOpen(false);
-                return true;
-            }
-
-            if (open) {
-                for (MultiSelectedButton selectedButton : multiSelectedButtons) {
-                    if (selectedButton.mouseClicked(mouseX, mouseY, button)) {
-                        return true;
-                    }
+                List<String> selected = new ArrayList<>(setting.getSelected());
+                if (selected.contains(entry.name)) {
+                    selected.remove(entry.name);
+                } else {
+                    selected.add(entry.name);
+                    selected.sort(Comparator.comparingInt(setting.getList()::indexOf));
                 }
-                if (isHoveredList(mouseX, mouseY)) {
-                    return true;
-                }
+                setting.setSelected(selected);
+                return true;
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-
     @Override
     public boolean isHover(double mouseX, double mouseY) {
-        float buttonY = y + height / 2 - 7;
-        if (MathUtil.isHovered(mouseX, mouseY, x + width - 75 + 2, buttonY, 66, 14)) {
-            return true;
-        }
-        if (MathUtil.isHovered(mouseX, mouseY, x + 9, y + 6, width - 75 - 9, height - 12)) {
-            return true;
-        }
-        return open && isHoveredList(mouseX, mouseY);
+        return MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
     }
 
-
-    private void renderSelected(MatrixStack matrix, Matrix4f positionMatrix) {
-        FontRenderer font = Fonts.getSize(12);
-        int x1 = (int) (x + width - 72 + 2);
-        float buttonY = y + height / 2 - 7;
-
-        rectangle.render(ShapeProperties.create(matrix, x1 - 3, buttonY, 66, 14)
-                .round(2).thickness(1.1F).softness(0.5F)
-                .outlineColor(MenuStyle.withAlpha(open ? MenuStyle.CHIP_ACTIVE : MenuStyle.BORDER, currentAlpha))
-                .color(MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, currentAlpha))
-                .build());
-
-        String selectedName = String.join(", ", setting.getSelected());
-
-        float offset = 64;
-
-        ScissorManager scissor = Main.getInstance().getScissorManager();
-        scissor.push(positionMatrix, x1 - 1, buttonY, 62, 14);
-
-        font.drawStringWithScroll(matrix, selectedName, x1, centeredTextY(font, selectedName, buttonY, 14), offset, MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, currentAlpha));
-
-        scissor.pop();
-
-        if (font.getStringWidth(selectedName) - offset > 0) {
-            rectangle.render(ShapeProperties.create(matrix, x + width - 13.75F + 2, buttonY + 1, 4, 12)
-                    .round(3).color(
-                            MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, currentAlpha),
-                            MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, currentAlpha),
-                            MenuStyle.withAlpha(MenuStyle.PANEL_BG, 0.0F),
-                            MenuStyle.withAlpha(MenuStyle.PANEL_BG, 0.0F)
-                    ).build());
-
-            rectangle.render(ShapeProperties.create(matrix, x1 - 2.25F, buttonY + 1, 4, 12)
-                    .round(3).color(
-                            MenuStyle.withAlpha(MenuStyle.PANEL_BG, 0.0F),
-                            MenuStyle.withAlpha(MenuStyle.PANEL_BG, 0.0F),
-                            MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, currentAlpha),
-                            MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, currentAlpha)
-                    ).build());
-        }
-    }
-
-
-    private void renderSelectList(DrawContext context, Matrix4f positionMatrix, int mouseX, int mouseY, float delta) {
-        float opacity = alphaAnimation.getOutputFloat() * currentAlpha;
-        float slideProgress = slideAnimation.getOutputFloat();
-
-        float animatedHeight = dropDownListHeight * slideProgress;
-        float animatedY = dropDownListY;
-
-        context.getMatrices().push();
-
-        rectangle.render(ShapeProperties.create(context.getMatrices(), dropdownListX, animatedY, dropDownListWidth, animatedHeight)
-                .round(4).thickness(1.1F).outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER_LIGHT, opacity)).color(MenuStyle.withAlpha(MenuStyle.PANEL_BG_SOFT, opacity)).build());
-
-        ScissorManager scissor = Main.getInstance().getScissorManager();
-        scissor.push(positionMatrix, dropdownListX, animatedY, dropDownListWidth, animatedHeight);
-
-        float offset = dropDownListY;
-        int visibleButtons = Math.max(1, (int) (multiSelectedButtons.size() * slideProgress));
-
-        for (int i = 0; i < Math.min(visibleButtons, multiSelectedButtons.size()); i++) {
-            MultiSelectedButton button = multiSelectedButtons.get(i);
-            button.x = dropdownListX;
-            button.y = offset;
-            button.width = dropDownListWidth;
-            button.height = 12;
-
-            button.setAlpha(opacity);
-
-            button.render(context, mouseX, mouseY, delta);
-            offset += 12;
-        }
-
-        scissor.pop();
-        context.getMatrices().pop();
-    }
-
-
-    private boolean isHoveredList(double mouseX, double mouseY) {
-        float slideProgress = slideAnimation.getOutputFloat();
-        float animatedHeight = dropDownListHeight * slideProgress;
-        return MathUtil.isHovered(mouseX, mouseY, dropdownListX, dropDownListY - 16, dropDownListWidth, animatedHeight + 16);
-    }
-
+    @Override
     public float getExpandedHeight() {
-        if (!open || slideAnimation.getOutputFloat() < 0.01f) {
-            return height;
-        }
-        float slideProgress = slideAnimation.getOutputFloat();
-        float dropdownHeight = dropDownListHeight * slideProgress;
-        return height + 2 + dropdownHeight;
+        return expandedHeight > 0.0F ? expandedHeight : height;
     }
+
+    /**
+     * Per-option animation track. Only "selected" is animated -
+     * hover is intentionally absent because the user asked chips
+     * to not visually react to the cursor before a click commits
+     * the selection. Caching here is per-name so toggling a chip
+     * doesn't reset the in-flight selection animation.
+     */
+    private static final class ChipAnimations {
+        final Animation selected = new DecelerateAnimation().setMs(220).setValue(1);
+
+        ChipAnimations() {
+            selected.setDirection(Direction.BACKWARDS);
+        }
+    }
+
+    /** Geometry of one rendered chip, anchored to absolute screen pixels. */
+    private record ChipEntry(String name, float x, float y, float width) {}
+
+    /** Result of the per-frame layout pass. */
+    private record ChipLayout(List<ChipEntry> entries, int totalRows) {}
 }

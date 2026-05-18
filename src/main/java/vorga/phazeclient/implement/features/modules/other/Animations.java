@@ -642,6 +642,26 @@ public final class Animations extends Module {
     }
 
     /**
+     * Snap the tab slide animation to its fully-closed resting state
+     * without playing any close-out arc. Called when {@code hudHidden}
+     * is true (F1 pressed) so the tab list disappears instantly along
+     * with the rest of the HUD instead of playing a phantom close
+     * animation as it transitions to the closed offset. Mirrors the
+     * disabled-branch reset inside {@link #tickTabSlide} - same fields,
+     * same target values - so re-enabling the HUD after F1 starts from
+     * a clean closed state.
+     */
+    public void snapTabClosed() {
+        tabCurrentOffset = -TAB_SLIDE_TRAVEL;
+        tabTargetOffset = -TAB_SLIDE_TRAVEL;
+        tabLastFrameNanos = 0L;
+        tabLinearProgress = 0.0F;
+        tabAnimationStartProgress = 0.0F;
+        tabAnimationStartNanos = 0L;
+        tabAnimationTargetOpen = false;
+    }
+
+    /**
      * Returns the most recently computed slide offset without ticking. Used
      * by the {@link vorga.phazeclient.mixins.PlayerListHudMixin} when it
      * pushes the matrix translate inside {@code render()}; the actual tick

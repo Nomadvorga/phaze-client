@@ -49,8 +49,11 @@ public final class HitRange extends Module {
 
     private static final HitRange INSTANCE = new HitRange();
 
-    // ---------- General ----------
-    public final SectionSetting generalSection = new SectionSetting("General");
+    // ---------- Appearance ----------
+    // What the circle looks like geometrically: how big, what shape,
+    // how thick, how high. The most-tweaked block of settings, kept
+    // first so the user lands on it when opening the module.
+    public final SectionSetting appearanceSection = new SectionSetting("Appearance");
     public final ValueSetting radius = new ValueSetting(
             "Radius",
             "Circle radius in blocks. Match this to your reach (3.0 = vanilla 1.21 / ~3.0 = 1.8 PvP reach)."
@@ -67,6 +70,12 @@ public final class HitRange extends Module {
             "Height",
             "Vertical offset above the entity's feet, in blocks. 0 sits flat on the ground."
     ).range(0.0f, 5.0f).step(0.01f).setValue(0.0f);
+
+    // ---------- Targeting ----------
+    // Who the circle is drawn AROUND - ranks above colors because
+    // there's no point picking the perfect colour if you don't
+    // actually see the rings on the entities you care about.
+    public final SectionSetting targetingSection = new SectionSetting("Targeting");
     public final BooleanSetting nearestOnly = new BooleanSetting(
             "Nearest Only",
             "Only draw the circle around the single closest player within Max Search Distance."
@@ -75,6 +84,14 @@ public final class HitRange extends Module {
             "Show Self",
             "Also draw the circle around your own player (visible in third-person view)."
     ).setValue(true);
+    public final ValueSetting maxSearchDistance = new ValueSetting(
+            "Max Search Distance",
+            "Cap (in blocks) for the Nearest Only player search."
+    ).range(1, 100).step(1.0f).setValue(50);
+    public final ValueSetting maxDistance = new ValueSetting(
+            "Max Render Distance",
+            "Skip drawing for entities farther than this many blocks (culling)."
+    ).range(1, 200).step(1.0f).setValue(100);
 
     // ---------- Colors ----------
     public final SectionSetting colorsSection = new SectionSetting("Colors");
@@ -86,14 +103,14 @@ public final class HitRange extends Module {
             "In Range Color",
             "Color when the target entity is inside the configured radius."
     ).value(0x8000FF00);
-    public final BooleanSetting randomColors = new BooleanSetting(
-            "Random Colors",
-            "Hash each player's display name into a stable random color (overrides Color / In Range Color)."
-    ).setValue(false);
     public final BooleanSetting colorWhenInRange = new BooleanSetting(
             "Color When In Range",
             "Switch to In Range Color when the target is inside the radius."
     ).setValue(true);
+    public final BooleanSetting randomColors = new BooleanSetting(
+            "Random Colors",
+            "Hash each player's display name into a stable random color (overrides Color / In Range Color)."
+    ).setValue(false);
 
     // ---------- Advanced ----------
     public final SectionSetting advancedSection = new SectionSetting("Advanced");
@@ -101,14 +118,6 @@ public final class HitRange extends Module {
             "Circle Segments",
             "Polygon edge count of the circle. Lower = more polygonal, higher = smoother."
     ).range(3, 180).step(1.0f).setValue(60);
-    public final ValueSetting maxSearchDistance = new ValueSetting(
-            "Max Search Distance",
-            "Cap (in blocks) for the Nearest Only player search."
-    ).range(1, 100).step(1.0f).setValue(50);
-    public final ValueSetting maxDistance = new ValueSetting(
-            "Max Render Distance",
-            "Skip drawing for entities farther than this many blocks (culling)."
-    ).range(1, 200).step(1.0f).setValue(100);
 
     /**
      * Result of the most recent {@code World#getClosestPlayer} call from
@@ -161,9 +170,10 @@ public final class HitRange extends Module {
         renderMode.onChange(s -> HitRangeCircleRenderer.computeAngles());
 
         setup(
-                generalSection, radius, renderMode, thickness, height, nearestOnly, showSelf,
-                colorsSection, color, inRangeColor, randomColors, colorWhenInRange,
-                advancedSection, circleSegments, maxSearchDistance, maxDistance
+                appearanceSection, radius, renderMode, thickness, height,
+                targetingSection, nearestOnly, showSelf, maxSearchDistance, maxDistance,
+                colorsSection, color, inRangeColor, colorWhenInRange, randomColors,
+                advancedSection, circleSegments
         );
     }
 
