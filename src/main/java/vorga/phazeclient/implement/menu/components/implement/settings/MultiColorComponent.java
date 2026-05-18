@@ -55,11 +55,19 @@ public class MultiColorComponent extends AbstractSettingComponent {
                 float colorX = x + width - 15.5f - ((colorCount - 1 - i) * 9);
                 float colorY = y + height / 2 - 3.5f;
 
+                // Single SDF rect carries fill + outline: the shader
+                // paints a 1.2 px BORDER_LIGHT ring AND the swatch's
+                // colour fill in one pass. The previous two-rect
+                // pattern (fill, then outlined zero-fill on top) was
+                // a holdover from a renderer that didn't support
+                // both at once.
                 rectangle.render(ShapeProperties.create(matrix, colorX, colorY, 7, 7)
-                        .round(3.5F).color(colorSetting.getColor()).build());
-
-                rectangle.render(ShapeProperties.create(matrix, colorX, colorY, 7, 7)
-                        .round(3.5F).thickness(1.2F).softness(1).outlineColor(MenuStyle.BORDER_LIGHT).color(0).build());
+                        .round(3.5F)
+                        .thickness(1.2F)
+                        .softness(1)
+                        .outlineColor(MenuStyle.BORDER_LIGHT)
+                        .color(colorSetting.getColor())
+                        .build());
             }
         }
     }

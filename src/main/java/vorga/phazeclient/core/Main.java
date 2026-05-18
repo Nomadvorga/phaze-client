@@ -120,6 +120,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(ComboCounterHud.class) == null) {
             moduleProvider.getModules().add(ComboCounterHud.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.Cooldowns.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.Cooldowns.getInstance());
+        }
         if (moduleProvider.get(ServerAddressHud.class) == null) {
             moduleProvider.getModules().add(ServerAddressHud.getInstance());
         }
@@ -134,6 +137,42 @@ public class Main implements ModInitializer {
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HitColor.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HitColor.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.FakeFps.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.FakeFps.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.SmoothCamera.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.SmoothCamera.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.BetterF3.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.BetterF3.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.BetterDeathScreen.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.BetterDeathScreen.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.InventoryHud.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.InventoryHud.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.PlayerModelHud.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.PlayerModelHud.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.TpsHud.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.TpsHud.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.BlockOverlay.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.BlockOverlay.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Crosshair.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Crosshair.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.DeathCoords.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.DeathCoords.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.DiscordRpc.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.DiscordRpc.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ServerListPlus.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ServerListPlus.getInstance());
         }
         if (moduleProvider.get(Zoom.class) == null) {
             moduleProvider.getModules().add(Zoom.getInstance());
@@ -187,11 +226,11 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.TotemTracker.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.TotemTracker.getInstance());
         }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.BattleInfo.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.BattleInfo.getInstance());
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.BattleInfo.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.BattleInfo.getInstance());
         }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Consumable.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Consumable.getInstance());
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.Consumable.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance());
         }
         if (moduleProvider.get(ItemPhysics.class) == null) {
             moduleProvider.getModules().add(ItemPhysics.getInstance());
@@ -213,6 +252,21 @@ public class Main implements ModInitializer {
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChatHelper.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChatHelper.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.FTHelper.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.FTHelper.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.TrapTimer.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.TrapTimer.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.PickaxeNotifier.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.PickaxeNotifier.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ItemHighlighter.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ItemHighlighter.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Predictions.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Predictions.getInstance());
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.NickHider.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.NickHider.getInstance());

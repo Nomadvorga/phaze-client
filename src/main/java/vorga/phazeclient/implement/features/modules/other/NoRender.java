@@ -87,7 +87,11 @@ public final class NoRender extends Module {
     ).setValue(false);
 
     private NoRender() {
-        super("no_render", "No Render", ModuleCategory.OTHER);
+        // Storage id stays "no_render" for backwards-compatible config
+        // loading - users who already have this module saved in their
+        // profile keep that key. Only the displayed label changes,
+        // since the module now does more than just suppress renders.
+        super("no_render", "Render Tweaks", ModuleCategory.OTHER);
         glowing.setFullWidth(true);
         fire.setFullWidth(true);
         particles.setFullWidth(true);
@@ -114,7 +118,7 @@ public final class NoRender extends Module {
 
     @Override
     public String getDescription() {
-        return "Hides individual client-side renders: glowing outlines, fire overlay, particles";
+        return "Render-pipeline tweaks: hide glowing outlines, fire overlay, particles";
     }
 
     @Override

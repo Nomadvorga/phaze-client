@@ -25,22 +25,16 @@ import java.util.function.Consumer;
  * Hooks the inner save helper that vanilla calls on the IO worker
  * after capturing the framebuffer - that's the earliest spot where
  * we have a fully populated {@link NativeImage} but the disk write
- * hasn't happened yet, so the same one-shot intercept lets us:
+ * hasn't happened yet, so we can mirror the bitmap onto the system
+ * clipboard while leaving the vanilla disk save intact.
  *
- * <ol>
- *   <li>Mirror the bitmap onto the system clipboard, asynchronously
- *       so AWT clipboard locking can't stall the IO worker.</li>
- *   <li>Cancel the disk write entirely if the user opted out of
- *       {@code Save To Disk}, which would otherwise leave a stray
- *       PNG file behind every time they press F2.</li>
- * </ol>
- *
- * <p>The mixin is purely a forwarder: it only checks
- * {@link ChatHelper#shouldCopyScreenshot()} and
- * {@link ChatHelper#shouldSaveScreenshotToDisk()} and delegates the
- * actual clipboard work to the module - so module-level disable,
- * profile reload, and config save all "just work" without the mixin
- * needing to know any of that.
+ * <p>The mixin is purely a forwarder: it checks
+ * {@link ChatHelper#shouldCopyScreenshot()} and delegates the actual
+ * clipboard work to the module - so module-level disable, profile
+ * reload, and config save all "just work" without the mixin needing
+ * to know any of that. Disk save is never cancelled; we always let
+ * vanilla finish writing the {@code .png} so the user keeps a local
+ * copy alongside the clipboard push.
  *
  * <p>Method name {@code saveScreenshotInner} is the yarn 1.21.4
  * mapping for what older mods referenced as {@code method_1661};
@@ -50,7 +44,7 @@ import java.util.function.Consumer;
 @Mixin(ScreenshotRecorder.class)
 public abstract class ScreenshotRecorderScreencopyMixin {
 
-    @Inject(method = "saveScreenshotInner", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "saveScreenshotInner", at = @At("HEAD"))
     private static void phaze$screencopyOnSave(NativeImage image, File file, Consumer<Text> messageReceiver, CallbackInfo ci) {
         ChatHelper helper = ChatHelper.getInstance();
         if (helper == null || !helper.shouldCopyScreenshot()) {
@@ -62,7 +56,9 @@ public abstract class ScreenshotRecorderScreencopyMixin {
         // this method returns). The actual clipboard system call
         // happens on a daemon thread inside copyImageToClipboardAsync
         // so we don't pay AWT init / clipboard-lock latency on the
-        // worker queue.
+        // worker queue. Vanilla then proceeds with the disk save
+        // unaffected - we don't cancel it anymore so the user always
+        // keeps a .png alongside the clipboard push.
         try {
             helper.copyImageToClipboardAsync(image, messageReceiver);
         } catch (Throwable t) {
@@ -72,11 +68,6 @@ public abstract class ScreenshotRecorderScreencopyMixin {
             if (messageReceiver != null) {
                 messageReceiver.accept(Text.literal("Screencopy failed: " + t.getClass().getSimpleName()));
             }
-            return;
-        }
-
-        if (!helper.shouldSaveScreenshotToDisk()) {
-            ci.cancel();
         }
     }
 }

@@ -1,8 +1,6 @@
 package vorga.phazeclient.implement.features.modules.hud;
 
-import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
@@ -64,6 +62,17 @@ public final class ComboCounterHud extends RectHudModule {
         // ordering. Idle "No Combo" stays untouched because it has no
         // value half to reorder.
         return reverseOrder.isValue() ? combo + " Combo" : "Combo " + combo;
+    }
+
+    /**
+     * Raw running-combo accessor used by other modules (currently
+     * {@link vorga.phazeclient.implement.features.modules.hud.BattleInfo})
+     * that want to share the same canonical counter without
+     * reimplementing the target-change / hit-by-enemy / world-join
+     * reset rules. Returns 0 when no combo is active.
+     */
+    public int getCombo() {
+        return combo;
     }
 
     @Override

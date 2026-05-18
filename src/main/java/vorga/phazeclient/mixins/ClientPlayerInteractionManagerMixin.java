@@ -11,10 +11,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import vorga.phazeclient.implement.features.modules.hud.BattleInfo;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.other.AutoEat;
 import vorga.phazeclient.implement.features.modules.other.AutoGG;
-import vorga.phazeclient.implement.features.modules.other.BattleInfo;
 import vorga.phazeclient.implement.features.modules.other.ChangeHand;
 import vorga.phazeclient.implement.features.modules.other.HealthIndicator;
 import vorga.phazeclient.implement.features.modules.other.LockSlot;
@@ -65,10 +66,23 @@ public class ClientPlayerInteractionManagerMixin {
         if (changeHand != null) {
             changeHand.onAttackEntity();
         }
+    }
 
-        // Battle Info: feed reach / damage / combo samples on every
-        // outgoing attack. Module is enabled-gated internally so we
-        // can call unconditionally without an extra null check.
+    /**
+     * BattleInfo's combo metric reads from {@link
+     * vorga.phazeclient.implement.features.modules.hud.ComboCounterHud}
+     * which is incremented inside {@code PlayerEntity.attack} - i.e.
+     * <em>during</em> the body of {@code attackEntity}. Injecting at
+     * RETURN guarantees the combo counter has already been bumped by
+     * the time we read it, so the rolling combo average sees the
+     * post-hit value (1 on the first hit, 2 on the second, etc.)
+     * instead of the stale pre-hit value an HEAD inject would see.
+     * Reach / damage are recorded inside this method too rather than
+     * in the HEAD block above so the whole combat-summary record
+     * arrives as one atomic snapshot per attack.
+     */
+    @Inject(method = "attackEntity", at = @At("RETURN"))
+    private void phaze$recordBattleInfo(PlayerEntity player, Entity target, CallbackInfo ci) {
         BattleInfo battleInfo = BattleInfo.getInstance();
         if (battleInfo != null) {
             battleInfo.recordAttack(player, target);
@@ -80,6 +94,32 @@ public class ClientPlayerInteractionManagerMixin {
         ShiftTap shiftTap = ShiftTap.getInstance();
         if (shiftTap.isEnabled()) {
             shiftTap.triggerShiftTap();
+        }
+        // Trap Timer: arm the local trapka cooldown stopwatch when
+        // the held item matches the configured (item type + name)
+        // pair. Module gates internally so a non-trapka click is a
+        // single instanceof + map probe.
+        vorga.phazeclient.implement.features.modules.other.TrapTimer trapTimer =
+                vorga.phazeclient.implement.features.modules.other.TrapTimer.getInstance();
+        if (trapTimer != null) {
+            trapTimer.onItemUse(player, hand);
+        }
+    }
+
+    /**
+     * Pickaxe Notifications: hook the player's left-click-on-block
+     * dispatch so the durability check fires every swing without us
+     * having to touch the block-breaking progress path. The vanilla
+     * method runs on a successful left-click that hits a block, which
+     * is exactly when we want to evaluate "is this the swing that
+     * breaks my pickaxe?".
+     */
+    @Inject(method = "attackBlock", at = @At("HEAD"))
+    private void phaze$onAttackBlock(net.minecraft.util.math.BlockPos pos, net.minecraft.util.math.Direction direction, CallbackInfoReturnable<Boolean> cir) {
+        vorga.phazeclient.implement.features.modules.other.PickaxeNotifier notifications =
+                vorga.phazeclient.implement.features.modules.other.PickaxeNotifier.getInstance();
+        if (notifications != null) {
+            notifications.onAttackBlock();
         }
     }
 

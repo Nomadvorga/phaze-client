@@ -205,6 +205,7 @@ public class ServerUtil {
                 || hasServerSegment("funsky")
                 || hasServerSegment("space-times")
                 || hasServerSegment("spookytime")
+                || hasServerSegment("stray")
                 || hasServerSegment("funmoon");
     }
 
