@@ -1,59 +1,65 @@
 package vorga.phazeclient.mixins;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.InGameHud;
-import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.option.Perspective;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import vorga.phazeclient.implement.features.modules.other.Crosshair;
 
 /**
  * Forces the vanilla crosshair to render even when the camera is in
- * third-person view. Vanilla's {@code renderCrosshair} self-cancels
- * when {@code Perspective.isFirstPerson()} returns false; we re-run
- * the same draw at TAIL of {@code render} when the user has the
- * Crosshair module enabled with the third-person toggle on.
+ * third-person view.
  *
- * <p>The vanilla render call already happens for us when we're in
- * first-person, so we deliberately skip the inject in that case
- * (otherwise we'd double-draw and the inversion-blend crosshair
- * would visibly flicker).
+ * <h3>How vanilla blocks the crosshair in F5</h3>
+ * {@code InGameHud.renderCrosshair} starts with:
+ * <pre>{@code
+ *   if (!client.options.getPerspective().isFirstPerson()) return;
+ * }</pre>
+ * Once this guard returns true vanilla skips the entire draw. We
+ * can't @Inject and reverse the {@code return} cleanly because by
+ * then the method has already short-circuited; intercepting the
+ * {@code isFirstPerson()} call itself is the precise fix.
+ *
+ * <h3>Implementation</h3>
+ * {@code @Redirect} on the single {@code Perspective.isFirstPerson()}
+ * call inside {@code renderCrosshair}. We pretend the camera is in
+ * first person whenever the user has the Crosshair module enabled
+ * with the third-person toggle on. Vanilla then proceeds with the
+ * usual draw as if the camera was still F1, painting the cross.
+ *
+ * <p>Other call sites of {@code Perspective.isFirstPerson()} (e.g.
+ * the entity render dispatcher's self-cull) are NOT affected,
+ * because @Redirect targets only the call inside the method we
+ * mixin into.
  */
 @Mixin(InGameHud.class)
 public abstract class InGameHudCrosshairMixin {
 
-    /** {@code @Shadow} pulls the private vanilla method into our
-     *  mixin scope so we can call it from the inject without
-     *  hitting the access modifier. The method signature must
-     *  match exactly - any drift between MC versions would surface
-     *  here as a missing-target error at apply-time. */
-    @Shadow
-    protected abstract void renderCrosshair(DrawContext context, RenderTickCounter tickCounter);
-
-    @Inject(method = "render", at = @At("TAIL"))
-    private void phaze$drawCrosshairThirdPerson(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+    @Redirect(
+            method = "renderCrosshair",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/option/Perspective;isFirstPerson()Z")
+    )
+    private boolean phaze$forceFirstPersonForCrosshair(Perspective perspective) {
         Crosshair module = Crosshair.getInstance();
-        if (module == null || !module.isEnabled()) return;
-        if (!module.showInThirdPerson.isValue()) return;
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.options == null) return;
-        // F1 still suppresses the crosshair - we respect that so
-        // clean screenshots stay clean.
-        if (mc.options.hudHidden) return;
-        // First-person already draws via vanilla. Only kick in
-        // when the camera is in F5.
-        if (mc.options.getPerspective().isFirstPerson()) return;
-        // Skip while a screen is open - matches vanilla behaviour
-        // (no crosshair when the inventory / chat is on top).
-        if (mc.currentScreen != null) return;
-
-        // Vanilla 15x15 crosshair sprite, drawn with the inversion
-        // blend. Same call vanilla makes during first-person; the
-        // shadow above lets us reach the private method.
-        renderCrosshair(context, tickCounter);
+        if (module != null && module.isEnabled() && module.showInThirdPerson.isValue()) {
+            // Lie to vanilla: claim we're in first person so the
+            // crosshair draw proceeds. The actual perspective
+            // value is preserved everywhere else - this redirect
+            // is scoped to the renderCrosshair method only.
+            MinecraftClient mc = MinecraftClient.getInstance();
+            // Still respect F1 (hudHidden) so cinematic screenshots
+            // stay clean. Vanilla itself doesn't gate on hudHidden
+            // in renderCrosshair - the InGameHud.render parent
+            // already short-circuits before calling us in that
+            // case - so this is just a defensive belt-and-braces.
+            if (mc != null && mc.options != null && mc.options.hudHidden) {
+                return perspective.isFirstPerson();
+            }
+            return true;
+        }
+        return perspective.isFirstPerson();
     }
 }
