@@ -8,6 +8,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 
 public final class AutoSprint extends Module {
     private static final AutoSprint INSTANCE = new AutoSprint();
+
+    public final vorga.phazeclient.api.feature.module.setting.implement.SectionSetting generalSection =
+            new vorga.phazeclient.api.feature.module.setting.implement.SectionSetting("General");
     public final BooleanSetting showInSprintHud = new BooleanSetting("Show in sprint hud", "Show AutoSprint in Sprint HUD instead of Vanilla").setValue(true);
 
     public static AutoSprint getInstance() {
@@ -16,7 +19,8 @@ public final class AutoSprint extends Module {
 
     private AutoSprint() {
         super("auto_sprint", "AutoSprint", ModuleCategory.UTILITIES, true, false);
-        setup(showInSprintHud);
+        showInSprintHud.setFullWidth(true);
+        setup(generalSection, showInSprintHud);
 
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }

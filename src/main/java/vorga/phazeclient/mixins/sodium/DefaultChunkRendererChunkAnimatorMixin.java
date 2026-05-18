@@ -163,7 +163,7 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
             @Local(argsOnly = true) ChunkShaderInterface shader,
             @Local(argsOnly = true) RenderRegion region) {
         ChunkAnimator animator = ChunkAnimator.getInstance();
-        if (animator == null || !animator.isEnabled() || region == null || shader == null) {
+        if (animator == null || region == null || shader == null) {
             return;
         }
 
@@ -174,6 +174,17 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
         // TAIL inject site later in this same setModelMatrixUniforms
         // invocation reads the SAME cache (we both run on the render
         // thread, no synchronisation needed).
+        //
+        // CRITICAL: this refresh runs unconditionally, BEFORE any
+        // isEnabled() check. When the module is toggled off mid-
+        // animation, the TAIL flush path needs an up-to-date cached
+        // offset location for the program currently bound; if we
+        // skipped the refresh because !isEnabled() we'd write zeros
+        // to a STALE location belonging to a different program (Iris
+        // shader-pass switches happen every frame), corrupting an
+        // unrelated uniform slot and leaving the actual animation
+        // uniform untouched - which is the exact "chunks frozen mid-
+        // air after disabling Chunk Animator" symptom users hit.
         if (shader != phaze$cachedShader) {
             int programId = GL20.glGetInteger(GL20.GL_CURRENT_PROGRAM);
             if (programId == 0) {
@@ -199,6 +210,12 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
             // guarantees the first upload re-zeroes (or refreshes)
             // its uniform state.
             phaze$lastUploadWasZero = false;
+        }
+        // Module disabled: cache is now refreshed for the TAIL flush
+        // to use, no fallback region-offset shift needed (the section
+        // animation it would amplify is gone). Bail.
+        if (!animator.isEnabled()) {
+            return;
         }
         // If the patched uniform exists, the per-section TAIL path
         // handles this region. Don't shift the region offset here -
@@ -255,7 +272,29 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
             CameraTransform cameraTransform,
             CallbackInfo ci) {
         ChunkAnimator animator = ChunkAnimator.getInstance();
-        if (animator == null || !animator.isEnabled() || region == null) {
+        if (animator == null || region == null) {
+            return;
+        }
+
+        // Module disabled mid-frame: flush a single zero array into
+        // u_PhazeChunkAnimOffset so the shader stops adding stale
+        // per-section offsets to every vertex. Without this, any
+        // sections that were mid-fall when the user toggled the
+        // module off freeze in mid-air at whatever the last upload
+        // told them - the user-reported "chunks stuck floating in
+        // the sky after disabling Chunk Animator" bug. Once
+        // phaze$lastUploadWasZero is true the GPU is already in the
+        // identity state, so subsequent regions on the same program
+        // can early-return; a shader switch (Iris pass change, etc.)
+        // resets the flag in @ModifyArgs and the next disabled-frame
+        // region of the new program does its own one-shot flush.
+        if (!animator.isEnabled()) {
+            if (phaze$cachedOffsetLoc < 0 || phaze$lastUploadWasZero) {
+                return;
+            }
+            java.util.Arrays.fill(PHAZE$SCRATCH, 0, 256, 0.0F);
+            GL20.glUniform1fv(phaze$cachedOffsetLoc, PHAZE$SCRATCH);
+            phaze$lastUploadWasZero = true;
             return;
         }
 
@@ -314,7 +353,15 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
         }
         GL20.glUniform1fv(phaze$cachedOffsetLoc, PHAZE$SCRATCH);
         if (phaze$cachedDirLoc >= 0) {
-            animator.writeAnimationDirection(PHAZE$DIR);
+            // The per-section path needs the "per-section" direction
+            // variant (always (0,1,0) for Top/Bottom) because
+            // writeRegionSectionYOffsets fills the array with SIGNED
+            // Y deltas: positive for Top, negative for Bottom. Using
+            // the old writeAnimationDirection here would flip
+            // Bottom's negative deltas back to positive Y inside the
+            // shader's "offset * dir" multiply, lifting the section
+            // above its target instead of below it.
+            animator.writeAnimationDirectionPerSection(PHAZE$DIR);
             GL20.glUniform3f(phaze$cachedDirLoc, PHAZE$DIR[0], PHAZE$DIR[1], PHAZE$DIR[2]);
         }
         phaze$lastUploadWasZero = !hasNonZero;

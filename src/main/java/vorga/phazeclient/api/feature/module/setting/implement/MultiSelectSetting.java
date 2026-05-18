@@ -68,7 +68,11 @@ public class MultiSelectSetting extends Setting {
     @Override
     public void reset() {
         if (defaultSelected != null) {
+            // Fire notifyChange after the assignment so the auto-save
+            // pipeline picks up the reset. Lombok's generated setter
+            // is just a field write - we have to do this by hand here.
             selected = new ArrayList<>(defaultSelected);
+            notifyChange();
         }
     }
 }

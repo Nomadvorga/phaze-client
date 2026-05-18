@@ -16,16 +16,25 @@ import vorga.phazeclient.implement.menu.MenuStyle;
 
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class TextComponent extends AbstractSettingComponent {
-    private boolean typing;
-    private final TextSetting setting;
-    private float rectX, rectY, rectWidth, rectHeight;
-    private boolean dragging;
-    private int cursorPosition = 0;
-    private int selectionStart = -1;
-    private int selectionEnd = -1;
-    private long lastClickTime = 0;
-    private float xOffset = 0;
-    private String text = "";
+    /** Globally-incrementing activation counter. Each click on a
+     *  TextComponent bumps {@link #ACTIVE_TEXT_COMPONENT_ID} and
+     *  records the new value into {@link #myActivationId}. The
+     *  render path then drops focus when our id no longer matches
+     *  the latest, which gives the "only one input typing at a time"
+     *  contract without an explicit sibling list. */
+    static int ACTIVE_TEXT_COMPONENT_ID = 0;
+    int myActivationId = -1;
+
+    boolean typing;
+    final TextSetting setting;
+    float rectX, rectY, rectWidth, rectHeight;
+    boolean dragging;
+    int cursorPosition = 0;
+    int selectionStart = -1;
+    int selectionEnd = -1;
+    long lastClickTime = 0;
+    float xOffset = 0;
+    String text = "";
 
     public TextComponent(TextSetting setting) {
         super(setting);
@@ -37,6 +46,17 @@ public class TextComponent extends AbstractSettingComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
+
+        // Drop focus if a different TextComponent has been clicked
+        // since we last claimed focus. Single global counter, so
+        // the most recently clicked input is always the one whose
+        // myActivationId == ACTIVE_TEXT_COMPONENT_ID.
+        if (typing && myActivationId != ACTIVE_TEXT_COMPONENT_ID) {
+            typing = false;
+            dragging = false;
+            clearSelection();
+        }
+
         var labelFont = Fonts.getSize(14, Fonts.Type.INTER_BOLD);
 
         boolean isModified = setting.isModified();
@@ -68,12 +88,43 @@ public class TextComponent extends AbstractSettingComponent {
         float textX = x + 10 + textOffset;
         labelFont.drawString(context.getMatrices(), wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
 
+        // Drag-to-move-cursor: ONLY the component that was clicked
+        // first holds the {@link #dragging} flag (set inside
+        // mouseClicked + mouseDragged). Other components reset their
+        // own flag to false in mouseDragged when they didn't
+        // actually receive the press, so a single drag gesture only
+        // ever updates one input's cursor. Mouse-released clears
+        // the flag.
+        if (dragging) {
+            cursorPosition = getCursorIndexAt(mouseX);
+            if (selectionStart == -1) selectionStart = cursorPosition;
+            selectionEnd = cursorPosition;
+        }
+
         updateXOffset(font, cursorPosition);
 
         String displayText = text.isEmpty() ? (setting.getText() == null ? "" : setting.getText()) : text;
         float inputTextY = centeredTextY(font, displayText.isEmpty() ? "I" : displayText, rectY, rectHeight);
         float cursorTop = inputTextY - 2.5F;
         float cursorHeight = Math.max(7.0F, renderedTextHeight(font, "I"));
+
+        // Scissor-clip everything we draw inside the input box so
+        // text + cursor + selection never bleed outside the rect
+        // when the cursor walks past the right edge. The clip is
+        // measured at the GL window level using the same scaled-
+        // GUI factor that DrawContext uses, so it matches the
+        // logical {@code rect*} coordinates we render into.
+        net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+        double sf = mc.getWindow().getScaleFactor();
+        int sx0 = (int) Math.round((rectX + 1) * sf);
+        int sy0 = (int) Math.round((rectY + 1) * sf);
+        int sx1 = (int) Math.round((rectX + rectWidth - 1) * sf);
+        int sy1 = (int) Math.round((rectY + rectHeight - 1) * sf);
+        // DrawContext.enableScissor uses logical (GUI) coords on
+        // 1.21.4, not raw window pixels, so feed it the un-scaled
+        // bounds. The check ensures we don't double-scale.
+        context.enableScissor((int) (rectX + 1), (int) (rectY + 1),
+                (int) (rectX + rectWidth - 1), (int) (rectY + rectHeight - 1));
 
         if (typing && selectionStart != -1 && selectionEnd != -1 && selectionStart != selectionEnd) {
             int start = Math.max(0, Math.min(getStartOfSelection(), text.length()));
@@ -106,20 +157,21 @@ public class TextComponent extends AbstractSettingComponent {
                     .build());
         }
 
-        if (dragging) {
-            cursorPosition = getCursorIndexAt(mouseX);
-
-            if (selectionStart == -1) {
-                selectionStart = cursorPosition + 1;
-            }
-            selectionEnd = cursorPosition;
-        }
+        context.disableScissor();
     }
 
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        dragging = true;
+        // Only continue drag if THIS component is the one whose
+        // input rect originally received the mousedown. Without
+        // this every visible TextComponent would treat every
+        // dragged mouse motion as an in-progress text selection,
+        // so dragging text in one input would also slide cursor
+        // in every other input on the same module.
+        if (!dragging) {
+            return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
@@ -134,8 +186,18 @@ public class TextComponent extends AbstractSettingComponent {
             return true;
         }
 
-        if (MathUtil.isHovered(mouseX, mouseY, rectX, rectY, rectWidth, rectHeight) && button == 0) {
+        boolean insideRect = MathUtil.isHovered(mouseX, mouseY, rectX, rectY, rectWidth, rectHeight);
+        if (insideRect && button == 0) {
             playButtonClickSound();
+            // Tell every OTHER text component to drop focus before
+            // we claim it. Otherwise a fresh click on input B while
+            // input A is still {@code typing} leaves both flagged
+            // typing=true and char input goes into both at once.
+            // Implemented as a static notification because
+            // AbstractSettingComponent doesn't expose a sibling-
+            // iteration API.
+            ACTIVE_TEXT_COMPONENT_ID++;
+            myActivationId = ACTIVE_TEXT_COMPONENT_ID;
             long currentTime = System.currentTimeMillis();
             if (currentTime - lastClickTime < 250) {
                 selectionStart = 0;
@@ -150,7 +212,11 @@ public class TextComponent extends AbstractSettingComponent {
             }
             return true;
         } else {
+            // Click landed outside our input rect. Drop focus AND
+            // any selection so the next char-typed event doesn't
+            // hit a stale typing=true.
             typing = false;
+            dragging = false;
             clearSelection();
         }
         return super.mouseClicked(mouseX, mouseY, button);

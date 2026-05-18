@@ -10,6 +10,7 @@ import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffectCategory;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.item.ItemStack;
@@ -473,7 +474,7 @@ public class InGameHudMixin {
                         getTextHudBaseWidth(client, dayTextWrapped), BASE_HEIGHT));
         // Direction HUD temporarily disabled by request.
         // TabHud/NametagHud now affect vanilla TAB list and world nametags directly via dedicated mixins.
-        String timeText = getTimeHudText(TimeHud.getInstance());
+        String timeText = getTimeHudText(TimeHud.getInstance(), client);
         final String timeTextWrapped = wrapTextWithBrackets(timeText, TimeHud.getInstance());
         renderBufferedHud(context, TimeHud.getInstance(), chatEditing, () ->
                 renderSimpleTextHud(context, client, TimeHud.getInstance(), timeTextWrapped, HUD_TIME, chatEditing, mouseX, mouseY, mouseDown,
@@ -578,18 +579,37 @@ public class InGameHudMixin {
         // so we don't bother caching at the {@code getCachedHudText}
         // layer; the rect-render lambda short-circuits on empty text
         // when no metric is enabled.
-        final vorga.phazeclient.implement.features.modules.other.BattleInfo battleInfo =
-                vorga.phazeclient.implement.features.modules.other.BattleInfo.getInstance();
+        // BattleInfo: rolling-average HUD. Renders either as a single
+        // text row (default horizontal layout) or one metric-per-line
+        // when the user enables Vertical Layout. The vertical-layout
+        // path uses an empty-text {@link #renderRectHud} call to size
+        // and paint the background / blur, then loops the metric lines
+        // ourselves so the rect height grows with the line count.
+        final vorga.phazeclient.implement.features.modules.hud.BattleInfo battleInfo =
+                vorga.phazeclient.implement.features.modules.hud.BattleInfo.getInstance();
         renderBufferedHud(context, battleInfo, chatEditing, () -> {
-            String biText;
-            if (chatEditing) {
-                biText = battleInfo.getPlaceholderText();
-            } else {
-                biText = battleInfo.getDisplayText();
-                if (biText.isEmpty()) {
-                    return;
-                }
+            java.util.List<String> rawLines = chatEditing
+                    ? battleInfo.getPlaceholderLines()
+                    : battleInfo.getDisplayLines();
+            if (rawLines.isEmpty()) {
+                return;
             }
+
+            if (battleInfo.verticalLayout.isValue()) {
+                renderBattleInfoVertical(context, client, battleInfo, rawLines, chatEditing,
+                        mouseX, mouseY, mouseDown, getHudDelta(battleInfo, chatEditing, deltaSeconds),
+                        inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY);
+                return;
+            }
+
+            // Horizontal layout: stitched single-line text row.
+            StringBuilder horizontal = new StringBuilder();
+            for (String line : rawLines) {
+                if (horizontal.length() > 0) horizontal.append(' ');
+                horizontal.append(line);
+            }
+            String biText = horizontal.toString();
+            if (biText.isEmpty()) return;
             String wrappedBiText = wrapTextWithBrackets(biText, battleInfo);
             renderRectHud(context, client, battleInfo, wrappedBiText, HUD_BATTLE_INFO,
                     chatEditing, mouseX, mouseY, mouseDown, getHudDelta(battleInfo, chatEditing, deltaSeconds),
@@ -602,8 +622,8 @@ public class InGameHudMixin {
         // FBO / direct-blur split for free. The custom path knows
         // how to size itself from the icon grid layout the module
         // computes.
-        final vorga.phazeclient.implement.features.modules.other.Consumable consumable =
-                vorga.phazeclient.implement.features.modules.other.Consumable.getInstance();
+        final vorga.phazeclient.implement.features.modules.hud.Consumable consumable =
+                vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance();
         renderBufferedHud(context, consumable, chatEditing, () ->
                 renderConsumableHud(context, client, consumable, HUD_CONSUMABLE,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(consumable, chatEditing, deltaSeconds),
@@ -1249,6 +1269,7 @@ public class InGameHudMixin {
 
         for (int i = 0; i < stacks.size(); i++) {
             String durabilityText = durabilityTexts.get(i);
+            ItemStack stackForColor = stacks.get(i);
             float rowY = i * rowHeight;
             float textWidth = getHudTextWidth(client, durabilityText, HUD_TEXT_SIZE);
 
@@ -1261,7 +1282,18 @@ public class InGameHudMixin {
 
             float textY = rowY + 4.0f;
 
-            renderScaledHudText(context, client, durabilityText, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+            // Color By Durability: pick a stoplight colour from the
+            // remaining vs max ratio of THIS row's stack. Falls back
+            // to white when the toggle is off (the inherited
+            // {@code renderScaledHudText} default), so the visual is
+            // unchanged on disabled.
+            int stackMax = stackForColor.getMaxDamage();
+            int stackRemaining = stackForColor.isDamageable()
+                    ? Math.max(0, stackMax - stackForColor.getDamage())
+                    : stackMax;
+            int textColor = module.colorForDurability(stackRemaining, stackMax);
+
+            renderScaledHudTextColored(context, client, durabilityText, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
         }
 
         if (chatEditing && armorHoverProgress > 0.05f) {
@@ -1289,6 +1321,79 @@ public class InGameHudMixin {
     }
 
     /**
+     * Vertical-layout renderer for {@code BattleInfo}. Uses the
+     * existing {@link #renderRectHud} pipeline to paint the rect
+     * background (with blur / preset / hover outline behaviour
+     * inherited automatically) at a height proportional to the
+     * number of metric rows, then draws each metric line as its
+     * own {@code "label:value"} row inside that rect. The rect is
+     * sized to fit the widest metric so all lines align flush-left.
+     *
+     * <p>Pulling the renderRectHud call up front means BattleInfo's
+     * vertical layout shares the exact drag / resize / hover-outline
+     * / handle behaviour of every other rect HUD - we don't have to
+     * reimplement any of it. The text pass after returns at the same
+     * matrix / scale state {@link #renderCoordinatesHud} uses, so
+     * line-height and centring math match the multi-row Coordinates
+     * HUD pixel-for-pixel.
+     */
+    private void renderBattleInfoVertical(
+            DrawContext context,
+            MinecraftClient client,
+            vorga.phazeclient.implement.features.modules.hud.BattleInfo module,
+            java.util.List<String> lines,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        float paddingX = 5.0f;
+        float paddingY = 4.0f;
+        float lineHeight = 10.0f;
+        float maxLineWidth = 0.0f;
+        for (String line : lines) {
+            maxLineWidth = Math.max(maxLineWidth, getHudTextWidth(client, line, HUD_TEXT_SIZE));
+        }
+        float baseWidth = Math.max(BASE_WIDTH, paddingX * 2.0f + maxLineWidth);
+        float baseHeight = Math.max(BASE_HEIGHT, paddingY * 2.0f + lines.size() * lineHeight);
+
+        // Use empty text for the rect-pass so renderRectHud doesn't
+        // paint a centred single-line label - we draw the per-row
+        // text ourselves below.
+        renderRectHud(context, client, module, "", HUD_BATTLE_INFO, chatEditing, mouseX, mouseY, mouseDown,
+                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                baseWidth, baseHeight);
+
+        float x = module.getHudX();
+        float y = module.getHudY();
+        float scale = module.getHudScale();
+        context.getMatrices().push();
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+
+        // Vertically centre the line block inside the rect; clamps to
+        // the top padding when the rect is exactly the line block plus
+        // padding (the common case) so single-line / multi-line both
+        // start at a consistent top offset.
+        float textBlockHeight = lines.size() * lineHeight;
+        float textOffsetY = (baseHeight - textBlockHeight) * 0.5f;
+        if (textOffsetY < paddingY) {
+            textOffsetY = paddingY;
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            float textY = textOffsetY + i * lineHeight;
+            renderScaledHudText(context, client, lines.get(i), x, y, paddingX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+        }
+
+        context.getMatrices().pop();
+    }
+
+    /**
      * Custom render path for the {@code Consumable} module - rect HUD
      * background reused via {@link RectHudModule#getResolvedBackgroundColor}
      * but populated with {@link DrawContext#drawItem} icons rather
@@ -1302,7 +1407,7 @@ public class InGameHudMixin {
     private void renderConsumableHud(
             DrawContext context,
             MinecraftClient client,
-            vorga.phazeclient.implement.features.modules.other.Consumable module,
+            vorga.phazeclient.implement.features.modules.hud.Consumable module,
             int hudIndex,
             boolean chatEditing,
             double mouseX,
@@ -1319,7 +1424,7 @@ public class InGameHudMixin {
             return;
         }
 
-        vorga.phazeclient.implement.features.modules.other.Consumable.Layout layout = module.computeLayout(chatEditing);
+        vorga.phazeclient.implement.features.modules.hud.Consumable.Layout layout = module.computeLayout(chatEditing);
         if (layout.entries().isEmpty()) {
             return;
         }
@@ -1435,6 +1540,30 @@ public class InGameHudMixin {
         context.getMatrices().scale(scale, scale, 1.0f);
 
         if (module.background.isValue()) {
+            float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
+            if (blurRadius > 0.0f) {
+                float safeScale = Math.max(scale, 1.0f);
+                float normalizedBlurRadius = blurRadius / safeScale;
+                float blurX = 0.0f;
+                float blurY = 0.0f;
+                float blurWidth = baseWidth;
+                float blurHeight = baseHeight;
+                float blurQuality = getOptimizedHudBlurQuality(normalizedBlurRadius);
+                long blurStateKey = makeHudBlurStateKey(normalizedBlurRadius, safeScale, blurX, blurY, blurWidth, blurHeight);
+                Blur.INSTANCE.registerHudBlurState(hudIndex, blurStateKey);
+
+                if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
+                    Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(), blurX, blurY, blurWidth, blurHeight)
+                            .round(0.0f)
+                            .softness(0.0f)
+                            .quality(blurQuality)
+                            .color(0xFFFFFFFF)
+                            .build());
+                }
+            }
+        }
+
+        if (module.background.isValue()) {
             int targetBgColor = module.getResolvedBackgroundColor(client);
             if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
                 RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
@@ -1456,7 +1585,7 @@ public class InGameHudMixin {
         // Padding mirrors the value computeLayout sized the rect to.
         float padding = 3.0f;
         float itemSize = 18.0f;
-        for (vorga.phazeclient.implement.features.modules.other.Consumable.IconEntry entry : layout.entries()) {
+        for (vorga.phazeclient.implement.features.modules.hud.Consumable.IconEntry entry : layout.entries()) {
             int iconX = Math.round(padding + entry.col() * itemSize);
             int iconY = Math.round(padding + entry.row() * itemSize);
             context.drawItem(entry.stack(), iconX, iconY);
@@ -2303,7 +2432,36 @@ public class InGameHudMixin {
             float rowY = paddingY + i * rowHeight;
             String name = potionNamesCache.get(i);
             String duration = potionDurationsCache.get(i);
-            renderScaledHudText(context, client, name, x, y, textX, rowY + 2.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
+
+            // Color By Type: pick a tint for the effect NAME based
+            // on the StatusEffect category (BENEFICIAL / HARMFUL /
+            // NEUTRAL). Fixed colors so no extra picker UI; the
+            // user toggles the whole behaviour with a single
+            // checkbox. When sampling the empty list (chat-edit
+            // preview) we have no live effect to query, so fall
+            // back to plain white.
+            int nameColor = 0xFFFFFFFF;
+            if (module.colorByType.isValue() && !sample && i < potionEffectsCache.size()) {
+                StatusEffectInstance effect = potionEffectsCache.get(i);
+                StatusEffectCategory cat = effect.getEffectType().value().getCategory();
+                if (cat == StatusEffectCategory.BENEFICIAL) nameColor = 0xFF55FF55;
+                else if (cat == StatusEffectCategory.HARMFUL) nameColor = 0xFFFF5555;
+            }
+
+            // Flash-on-expiry: pulse the name's alpha when there's
+            // less than 10 seconds left. Sin oscillator so the
+            // change is smooth and breathes at ~5Hz.
+            if (module.flashOnExpiry.isValue() && !sample && i < potionEffectsCache.size()) {
+                StatusEffectInstance effect = potionEffectsCache.get(i);
+                if (!effect.isInfinite() && effect.getDuration() < 200) {
+                    float pulse = (float) (0.5 + 0.5 * Math.sin(System.nanoTime() / 200_000_000.0));
+                    int origAlpha = (nameColor >>> 24) & 0xFF;
+                    int newAlpha = (int) (origAlpha * (0.45f + 0.55f * pulse));
+                    nameColor = (newAlpha << 24) | (nameColor & 0x00FFFFFF);
+                }
+            }
+
+            renderScaledHudTextColored(context, client, name, x, y, textX, rowY + 2.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), nameColor);
             renderScaledHudText(context, client, duration, x, y, textX, rowY + 12.0f, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
         }
 
@@ -2381,15 +2539,25 @@ public class InGameHudMixin {
         return days + (days == 1L ? " Day" : " Days");
     }
 
-    private static String getTimeHudText(TimeHud module) {
+    private static String getTimeHudText(TimeHud module, MinecraftClient client) {
         LocalTime now = LocalTime.now();
-        if (module.hour24.isValue()) {
-            return now.format(DateTimeFormatter.ofPattern("H:mm"));
+        boolean is24 = module.hour24.isValue();
+        boolean wantSeconds = module.showSeconds.isValue();
+        String pattern;
+        if (is24) {
+            pattern = wantSeconds ? "H:mm:ss" : "H:mm";
+        } else if (module.showAmPm.isValue()) {
+            pattern = wantSeconds ? "h:mm:ss a" : "h:mm a";
+        } else {
+            pattern = wantSeconds ? "h:mm:ss" : "h:mm";
         }
-        if (module.showAmPm.isValue()) {
-            return now.format(DateTimeFormatter.ofPattern("h:mm a", Locale.US));
+        String time = now.format(DateTimeFormatter.ofPattern(pattern, Locale.US));
+        if (module.showPhase.isValue() && client != null && client.world != null) {
+            TimeHud.Phase phase = module.phaseForTime(client.world.getTimeOfDay());
+            String label = module.colorPhase.isValue() ? phase.colorCode + phase.label + "§r" : phase.label;
+            return time + " " + label;
         }
-        return now.format(DateTimeFormatter.ofPattern("h:mm", Locale.US));
+        return time;
     }
 
     private static String getSessionText(SessionTimeHud module) {
@@ -2861,8 +3029,8 @@ public class InGameHudMixin {
                 || MovementSpeedHud.getInstance().isEnabled()
                 || WailaHud.getInstance().isEnabled()
                 || HealthIndicator.getInstance().isEnabled()
-                || vorga.phazeclient.implement.features.modules.other.BattleInfo.getInstance().isEnabled()
-                || vorga.phazeclient.implement.features.modules.other.Consumable.getInstance().isEnabled();
+                || vorga.phazeclient.implement.features.modules.hud.BattleInfo.getInstance().isEnabled()
+                || vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance().isEnabled();
     }
 
     private static boolean isAnyHudInteractionActive() {

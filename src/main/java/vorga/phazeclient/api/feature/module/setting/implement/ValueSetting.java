@@ -78,7 +78,17 @@ public class ValueSetting extends Setting {
     @Override
     public void reset() {
         if (defaultValue != null) {
-            this.value = defaultValue;
+            // Route through setValue() so notifyChange fires (auto-save
+            // markDirty hook) and the onChange callback runs - the
+            // previous "this.value = defaultValue" direct assignment
+            // bypassed both, which meant clicking the reset icon
+            // visually moved the slider but never persisted to disk
+            // (so the value reverted on the next session) and never
+            // recomputed dependent renderer state (HitRange's cached
+            // circle angles, for example - the slider thumb snapped
+            // back but the rendered circle stayed at the pre-reset
+            // radius until the user dragged the slider).
+            setValue(defaultValue);
         }
     }
 }

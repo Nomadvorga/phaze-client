@@ -32,6 +32,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 public final class AspectRatio extends Module {
     private static final AspectRatio INSTANCE = new AspectRatio();
 
+    public final vorga.phazeclient.api.feature.module.setting.implement.SectionSetting generalSection =
+            new vorga.phazeclient.api.feature.module.setting.implement.SectionSetting("General");
+
     public final BooleanSetting usePreset = new BooleanSetting(
             "Use Preset",
             "Pick from a list of common aspect ratios instead of a free-form factor"
@@ -55,7 +58,7 @@ public final class AspectRatio extends Module {
         factor.setFullWidth(true);
         factor.setVisible(() -> !usePreset.isValue());
 
-        setup(usePreset, preset, factor);
+        setup(generalSection, usePreset, preset, factor);
     }
 
     public static AspectRatio getInstance() {

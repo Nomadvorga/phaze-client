@@ -18,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.hud.TabHud;
 import vorga.phazeclient.implement.features.modules.other.Animations;
+import vorga.phazeclient.implement.features.modules.other.NickHider;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -177,6 +178,33 @@ public class PlayerListHudMixin {
         }
         MutableText styled = original.copy().formatted(Formatting.AQUA, Formatting.BOLD);
         cir.setReturnValue(styled);
+    }
+
+    /**
+     * Rewrite the tab list display name through {@link NickHider} so the
+     * configured replacement string surfaces in the vanilla TAB overlay.
+     * Chained at RETURN so it observes the value set by
+     * {@link #phaze$styleOwnName} - if highlightOwn is on we still want
+     * the AQUA/BOLD styling, just with the username swapped to the
+     * replacement. {@link NickHider#rewrite} preserves style per-fragment
+     * via {@link Text#visit}, so the highlight survives intact.
+     *
+     * <p>The hider short-circuits when the module is disabled or the
+     * decorated name doesn't contain the local username (e.g. a server
+     * that hides usernames in tab and only shows ranks), so the per-tick
+     * cost on a vanilla server is a single {@code String.contains}.
+     */
+    @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
+    private void phaze$nickHideTabName(PlayerListEntry entry, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Text> cir) {
+        NickHider hider = NickHider.getInstance();
+        if (hider == null || !hider.isEnabled()) {
+            return;
+        }
+        Text current = cir.getReturnValue();
+        Text rewritten = hider.rewrite(current);
+        if (rewritten != current) {
+            cir.setReturnValue(rewritten);
+        }
     }
 
 

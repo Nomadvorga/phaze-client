@@ -62,6 +62,17 @@ public abstract class InGameHudTabSlideMixin {
             return;
         }
 
+        // F1 (hudHidden) suppresses the entire HUD - including the tab
+        // list, scoreboard and any close animation that would otherwise
+        // run. Snap the slide animation to its resting closed state and
+        // bail before we tick or force-render so the user sees nothing
+        // at all when F1 is held instead of a one-off close-out arc.
+        if (client.options.hudHidden) {
+            module.snapTabClosed();
+            phaze$wasOpenedThisCycle = false;
+            return;
+        }
+
         boolean keyPressed = client.options.playerListKey.isPressed();
         // Tick once per frame regardless of which branch we end up in - this
         // is the single source of truth for the offset that PlayerListHudMixin

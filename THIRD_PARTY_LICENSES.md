@@ -39,3 +39,69 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+---
+
+## Inf Chat History (xBackpack/InfChatHistory)
+
+The Longer Chat History feature inside
+`vorga.phazeclient.implement.features.modules.other.ChatHelper`
+(plus the supporting mixin
+`vorga.phazeclient.mixins.ChatHudHistoryLimitMixin`) is adapted from
+[InfChatHistory](https://github.com/xBackpack/InfChatHistory) by
+xBackpack, released under CC0 1.0 Universal (Public Domain
+Dedication). The upstream `ChatComponent` mixin targets Forge yarn
+mappings; the Phaze port retargets the Yarn `ChatHud` constant uses
+(visible-message cap, message cap, and message-history cap) and adds a
+configurable slider plus a per-module toggle.
+
+```
+Creative Commons Legal Code
+
+CC0 1.0 Universal
+
+Affirmer hereby overtly, fully, permanently, irrevocably and
+unconditionally waives, abandons, and surrenders all of Affirmer's
+Copyright and Related Rights and associated claims and causes of
+action, whether now known or unknown, in the Work in all territories
+worldwide, for the maximum duration provided by applicable law or
+treaty, in any current or future medium and for any number of copies,
+and for any purpose whatsoever, including without limitation
+commercial, advertising or promotional purposes.
+
+THE WORK IS PROVIDED "AS-IS" AND THE AFFIRMER MAKES NO REPRESENTATIONS
+OR WARRANTIES OF ANY KIND CONCERNING THE WORK, EXPRESS, IMPLIED,
+STATUTORY OR OTHERWISE, INCLUDING WITHOUT LIMITATION WARRANTIES OF
+TITLE, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+NON-INFRINGEMENT, OR THE ABSENCE OF LATENT OR OTHER DEFECTS, ACCURACY,
+OR THE PRESENT OR ABSENCE OF ERRORS, WHETHER OR NOT DISCOVERABLE.
+
+Full text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+```
+
+---
+
+## No Hand Sway (O3kar/no-hand-sway)
+
+The No Hand Sway feature inside
+`vorga.phazeclient.implement.features.modules.other.ChangeHand`
+(plus the supporting mixin
+`vorga.phazeclient.mixins.HeldItemRendererNoSwayMixin`) is adapted
+from [no-hand-sway](https://github.com/O3kar/no-hand-sway) by O3kar,
+licensed under the Apache License, Version 2.0.
+
+```
+Copyright (c) O3kar
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```

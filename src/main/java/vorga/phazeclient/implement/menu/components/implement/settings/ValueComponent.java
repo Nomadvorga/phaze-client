@@ -198,10 +198,18 @@ public class ValueComponent extends AbstractSettingComponent {
         }
 
         float thumbX = MathHelper.clamp((float) (sliderStartX + animation), sliderStartX, sliderStartX + sliderWidth);
+        // One SDF rect for the whole thumb: fill = sliderColor for
+        // the inner disc, outline = thumbBgColor as the 1 px ring.
+        // Visually identical to the previous (outer thumbBgColor
+        // disc + smaller sliderColor disc on top) pair, but in a
+        // single rasterisation pass.
+        float thumbBorder = (THUMB_OUTER - THUMB_INNER) * 0.5F;
         rectangle.render(ShapeProperties.create(matrix, thumbX - THUMB_OUTER / 2, sliderY - THUMB_OUTER / 2, THUMB_OUTER, THUMB_OUTER)
-                .round(THUMB_OUTER / 2).color(thumbBgColor).build());
-        rectangle.render(ShapeProperties.create(matrix, thumbX - THUMB_INNER / 2, sliderY - THUMB_INNER / 2, THUMB_INNER, THUMB_INNER)
-                .round(THUMB_INNER / 2).color(sliderColor).build());
+                .round(THUMB_OUTER / 2)
+                .thickness(thumbBorder)
+                .outlineColor(thumbBgColor)
+                .color(sliderColor)
+                .build());
 
         return difference;
     }

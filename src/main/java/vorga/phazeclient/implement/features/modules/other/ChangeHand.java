@@ -86,11 +86,32 @@ public final class ChangeHand extends Module {
     public final BooleanSetting uponImpact = new BooleanSetting(
             "Upon Impact",
             "Flip the main arm every time you successfully hit an entity"
-    ).setValue(true);
+    ).setValue(false);
     public final BindSetting keybind = new BindSetting(
             "Bind",
             "Key to manually flip the main arm. Only used when Upon Impact is OFF."
     );
+
+    /**
+     * No Hand Sway. When ON the camera-driven yaw / pitch follow-along
+     * sway that vanilla applies in
+     * {@code HeldItemRenderer.renderItem(float, MatrixStack,
+     * VertexConsumerProvider$Immediate, ClientPlayerEntity, int)}
+     * is suppressed, freezing the held item rotationally relative to
+     * the camera. Adapted from
+     * <a href="https://github.com/O3kar/no-hand-sway">no-hand-sway</a>
+     * by O3kar (Apache License 2.0). The mixin
+     * {@code HeldItemRendererNoSwayMixin} surrounds the two
+     * {@code MatrixStack.multiply(Quaternionf)} calls that vanilla
+     * issues from that overload with a {@code WrapWithCondition}
+     * that returns {@code false} when this toggle is on, skipping
+     * the rotation while leaving the rest of the matrix work intact.
+     */
+    public final SectionSetting swaySection = new SectionSetting("Hand Sway");
+    public final BooleanSetting noHandSway = new BooleanSetting(
+            "No Hand Sway",
+            "Stop the camera-following yaw/pitch sway on your held item, keeping it rotationally fixed relative to the camera"
+    ).setValue(false);
 
     private ChangeHand() {
         super("changehand", "Change Hand", ModuleCategory.OTHER);
@@ -107,6 +128,7 @@ public final class ChangeHand extends Module {
         offHandScale.setFullWidth(true);
         uponImpact.setFullWidth(true);
         keybind.setFullWidth(true);
+        noHandSway.setFullWidth(true);
         // The bind only makes sense when Upon Impact is OFF - otherwise
         // impacts already flip the arm and a manual key would just be
         // a redundant second source of input that fights over the arm
@@ -115,7 +137,8 @@ public final class ChangeHand extends Module {
         setup(
                 mainHandSection, mainHandX, mainHandY, mainHandZ, mainHandScale,
                 offHandSection, offHandX, offHandY, offHandZ, offHandScale,
-                switchSection, uponImpact, keybind
+                switchSection, uponImpact, keybind,
+                swaySection, noHandSway
         );
     }
 

@@ -59,7 +59,12 @@ public class TextSetting extends Setting {
     @Override
     public void reset() {
         if (defaultText != null) {
-            this.text = defaultText;
+            // Route through setText() so notifyChange fires and the
+            // auto-save pipeline picks up the reset. Bypassing it (the
+            // previous direct assignment) meant the reset value never
+            // hit disk and the user's "reset to default" silently
+            // reverted on the next session.
+            setText(defaultText);
         }
     }
 }
