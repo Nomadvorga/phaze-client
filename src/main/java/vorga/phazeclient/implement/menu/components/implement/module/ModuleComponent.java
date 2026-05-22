@@ -140,6 +140,13 @@ public class ModuleComponent extends AbstractComponent {
         this.isHovered = isHover(mouseX, mouseY);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
+        // Dynamic cursor: a hovered module card is clickable (toggle /
+        // open settings), so request the hand shape. Commit happens at
+        // ScreenCursorMixin TAIL.
+        if (isHovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
+
         boolean currentModuleState = module.isState();
         if (currentModuleState != lastModuleState) {
             outlineColorAnimation.setDirection(currentModuleState ? Direction.FORWARDS : Direction.BACKWARDS);

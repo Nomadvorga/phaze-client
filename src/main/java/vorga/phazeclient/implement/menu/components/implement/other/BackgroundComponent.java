@@ -60,6 +60,11 @@ public class BackgroundComponent extends AbstractComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         MatrixStack matrix = context.getMatrices();
+        // Sidebar is hidden while the CONFIGS view is active so the
+        // configs list spans the full width of the menu's content
+        // pane. Keep the same border / background panels otherwise so
+        // the menu chrome stays identical with or without the sidebar.
+        boolean configsOpen = MenuScreen.INSTANCE.isConfigsViewOpen();
 
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(8).softness(1).thickness(2)
@@ -73,20 +78,28 @@ public class BackgroundComponent extends AbstractComponent {
         rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + 1.0F, width - 2.0F, HEADER_HEIGHT)
                 .round(7, 0, 7, 0).color(applyGlobalAlpha(MenuStyle.PANEL_HEADER)).build());
 
-        rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT + 1.0F, SIDEBAR_WIDTH - 1.0F, height - HEADER_HEIGHT - 2.0F)
-                .round(0, 0, 0, 7).color(applyGlobalAlpha(MenuStyle.PANEL_SIDEBAR)).build());
+        if (!configsOpen) {
+            rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT + 1.0F, SIDEBAR_WIDTH - 1.0F, height - HEADER_HEIGHT - 2.0F)
+                    .round(0, 0, 0, 7).color(applyGlobalAlpha(MenuStyle.PANEL_SIDEBAR)).build());
 
-        rectangle.render(ShapeProperties.create(matrix, x + SIDEBAR_WIDTH, y + HEADER_HEIGHT + 1.0F, width - SIDEBAR_WIDTH - 1.0F, height - HEADER_HEIGHT - 2.0F)
-                .round(0, 7, 0, 0).color(applyGlobalAlpha(MenuStyle.PANEL_CONTENT)).build());
+            rectangle.render(ShapeProperties.create(matrix, x + SIDEBAR_WIDTH, y + HEADER_HEIGHT + 1.0F, width - SIDEBAR_WIDTH - 1.0F, height - HEADER_HEIGHT - 2.0F)
+                    .round(0, 7, 0, 0).color(applyGlobalAlpha(MenuStyle.PANEL_CONTENT)).build());
 
-        rectangle.render(ShapeProperties.create(matrix, x + SIDEBAR_WIDTH, y + HEADER_HEIGHT + 1.0F, 1.0F, height - HEADER_HEIGHT - 2.0F)
-                .color(applyGlobalAlpha(MenuStyle.BORDER)).build());
+            rectangle.render(ShapeProperties.create(matrix, x + SIDEBAR_WIDTH, y + HEADER_HEIGHT + 1.0F, 1.0F, height - HEADER_HEIGHT - 2.0F)
+                    .color(applyGlobalAlpha(MenuStyle.BORDER)).build());
+        } else {
+            // Full-width content pane (no sidebar separator).
+            rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT + 1.0F, width - 2.0F, height - HEADER_HEIGHT - 2.0F)
+                    .round(0, 0, 7, 7).color(applyGlobalAlpha(MenuStyle.PANEL_CONTENT)).build());
+        }
         rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT, width - 2.0F, 1.0F)
                 .color(applyGlobalAlpha(MenuStyle.BORDER)).build());
 
         renderHeader(context, mouseX, mouseY);
-        renderConfigs(context, mouseX, mouseY);
-        renderSidebarFooter(context, mouseX, mouseY);
+        if (!configsOpen) {
+            renderConfigs(context, mouseX, mouseY);
+            renderSidebarFooter(context, mouseX, mouseY);
+        }
     }
 
     private void renderHeader(DrawContext context, int mouseX, int mouseY) {
@@ -105,9 +118,11 @@ public class BackgroundComponent extends AbstractComponent {
                 0.0F
         );
 
-        String[] labels = {"MODS", "SETTINGS"};
+        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
         boolean settingsActive = isSettingsTabActive();
-        boolean[] active = {!settingsActive, settingsActive};
+        boolean configsActive = isConfigsTabActive();
+        boolean modsActive = !settingsActive && !configsActive;
+        boolean[] active = {modsActive, settingsActive, configsActive};
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
             totalTabsWidth += getTopTabWidth(labels[i]);
@@ -115,11 +130,21 @@ public class BackgroundComponent extends AbstractComponent {
                 totalTabsWidth += TOP_TAB_GAP;
             }
         }
+        // Reserve space for the import-key "+" button that lives
+        // just to the right of the CONFIGS tab. Including it in the
+        // centring math keeps the tab cluster + plus visually
+        // balanced about the menu's horizontal centreline instead of
+        // shifting left when the plus is shown.
+        totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
 
         float tabsX = x + width / 2F - totalTabsWidth / 2.0F;
         for (int i = 0; i < labels.length; i++) {
             tabsX += drawTopTab(context, mouseX, mouseY, tabsX, labels[i], active[i]) + TOP_TAB_GAP;
         }
+        // "+" - opens the import-from-key modal. We render it as a
+        // square chip the same height as the top tabs so the strip
+        // reads as one cohesive row of controls.
+        drawImportPlus(context, mouseX, mouseY, tabsX);
     }
 
     private float getTopTabWidth(String label) {
@@ -258,12 +283,12 @@ public class BackgroundComponent extends AbstractComponent {
                     0.0F
             );
 
-            // Hide the delete icon on (a) the immutable "default" entry
-            // and (b) whichever config is currently active. The active
-            // guard mirrors ConfigManager.deleteConfig which already
-            // refuses to delete the active config; without this, the
-            // user would see a clickable cross that silently no-ops.
-            if (!config.equalsIgnoreCase("default") && !active) {
+            // Always show the delete icon - even on "default" and on
+            // the active config. ConfigManager.deleteConfig handles
+            // both: default is a regular file that can be recreated
+            // by the next save, and deleting the active config
+            // auto-switches to the next available config.
+            {
                 float iconSize = 6.5F;
                 float deleteX = deleteSectionX(rowX, rowWidth) + (CONFIG_DELETE_WIDTH - iconSize) / 2.0F;
                 float iconY = rowY + (CONFIG_ROW_HEIGHT - iconSize) / 2.0F;
@@ -357,6 +382,14 @@ public class BackgroundComponent extends AbstractComponent {
             return true;
         }
 
+        // While CONFIGS view is open the sidebar isn't rendered, so
+        // its click handlers (config rows, NEW CONFIG, EDIT HUD)
+        // would react to clicks in the now full-width content pane
+        // where they have no visible widgets. Skip them entirely.
+        if (MenuScreen.INSTANCE.isConfigsViewOpen()) {
+            return false;
+        }
+
         float footerX = x + 4.0F;
         float footerWidth = SIDEBAR_WIDTH - 8.0F;
         float buttonGap = 4.0F;
@@ -387,16 +420,14 @@ public class BackgroundComponent extends AbstractComponent {
             }
 
             if (isDeleteHovered(mouseX, mouseY, rowY)) {
-                // Only allow deletion when both (a) it's not the immutable
-                // "default" entry, and (b) it's not the currently active
-                // config. Mirrors the renderConfigs guard so the click
-                // region stays in sync with the visual icon.
-                boolean isActive = config.equalsIgnoreCase(configManager.getCurrentConfigName());
-                if (!config.equalsIgnoreCase("default") && !isActive) {
-                    playButtonClickSound();
-                    configManager.deleteConfig(config);
-                    return true;
-                }
+                // Default is now a regular file (no special-cased
+                // redirect), and deleteConfig safely auto-switches to
+                // the next available config when the user nukes the
+                // active one. Both restrictions removed - if the user
+                // wants their config gone, give it to them.
+                playButtonClickSound();
+                configManager.deleteConfig(config);
+                return true;
             }
 
             if (MathUtil.isHovered(mouseX, mouseY, rowX, rowY, rowWidth, CONFIG_ROW_HEIGHT)) {
@@ -552,7 +583,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private boolean handleTopTabClick(double mouseX, double mouseY) {
-        String[] labels = {"MODS", "SETTINGS"};
+        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
             totalTabsWidth += getTopTabWidth(labels[i]);
@@ -560,6 +591,9 @@ public class BackgroundComponent extends AbstractComponent {
                 totalTabsWidth += TOP_TAB_GAP;
             }
         }
+        // Match the offset reservation in renderHeader so the plus
+        // hit-target sits exactly under what the user sees.
+        totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
 
         float tabsX = x + width / 2F - totalTabsWidth / 2.0F;
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
@@ -569,19 +603,29 @@ public class BackgroundComponent extends AbstractComponent {
                 playButtonClickSound();
                 if ("SETTINGS".equals(label)) {
                     MenuScreen.INSTANCE.openModuleDetail(Theme.getInstance());
+                    MenuScreen.INSTANCE.closeConfigsView();
+                } else if ("CONFIGS".equals(label)) {
+                    MenuScreen.INSTANCE.openConfigsView();
                 } else {
                     MenuScreen.INSTANCE.closeModuleDetail();
+                    MenuScreen.INSTANCE.closeConfigsView();
                     MenuScreen.INSTANCE.setCategory(ModuleCategory.ALL);
                 }
                 return true;
             }
             tabsX += tabWidth + TOP_TAB_GAP;
         }
+        // Plus button right after the last tab.
+        if (MathUtil.isHovered(mouseX, mouseY, tabsX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)) {
+            playButtonClickSound();
+            MenuScreen.INSTANCE.openConfigImportModal();
+            return true;
+        }
         return false;
     }
 
     private boolean isTopTabHovered(double mouseX, double mouseY) {
-        String[] labels = {"MODS", "SETTINGS"};
+        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
             totalTabsWidth += getTopTabWidth(labels[i]);
@@ -589,6 +633,7 @@ public class BackgroundComponent extends AbstractComponent {
                 totalTabsWidth += TOP_TAB_GAP;
             }
         }
+        totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
 
         float tabsX = x + width / 2F - totalTabsWidth / 2.0F;
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
@@ -599,11 +644,59 @@ public class BackgroundComponent extends AbstractComponent {
             }
             tabsX += tabWidth + TOP_TAB_GAP;
         }
+        if (MathUtil.isHovered(mouseX, mouseY, tabsX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)) {
+            return true;
+        }
         return false;
+    }
+
+    /**
+     * Renders the import-from-key "+" button. Square chip the same
+     * height as the top tabs, sitting one TOP_TAB_GAP after the
+     * CONFIGS tab. Hover animates a soft outline glow so the hit
+     * target reads even when there's no label text in the chip.
+     */
+    private void drawImportPlus(DrawContext context, int mouseX, int mouseY, float tabX) {
+        MatrixStack matrix = context.getMatrices();
+        float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
+        boolean hovered = MathUtil.isHovered(mouseX, mouseY, tabX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT);
+        Animation hoverAnimation = topTabHoverAnimations.computeIfAbsent("__plus__",
+                ignored -> new DecelerateAnimation().setMs(180).setValue(1));
+        hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
+        float hoverProgress = hoverAnimation.getOutputFloat();
+
+        int baseBorderColor = MenuStyle.BORDER;
+        int hoverBorderColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.BORDER_LIGHT, 0.45F);
+        int borderColor = MenuStyle.mix(baseBorderColor, hoverBorderColor, hoverProgress);
+        int textColor = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.45F + hoverProgress * 0.55F);
+
+        rectangle.render(ShapeProperties.create(matrix, tabX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)
+                .round(2).thickness(3.0F)
+                .outlineColor(applyGlobalAlpha(borderColor))
+                .color(MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, 0))
+                .build());
+
+        // "+" drawn as two thin rounded bars centred in the chip.
+        // Easier than relying on font glyph metrics for a single
+        // character that has to look pixel-aligned against the chip.
+        float cx = tabX + TOP_TAB_HEIGHT * 0.5F;
+        float cy = tabY + TOP_TAB_HEIGHT * 0.5F;
+        float arm = TOP_TAB_HEIGHT * 0.30F;
+        float thick = 1.2F;
+        rectangle.render(ShapeProperties.create(matrix,
+                cx - arm, cy - thick * 0.5F, arm * 2.0F, thick)
+                .round(thick * 0.5F).color(applyGlobalAlpha(textColor)).build());
+        rectangle.render(ShapeProperties.create(matrix,
+                cx - thick * 0.5F, cy - arm, thick, arm * 2.0F)
+                .round(thick * 0.5F).color(applyGlobalAlpha(textColor)).build());
     }
 
     private boolean isSettingsTabActive() {
         return MenuScreen.INSTANCE.getModuleDetailComponent().isOpen()
                 && MenuScreen.INSTANCE.getModuleDetailComponent().getModule() == Theme.getInstance();
+    }
+
+    private boolean isConfigsTabActive() {
+        return MenuScreen.INSTANCE.isConfigsViewOpen();
     }
 }

@@ -307,6 +307,15 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AucHelper.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AucHelper.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Binds.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Binds.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.MentionHighlight.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.MentionHighlight.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.SkyCustomizer.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.SkyCustomizer.getInstance());
+        }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoRespawn.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoRespawn.getInstance());
         }
@@ -345,12 +354,28 @@ public class Main implements ModInitializer {
         // immediately re-mark the config dirty and trigger a save
         // pass that overwrites the just-loaded data.
         vorga.phazeclient.api.feature.module.Module.setGlobalStateChangeListener(
-                module -> configManager.markDirty()
+                module -> configManager.flushNow()
         );
         configManager.enableAutoSave();
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
                 client -> configManager.flushIfDirty()
         );
+
+        // Last-chance save on JVM shutdown. Catches Alt+F4 / window
+        // close / SIGTERM that ClientLifecycleEvents.CLIENT_STOPPING
+        // doesn't fire on, so any change made within the debounce
+        // window before a hard exit still persists. Hard kills (kill
+        // -9 / process tree termination from Task Manager) bypass
+        // shutdown hooks, but those are not recoverable in any
+        // user-mode code.
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                configManager.saveCurrentConfig();
+            } catch (Throwable ignored) {
+                // Shutdown hooks must never throw - the JVM is already
+                // tearing down and any exception here is unobservable.
+            }
+        }, "phaze-config-shutdown"));
 
         // Final save on game close. The tick-based debounce can miss a
         // change made within ~250ms of quitting; this catches it. We call

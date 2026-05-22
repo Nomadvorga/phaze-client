@@ -266,6 +266,13 @@ public class CategoryComponent extends AbstractComponent {
         boolean isHovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
+        // Dynamic cursor: category chips behave like buttons - request
+        // the hand pointer while hovered. The end-of-frame commit lives
+        // in ScreenCursorMixin.
+        if (isHovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
+
         float hoverProgress = hoverAnimation.getOutputFloat();
         float selectionProgress = selectionAnimation.getOutputFloat();
 

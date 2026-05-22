@@ -230,25 +230,168 @@ public final class ConfigManager {
     public void saveConfig(String configName) {
         save(getConfigFile(configName));
     }
+
+    /**
+     * Serialize the current in-memory configuration into a portable
+     * shareable string. The format is:
+     *
+     *   PHAZE1:<base64(gzip(JSON))>
+     *
+     * <p>The {@code PHAZE1:} prefix is a magic marker so a clipboard
+     * paste with foreign text can be rejected fast in {@link
+     * #importFromString}; gzip+base64 keeps the payload short enough
+     * to fit in a Discord message (typical config compresses 5-10x).
+     * The JSON body is the same shape as what {@link #save} writes to
+     * disk, so anything saveable on disk is also shareable.
+     *
+     * <p>Returns {@code null} if the serialization fails - the caller
+     * should fall back to displaying an error rather than feeding a
+     * garbage string to the clipboard.
+     */
+    public String exportCurrentToString() {
+        try {
+            JsonObject config = buildCurrentConfigJson();
+            String json = GSON.toJson(config);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.GZIPOutputStream gz = new java.util.zip.GZIPOutputStream(out)) {
+                gz.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            String b64 = java.util.Base64.getEncoder().withoutPadding().encodeToString(out.toByteArray());
+            return "PHAZE1:" + b64;
+        } catch (Throwable t) {
+            t.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Decode a {@code PHAZE1:...} share-string and apply it as the
+     * current config (after persisting the result to a fresh
+     * {@code imported_<n>} entry so the user doesn't overwrite their
+     * existing setup by accident).
+     *
+     * <p>Returns the name of the new config on success, or {@code null}
+     * if the input wasn't a valid share-string. The active config is
+     * then switched to the imported one.
+     */
+    public String importFromString(String shareString) {
+        if (shareString == null) return null;
+        String trimmed = shareString.trim();
+        // Tolerate CRLF / surrounding quotes from clipboard pastes.
+        if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length() > 1) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1);
+        }
+        if (!trimmed.startsWith("PHAZE1:")) {
+            return null;
+        }
+        try {
+            String b64 = trimmed.substring("PHAZE1:".length());
+            byte[] gz = java.util.Base64.getDecoder().decode(b64);
+            byte[] raw;
+            try (java.util.zip.GZIPInputStream in = new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(gz))) {
+                raw = in.readAllBytes();
+            }
+            String json = new String(raw, java.nio.charset.StandardCharsets.UTF_8);
+            JsonObject parsed = GSON.fromJson(json, JsonObject.class);
+            if (parsed == null) {
+                return null;
+            }
+            // Persist as a brand-new config so we don't overwrite
+            // anything the user already had on disk. Pick a slot that
+            // doesn't already exist on disk.
+            String name = nextImportedName();
+            File target = getConfigFile(name);
+            try (FileWriter writer = new FileWriter(target)) {
+                GSON.toJson(parsed, writer);
+            }
+            // Switch to the new config; loadConfig handles the
+            // dirty-suppression / autosave-redirect interactions.
+            loadConfig(name);
+            return name;
+        } catch (Throwable t) {
+            t.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Pick the next free {@code imported_<n>} slot. The simple
+     * sequential search is fine because a user is unlikely to ever
+     * cross the double-digit imports threshold and the directory
+     * scan is one stat per attempted name.
+     */
+    private String nextImportedName() {
+        for (int i = 1; i < 1000; i++) {
+            String candidate = i == 1 ? "imported" : "imported_" + i;
+            if (!getConfigFile(candidate).exists()) {
+                return candidate;
+            }
+        }
+        return "imported_" + System.currentTimeMillis();
+    }
+
+    /**
+     * Build the same JSON tree {@link #save} writes, but return it
+     * directly instead of serializing to disk. Shared by the regular
+     * save path and the export-to-string path so the two never drift
+     * apart.
+     */
+    private JsonObject buildCurrentConfigJson() {
+        JsonObject config = new JsonObject();
+        JsonObject modules = new JsonObject();
+
+        for (Module module : Main.getInstance().getModuleProvider().getModules()) {
+            JsonObject moduleData = new JsonObject();
+            moduleData.addProperty("enabled", module.isState());
+            moduleData.addProperty("key", module.getKey());
+
+            if (module instanceof RectHudModule rectHudModule) {
+                moduleData.addProperty("hud_x", rectHudModule.getHudX());
+                moduleData.addProperty("hud_y", rectHudModule.getHudY());
+                moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
+            } else if (module instanceof ArmorHud armorHud) {
+                moduleData.addProperty("hud_x", armorHud.getHudX());
+                moduleData.addProperty("hud_y", armorHud.getHudY());
+                moduleData.addProperty("hud_scale", armorHud.getHudScale());
+            }
+
+            JsonObject settings = new JsonObject();
+            for (Setting setting : module.settings()) {
+                try {
+                    serializeSetting(setting, settings);
+                } catch (Throwable ignored) {}
+            }
+            moduleData.add("settings", settings);
+            modules.add(module.getName(), moduleData);
+        }
+
+        config.add("modules", modules);
+        vorga.phazeclient.implement.features.modules.client.Theme theme = vorga.phazeclient.implement.features.modules.client.Theme.getInstance();
+        config.addProperty("theme", theme.menuTheme.getSelected());
+        config.addProperty("blurRadius", theme.blurRadius.getValue());
+        return config;
+    }
     
     /**
      * Persists the in-memory state to whatever config is currently active.
      *
-     * <p>Special-case: the {@code default} config is treated as a
-     * read-only baseline (it's effectively a "factory reset" target).
-     * Any attempt to write to it - whether via the auto-save pipeline
-     * after the user changes a setting, or via an explicit save - is
-     * transparently redirected to a config named {@code autosave}, which
-     * is created on demand and switched to the active config so the
-     * {@code default} file stays pristine. This way the user can always
-     * "Reset to Default" without first having to remember which settings
-     * they had changed.
+     * <p>Each named config (including {@code default}) is treated as a
+     * regular file: auto-save writes straight into the active file and
+     * never silently swaps the active config behind the user's back.
+     * The previous "default redirects to autosave" trick caused two
+     * separate bugs:
+     * <ul>
+     *   <li>Settings appeared to merge between configs because changes
+     *       made on {@code default} kept being written to {@code autosave}
+     *       and bled into whatever happened to load that file next.</li>
+     *   <li>Switching to {@code default} silently flipped the active
+     *       config back to {@code autosave} on the very next setting
+     *       change.</li>
+     * </ul>
+     * If the user wants a true factory reset, they can delete their
+     * {@code default.Phaze} file - the in-code defaults take over.
      */
     public void saveCurrentConfig() {
-        if ("default".equalsIgnoreCase(currentConfigName)) {
-            currentConfigName = "autosave";
-            currentConfig = getConfigFile("autosave");
-        }
         if (currentConfig != null) {
             save(currentConfig);
             saveCurrentConfigName();
@@ -292,6 +435,25 @@ public final class ConfigManager {
         dirtyAt = 0L;
         saveCurrentConfig();
     }
+
+    /**
+     * Immediate save bypass for events that the user expects to persist
+     * even if the game crashes within the debounce window. Module
+     * enable/disable toggles and bind reassignments are the canonical
+     * cases: a user who toggles a module then Alt+F4s a frame later
+     * (e.g. because the module's just-enabled effect made the game
+     * unresponsive) would otherwise lose the toggle. Slider drags are
+     * still debounced via {@link #markDirty} - they fire dozens of
+     * notifications per second and immediate-saving each one would
+     * write the config dozens of times per drag.
+     */
+    public void flushNow() {
+        if (!autoSaveEnabled) {
+            return;
+        }
+        dirtyAt = 0L;
+        saveCurrentConfig();
+    }
     
     public void loadConfig(String configName) {
         try {
@@ -312,41 +474,25 @@ public final class ConfigManager {
     }
 
     private void loadConfigInternal(String configName) {
-        // Save current config before loading new one, only when switching to a different config
+        // Save current config before loading new one, only when switching
+        // to a different config. Skipped when target == current so the
+        // initial load on startup doesn't write the in-code defaults
+        // straight back over a user's freshly-loaded file.
         if (currentConfig != null && currentConfig.exists() && !currentConfigName.equals(configName)) {
             save(currentConfig);
         }
 
         File configFile = getConfigFile(configName);
 
-        // If loading default config, reset it to default state instead of loading from file
-        if (configName.equalsIgnoreCase("default")) {
-            // Reset all modules to default state
-            for (Module module : Main.getInstance().getModuleProvider().getModules()) {
-                if (module.isState()) {
-                    module.switchState();
-                }
-            }
-            for (Module module : Main.getInstance().getModuleProvider().getModules()) {
-                if (module instanceof RectHudModule rectHudModule) {
-                    rectHudModule.resetHudTransform();
-                } else if (module instanceof ArmorHud armorHud) {
-                    armorHud.resetHudTransform();
-                }
-            }
-            // Reset theme to default
-            vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected("Lunar Blue");
-            vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(5.0F);
-
-            currentConfig = configFile;
-            setCurrentConfigName(configName);
-            return;
-        }
+        // Reset every module / hud / theme to its in-code default BEFORE
+        // applying the new file. Without this, modules that the new file
+        // doesn't mention would keep whatever state the previous config
+        // left them in - which manifested as "configs merge" when
+        // switching between profiles. This mirrors soup's onUnload step.
+        applyInCodeDefaults();
 
         // Try the primary file first; on a corrupt-or-missing read,
-        // fall back to the .bak rotation save() leaves behind. This is
-        // the recovery path for crashes / Alt+F4 / power-loss during a
-        // write that produced a half-flushed primary.
+        // fall back to the .bak rotation save() leaves behind.
         JsonObject config = readConfigFile(configFile);
         File backupFile = new File(configFile.getParentFile(), configFile.getName() + ".bak");
         if (config == null && backupFile.exists()) {
@@ -354,6 +500,15 @@ public final class ConfigManager {
                     + "' unreadable, falling back to .bak");
             config = readConfigFile(backupFile);
         }
+
+        // Update the active-config pointer regardless of whether the
+        // file existed - if the user is switching to a config name
+        // that has no .Phaze yet (e.g. a fresh "default" on first
+        // launch), we still want subsequent saves to land on that name
+        // instead of writing into the previous active config.
+        currentConfig = configFile;
+        setCurrentConfigName(configName);
+
         if (config == null) {
             return; // nothing to apply; in-code defaults stay in place
         }
@@ -365,11 +520,6 @@ public final class ConfigManager {
                     // Wrap every module's load in its own try so a
                     // single broken module entry can't strand all the
                     // ones that come after it in the iteration order.
-                    // Without this, a ClassCastException on a
-                    // hand-edited JSON (e.g. "settings" not an object)
-                    // would short-circuit the loop and silently reset
-                    // every module after it - which is exactly the
-                    // "some modules sometimes reset" symptom users hit.
                     try {
                         loadModule(module, modules);
                     } catch (Throwable t) {
@@ -392,17 +542,99 @@ public final class ConfigManager {
                     vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(blurRadius);
                 } catch (Throwable ignored) {}
             }
-
-            currentConfig = configFile;
-            setCurrentConfigName(configName);
         } catch (Throwable t) {
             // Defensive: anything that escapes the per-module try (e.g.
             // a structural cast on the top-level "modules" object) is
-            // logged but not rethrown, so onInitialize never aborts and
-            // the user keeps whatever in-memory defaults their modules
-            // have already initialised with.
+            // logged but not rethrown.
             t.printStackTrace();
         }
+    }
+
+    /**
+     * Resets every module / HUD / theme back to its in-code default.
+     * Called as the first step of {@link #loadConfigInternal} so the
+     * about-to-be-applied JSON only adds back the deltas the saved
+     * config explicitly captured - everything not mentioned in the
+     * file ends up at its in-code default rather than carrying over
+     * from the previously-active config.
+     *
+     * <p>Mirrors soup's {@code onUnload} pass + module init defaults:
+     * disables every currently-enabled module, resets HUD positions,
+     * and reverts theme name + blur radius to the boot values.
+     */
+    private void applyInCodeDefaults() {
+        for (Module module : Main.getInstance().getModuleProvider().getModules()) {
+            // Toggle off any module that's currently on. switchState()
+            // routes through the same notifyChange path a manual click
+            // would take, which is what we want - keybinds, listeners,
+            // overlay registrations all see the disable.
+            if (module.isState()) {
+                module.switchState();
+            }
+            module.setKey(0);
+            // Best-effort settings reset: walk every setting and ask
+            // it to revert to its declared default. Settings that
+            // don't expose a reset API are left as-is - in practice
+            // most user-visible settings extend a base that does.
+            for (Setting setting : module.settings()) {
+                try {
+                    resetSettingToDefault(setting);
+                } catch (Throwable ignored) {
+                    // Skip a single bad setting without taking the
+                    // rest of the module reset down with it.
+                }
+            }
+            if (module instanceof RectHudModule rectHudModule) {
+                rectHudModule.resetHudTransform();
+            } else if (module instanceof ArmorHud armorHud) {
+                armorHud.resetHudTransform();
+            }
+        }
+        // Theme + blur back to boot defaults.
+        vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected("Lunar Blue");
+        vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(5.0F);
+    }
+
+    /**
+     * Best-effort reset of a single setting to its declared default
+     * value. Each setting type carries the default in a different
+     * field name; we sniff via {@code reflect} so this stays
+     * decoupled from concrete API additions. Failures are swallowed
+     * because settings that don't expose a default reset still leave
+     * the existing in-memory value, which is fine - the next loaded
+     * file will overwrite it anyway.
+     */
+    private void resetSettingToDefault(Setting setting) {
+        if (setting == null || !setting.isSaveToConfig()) return;
+        try {
+            // Most settings store the boot default in a {@code defaultValue}
+            // field; reflection avoids a per-type switch and stays
+            // forward-compat when new setting types are added.
+            java.lang.reflect.Field f = null;
+            for (Class<?> c = setting.getClass(); c != null; c = c.getSuperclass()) {
+                try {
+                    f = c.getDeclaredField("defaultValue");
+                    break;
+                } catch (NoSuchFieldException ignored) {}
+            }
+            if (f == null) return;
+            f.setAccessible(true);
+            Object def = f.get(setting);
+            if (def == null) return;
+            switch (setting) {
+                case BooleanSetting b -> b.setValue((Boolean) def);
+                case ValueSetting v -> v.setValue(((Number) def).floatValue());
+                case TextSetting t -> t.setText(def.toString());
+                case BindSetting b -> b.setKey(((Number) def).intValue());
+                case ColorSetting c -> c.setColor(((Number) def).intValue());
+                case SelectSetting s -> s.setSelected(def.toString());
+                case GroupSetting g -> {
+                    g.setValue((Boolean) def);
+                    for (Setting sub : g.getSubSettings()) resetSettingToDefault(sub);
+                }
+                default -> {}
+            }
+        } catch (Throwable ignored) {}
     }
 
     /**
@@ -550,15 +782,50 @@ public final class ConfigManager {
         return getConfigFile(configName).exists();
     }
     
+    /**
+     * Removes a config from disk and from the listing. If the user
+     * deletes the currently-active config, we transparently switch
+     * to {@code default} (or the first available config when the
+     * default has also been removed) and load it - this mirrors
+     * soup's deleteConfig flow and stops the GUI from showing a row
+     * that no longer exists on disk.
+     *
+     * <p>The literal name {@code "default"} is intentionally
+     * deletable: it's just a regular file. Deleting it just makes
+     * the next save recreate it from the in-code defaults.
+     */
     public void deleteConfig(String configName) {
-        // Prevent deletion of current config
-        if (currentConfigName.equals(configName)) {
-            return;
-        }
-        
+        if (configName == null || configName.isEmpty()) return;
+
         File configFile = getConfigFile(configName);
-        if (configFile.exists()) {
-            configFile.delete();
+        File backupFile = new File(configFile.getParentFile(), configFile.getName() + ".bak");
+        boolean wasActive = currentConfigName.equalsIgnoreCase(configName);
+
+        // Delete primary + .bak so the listing doesn't keep showing a
+        // stale entry. {@code File.delete} returns false on missing
+        // files, which is fine - we just want to ensure neither lives
+        // after this call.
+        if (configFile.exists()) configFile.delete();
+        if (backupFile.exists()) backupFile.delete();
+
+        // If we deleted what we were actively saving to, fall back to
+        // a real config so subsequent setting changes have a stable
+        // file to land in.
+        if (wasActive) {
+            String fallback = "default";
+            // If the user just deleted "default" too, pick whatever's
+            // first in the listing; if even that is empty, leave the
+            // active pointer on default so the next save creates it.
+            if (!getConfigFile(fallback).exists()) {
+                String[] remaining = getConfigList();
+                for (String name : remaining) {
+                    if (!name.equalsIgnoreCase(configName)) {
+                        fallback = name;
+                        break;
+                    }
+                }
+            }
+            loadConfig(fallback);
         }
     }
     

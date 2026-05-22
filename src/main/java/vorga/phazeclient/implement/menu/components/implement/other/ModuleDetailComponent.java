@@ -39,8 +39,14 @@ public class ModuleDetailComponent extends AbstractComponent {
     private static final float DESCRIPTION_TOP_OFFSET = 11.2F;
 
     private final List<AbstractSettingComponent> settingComponents = new ArrayList<>();
-    private final Animation openAnimation = new DecelerateAnimation().setMs(400).setValue(1);
-    private final Animation fadeAnimation = new DecelerateAnimation().setMs(300).setValue(1);
+    private final Animation openAnimation = new DecelerateAnimation().setMs(1).setValue(1);
+    // fadeAnimation was previously used to cross-fade the settings
+    // panel when the user switched modules / opened SETTINGS. Removed
+    // because the user explicitly asked for no fade on tab/category
+    // switching - panelAlpha now drives off the open animation alone,
+    // which is set to 1ms so the panel + settings + theme controls
+    // appear instantly the moment the user clicks SETTINGS, with no
+    // perceptible alpha ramp.
 
     private Module module;
     private double lastMeasuredHeight = 0.0;
@@ -53,8 +59,6 @@ public class ModuleDetailComponent extends AbstractComponent {
         if (this.module != module) {
             settingComponents.clear();
             new SettingComponentAdder().addSettingComponent(module.settings(), settingComponents);
-            fadeAnimation.reset();
-            fadeAnimation.setDirection(Direction.FORWARDS);
         }
 
         this.module = module;
@@ -65,7 +69,6 @@ public class ModuleDetailComponent extends AbstractComponent {
     }
 
     public void closeDetail() {
-        fadeAnimation.setDirection(Direction.BACKWARDS);
         module = null;
         scroll = 0.0;
         smoothedScroll = 0.0;
@@ -195,7 +198,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         float panelWidth = settingsPanelWidth();
         float panelHeight = settingsPanelHeight();
 
-        float fadeProgress = fadeAnimation.getOutputFloat();
+        float fadeProgress = 1.0F;
         float panelAlpha = Math.max(0.0F, Math.min(1.0F, fadeProgress * anim));
 
         float innerX = panelX + 2.0F;
@@ -212,6 +215,19 @@ public class ModuleDetailComponent extends AbstractComponent {
         scissorManager.push(positionMatrix, innerX, innerY, innerWidth, innerHeight);
 
         float[] columnOffsets = new float[]{0.0F, 0.0F};
+        // Visible-band cull: any setting whose row strip falls
+        // entirely outside [innerY, innerY + innerHeight] won't be
+        // visible at all. The GL scissor we just pushed clips the
+        // pixels for us, but the per-component render() still runs
+        // expensive layout / hover-animation work for those rows -
+        // visible in the user's screenshot as the bottom rows
+        // bleeding through the panel border (MSDF batches don't
+        // pick up the scissor boundary the way solid-color rects do).
+        // Skipping render() outright AND the hover-tracking branches
+        // for off-screen rows fixes both the visual leak and the
+        // "invisible setting still steals my hover" interaction bug.
+        float visibleTop = innerY;
+        float visibleBottom = innerY + innerHeight;
         for (AbstractSettingComponent component : settingComponents) {
             if (!shouldRenderSetting(component.getSetting())) {
                 continue;
@@ -220,29 +236,37 @@ public class ModuleDetailComponent extends AbstractComponent {
             boolean fullWidthSetting = singleColumnLayout || component.getSetting().isFullWidth();
             if (fullWidthSetting) {
                 float rowOffset = Math.max(columnOffsets[0], columnOffsets[1]);
-                component.x = innerX;
-                component.y = (float) (innerY + rowOffset - smoothedScroll);
-                component.width = innerWidth;
-                component.setExternalAlpha(panelAlpha);
-                component.render(context, mouseX, mouseY, delta);
-                component.setExternalAlpha(1.0F);
+                float componentY = (float) (innerY + rowOffset - smoothedScroll);
+                float rowHeight = component.getExpandedHeight();
 
-                float nextOffset = rowOffset + component.getExpandedHeight() + ROW_GAP;
+                component.x = innerX;
+                component.y = componentY;
+                component.width = innerWidth;
+                if (componentY + rowHeight >= visibleTop && componentY <= visibleBottom) {
+                    component.setExternalAlpha(panelAlpha);
+                    component.render(context, mouseX, mouseY, delta);
+                    component.setExternalAlpha(1.0F);
+                }
+
+                float nextOffset = rowOffset + rowHeight + ROW_GAP;
                 columnOffsets[0] = nextOffset;
                 columnOffsets[1] = nextOffset;
             } else {
                 int column = columnOffsets[0] <= columnOffsets[1] ? 0 : 1;
                 float componentX = innerX + column * (columnWidth + COLUMN_GAP);
                 float componentY = (float) (innerY + columnOffsets[column] - smoothedScroll);
+                float rowHeight = component.getExpandedHeight();
 
                 component.x = componentX;
                 component.y = componentY;
                 component.width = columnWidth;
-                component.setExternalAlpha(panelAlpha);
-                component.render(context, mouseX, mouseY, delta);
-                component.setExternalAlpha(1.0F);
+                if (componentY + rowHeight >= visibleTop && componentY <= visibleBottom) {
+                    component.setExternalAlpha(panelAlpha);
+                    component.render(context, mouseX, mouseY, delta);
+                    component.setExternalAlpha(1.0F);
+                }
 
-                columnOffsets[column] += component.getExpandedHeight() + ROW_GAP;
+                columnOffsets[column] += rowHeight + ROW_GAP;
             }
         }
 
@@ -256,6 +280,27 @@ public class ModuleDetailComponent extends AbstractComponent {
 
     private boolean shouldRenderSetting(Setting setting) {
         return setting != null && setting.isVisible();
+    }
+
+    /**
+     * True if the component's row strip overlaps the visible band of
+     * the settings panel for the current scroll position. Used to
+     * gate event delivery so an invisible (scrolled-off) row can't
+     * absorb clicks, hovers, or scroll-wheel events that should fall
+     * through to the user's actual cursor target.
+     *
+     * <p>Recomputes the visible band from {@link #settingsPanelY()}
+     * and {@link #settingsPanelHeight()} rather than caching - the
+     * panel rect can move between frames (window resize, settings
+     * collapse/expand) and an out-of-date cache would re-introduce
+     * the "click absorbed by invisible row" bug we're fixing.
+     */
+    private boolean isComponentVisible(AbstractSettingComponent component) {
+        float visibleTop = settingsPanelY() + 2.0F;
+        float visibleBottom = visibleTop + settingsPanelHeight() - 4.0F;
+        float rowTop = component.y;
+        float rowBottom = component.y + component.getExpandedHeight();
+        return rowBottom >= visibleTop && rowTop <= visibleBottom;
     }
 
     private List<String> wrap(String text, MsdfFont font, float size, float maxWidth) {
@@ -298,7 +343,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         }
 
         for (AbstractSettingComponent component : settingComponents) {
-            if (shouldRenderSetting(component.getSetting()) && component.isHover(mouseX, mouseY)) {
+            if (shouldRenderSetting(component.getSetting()) && isComponentVisible(component) && component.isHover(mouseX, mouseY)) {
                 return true;
             }
         }
@@ -319,7 +364,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         }
 
         for (AbstractSettingComponent component : settingComponents) {
-            if (shouldRenderSetting(component.getSetting()) && component.isHover(mouseX, mouseY) && component.mouseClicked(mouseX, mouseY, button)) {
+            if (shouldRenderSetting(component.getSetting()) && isComponentVisible(component) && component.isHover(mouseX, mouseY) && component.mouseClicked(mouseX, mouseY, button)) {
                 return true;
             }
         }
@@ -334,7 +379,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         }
 
         for (AbstractSettingComponent component : settingComponents) {
-            if (shouldRenderSetting(component.getSetting())) {
+            if (shouldRenderSetting(component.getSetting()) && isComponentVisible(component)) {
                 component.mouseReleased(mouseX, mouseY, button);
             }
         }
@@ -348,7 +393,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         }
 
         for (AbstractSettingComponent component : settingComponents) {
-            if (shouldRenderSetting(component.getSetting())) {
+            if (shouldRenderSetting(component.getSetting()) && isComponentVisible(component)) {
                 component.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
             }
         }
@@ -366,7 +411,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         }
 
         for (AbstractSettingComponent component : settingComponents) {
-            if (shouldRenderSetting(component.getSetting()) && component.isHover(mouseX, mouseY)) {
+            if (shouldRenderSetting(component.getSetting()) && isComponentVisible(component) && component.isHover(mouseX, mouseY)) {
                 component.mouseScrolled(mouseX, mouseY, amount);
             }
         }

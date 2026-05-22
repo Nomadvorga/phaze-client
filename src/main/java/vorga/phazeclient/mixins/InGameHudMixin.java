@@ -31,11 +31,31 @@ import net.minecraft.block.Block;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.tag.BlockTags;
+import net.minecraft.client.gui.hud.PlayerListHud;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
+import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.option.Perspective;
+import net.minecraft.entity.player.HungerManager;
+import net.minecraft.entity.player.ItemCooldownManager;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.ScoreboardDisplaySlot;
+import net.minecraft.scoreboard.ScoreboardObjective;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.ModifyArgs;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.features.modules.client.Theme;
@@ -61,12 +81,26 @@ import vorga.phazeclient.implement.features.modules.hud.WailaHud;
 import vorga.phazeclient.implement.features.modules.other.HealthIndicator;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
+import vorga.phazeclient.implement.features.modules.hud.TpsHud;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
+import vorga.phazeclient.implement.features.modules.other.Animations;
+import vorga.phazeclient.implement.features.modules.hud.Cooldowns;
+import vorga.phazeclient.implement.features.modules.other.Crosshair;
+import vorga.phazeclient.implement.features.modules.other.HealingHelper;
 import vorga.phazeclient.implement.features.modules.other.HudOptimizer;
+import vorga.phazeclient.implement.features.modules.other.ItemHighlighter;
+import vorga.phazeclient.implement.features.modules.other.MaceIndicator;
+import vorga.phazeclient.implement.features.modules.other.NickHider;
+import vorga.phazeclient.implement.features.modules.other.Saturation;
+import vorga.phazeclient.implement.features.modules.hud.InventoryHud;
+import vorga.phazeclient.implement.features.modules.hud.PlayerModelHud;
 import vorga.phazeclient.implement.features.modules.other.StreamerMode;
+import vorga.phazeclient.helpers.ColorHelper;
+import vorga.phazeclient.helpers.IntPoint;
+import vorga.phazeclient.helpers.TextureHelper;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.api.feature.module.Module;
 
@@ -79,6 +113,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
+import java.util.Vector;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -123,7 +160,8 @@ public class InGameHudMixin {
     private static final int HUD_HEALTH_INDICATOR = 20;
     private static final int HUD_BATTLE_INFO = 21;
     private static final int HUD_CONSUMABLE = 22;
-    private static final int RECT_HUD_COUNT = 23;
+    private static final int HUD_TPS = 23;
+    private static final int RECT_HUD_COUNT = 24;
     private static final int HUD_ARMOR_BLUR_SLOT = 15;
     private static final int KEYSTROKE_W = 0;
     private static final int KEYSTROKE_A = 1;
@@ -490,6 +528,12 @@ public class InGameHudMixin {
         renderBufferedHud(context, MemoryHud.getInstance(), chatEditing, () ->
                 renderMemoryHud(context, client, MemoryHud.getInstance(), memoryTextWrapped, HUD_MEMORY, chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(MemoryHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        String tpsText = TpsHud.getInstance().getFormattedText();
+        final String tpsTextWrapped = wrapTextWithBrackets(tpsText, TpsHud.getInstance());
+        renderBufferedHud(context, TpsHud.getInstance(), chatEditing, () ->
+                renderTpsHud(context, client, TpsHud.getInstance(), tpsTextWrapped, HUD_TPS, chatEditing, mouseX, mouseY, mouseDown,
+                        getHudDelta(TpsHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
         String comboText = ComboCounterHud.getInstance().getComboText();
         final String comboTextWrapped = wrapTextWithBrackets(comboText, ComboCounterHud.getInstance());
@@ -990,6 +1034,10 @@ public class InGameHudMixin {
             // target is tracked, so this branch transparently degrades
             // to the inherited default in those cases.
             textColor = ((HealthIndicator) module).getCurrentHpColor();
+        } else if (module instanceof TpsHud) {
+            // TPS HUD: green / yellow / red tier color when the user
+            // has Color By TPS on. Off = white sentinel.
+            textColor = ((TpsHud) module).getColor();
         }
 
         renderScaledHudTextColored(context, client, text, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
@@ -3019,6 +3067,7 @@ public class InGameHudMixin {
                 || TimeHud.getInstance().isEnabled()
                 || SessionTimeHud.getInstance().isEnabled()
                 || MemoryHud.getInstance().isEnabled()
+                || TpsHud.getInstance().isEnabled()
                 || ComboCounterHud.getInstance().isEnabled()
                 || ServerAddressHud.getInstance().isEnabled()
                 // Missing entries caused the parent dispatch to early-return
@@ -3048,6 +3097,7 @@ public class InGameHudMixin {
                 || RECT_DRAGGING[HUD_TIME] || RECT_RESIZING[HUD_TIME]
                 || RECT_DRAGGING[HUD_SESSION] || RECT_RESIZING[HUD_SESSION]
                 || RECT_DRAGGING[HUD_MEMORY] || RECT_RESIZING[HUD_MEMORY]
+                || RECT_DRAGGING[HUD_TPS] || RECT_RESIZING[HUD_TPS]
                 || RECT_DRAGGING[HUD_COMBO] || RECT_RESIZING[HUD_COMBO]
                 || RECT_DRAGGING[HUD_SERVER_ADDRESS] || RECT_RESIZING[HUD_SERVER_ADDRESS]
                 || RECT_DRAGGING[HUD_SCOREBOARD] || RECT_RESIZING[HUD_SCOREBOARD]
@@ -3191,6 +3241,28 @@ public class InGameHudMixin {
             DrawContext context,
             MinecraftClient client,
             MemoryHud module,
+            String text,
+            int hudIndex,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        renderRectHud(context, client, module, text, hudIndex,
+                chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                getTextHudBaseWidth(client, text), BASE_HEIGHT);
+    }
+
+    private void renderTpsHud(
+            DrawContext context,
+            MinecraftClient client,
+            TpsHud module,
             String text,
             int hudIndex,
             boolean chatEditing,
@@ -3649,5 +3721,748 @@ public class InGameHudMixin {
         float y = screenHeight - 50.0f;
 
         context.drawText(client.textRenderer, Text.literal(displayText), (int)x, (int)y, 0xFFFFFFFF, true);
+    }
+
+    // ====================================================================
+    // ===== Merged sibling InGameHud mixins ==============================
+    // ====================================================================
+    //
+    // The following blocks were previously separate @Mixin(InGameHud.class)
+    // files. Each block keeps the original injectors verbatim with a unique
+    // method name and {@code phaze$<feature>} field prefix. Field names
+    // that collided across the originals (e.g. {@code phaze$dragging} used
+    // by both InventoryHud and PlayerModel) are renamed per feature.
+    //
+    // Mergers:
+    //   1. Saturation (renderStatusBars TAIL + renderAirBubbles HEAD/RETURN)
+    //   2. Cooldowns (renderHotbarItem TAIL)
+    //   3. HotbarSlide (renderHotbar HEAD/INVOKE/RETURN)
+    //   4. MaceIndicator (renderHotbar TAIL)
+    //   5. ScoreboardNickHider (renderScoreboardSidebar @ModifyArg)
+    //   6. TabSlide (render TAIL)
+    //   7. ItemHighlighter (renderHotbar TAIL)
+    //   8. PlayerModel (render TAIL)
+    //   9. InventoryHud (render TAIL)
+    //   10. HealingHelper (renderHotbar TAIL)
+    //   11. HotbarFlush (renderHotbar TAIL)
+    //   12. Crosshair (renderCrosshair @Redirect on Perspective.isFirstPerson)
+
+    // ---------- TabSlide shadows ----------
+    @Shadow @Final private MinecraftClient client;
+    @Shadow @Final private PlayerListHud playerListHud;
+
+    // ---------- Saturation state ----------
+    @Unique private float phaze$satUnclampedFlashAlpha = 0f;
+    @Unique private float phaze$satFlashAlpha = 0f;
+    @Unique private byte phaze$satAlphaDir = 1;
+    @Unique private final SaturationOffsetsCache phaze$satBarOffsets = new SaturationOffsetsCache();
+    @Unique private final SaturationHeldFoodCache phaze$satHeldFood = new SaturationHeldFoodCache();
+    @Unique private boolean phaze$bubblesLifted = false;
+    @Unique private static final int PHAZE_BUBBLE_LIFT_PX = 10;
+
+    // ---------- HotbarSlide state ----------
+    @Unique private static final int PHAZE_HOTBAR_SLOT_PX = 20;
+    @Unique private static final int PHAZE_HOTBAR_SLOTS = 9;
+    @Unique private static final int PHAZE_HOTBAR_PIXEL_W = PHAZE_HOTBAR_SLOT_PX * PHAZE_HOTBAR_SLOTS;
+    @Unique private static final int PHAZE_HOTBAR_BG_W = 182;
+    @Unique private static final int PHAZE_HOTBAR_BG_H = 22;
+    @Unique private float phaze$hotbarCurrentSlotX = 0.0F;
+    @Unique private int phaze$hotbarLastSelected = -1;
+    @Unique private long phaze$hotbarLastFrameNanos = 0L;
+    @Unique private boolean phaze$hotbarShouldDrawMirror = false;
+    @Unique private int phaze$hotbarMirrorOffsetX = 0;
+    @Unique private int phaze$hotbarLastDrawX;
+    @Unique private int phaze$hotbarLastDrawY;
+    @Unique private int phaze$hotbarLastWidth;
+    @Unique private int phaze$hotbarLastHeight;
+    @Unique private Identifier phaze$hotbarLastTexture;
+    @Unique private Function<Identifier, ?> phaze$hotbarLastSpriteFn;
+    @Unique private boolean phaze$hotbarScissorOn = false;
+
+    // ---------- TabSlide state ----------
+    @Unique private boolean phaze$tabWasOpenedThisCycle = false;
+
+    // ---------- PlayerModel drag state ----------
+    @Unique private static boolean phaze$pmDragging = false;
+    @Unique private static float phaze$pmDragOffsetX = 0.0F;
+    @Unique private static float phaze$pmDragOffsetY = 0.0F;
+    @Unique private static boolean phaze$pmWasMouseDown = false;
+
+    // ---------- InventoryHud drag state ----------
+    @Unique private static final int PHAZE_INV_SLOT = 18;
+    @Unique private static final int PHAZE_INV_ICON = 16;
+    @Unique private static final int PHAZE_INV_PADDING = 1;
+    @Unique private static boolean phaze$invDragging = false;
+    @Unique private static float phaze$invDragOffsetX = 0.0F;
+    @Unique private static float phaze$invDragOffsetY = 0.0F;
+    @Unique private static boolean phaze$invWasMouseDown = false;
+
+    // ====================================================================
+    // 1) Saturation: renderStatusBars TAIL + renderAirBubbles HEAD/RETURN
+    // ====================================================================
+
+    @Inject(method = "renderStatusBars", at = @At("TAIL"))
+    private void phaze$onSaturationRenderStatusBars(DrawContext context, CallbackInfo ci) {
+        if (!Saturation.getInstance().isEnabled()) return;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.player == null) return;
+
+        PlayerEntity player = mc.player;
+        HungerManager stats = player.getHungerManager();
+        float saturationLevel = stats.getSaturationLevel();
+        if (saturationLevel <= 0) {
+            phaze$resetSaturationFlash();
+            return;
+        }
+
+        int right = context.getScaledWindowWidth() / 2 + 91;
+        int top = context.getScaledWindowHeight() - 39;
+        phaze$drawSaturationOverlay(context, saturationLevel, 0, 1.0F, mc.inGameHud.getTicks(), right, top);
+
+        ItemStack heldItem = player.getMainHandStack();
+        if (heldItem.isEmpty()) heldItem = player.getOffHandStack();
+        if (heldItem.isEmpty() || !heldItem.contains(net.minecraft.component.DataComponentTypes.FOOD)) {
+            phaze$resetSaturationFlash();
+            return;
+        }
+        phaze$satOnClientTick();
+    }
+
+    @Inject(method = "renderAirBubbles", at = @At("HEAD"))
+    private void phaze$liftAirBubblesHead(DrawContext context, PlayerEntity player,
+                                          int heartCount, int maxAirBubbles, int top,
+                                          CallbackInfo ci) {
+        if (phaze$shouldLiftBubbles()) {
+            context.getMatrices().push();
+            context.getMatrices().translate(0.0F, -PHAZE_BUBBLE_LIFT_PX, 0.0F);
+            phaze$bubblesLifted = true;
+        }
+    }
+
+    @Inject(method = "renderAirBubbles", at = @At("RETURN"))
+    private void phaze$liftAirBubblesReturn(DrawContext context, PlayerEntity player,
+                                            int heartCount, int maxAirBubbles, int top,
+                                            CallbackInfo ci) {
+        if (phaze$bubblesLifted) {
+            context.getMatrices().pop();
+            phaze$bubblesLifted = false;
+        }
+    }
+
+    @Unique
+    private static boolean phaze$shouldLiftBubbles() {
+        Saturation sat = Saturation.getInstance();
+        if (sat == null || !sat.isEnabled()) return false;
+        return "Second Hunger Bar".equals(sat.style.getSelected());
+    }
+
+    @Unique
+    private void phaze$drawSaturationOverlay(DrawContext context, float saturationLevel, float saturationGained, float alpha, int guiTicks, int right, int top) {
+        if (saturationLevel + saturationGained < 0) return;
+        int alphaColor = ColorHelper.argbFromRGBA(1.0F, 1.0F, 1.0F, alpha);
+        float modifiedSaturation = Math.max(0, Math.min(saturationLevel + saturationGained, 20));
+        int startSaturationBar = 0;
+        int endSaturationBar = (int) Math.ceil(modifiedSaturation / 2.0F);
+        if (saturationGained != 0) startSaturationBar = (int) Math.max(saturationLevel / 2.0F, 0);
+
+        int iconSize = 9;
+        int saturationTop = top - 10;
+        String styleValue = Saturation.getInstance().style.getSelected();
+        boolean isYellowBar = styleValue.equals("Yellow Bar");
+
+        for (int i = startSaturationBar; i < endSaturationBar; ++i) {
+            int x = right - i * 8 - 9;
+            int y = saturationTop;
+            float effectiveSaturationOfBar = (modifiedSaturation / 2.0F) - i;
+
+            if (!isYellowBar) {
+                if (effectiveSaturationOfBar <= 0) continue;
+                Identifier foodTexture = null;
+                if (effectiveSaturationOfBar >= 1) {
+                    foodTexture = TextureHelper.FOOD_FULL_TEXTURE;
+                } else if (effectiveSaturationOfBar >= .5) {
+                    foodTexture = TextureHelper.FOOD_HALF_TEXTURE;
+                }
+                if (foodTexture == null) continue;
+                context.drawGuiTexture(RenderLayer::getGuiTextured, TextureHelper.FOOD_EMPTY_TEXTURE, x, y, iconSize, iconSize);
+                context.drawGuiTexture(RenderLayer::getGuiTextured, foodTexture, x, y, iconSize, iconSize);
+            } else {
+                int hungerY = top;
+                int v = 0;
+                int u = 0;
+                if (effectiveSaturationOfBar >= 1) u = 3 * iconSize;
+                else if (effectiveSaturationOfBar > .5) u = 2 * iconSize;
+                else if (effectiveSaturationOfBar > .25) u = 1 * iconSize;
+                context.drawTexture(RenderLayer::getGuiTextured, TextureHelper.MOD_ICONS, x, hungerY, u, v, iconSize, iconSize, 256, 256, alphaColor);
+            }
+        }
+    }
+
+    @Unique
+    private void phaze$satOnClientTick() {
+        phaze$satUnclampedFlashAlpha += phaze$satAlphaDir * 0.125F;
+        if (phaze$satUnclampedFlashAlpha >= 1.5F) phaze$satAlphaDir = -1;
+        else if (phaze$satUnclampedFlashAlpha <= -0.5F) phaze$satAlphaDir = 1;
+        phaze$satFlashAlpha = Math.max(0F, Math.min(1F, phaze$satUnclampedFlashAlpha));
+    }
+
+    @Unique
+    private void phaze$resetSaturationFlash() {
+        phaze$satUnclampedFlashAlpha = phaze$satFlashAlpha = 0;
+        phaze$satAlphaDir = 1;
+    }
+
+    @Unique
+    private static class SaturationOffsetsCache {
+        private final Vector<IntPoint> foodBarOffsets = new Vector<>();
+        private int lastGuiTick = 0;
+        private final Random random = new Random();
+
+        private void generate(int guiTicks, PlayerEntity player) {
+            final int preferFoodBars = 10;
+            if (foodBarOffsets.size() != preferFoodBars) foodBarOffsets.setSize(preferFoodBars);
+            random.setSeed((long) (guiTicks * 312871));
+            for (int i = 0; i < preferFoodBars; ++i) {
+                int x = -(i * 8) - 9;
+                int y = 0;
+                IntPoint point = foodBarOffsets.get(i);
+                if (point == null) {
+                    point = new IntPoint();
+                    foodBarOffsets.set(i, point);
+                }
+                point.x = x;
+                point.y = y;
+            }
+            lastGuiTick = guiTicks;
+        }
+
+        public Vector<IntPoint> foodBarOffsets(int guiTicks, PlayerEntity player) {
+            if (guiTicks != lastGuiTick) generate(guiTicks, player);
+            return this.foodBarOffsets;
+        }
+    }
+
+    @Unique
+    private static class SaturationHeldFoodCache {
+        private ItemStack lastHeldItem;
+        private int lastGuiTick = 0;
+
+        public ItemStack result(int guiTick, PlayerEntity player) {
+            if (guiTick != lastGuiTick) {
+                ItemStack heldItem = player.getMainHandStack();
+                if (heldItem.isEmpty()) heldItem = player.getOffHandStack();
+                lastHeldItem = heldItem;
+                lastGuiTick = guiTick;
+            }
+            return lastHeldItem;
+        }
+    }
+
+    // ====================================================================
+    // 2) Cooldowns: renderHotbarItem TAIL
+    // ====================================================================
+
+    @Inject(
+            method = "renderHotbarItem(Lnet/minecraft/client/gui/DrawContext;IILnet/minecraft/client/render/RenderTickCounter;Lnet/minecraft/entity/player/PlayerEntity;Lnet/minecraft/item/ItemStack;I)V",
+            at = @At("TAIL")
+    )
+    private void phaze$drawCooldownNumber(
+            DrawContext context, int x, int y, RenderTickCounter tickCounter,
+            PlayerEntity player, ItemStack stack, int seed, CallbackInfo ci
+    ) {
+        Cooldowns module = Cooldowns.getInstance();
+        if (module == null || !module.isEnabled()) return;
+        if (stack == null || stack.isEmpty() || player == null) return;
+        ItemCooldownManager manager = player.getItemCooldownManager();
+        if (manager == null) return;
+        float tickDelta = tickCounter.getTickDelta(false);
+        float progress = manager.getCooldownProgress(stack, tickDelta);
+        if (progress <= 0.0F) return;
+
+        Identifier groupId = manager.getGroup(stack);
+        ItemCooldownManager.Entry entry = manager.entries.get(groupId);
+        if (entry == null) return;
+        float remainingTicks = entry.endTick - (manager.tick + tickDelta);
+        if (remainingTicks <= 0.0F) return;
+        float remainingSeconds = remainingTicks / 20.0F;
+
+        String text = module.formatSeconds(remainingSeconds);
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.textRenderer == null) return;
+        int color = module.colorForProgress(progress);
+        int textWidth = mc.textRenderer.getWidth(text);
+        int drawX = x + 8 - textWidth / 2;
+        int drawY = y - 9;
+        context.drawText(mc.textRenderer, text, drawX, drawY, color, module.textShadow.isValue());
+    }
+
+    // ====================================================================
+    // 3) HotbarSlide: renderHotbar HEAD + scissor + ModifyArgs + after
+    // ====================================================================
+
+    @Inject(method = "renderHotbar", at = @At("HEAD"))
+    private void phaze$tickHotbarSlide(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        phaze$hotbarShouldDrawMirror = false;
+        phaze$hotbarScissorOn = false;
+
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isHotbarSlideEnabled()) {
+            phaze$hotbarLastSelected = -1;
+            phaze$hotbarLastFrameNanos = 0L;
+            return;
+        }
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null) return;
+
+        int selected = mc.player.getInventory().selectedSlot;
+        float target = selected * PHAZE_HOTBAR_SLOT_PX;
+
+        if (module.isHotbarRolloverEnabled() && phaze$hotbarLastSelected >= 0) {
+            int slotDelta = selected - phaze$hotbarLastSelected;
+            if (slotDelta >= 5) phaze$hotbarCurrentSlotX += PHAZE_HOTBAR_PIXEL_W;
+            else if (slotDelta <= -5) phaze$hotbarCurrentSlotX -= PHAZE_HOTBAR_PIXEL_W;
+        }
+        phaze$hotbarLastSelected = selected;
+
+        long now = System.nanoTime();
+        float dt;
+        if (phaze$hotbarLastFrameNanos == 0L) dt = 1.0F / 60.0F;
+        else {
+            dt = (now - phaze$hotbarLastFrameNanos) / 1_000_000_000.0F;
+            if (dt > 0.25F) dt = 0.25F;
+        }
+        phaze$hotbarLastFrameNanos = now;
+
+        float smoothness = module.smoothnessForSpeed(module.hotbarSpeed.getValue());
+        float decay = (float) Math.pow(smoothness, dt);
+        phaze$hotbarCurrentSlotX = (phaze$hotbarCurrentSlotX - target) * decay + target;
+        if (Math.abs(phaze$hotbarCurrentSlotX - target) < 0.4F) phaze$hotbarCurrentSlotX = target;
+
+        if (module.isHotbarRolloverEnabled()) {
+            float maxNormalX = (PHAZE_HOTBAR_SLOTS - 1) * PHAZE_HOTBAR_SLOT_PX;
+            if (phaze$hotbarCurrentSlotX < 0.0F) {
+                phaze$hotbarShouldDrawMirror = true;
+                phaze$hotbarMirrorOffsetX = PHAZE_HOTBAR_PIXEL_W;
+            } else if (phaze$hotbarCurrentSlotX > maxNormalX) {
+                phaze$hotbarShouldDrawMirror = true;
+                phaze$hotbarMirrorOffsetX = -PHAZE_HOTBAR_PIXEL_W;
+            }
+        }
+    }
+
+    @Inject(
+            method = "renderHotbar",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
+                    ordinal = 1, shift = At.Shift.BEFORE)
+    )
+    private void phaze$openMirrorScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        if (!phaze$hotbarShouldDrawMirror) return;
+        context.draw();
+        int hotbarLeft = context.getScaledWindowWidth() / 2 - PHAZE_HOTBAR_BG_W / 2;
+        int hotbarTop = context.getScaledWindowHeight() - PHAZE_HOTBAR_BG_H;
+        context.enableScissor(hotbarLeft, hotbarTop, hotbarLeft + PHAZE_HOTBAR_BG_W, hotbarTop + PHAZE_HOTBAR_BG_H);
+        phaze$hotbarScissorOn = true;
+    }
+
+    @ModifyArgs(
+            method = "renderHotbar",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
+                    ordinal = 1)
+    )
+    private void phaze$slideSelectionX(Args args) {
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isHotbarSlideEnabled()) return;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null) return;
+
+        int selectedSlot = mc.player.getInventory().selectedSlot;
+        int origX = args.<Integer>get(2);
+        int baseX = origX - selectedSlot * PHAZE_HOTBAR_SLOT_PX;
+        int newX = baseX + Math.round(phaze$hotbarCurrentSlotX);
+        args.set(2, newX);
+
+        if (phaze$hotbarShouldDrawMirror) {
+            phaze$hotbarLastDrawX = newX;
+            phaze$hotbarLastDrawY = args.<Integer>get(3);
+            phaze$hotbarLastWidth = args.<Integer>get(4);
+            phaze$hotbarLastHeight = args.<Integer>get(5);
+            phaze$hotbarLastTexture = args.<Identifier>get(1);
+            phaze$hotbarLastSpriteFn = args.<Function<Identifier, ?>>get(0);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Inject(
+            method = "renderHotbar",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
+                    ordinal = 1, shift = At.Shift.AFTER)
+    )
+    private void phaze$drawMirrorAndCloseScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        if (!phaze$hotbarShouldDrawMirror || phaze$hotbarLastTexture == null || phaze$hotbarLastSpriteFn == null) {
+            if (phaze$hotbarScissorOn) {
+                context.draw();
+                context.disableScissor();
+                phaze$hotbarScissorOn = false;
+            }
+            return;
+        }
+        int mirrorX = phaze$hotbarLastDrawX + phaze$hotbarMirrorOffsetX;
+        context.drawGuiTexture(
+                (Function<Identifier, RenderLayer>) phaze$hotbarLastSpriteFn,
+                phaze$hotbarLastTexture, mirrorX, phaze$hotbarLastDrawY,
+                phaze$hotbarLastWidth, phaze$hotbarLastHeight);
+        context.draw();
+        if (phaze$hotbarScissorOn) {
+            context.disableScissor();
+            phaze$hotbarScissorOn = false;
+        }
+        phaze$hotbarShouldDrawMirror = false;
+    }
+
+    // ====================================================================
+    // 4) MaceIndicator: renderHotbar TAIL — uses shared paint helper below
+    // ====================================================================
+
+    @Inject(method = "renderHotbar", at = @At("TAIL"))
+    private void phaze$drawHotbarMaceHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        MaceIndicator module = MaceIndicator.getInstance();
+        if (module == null || !module.isEnabled()) return;
+        phaze$paintHotbarFills(context, module::colorForStack);
+    }
+
+    // ====================================================================
+    // 5) ScoreboardNickHider: ModifyArg on drawText inside sidebar render
+    // ====================================================================
+
+    @ModifyArg(
+            method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawText(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;IIIZ)I")
+    )
+    private Text phaze$hideOwnNickInSidebar(Text original) {
+        NickHider hider = NickHider.getInstance();
+        if (hider == null || !hider.isEnabled()) return original;
+        return hider.rewrite(original);
+    }
+
+    // ====================================================================
+    // 6) TabSlide: render TAIL drives the slide animation when key released
+    // ====================================================================
+
+    @Inject(method = "render", at = @At("TAIL"))
+    private void phaze$tabSlideTick(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isTabSlideEnabled()) {
+            phaze$tabWasOpenedThisCycle = false;
+            return;
+        }
+        if (this.client == null || this.client.options == null) {
+            phaze$tabWasOpenedThisCycle = false;
+            return;
+        }
+        if (this.client.options.hudHidden) {
+            module.snapTabClosed();
+            phaze$tabWasOpenedThisCycle = false;
+            return;
+        }
+
+        boolean keyPressed = this.client.options.playerListKey.isPressed();
+        module.tickTabSlide(keyPressed);
+
+        if (keyPressed) {
+            if (phaze$vanillaTabListWouldRender()) phaze$tabWasOpenedThisCycle = true;
+            return;
+        }
+        if (!module.isTabSlideRendering(false)) {
+            phaze$tabWasOpenedThisCycle = false;
+            return;
+        }
+        if (!phaze$tabWasOpenedThisCycle) return;
+
+        this.playerListHud.setVisible(true);
+        Scoreboard scoreboard = this.client.world == null ? null : this.client.world.getScoreboard();
+        ScoreboardObjective objective = scoreboard == null ? null
+                : scoreboard.getObjectiveForSlot(ScoreboardDisplaySlot.LIST);
+        this.playerListHud.render(context, context.getScaledWindowWidth(), scoreboard, objective);
+    }
+
+    @Unique
+    private boolean phaze$vanillaTabListWouldRender() {
+        if (this.client == null || this.client.player == null) return false;
+        if (!this.client.isInSingleplayer()) return true;
+        if (this.client.player.networkHandler != null
+                && this.client.player.networkHandler.getListedPlayerListEntries().size() > 1) return true;
+        if (this.client.world != null) {
+            Scoreboard scoreboard = this.client.world.getScoreboard();
+            if (scoreboard != null
+                    && scoreboard.getObjectiveForSlot(ScoreboardDisplaySlot.LIST) != null) return true;
+        }
+        return false;
+    }
+
+    // ====================================================================
+    // 7) ItemHighlighter: renderHotbar TAIL — shared paint helper
+    // ====================================================================
+
+    @Inject(method = "renderHotbar", at = @At("TAIL"))
+    private void phaze$drawHotbarItemHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        ItemHighlighter module = ItemHighlighter.getInstance();
+        if (module == null || !module.isEnabled()) return;
+        phaze$paintHotbarFills(context, module::colorForStack);
+    }
+
+    // ====================================================================
+    // 10) HealingHelper: renderHotbar TAIL — shared paint helper
+    // ====================================================================
+
+    @Inject(method = "renderHotbar", at = @At("TAIL"))
+    private void phaze$drawHotbarHealingHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        HealingHelper module = HealingHelper.getInstance();
+        if (module == null || !module.isEnabled()) return;
+        phaze$paintHotbarFills(context, module::colorForStack);
+    }
+
+    /**
+     * Shared 9-slot hotbar fill helper for HealingHelper, ItemHighlighter
+     * and MaceIndicator. Walks the player's hotbar, calls the per-stack
+     * colour function, and fills the slot when alpha is non-zero.
+     */
+    @Unique
+    private void phaze$paintHotbarFills(DrawContext context,
+                                        java.util.function.ToIntFunction<ItemStack> colorFn) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null) return;
+        PlayerEntity player = mc.player;
+
+        int screenW = context.getScaledWindowWidth();
+        int screenH = context.getScaledWindowHeight();
+        int centerX = screenW / 2;
+        int itemY = screenH - 16 - 3;
+
+        context.draw();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+
+        for (int n = 0; n < 9; n++) {
+            ItemStack stack = player.getInventory().main.get(n);
+            int color = colorFn.applyAsInt(stack);
+            if ((color & 0xFF000000) == 0) continue;
+            int itemX = centerX - 90 + n * 20 + 2;
+            context.fill(itemX, itemY, itemX + 16, itemY + 16, color);
+        }
+        context.draw();
+    }
+
+    // ====================================================================
+    // 11) HotbarFlush: renderHotbar TAIL — flush vertex batches
+    // ====================================================================
+
+    @Inject(method = "renderHotbar", at = @At("TAIL"))
+    private void phaze$flushHotbarBatch(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        context.draw();
+    }
+
+    // ====================================================================
+    // 8) PlayerModel: render TAIL
+    // ====================================================================
+
+    @Inject(method = "render", at = @At("TAIL"))
+    private void phaze$drawPlayerModel(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        PlayerModelHud module = PlayerModelHud.getInstance();
+        if (module == null || !module.isEnabled()) return;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.options == null) return;
+        if (mc.options.hudHidden) return;
+
+        ClientPlayerEntity player = mc.player;
+        float scale = module.getHudScale();
+        int size = Math.round(module.modelSize.getValue());
+        float panelW = 2.0F * size * scale;
+        float panelH = 2.5F * size * scale;
+
+        boolean chatEditing = mc.currentScreen instanceof ChatScreen;
+        boolean mouseDown = chatEditing && GLFW.glfwGetMouseButton(
+                mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        double scaleFactor = mc.getWindow().getScaleFactor();
+        if (scaleFactor <= 0.0) scaleFactor = 1.0;
+        float mouseX = (float) (mc.mouse.getX() / scaleFactor);
+        float mouseY = (float) (mc.mouse.getY() / scaleFactor);
+
+        int scaledScreenW = mc.getWindow().getScaledWidth();
+        int scaledScreenH = mc.getWindow().getScaledHeight();
+        float maxX = Math.max(0.0F, scaledScreenW - panelW);
+        float maxY = Math.max(0.0F, scaledScreenH - panelH);
+
+        float panelX = MathHelper.clamp(module.getHudX(), 0.0F, maxX);
+        float panelY = MathHelper.clamp(module.getHudY(), 0.0F, maxY);
+        module.setHudX(panelX);
+        module.setHudY(panelY);
+
+        if (chatEditing) {
+            boolean inside = mouseX >= panelX && mouseX <= panelX + panelW
+                    && mouseY >= panelY && mouseY <= panelY + panelH;
+            if (mouseDown && !phaze$pmWasMouseDown && inside) {
+                phaze$pmDragging = true;
+                phaze$pmDragOffsetX = mouseX - panelX;
+                phaze$pmDragOffsetY = mouseY - panelY;
+            }
+            if (!mouseDown) phaze$pmDragging = false;
+            if (phaze$pmDragging) {
+                panelX = MathHelper.clamp(mouseX - phaze$pmDragOffsetX, 0.0F, maxX);
+                panelY = MathHelper.clamp(mouseY - phaze$pmDragOffsetY, 0.0F, maxY);
+                module.setHudX(panelX);
+                module.setHudY(panelY);
+            }
+        } else {
+            phaze$pmDragging = false;
+        }
+        phaze$pmWasMouseDown = mouseDown;
+
+        float centerX = panelX + size;
+        float centerY = panelY + size * 2.0F;
+
+        Vector3f translation = new Vector3f();
+        Quaternionf bodyRotation;
+        Quaternionf headRotation = null;
+
+        String mode = module.mode.getSelected();
+        if ("Follow Mouse".equalsIgnoreCase(mode) && !chatEditing) {
+            float mx = (float) (mc.mouse.getX() * mc.getWindow().getScaledWidth() / mc.getWindow().getWidth());
+            float my = (float) (mc.mouse.getY() * mc.getWindow().getScaledHeight() / mc.getWindow().getHeight());
+            float dx = (centerX - mx) / 50.0F;
+            float dy = (centerY - my * 0.5F - size) / 50.0F;
+            bodyRotation = new Quaternionf().rotateZ((float) Math.PI);
+            headRotation = new Quaternionf().rotateX(dy * 20.0F * (float) (Math.PI / 180.0));
+            bodyRotation.mul(new Quaternionf().rotateY(dx * 20.0F * (float) (Math.PI / 180.0)));
+        } else if ("Auto Rotate".equalsIgnoreCase(mode)) {
+            float speed = module.rotationSpeed.getValue();
+            float angleDeg = (System.nanoTime() / 1_000_000_000.0F) * speed;
+            bodyRotation = new Quaternionf().rotateZ((float) Math.PI).rotateY(angleDeg * (float) (Math.PI / 180.0));
+        } else {
+            bodyRotation = new Quaternionf().rotateZ((float) Math.PI);
+            headRotation = new Quaternionf();
+        }
+
+        InventoryScreen.drawEntity(context, centerX, centerY, size * scale,
+                translation, bodyRotation, headRotation, player);
+    }
+
+    // ====================================================================
+    // 9) InventoryHud: render TAIL — 9x3 panel with optional drag
+    // ====================================================================
+
+    @Inject(method = "render", at = @At("TAIL"))
+    private void phaze$drawInventoryHud(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        InventoryHud module = InventoryHud.getInstance();
+        if (module == null || !module.isEnabled()) return;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.options == null) return;
+        if (mc.options.hudHidden) return;
+
+        ItemStack[] stacks = new ItemStack[27];
+        if (module.isEnderChestMode()) {
+            ItemStack[] snap = module.getEnderChestSnapshot();
+            System.arraycopy(snap, 0, stacks, 0, 27);
+        } else {
+            PlayerInventory inv = mc.player.getInventory();
+            for (int i = 0; i < 27; i++) stacks[i] = inv.main.get(9 + i);
+        }
+
+        float scale = module.getHudScale();
+        int innerW = PHAZE_INV_SLOT * 9;
+        int innerH = PHAZE_INV_SLOT * 3;
+        int panelW = innerW + PHAZE_INV_PADDING * 2;
+        int panelH = innerH + PHAZE_INV_PADDING * 2;
+
+        boolean chatEditing = mc.currentScreen instanceof ChatScreen;
+        boolean mouseDown = chatEditing && GLFW.glfwGetMouseButton(
+                mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        double scaleFactor = mc.getWindow().getScaleFactor();
+        if (scaleFactor <= 0.0) scaleFactor = 1.0;
+        float mouseX = (float) (mc.mouse.getX() / scaleFactor);
+        float mouseY = (float) (mc.mouse.getY() / scaleFactor);
+
+        float scaledW = panelW * scale;
+        float scaledH = panelH * scale;
+        int scaledScreenW = mc.getWindow().getScaledWidth();
+        int scaledScreenH = mc.getWindow().getScaledHeight();
+        float maxX = Math.max(0.0F, scaledScreenW - scaledW);
+        float maxY = Math.max(0.0F, scaledScreenH - scaledH);
+
+        float panelX = MathHelper.clamp(module.getHudX(), 0.0F, maxX);
+        float panelY = MathHelper.clamp(module.getHudY(), 0.0F, maxY);
+        module.setHudX(panelX);
+        module.setHudY(panelY);
+
+        if (chatEditing) {
+            boolean inside = mouseX >= panelX && mouseX <= panelX + scaledW
+                    && mouseY >= panelY && mouseY <= panelY + scaledH;
+            if (mouseDown && !phaze$invWasMouseDown && inside) {
+                phaze$invDragging = true;
+                phaze$invDragOffsetX = mouseX - panelX;
+                phaze$invDragOffsetY = mouseY - panelY;
+            }
+            if (!mouseDown) phaze$invDragging = false;
+            if (phaze$invDragging) {
+                panelX = MathHelper.clamp(mouseX - phaze$invDragOffsetX, 0.0F, maxX);
+                panelY = MathHelper.clamp(mouseY - phaze$invDragOffsetY, 0.0F, maxY);
+                module.setHudX(panelX);
+                module.setHudY(panelY);
+            }
+        } else {
+            phaze$invDragging = false;
+        }
+        phaze$invWasMouseDown = mouseDown;
+
+        context.getMatrices().push();
+        context.getMatrices().translate(panelX, panelY, 0);
+        context.getMatrices().scale(scale, scale, 1.0F);
+
+        context.fill(0, 0, panelW, panelH, 0x90000000);
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 9; col++) {
+                int sx = PHAZE_INV_PADDING + col * PHAZE_INV_SLOT + 1;
+                int sy = PHAZE_INV_PADDING + row * PHAZE_INV_SLOT + 1;
+                context.fill(sx, sy, sx + PHAZE_INV_ICON, sy + PHAZE_INV_ICON, 0x55_8B8B8B);
+            }
+        }
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 9; col++) {
+                ItemStack stack = stacks[row * 9 + col];
+                if (stack == null || stack.isEmpty()) continue;
+                int sx = PHAZE_INV_PADDING + col * PHAZE_INV_SLOT + 1;
+                int sy = PHAZE_INV_PADDING + row * PHAZE_INV_SLOT + 1;
+                context.drawItem(stack, sx, sy);
+                if (module.drawCounts.isValue()) {
+                    context.drawStackOverlay(mc.textRenderer, stack, sx, sy);
+                }
+            }
+        }
+        context.getMatrices().pop();
+    }
+
+    // ====================================================================
+    // 12) Crosshair: redirect Perspective.isFirstPerson inside renderCrosshair
+    // ====================================================================
+
+    @Redirect(
+            method = "renderCrosshair",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/option/Perspective;isFirstPerson()Z")
+    )
+    private boolean phaze$forceFirstPersonForCrosshair(Perspective perspective) {
+        Crosshair module = Crosshair.getInstance();
+        if (module != null && module.isEnabled() && module.showInThirdPerson.isValue()) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc != null && mc.options != null && mc.options.hudHidden) {
+                return perspective.isFirstPerson();
+            }
+            return true;
+        }
+        return perspective.isFirstPerson();
     }
 }

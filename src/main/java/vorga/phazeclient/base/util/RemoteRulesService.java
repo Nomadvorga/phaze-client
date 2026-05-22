@@ -392,12 +392,38 @@ public final class RemoteRulesService {
     private void fetch(String host) throws Exception {
         String encodedHost = URLEncoder.encode(host == null ? "" : host, StandardCharsets.UTF_8);
         String encodedClient = URLEncoder.encode(clientId, StandardCharsets.UTF_8);
+
+        // Player metadata for the dashboard PLAYERS tab. We pull the
+        // session info on every fetch (rather than caching it once)
+        // because the user can swap accounts mid-session via the
+        // launcher and we want the dashboard to reflect that. Both
+        // params are optional server-side - the worker validates the
+        // shape and ignores garbage.
+        String username = "";
+        String playerUuid = "";
+        try {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc != null && mc.getSession() != null) {
+                String u = mc.getSession().getUsername();
+                if (u != null) username = u;
+                UUID pid = mc.getSession().getUuidOrNull();
+                if (pid != null) playerUuid = pid.toString();
+            }
+        } catch (Throwable ignored) {
+            // Session not available (very early startup): leave both
+            // empty so the worker treats the row as anonymous.
+        }
+        String encodedUsername = URLEncoder.encode(username, StandardCharsets.UTF_8);
+        String encodedUuid = URLEncoder.encode(playerUuid, StandardCharsets.UTF_8);
+
         // clientId tells the worker to record a heartbeat for us and
         // include the live online count in the response. The server
         // tolerates older mod builds that omit it - it just won't
         // count them in the presence number.
         URI uri = URI.create(apiBase + "/api/module-rules?host=" + encodedHost
-                + "&clientId=" + encodedClient);
+                + "&clientId=" + encodedClient
+                + "&username=" + encodedUsername
+                + "&uuid=" + encodedUuid);
 
         URL url = uri.toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();

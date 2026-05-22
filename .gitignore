@@ -22,3 +22,29 @@ claude_launcher.exe
 
 # Iris (and other) compile-only jars - large, version-specific, not committed
 libs-compileonly/
+
+# Workspace-local staging directories used by build scripts that
+# can't write directly into sibling project paths. Never committed -
+# their contents get copied into D:\projects\phaze-rules-admin and
+# the staged copies are discarded.
+__server_staging/
+.sehl-staging/
+
+# Temporary one-off helper scripts and logs created during build /
+# deploy sessions. They are recreated on demand so committing them
+# would just churn diffs.
+__*.cjs
+__*.js
+__*.log
+build_log.txt
+abs.txt
+mc.txt
+mcbody.txt
+dh.txt
+last-crash.txt
+
+# Editor / utility scratch
+.vscode/
+fix_user_folder.ps1
+find_sodium.ps1
+inspect_sodium.ps1

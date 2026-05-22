@@ -62,9 +62,9 @@ import java.util.Locale;
  * segment count, with no per-vertex trig.
  */
 public final class HitRangeCircleRenderer {
-    private static final RenderLayer.MultiPhase DEBUG_LINE_STRIP = makeLayer(VertexFormat.DrawMode.DEBUG_LINE_STRIP);
+    private static final RenderLayer.MultiPhase DEBUG_LINES = makeLayer(VertexFormat.DrawMode.DEBUG_LINES);
     private static final RenderLayer.MultiPhase DEBUG_QUADS = makeLayer(VertexFormat.DrawMode.QUADS);
-    private static final RenderLayer.MultiPhase TRIANGLE_FAN = makeLayer(VertexFormat.DrawMode.TRIANGLE_FAN);
+    private static final RenderLayer.MultiPhase TRIANGLES = makeLayer(VertexFormat.DrawMode.TRIANGLES);
 
     private static final List<Angle> angles = new ArrayList<>();
 
@@ -110,33 +110,38 @@ public final class HitRangeCircleRenderer {
 
         HitRange.Mode mode = config.mode();
         RenderLayer layer = switch (mode) {
-            case LINE -> DEBUG_LINE_STRIP;
+            case LINE -> DEBUG_LINES;
             case THICK -> DEBUG_QUADS;
-            case FILLED -> TRIANGLE_FAN;
+            case FILLED -> TRIANGLES;
         };
 
         VertexConsumer vertices = vertexConsumers.getBuffer(layer);
 
         matrices.push();
         switch (mode) {
-            case LINE -> drawCircleLineStrip(matrices, vertices, dy, color);
+            case LINE -> drawCircleLines(matrices, vertices, dy, color);
             case THICK -> drawCircleQuad(matrices, vertices, dy, color);
-            case FILLED -> drawCircleTriangleFan(matrices, vertices, dy, color);
+            case FILLED -> drawCircleTriangles(matrices, vertices, dy, color);
         }
         matrices.pop();
     }
 
-    private static void drawCircleLineStrip(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
+    private static void drawCircleLines(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
-        for (Angle angle : angles) {
-            vertices.vertex(positionMatrix, angle.dx, dy, angle.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
+        // DEBUG_LINES (not DEBUG_LINE_STRIP) so the vertex stream is
+        // pairs of independent line segments. Strip mode connects the
+        // last vertex of one player's ring to the first vertex of the
+        // next player's ring when both render in the same batch,
+        // producing the spurious "cones" that fan out from each player
+        // toward the local player.
+        int n = angles.size();
+        for (int i = 0; i < n; i++) {
+            Angle a = angles.get(i);
+            Angle b = angles.get((i + 1) % n);
+            vertices.vertex(positionMatrix, a.dx, dy, a.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
+            vertices.vertex(positionMatrix, b.dx, dy, b.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
         }
-
-        // Close the loop so the first segment connects back to the last
-        // segment instead of leaving a tiny gap at the start vertex.
-        Angle first = angles.getFirst();
-        vertices.vertex(positionMatrix, first.dx, dy, first.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
     }
 
     private static void drawCircleQuad(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
@@ -153,14 +158,25 @@ public final class HitRangeCircleRenderer {
         }
     }
 
-    private static void drawCircleTriangleFan(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
+    private static void drawCircleTriangles(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
-        // Center vertex of the fan, then the same outline that line-strip
-        // would emit so the fan's rim coincides exactly with the line
-        // geometry at the same radius / segment count.
-        vertices.vertex(positionMatrix, 0.0f, dy, 0.0f).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
-        drawCircleLineStrip(matrices, vertices, dy, argb);
+        // TRIANGLES (not TRIANGLE_FAN) so each disc is independent.
+        // Fan mode shares the first emitted vertex as the pivot for
+        // every subsequent triangle in the entire batch, which means
+        // the second player's first vertex becomes part of triangles
+        // anchored on the FIRST player's centre - the source of the
+        // "cones" the user sees on a server with many ranged rings.
+        // Emitting (centre, A, B) for each segment as an explicit
+        // triangle list makes every disc self-contained and cone-free.
+        int n = angles.size();
+        for (int i = 0; i < n; i++) {
+            Angle a = angles.get(i);
+            Angle b = angles.get((i + 1) % n);
+            vertices.vertex(positionMatrix, 0.0f, dy, 0.0f).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
+            vertices.vertex(positionMatrix, a.dx, dy, a.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
+            vertices.vertex(positionMatrix, b.dx, dy, b.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
+        }
     }
 
     /**

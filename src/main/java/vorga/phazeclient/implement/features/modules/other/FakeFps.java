@@ -30,11 +30,14 @@ public final class FakeFps extends Module {
     private static final FakeFps INSTANCE = new FakeFps();
 
     /** How often the random fake-fps pick is regenerated, in
-     *  milliseconds. Real FPS counters update at roughly this
-     *  cadence too (vanilla refreshes its current-fps reading
-     *  about once per second in 1.21), so the resampled value
-     *  blends in naturally. */
-    private static final long UPDATE_INTERVAL_MS = 800L;
+     *  milliseconds. Vanilla refreshes its F3 fps line exactly
+     *  once per second (the {@code nextDebugInfoUpdateTime}
+     *  cadence in {@code MinecraftClient.run}), so resampling at
+     *  the same beat keeps the visible number changing in sync
+     *  with the real reading and avoids the "fake number jitters
+     *  on a different rhythm than real FPS" tell. Also matches
+     *  Sodium's HUD update interval. */
+    private static final long UPDATE_INTERVAL_MS = 1000L;
 
     public final SectionSetting generalSection = new SectionSetting("General");
     public final ValueSetting minFps = new ValueSetting(

@@ -70,6 +70,16 @@ public class TextComponent extends AbstractSettingComponent {
         height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
+        // Dynamic cursor: the input rect inside this component is a
+        // text input, request the I-beam while the pointer is over
+        // that specific rectangle (or while typing). The end-of-frame
+        // commit lives in ScreenCursorMixin.
+        boolean overInputRect = MathUtil.isHovered(mouseX, mouseY,
+                x + width - 61.5F, y + height / 2.0F - 6.0F, 53.0F, 12.0F);
+        if (overInputRect || typing) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestBeam();
+        }
+
         renderSettingCard(context, typing ? 1.0f : 0.0f, hoverProgress);
 
         this.rectX = x + width - 61.5F;

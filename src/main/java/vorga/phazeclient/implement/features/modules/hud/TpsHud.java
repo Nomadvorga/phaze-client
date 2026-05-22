@@ -14,14 +14,13 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
  * The raw measurement jitters because a single laggy server frame
  * can stall world-time updates for hundreds of milliseconds. We
  * keep a rolling window of the last {@link #SAMPLE_WINDOW} samples
- * and report the average; the bar widget plots the per-sample raw
- * values so users still see the spikes.
+ * and report the average.
  *
- * <h3>Why a 200ms tick</h3>
- * Sampling at 200ms means each window contains ~5 samples per
- * second. Over the configured 60-sample window that's a 12-second
- * trailing average, which feels representative without being
- * laggy when the user toggles between low- and high-tps servers.
+ * <h3>Rendering</h3>
+ * Routed through the standard batched HUD pipeline alongside Time /
+ * Memory / Combo / etc. - the renderer pulls the formatted text via
+ * {@link #getFormattedText()} and the colour via
+ * {@link #getColor()} (when {@link #colorByTps} is on).
  */
 public final class TpsHud extends RectHudModule {
     private static final TpsHud INSTANCE = new TpsHud();
@@ -29,18 +28,10 @@ public final class TpsHud extends RectHudModule {
     /** How many raw samples the rolling window holds. */
     public static final int SAMPLE_WINDOW = 60;
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
-    public final BooleanSetting showBar = new BooleanSetting(
-            "Show Bar",
-            "Render a 60-sample history bar showing TPS over the last ~12 seconds"
-    ).setValue(true);
-    public final BooleanSetting showNumeric = new BooleanSetting(
-            "Show Numeric",
-            "Show the current smoothed TPS reading as a number"
-    ).setValue(true);
+    public final SectionSetting generalSection = new SectionSetting("General");
     public final BooleanSetting colorByTps = new BooleanSetting(
             "Color By TPS",
-            "Tint the numeric reading green / yellow / red based on tier"
+            "Tint the TPS reading green / yellow / red based on tier"
     ).setValue(true);
 
     /** Rolling raw-sample buffer. New samples added at the head;
@@ -50,11 +41,9 @@ public final class TpsHud extends RectHudModule {
     private long lastWorldTime = 0L;
 
     private TpsHud() {
-        super("tps_hud", "TPS", 22.0F, 22.0F, 1.5F);
-        showBar.setFullWidth(true);
-        showNumeric.setFullWidth(true);
+        super("tps_hud", "TPS", 22.0F, 22.0F, 1.0F);
         colorByTps.setFullWidth(true);
-        setup(otherSection, showBar, showNumeric, colorByTps);
+        setup(generalSection, colorByTps);
     }
 
     public static TpsHud getInstance() {
@@ -63,7 +52,7 @@ public final class TpsHud extends RectHudModule {
 
     @Override
     public String getDescription() {
-        return "Estimates and visualises server TPS based on world-time advancement";
+        return "Estimates server TPS based on world-time advancement";
     }
 
     @Override
@@ -90,25 +79,16 @@ public final class TpsHud extends RectHudModule {
             lastWorldTime = currentWorldTime;
             return;
         }
-        // Sample at 200 ms intervals to keep the history aggregation
-        // consistent. Faster sampling would over-represent client
-        // tick jitter; slower sampling makes the bar widget feel
-        // sluggish.
         double deltaSeconds = (now - lastSampleNanos) / 1_000_000_000.0;
         if (deltaSeconds < 0.2) return;
 
         long deltaTicks = currentWorldTime - lastWorldTime;
-        // Negative delta = world reset (e.g. dimension change).
-        // Drop the sample and re-anchor the baseline so the next
-        // window starts cleanly.
         if (deltaTicks < 0) {
             lastSampleNanos = now;
             lastWorldTime = currentWorldTime;
             return;
         }
         double tps = deltaTicks / deltaSeconds;
-        // Clamp upper bound so a one-tick burst can't spike the
-        // bar to 100+. Vanilla server caps at 20.
         if (tps > 20.5) tps = 20.0;
         samples.addFirst(tps);
         while (samples.size() > SAMPLE_WINDOW) {
@@ -118,11 +98,6 @@ public final class TpsHud extends RectHudModule {
         lastWorldTime = currentWorldTime;
     }
 
-    /** Live snapshot of the rolling window for the renderer. */
-    public java.util.Deque<Double> getSamples() {
-        return samples;
-    }
-
     /** Smoothed TPS = simple mean of the window. Empty window
      *  returns 20 (assume healthy until we have data). */
     public double getSmoothedTps() {
@@ -130,5 +105,19 @@ public final class TpsHud extends RectHudModule {
         double sum = 0;
         for (Double s : samples) sum += s;
         return sum / samples.size();
+    }
+
+    /** Formatted text the batched HUD renderer paints. */
+    public String getFormattedText() {
+        return String.format("TPS: %.1f", getSmoothedTps());
+    }
+
+    /** Tier color matching the FPS HUD convention. */
+    public int getColor() {
+        if (!colorByTps.isValue()) return 0xFFFFFFFF;
+        double tps = getSmoothedTps();
+        if (tps >= 18.0) return 0xFF55FF55;
+        if (tps >= 15.0) return 0xFFFFFF55;
+        return 0xFFFF5555;
     }
 }
