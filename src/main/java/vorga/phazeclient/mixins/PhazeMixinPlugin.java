@@ -80,6 +80,17 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
             FabricLoader.getInstance().isModLoaded("screencopy");
 
     /**
+     * Reese's Sodium Options loaded? It's an optional add-on to
+     * Sodium that replaces the stock options screen with a tabbed
+     * UI (search field, category tabs). Phaze ships a cursor mixin
+     * that targets one of its internal classes, gated behind this
+     * flag so users running plain Sodium without Reese's don't
+     * crash with a NoClassDefFoundError on the missing target.
+     */
+    private static final boolean REESES_LOADED =
+            FabricLoader.getInstance().isModLoaded("reeses-sodium-options");
+
+    /**
      * Mixins that must NOT load when Sodium is present. Full class
      * names so they compare directly against the {@code mixinClassName}
      * the {@link IMixinConfigPlugin} contract passes in.
@@ -97,7 +108,26 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
     private static final Set<String> SODIUM_ONLY = Set.of(
             "vorga.phazeclient.mixins.sodium.DefaultChunkRendererChunkAnimatorMixin",
             "vorga.phazeclient.mixins.sodium.ShaderParserChunkAnimatorMixin",
-            "vorga.phazeclient.mixins.sodium.SodiumGlShaderChunkAnimatorMixin"
+            "vorga.phazeclient.mixins.sodium.SodiumGlShaderChunkAnimatorMixin",
+            "vorga.phazeclient.mixins.sodium.SodiumFlatButtonCursorMixin",
+            "vorga.phazeclient.mixins.sodium.SodiumControlElementCursorMixin",
+            "vorga.phazeclient.mixins.sodium.SodiumSliderDragCursorMixin",
+            "vorga.phazeclient.mixins.sodium.ReesesSearchFieldCursorMixin"
+    );
+
+    /**
+     * Mixins that need Reese's Sodium Options (an optional add-on
+     * to Sodium) on classpath. They reference
+     * {@code me.flashyreese.mods.reeses_sodium_options.*} classes
+     * which don't exist on classpath unless the mod is installed,
+     * so loading them under plain Sodium would NCDFE at the mixin
+     * apply phase. Note this is checked in addition to
+     * {@link #SODIUM_LOADED} - Reese's depends on Sodium, so a
+     * machine without Sodium also won't have Reese's, and the
+     * Sodium gate filters out those cases first.
+     */
+    private static final Set<String> REESES_ONLY = Set.of(
+            "vorga.phazeclient.mixins.sodium.ReesesSearchFieldCursorMixin"
     );
 
     /**
@@ -106,7 +136,8 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
      * which don't exist on classpath unless Iris is installed.
      */
     private static final Set<String> IRIS_ONLY = Set.of(
-            "vorga.phazeclient.mixins.iris.IrisGlShaderChunkAnimatorMixin"
+            "vorga.phazeclient.mixins.iris.IrisGlShaderChunkAnimatorMixin",
+            "vorga.phazeclient.mixins.iris.IrisElementWidgetCursorMixin"
     );
 
     /**
@@ -142,6 +173,9 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
             return false;
         }
         if (!IRIS_LOADED && IRIS_ONLY.contains(mixinClassName)) {
+            return false;
+        }
+        if (!REESES_LOADED && REESES_ONLY.contains(mixinClassName)) {
             return false;
         }
         if (SCREENCOPY_MOD_LOADED && SKIP_IF_SCREENCOPY_MOD.contains(mixinClassName)) {

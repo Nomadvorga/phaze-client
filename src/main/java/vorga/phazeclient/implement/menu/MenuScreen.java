@@ -61,6 +61,10 @@ public class MenuScreen extends Screen implements QuickImports {
     private final CategoryContainerComponent categoryContainerComponent = new CategoryContainerComponent();
     private final ModuleDescriptionComponent moduleDescriptionComponent = new ModuleDescriptionComponent();
     private final ModuleDetailComponent moduleDetailComponent = new ModuleDetailComponent();
+    private final vorga.phazeclient.implement.menu.components.implement.other.ConfigsViewComponent configsView =
+            new vorga.phazeclient.implement.menu.components.implement.other.ConfigsViewComponent();
+    private final vorga.phazeclient.implement.menu.components.implement.other.ConfigShareModalComponent configShareModal =
+            new vorga.phazeclient.implement.menu.components.implement.other.ConfigShareModalComponent();
     public final Animation animation = new LinearAnimation().setMs(200).setValue(1);
     public ModuleCategory category = ModuleCategory.ALL;
     public int x, y, width, height;
@@ -167,14 +171,29 @@ public class MenuScreen extends Screen implements QuickImports {
         try {
             MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> {
                 boolean moduleDetailOpen = moduleDetailComponent.isOpen();
+                boolean configsViewOpen = configsView.isOpen();
                 for (AbstractComponent component : components) {
-                    if (moduleDetailOpen && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
+                    if ((moduleDetailOpen || configsViewOpen) && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
                         continue;
                     }
                     component.globalAlpha = alphaAnimation;
                     component.render(context, overlayMouseX, overlayMouseY, delta);
                 }
+                if (configsViewOpen) {
+                    configsView.position(x, y).size(width, height);
+                    configsView.globalAlpha = alphaAnimation;
+                    configsView.render(context, overlayMouseX, overlayMouseY, delta);
+                }
                 windowManager.render(context, overlayMouseX, overlayMouseY, delta);
+                // ConfigShare modal renders LAST so it floats above
+                // the windowManager output (window dialogs, etc.) and
+                // its dim layer covers the entire menu canvas. We
+                // re-anchor its bounds to the menu rect on every
+                // frame so the centred modal stays centred when the
+                // user resizes the window.
+                configShareModal.position(x, y).size(width, height);
+                configShareModal.globalAlpha = alphaAnimation;
+                configShareModal.render(context, overlayMouseX, overlayMouseY, delta);
             });
         } finally {
             vorga.phazeclient.api.system.shape.batched.BatchedRectangle.endScope();
@@ -264,6 +283,50 @@ public class MenuScreen extends Screen implements QuickImports {
         moduleDetailComponent.closeDetail();
     }
 
+    public void openConfigShareModal() {
+        configShareModal.position(x, y).size(width, height);
+        configShareModal.openShare(null);
+    }
+
+    public void openConfigShareModal(String configName) {
+        configShareModal.position(x, y).size(width, height);
+        configShareModal.openShare(configName);
+    }
+
+    public void openConfigRenameModal(String configName, Runnable onRenamed) {
+        configShareModal.position(x, y).size(width, height);
+        configShareModal.openRename(configName, onRenamed);
+    }
+
+    /**
+     * Opens the modal in IMPORT mode so the user can paste a
+     * share-key code and download a config from the server. Refreshes
+     * the configs view list once import completes so the new entry
+     * shows up without a manual reload.
+     */
+    public void openConfigImportModal() {
+        configShareModal.position(x, y).size(width, height);
+        configShareModal.openImport(configsView::refreshAfterImport);
+    }
+
+    public boolean isConfigShareModalOpen() {
+        return configShareModal.isOpen();
+    }
+
+    public void openConfigsView() {
+        closeModuleDetail();
+        configsView.position(x, y).size(width, height);
+        configsView.open();
+    }
+
+    public void closeConfigsView() {
+        configsView.close();
+    }
+
+    public boolean isConfigsViewOpen() {
+        return configsView.isOpen();
+    }
+
     public float getScaleAnimation() {
         return animation.getOutputFloat();
     }
@@ -283,6 +346,34 @@ public class MenuScreen extends Screen implements QuickImports {
 
         if (shouldStartMenuDrag(overlayMouseX, overlayMouseY, button, insideMenu)) {
             startMenuDrag(mouseX, mouseY);
+            return true;
+        }
+
+        // ConfigShare modal claims input priority while open so clicks
+        // on the dim backdrop can close it and clicks on the modal's
+        // own widgets aren't intercepted by the search bar / category
+        // grid that lives underneath.
+        if (configShareModal.isOpen()) {
+            configShareModal.position(x, y).size(width, height);
+            configShareModal.mouseClicked(overlayMouseX, overlayMouseY, button);
+            return true;
+        }
+
+        // Configs view (CONFIGS top-tab content) sits between the
+        // background sidebar / footer and the rest of the menu.
+        // Route clicks here first so kebab pop-ups and row activates
+        // don't fall through to the category grid.
+        if (configsView.isOpen()) {
+            configsView.position(x, y).size(width, height);
+            if (configsView.mouseClicked(overlayMouseX, overlayMouseY, button)) {
+                return true;
+            }
+            // Forward to BackgroundComponent so the sidebar (config
+            // list, NEW CONFIG button, top tabs) is still clickable
+            // while the configs view is open.
+            if (backgroundComponent.mouseClicked(overlayMouseX, overlayMouseY, button)) {
+                return true;
+            }
             return true;
         }
 
@@ -374,11 +465,32 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
+        // Dynamic cursor: announce the wheel event to the cursor
+        // manager so it can flip the OS pointer to the vertical/
+        // horizontal resize shape for the duration of the spin. The
+        // global Mouse.onMouseScroll mixin would normally cover this,
+        // but calling directly from the screen path is the most
+        // reliable trigger - it runs on the render thread inside the
+        // active screen's scroll handler, so the resize shape is
+        // armed before the next render frame's endFrame() commits it.
+        vorga.phazeclient.api.system.cursor.CursorManager.notifyScroll(horizontal, vertical);
+
         updateOverlayMetrics();
         double overlayMouseX = toOverlayCoordinate(mouseX);
         double overlayMouseY = toOverlayCoordinate(mouseY);
         if (moduleDetailComponent.isOpen()) {
             moduleDetailComponent.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
+            return true;
+        }
+
+        // CONFIGS view owns the scroll wheel while open so its row
+        // list can pan past the visible window. Without this branch
+        // the wheel went to the category grid that sits underneath
+        // (which is hidden but still in the components list), so the
+        // user couldn't reach configs that overflow the bottom edge.
+        if (configsView.isOpen()) {
+            configsView.position(x, y).size(width, height);
+            configsView.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
             return true;
         }
 
@@ -390,6 +502,11 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // Modal owns key input while open so Esc closes it and the
+        // text field gets every keystroke before menu hotkeys.
+        if (configShareModal.isOpen() && configShareModal.keyPressed(keyCode, scanCode, modifiers)) {
+            return true;
+        }
         if (backgroundComponent.keyPressed(keyCode, scanCode, modifiers)) {
             return true;
         }
@@ -445,6 +562,9 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
+        if (configShareModal.isOpen() && configShareModal.charTyped(chr, modifiers)) {
+            return true;
+        }
         if (backgroundComponent.charTyped(chr, modifiers)) {
             return true;
         }
@@ -525,6 +645,14 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     private boolean shouldStartMenuDrag(double overlayMouseX, double overlayMouseY, int button, boolean insideMenu) {
+        // While a kebab popup or the share/rename modal is up, the
+        // first click is meant to dismiss / interact with that
+        // overlay - it must NOT also start a menu drag, otherwise
+        // closing the popup also yanks the entire window across the
+        // screen.
+        if (configShareModal.isOpen() || configsView.isPopupOpen()) {
+            return false;
+        }
         return button == 0
                 && insideMenu
                 && !isPointerOverInteractiveElement(overlayMouseX, overlayMouseY);

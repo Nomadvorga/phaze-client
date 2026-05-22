@@ -76,6 +76,14 @@ public class SearchComponent extends AbstractComponent {
         boolean isHovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
+        // Dynamic cursor: search box is a text input, request the
+        // I-beam shape while the pointer is over it. CursorManager
+        // commits the highest-priority request at end-of-frame, so
+        // touching it from a render path is safe.
+        if (isHovered || typing) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestBeam();
+        }
+
         selectAnimation.setDirection(isSearchSelected ? Direction.FORWARDS : Direction.BACKWARDS);
 
         float hoverProgress = hoverAnimation.getOutputFloat();

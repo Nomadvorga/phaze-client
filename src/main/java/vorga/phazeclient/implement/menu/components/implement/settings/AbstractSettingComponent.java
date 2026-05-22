@@ -15,7 +15,7 @@ import vorga.phazeclient.implement.menu.components.AbstractComponent;
 @RequiredArgsConstructor
 public abstract class AbstractSettingComponent extends AbstractComponent {
     private final Setting setting;
-    private final Animation visibilityAnimation = new DecelerateAnimation().setMs(350).setValue(1);
+    private final Animation visibilityAnimation = new DecelerateAnimation().setMs(1).setValue(1);
     private final Animation textOffsetAnimation = new DecelerateAnimation().setMs(140).setValue(1);
     private final Animation cardHoverAnimation = new DecelerateAnimation().setMs(170).setValue(1);
     protected final ResetIconComponent resetIcon = new ResetIconComponent();
@@ -110,6 +110,18 @@ public abstract class AbstractSettingComponent extends AbstractComponent {
 
     protected float animatedCardHover(boolean hovered) {
         cardHoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
+        // Dynamic Cursor: every setting row that funnels through this
+        // animated-hover helper is interactive (toggle, slider, color
+        // swatch, dropdown, bind capture, multi-select chip, group
+        // header, button). Funneling the request here means each
+        // concrete component just keeps calling animatedCardHover for
+        // its visuals and the cursor updates "for free" - the only
+        // exception is TextComponent, which has its own narrower
+        // beam-shaped rect inside the card and overrides this in its
+        // render method by issuing requestBeam().
+        if (hovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
         return cardHoverAnimation.getOutputFloat();
     }
 }
