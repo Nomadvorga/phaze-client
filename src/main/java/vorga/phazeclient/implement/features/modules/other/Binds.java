@@ -7,7 +7,6 @@ import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
-import vorga.phazeclient.api.feature.module.setting.implement.GroupSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
 
@@ -78,16 +77,19 @@ public final class Binds extends Module {
 
         slots = new BindSlot[SLOT_COUNT];
         List<vorga.phazeclient.api.feature.module.setting.Setting> setupArgs = new ArrayList<>();
-        setupArgs.add(generalSection);
         for (int i = 0; i < SLOT_COUNT; i++) {
             slots[i] = new BindSlot(i + 1);
-            setupArgs.add(slots[i].asGroup());
+            // Inline layout: per-slot section header + the bind +
+            // the message text, all rendered as full-width rows so
+            // the user sees every slot's controls without needing
+            // to click into a popup. The previous GroupSetting
+            // layout hid the controls behind a gear that didn't
+            // open reliably on every machine - the user reported
+            // "у биндов нет настроек". Flat layout fixes it.
+            setupArgs.add(slots[i].section);
+            setupArgs.add(slots[i].bind);
+            setupArgs.add(slots[i].text);
         }
-        // Module uses the default constructor (showEnable=true) so
-        // the per-module toggle in the menu actually gates the
-        // dispatch path. Flipping the toggle off should silence
-        // every bind without the user needing to clear individual
-        // slots.
         setup(setupArgs.toArray(new vorga.phazeclient.api.feature.module.setting.Setting[0]));
     }
 
@@ -143,35 +145,26 @@ public final class Binds extends Module {
     }
 
     /**
-     * One {bind, text} row in the settings panel. Each slot owns a
-     * {@link GroupSetting} so the bind and the message render
-     * together as a labelled card; the group's expand/collapse
-     * state is wired automatically by the menu.
+     * One {section header, bind, text} row group flattened inline
+     * into the module's settings panel. {@link #section} renders a
+     * "Bind 1" / "Bind 2" / ... heading above each pair so the
+     * three rows visually group together; {@link #bind} captures
+     * the trigger key, {@link #text} captures the chat / command
+     * payload.
      */
     private static final class BindSlot {
+        final SectionSetting section;
         final BindSetting bind;
         final TextSetting text;
-        private final GroupSetting group;
 
         BindSlot(int index) {
-            // Localised slot label. Keep it short (the menu's group
-            // header truncates anything longer than ~14 chars on a
-            // narrow card) and human-1-indexed because the user
-            // doesn't think in arrays.
             String label = "Bind " + index;
-            this.bind = new BindSetting("Key", "Key that triggers this bind");
-            this.text = new TextSetting("Message", "Chat text or /command. Empty = slot is disabled.")
+            this.section = new SectionSetting(label);
+            this.bind = new BindSetting(label + " Key", "Key that triggers " + label);
+            this.text = new TextSetting(label + " Message", "Chat text or /command. Empty = slot is disabled.")
                     .setText("");
             this.bind.setFullWidth(true);
             this.text.setFullWidth(true);
-            this.group = new GroupSetting(label, "Bind " + index)
-                    .settings(bind, text);
-            this.group.setFullWidth(true);
-            this.group.setCheckbox(false);
-        }
-
-        GroupSetting asGroup() {
-            return group;
         }
 
         /**

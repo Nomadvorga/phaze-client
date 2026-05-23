@@ -3,6 +3,7 @@ package vorga.phazeclient.implement.features.modules.other;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
 
 /**
  * Suppresses selected client-side renders. Each toggle is independent
@@ -61,30 +62,41 @@ public final class NoRender extends Module {
             "Skip every particle the client would spawn (ambient, weather, hit, etc.)"
     ).setValue(false);
 
-    public final BooleanSetting hitParticles = new BooleanSetting(
-            "Hit Particles",
-            "Skip only the on-hit particles: damage indicators, crit, enchanted_hit, sweep_attack"
-    ).setValue(true);
+    /** Sub-set of particle categories to skip when {@link #particles}
+     *  is OFF. Replaces five separate {@link BooleanSetting}s so the
+     *  picker reads as one cohesive multiselect chip row instead of
+     *  a vertical wall of toggles. The {@code BooleanLike} accessors
+     *  below preserve the existing {@code module.hitParticles.isValue()}
+     *  call sites in mixins.
+     */
+    public final MultiSelectSetting particleTypes = new MultiSelectSetting(
+            "Particle Types",
+            "Pick which particle categories to skip. Click a label to toggle that category on / off."
+    ).value(
+            "Hit Particles", "Potion Particles", "Break Block Particles",
+            "Splash Potion Particles", "Food Particles"
+    ).selected(
+            "Hit Particles"
+    );
 
-    public final BooleanSetting potionParticles = new BooleanSetting(
-            "Potion Particles",
-            "Skip the bubbly status-effect particles drawn around entities under potion effects"
-    ).setValue(false);
+    /** {@code BooleanSetting}-style accessors so each particle mixin
+     *  keeps its existing {@code mod.hitParticles.isValue()} call
+     *  site unchanged after the migration to MultiSelect. Each is a
+     *  thin lambda over {@link MultiSelectSetting#getSelected()}.
+     */
+    public final BooleanLike hitParticles = () -> particleTypes.getSelected().contains("Hit Particles");
+    public final BooleanLike potionParticles = () -> particleTypes.getSelected().contains("Potion Particles");
+    public final BooleanLike breakBlockParticles = () -> particleTypes.getSelected().contains("Break Block Particles");
+    public final BooleanLike splashPotionParticles = () -> particleTypes.getSelected().contains("Splash Potion Particles");
+    public final BooleanLike foodParticles = () -> particleTypes.getSelected().contains("Food Particles");
 
-    public final BooleanSetting breakBlockParticles = new BooleanSetting(
-            "Break Block Particles",
-            "Skip the chunk-of-block particles that fly out when a block is broken"
-    ).setValue(false);
-
-    public final BooleanSetting splashPotionParticles = new BooleanSetting(
-            "Splash Potion Particles",
-            "Skip the burst that fires when a splash potion bottle breaks (does not affect lingering or status-effect bubbles)"
-    ).setValue(false);
-
-    public final BooleanSetting foodParticles = new BooleanSetting(
-            "Food Particles",
-            "Skip the bite-of-item particles that fly out of the player's mouth while eating"
-    ).setValue(false);
+    /** Functional shim mimicking {@link BooleanSetting#isValue()} so
+     *  every mixin's existing {@code .isValue()} call against a
+     *  particle category still compiles after the consolidation. */
+    @FunctionalInterface
+    public interface BooleanLike {
+        boolean isValue();
+    }
 
     private NoRender() {
         // Storage id stays "no_render" for backwards-compatible config
@@ -95,21 +107,12 @@ public final class NoRender extends Module {
         glowing.setFullWidth(true);
         fire.setFullWidth(true);
         particles.setFullWidth(true);
-        // Hide the more-specific toggles while the broader one is on -
-        // there is no useful state where Particles=ON + <subtoggle>=anything,
-        // so collapsing the redundant controls keeps the panel readable.
-        hitParticles.setFullWidth(true);
-        hitParticles.visible(() -> !particles.isValue());
-        potionParticles.setFullWidth(true);
-        potionParticles.visible(() -> !particles.isValue());
-        breakBlockParticles.setFullWidth(true);
-        breakBlockParticles.visible(() -> !particles.isValue());
-        splashPotionParticles.setFullWidth(true);
-        splashPotionParticles.visible(() -> !particles.isValue());
-        foodParticles.setFullWidth(true);
-        foodParticles.visible(() -> !particles.isValue());
-        setup(glowing, fire, particles, hitParticles, potionParticles, breakBlockParticles,
-                splashPotionParticles, foodParticles);
+        // Hide the multiselect while {@code Particles=ON} - everything
+        // it offers is already a no-op when the broader switch wins,
+        // so collapsing the picker keeps the panel readable.
+        particleTypes.setFullWidth(true);
+        particleTypes.visible(() -> !particles.isValue());
+        setup(glowing, fire, particles, particleTypes);
     }
 
     public static NoRender getInstance() {

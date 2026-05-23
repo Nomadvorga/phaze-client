@@ -26,11 +26,15 @@ import vorga.phazeclient.api.feature.module.setting.implement.GroupSetting;
 public class SearchComponent extends AbstractComponent {
     public static boolean typing = false;
     private int cursorPosition = 0;
+    private int selectionStart = -1;
+    private int selectionEnd = -1;
+    private boolean dragging = false;
     private long lastClickTime = 0;
     private float xOffset = 0;
     @Getter
     private String text = "";
     @Setter
+    @Getter
     private ModuleCategory previousCategory = ModuleCategory.ALL;
 
     private float animatedWidth = 82;
@@ -52,16 +56,49 @@ public class SearchComponent extends AbstractComponent {
     public void setText(String text) {
         this.text = text;
         cursorPosition = text.length();
+        clearSelection();
     }
 
     public void setCursorPosition(int position) {
         this.cursorPosition = Math.max(0, Math.min(position, text.length()));
     }
 
+    private boolean hasSelection() {
+        return selectionStart != -1 && selectionEnd != -1 && selectionStart != selectionEnd;
+    }
+
+    private int selStart() { return Math.min(selectionStart, selectionEnd); }
+    private int selEnd() { return Math.max(selectionStart, selectionEnd); }
+
+    private void clearSelection() {
+        selectionStart = -1;
+        selectionEnd = -1;
+    }
+
+    private void deleteSelectedText() {
+        if (hasSelection()) {
+            int s = selStart();
+            int e = selEnd();
+            text = text.substring(0, s) + text.substring(e);
+            cursorPosition = s;
+            clearSelection();
+        }
+    }
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         MatrixStack matrix = context.getMatrices();
         FontRenderer font = Fonts.getSize(12);
+
+        // Drag-to-extend: while a press is held inside the search box
+        // the cursor follows the mouse and the selection grows from
+        // the original press position. The flag is cleared in
+        // {@link #mouseReleased}.
+        if (dragging && typing) {
+            cursorPosition = getCursorIndexAt(mouseX);
+            if (selectionStart == -1) selectionStart = cursorPosition;
+            selectionEnd = cursorPosition;
+        }
 
         updateXOffset(font, cursorPosition);
 
@@ -122,6 +159,30 @@ public class SearchComponent extends AbstractComponent {
             ScissorManager scissor = Main.getInstance().getScissorManager();
             scissor.push(matrix.peek().getPositionMatrix(), x + 13, y, width - 15, height);
 
+                if (typing && hasSelection()) {
+                    int s = Math.max(0, Math.min(selStart(), text.length()));
+                    int e = Math.max(0, Math.min(selEnd(), text.length()));
+                    if (s < e) {
+                        float selX0 = textX + font.getStringWidth(text.substring(0, s));
+                        float selX1 = textX + font.getStringWidth(text.substring(0, e));
+                        // Center the selection band on the input rect
+                        // itself rather than on the baseline-shifted
+                        // text position. Using the rect centre keeps
+                        // the highlight visually balanced above and
+                        // below the glyphs even though the font's
+                        // baseline isn't symmetric inside the line
+                        // box - the previous {@code inputTextY - 2.5}
+                        // pinned the highlight too low because the
+                        // baseline sits in the lower half of the
+                        // rendered glyph height.
+                        float selH = Math.max(8.0F, renderedTextHeight(font, "I") + 2.0F);
+                        float selY = y + (height - selH) * 0.5F;
+                        rectangle.render(ShapeProperties.create(matrix, selX0, selY, selX1 - selX0, selH)
+                                .color(MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, applyGlobalAlpha(textAlpha)))
+                                .build());
+                    }
+                }
+
                 if (!text.isEmpty() && typing) {
                     String searchText = text.toLowerCase();
 
@@ -161,7 +222,7 @@ public class SearchComponent extends AbstractComponent {
                 long currentTime = System.currentTimeMillis();
                 boolean focused = typing && (currentTime % 1000 < 500);
 
-                if (focused && textAlpha > 0.5F) {
+                if (focused && textAlpha > 0.5F && !hasSelection()) {
                     float cursorX = font.getStringWidth(text.substring(0, cursorPosition));
                     int cursorColor = (int) (applyGlobalAlpha(textAlpha) * 255) << 24 | 0xFFFFFF;
                     float cursorHeight = Math.max(6.0F, renderedTextHeight(font, "I") - 1.0F);
@@ -178,6 +239,9 @@ public class SearchComponent extends AbstractComponent {
         if (hovered && button == 0) {
             long currentTime = System.currentTimeMillis();
             if (currentTime - lastClickTime < 250 && typing) {
+                // Double-click selects all text in the search box.
+                selectionStart = 0;
+                selectionEnd = text.length();
                 cursorPosition = text.length();
             } else {
 
@@ -192,6 +256,13 @@ public class SearchComponent extends AbstractComponent {
                     cursorPosition = 0;
                     xOffset = 0;
                 }
+                // Begin a fresh drag-selection from the click point.
+                // Even if the click was a single tap, this lets the
+                // user immediately drag to extend without releasing
+                // and re-pressing.
+                dragging = true;
+                selectionStart = cursorPosition;
+                selectionEnd = cursorPosition;
 
                 MenuScreen menuScreen = MenuScreen.INSTANCE;
                 if (menuScreen.getCategory() != ModuleCategory.SEARCH) {
@@ -204,6 +275,7 @@ public class SearchComponent extends AbstractComponent {
         } else {
             if (typing) {
                 typing = false;
+                clearSelection();
                 if (text.isEmpty()) {
                     MenuScreen menuScreen = MenuScreen.INSTANCE;
                     if (menuScreen.getCategory() == ModuleCategory.SEARCH) {
@@ -213,6 +285,24 @@ public class SearchComponent extends AbstractComponent {
             }
         }
         return hovered && button == 0;
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
+            dragging = false;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (button == 0 && dragging && typing) {
+            cursorPosition = getCursorIndexAt(mouseX);
+            if (selectionStart == -1) selectionStart = cursorPosition;
+            selectionEnd = cursorPosition;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     
@@ -234,8 +324,13 @@ public class SearchComponent extends AbstractComponent {
                 }
             }
 
+            // Replace the selected range with the typed character so
+            // typing over a highlight overwrites it - matches the
+            // standard text-editor contract.
+            deleteSelectedText();
             text = text.substring(0, cursorPosition) + chr + text.substring(cursorPosition);
             cursorPosition++;
+            clearSelection();
             return true;
         }
         return false;
@@ -245,10 +340,45 @@ public class SearchComponent extends AbstractComponent {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (typing) {
-            switch (keyCode) {
-                case GLFW.GLFW_KEY_BACKSPACE, GLFW.GLFW_KEY_ENTER -> handleTextModification(keyCode);
-                case GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_RIGHT -> moveCursor(keyCode);
-                case GLFW.GLFW_KEY_TAB -> handleTabCompletion();
+            if ((modifiers & GLFW.GLFW_MOD_CONTROL) != 0) {
+                switch (keyCode) {
+                    case GLFW.GLFW_KEY_A -> { selectionStart = 0; selectionEnd = text.length(); cursorPosition = text.length(); }
+                    case GLFW.GLFW_KEY_C -> {
+                        if (hasSelection()) {
+                            GLFW.glfwSetClipboardString(window().getHandle(), text.substring(selStart(), selEnd()));
+                        }
+                    }
+                    case GLFW.GLFW_KEY_X -> {
+                        if (hasSelection()) {
+                            GLFW.glfwSetClipboardString(window().getHandle(), text.substring(selStart(), selEnd()));
+                            deleteSelectedText();
+                        }
+                    }
+                    case GLFW.GLFW_KEY_V -> {
+                        String clip = GLFW.glfwGetClipboardString(window().getHandle());
+                        if (clip != null && !clip.isEmpty()) {
+                            deleteSelectedText();
+                            float maxTextWidth = EXPANDED_WIDTH - ICON_SIZE - 17;
+                            for (char c : clip.toCharArray()) {
+                                if (Fonts.getSize(12).getStringWidth(text) >= maxTextWidth) break;
+                                text = text.substring(0, cursorPosition) + c + text.substring(cursorPosition);
+                                cursorPosition++;
+                            }
+                            clearSelection();
+                            MenuScreen menuScreen = MenuScreen.INSTANCE;
+                            if (!text.isEmpty() && menuScreen.getCategory() != ModuleCategory.SEARCH) {
+                                previousCategory = menuScreen.getCategory();
+                                menuScreen.setCategory(ModuleCategory.SEARCH);
+                            }
+                        }
+                    }
+                }
+            } else {
+                switch (keyCode) {
+                    case GLFW.GLFW_KEY_BACKSPACE, GLFW.GLFW_KEY_ENTER -> handleTextModification(keyCode);
+                    case GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_RIGHT -> moveCursor(keyCode, modifiers);
+                    case GLFW.GLFW_KEY_TAB -> handleTabCompletion();
+                }
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -259,19 +389,22 @@ public class SearchComponent extends AbstractComponent {
 
     private void handleTextModification(int keyCode) {
         if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-            if (cursorPosition > 0) {
+            if (hasSelection()) {
+                deleteSelectedText();
+            } else if (cursorPosition > 0) {
                 text = text.substring(0, cursorPosition - 1) + text.substring(cursorPosition);
                 cursorPosition--;
+            }
 
-                if (text.isEmpty()) {
-                    MenuScreen menuScreen = MenuScreen.INSTANCE;
-                    if (menuScreen.getCategory() == ModuleCategory.SEARCH) {
-                        menuScreen.setCategory(previousCategory);
-                    }
+            if (text.isEmpty()) {
+                MenuScreen menuScreen = MenuScreen.INSTANCE;
+                if (menuScreen.getCategory() == ModuleCategory.SEARCH) {
+                    menuScreen.setCategory(previousCategory);
                 }
             }
         } else if (keyCode == GLFW.GLFW_KEY_ENTER) {
             typing = false;
+            clearSelection();
             if (text.isEmpty()) {
                 MenuScreen menuScreen = MenuScreen.INSTANCE;
                 if (menuScreen.getCategory() == ModuleCategory.SEARCH) {
@@ -282,11 +415,18 @@ public class SearchComponent extends AbstractComponent {
     }
 
     
-    private void moveCursor(int keyCode) {
+    private void moveCursor(int keyCode, int modifiers) {
+        boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
         if (keyCode == GLFW.GLFW_KEY_LEFT && cursorPosition > 0) {
             cursorPosition--;
         } else if (keyCode == GLFW.GLFW_KEY_RIGHT && cursorPosition < text.length()) {
             cursorPosition++;
+        }
+        if (shift) {
+            if (selectionStart == -1) selectionStart = cursorPosition;
+            selectionEnd = cursorPosition;
+        } else {
+            clearSelection();
         }
     }
 

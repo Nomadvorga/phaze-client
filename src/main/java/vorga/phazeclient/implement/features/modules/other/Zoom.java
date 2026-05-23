@@ -29,13 +29,13 @@ public final class Zoom extends Module {
     public final BooleanSetting resumeZoom = new BooleanSetting("Resume Zoom", "Resume zoom level after disabling").setValue(false);
     public final ValueSetting defaultZoom = new ValueSetting("Default Zoom", "Default zoom level").range(2.0f, 15.0f).step(1.0f).setValue(4.0f);
     public final BooleanSetting cinematicCamera = new BooleanSetting("Cinematic Camera", "Use cinematic camera when zooming").setValue(false);
-    public final ValueSetting zoomInDuration = new ValueSetting("Zoom In Duration", "Duration of zoom in animation").range(0.1f, 2.0f).step(0.1f).setValue(0.5f);
+    public final ValueSetting zoomInDuration = new ValueSetting("Zoom In Duration", "Duration of zoom in animation").range(0.1f, 2.0f).step(0.1f).setValue(1.5f);
     public final SelectSetting zoomInInterpolation = new SelectSetting(
             "Zoom In Interpolation",
             "Easing curve used while zooming in. Default keeps the legacy exponential-approach behaviour."
     ).value("Default", "Linear", "Smooth", "Fast", "Balanced", "Ease Out")
      .selected(vorga.phazeclient.base.util.animation.Interpolations.DEFAULT_NAME);
-    public final ValueSetting zoomOutDuration = new ValueSetting("Zoom Out Duration", "Duration of zoom out animation").range(0.1f, 2.0f).step(0.1f).setValue(0.5f);
+    public final ValueSetting zoomOutDuration = new ValueSetting("Zoom Out Duration", "Duration of zoom out animation").range(0.1f, 2.0f).step(0.1f).setValue(1.0f);
     public final SelectSetting zoomOutInterpolation = new SelectSetting(
             "Zoom Out Interpolation",
             "Easing curve used while zooming out. Default keeps the legacy exponential-approach behaviour."

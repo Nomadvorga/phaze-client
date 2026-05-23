@@ -32,7 +32,7 @@ import java.util.Locale;
 public class ModuleDetailComponent extends AbstractComponent {
     private static final float PANEL_PADDING = 12.0F;
     private static final float SETTINGS_TOP = 41.0F;
-    private static final float SETTINGS_BOTTOM = 12.0F;
+    private static final float SETTINGS_BOTTOM = 0.0F;
     private static final float COLUMN_GAP = 8.0F;
     private static final float ROW_GAP = 8.0F;
     private static final float BACK_BUTTON_SIZE = 13.0F;
@@ -280,6 +280,11 @@ public class ModuleDetailComponent extends AbstractComponent {
 
         scissorManager.pop();
 
+        // {@code columnOffsets} carries an extra trailing
+        // {@code ROW_GAP} after the last row's height. We keep
+        // that extra gap baked into {@code lastMeasuredHeight} so
+        // the user can scroll a few px past the last setting and
+        // its bottom doesn't kiss the panel border.
         lastMeasuredHeight = Math.max(columnOffsets[0], columnOffsets[1]);
         double maxScroll = Math.max(0.0, lastMeasuredHeight - innerHeight);
         scroll = Math.max(0.0, Math.min(scroll, maxScroll));

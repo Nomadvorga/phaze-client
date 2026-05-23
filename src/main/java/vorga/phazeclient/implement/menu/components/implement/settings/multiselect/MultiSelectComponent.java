@@ -185,7 +185,20 @@ public class MultiSelectComponent extends AbstractSettingComponent {
         boolean selected = setting.getSelected().contains(entry.name);
 
         ChipAnimations anim = chipAnimations.computeIfAbsent(entry.name, n -> new ChipAnimations());
-        anim.selected.setDirection(selected ? Direction.FORWARDS : Direction.BACKWARDS);
+        // First-render seeding: a chip should land already in its
+        // resting state instead of fading into it. The user
+        // explicitly asked to drop the colour fade when entering a
+        // module's settings (the previous flow ramped the
+        // selected-state animation from 0 to its target over 220 ms,
+        // which read as a flash on every open). Snap to the end
+        // value on first sight, then let the animation drive
+        // normally for subsequent user toggles.
+        if (!anim.seeded) {
+            anim.selected.setDirectionAndFinish(selected ? Direction.FORWARDS : Direction.BACKWARDS);
+            anim.seeded = true;
+        } else {
+            anim.selected.setDirection(selected ? Direction.FORWARDS : Direction.BACKWARDS);
+        }
         float selP = anim.selected.getOutputFloat();
 
         // Idle base = panel-chip surface (very subtle), selected
@@ -197,14 +210,17 @@ public class MultiSelectComponent extends AbstractSettingComponent {
         int fill = MenuStyle.mix(idle, activeFill, selP);
         int fillFinal = MenuStyle.withAlpha(fill, currentAlpha * (0.55F + 0.45F * selP));
 
-        // Outline lifts toward the accent only on selection so the
-        // chip clearly tells the user it's clickable / active.
+        // Outline always rendered at full chip alpha (gated only by
+        // the menu's open/close globalAlpha) so even the unselected
+        // chips show a 1px border instead of being a fill-only
+        // pill. The user explicitly asked for the outline to be
+        // visible on every chip.
         int outline = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, selP);
-        int outlineFinal = MenuStyle.withAlpha(outline, currentAlpha * (0.55F + 0.45F * selP));
+        int outlineFinal = MenuStyle.withAlpha(outline, currentAlpha);
 
         rectangle.render(ShapeProperties.create(matrices, entry.x, entry.y, entry.width, CHIP_HEIGHT)
                 .round(2.5F)
-                .thickness(1.0F + 0.4F * selP)
+                .thickness(1.2F)
                 .softness(0.6F)
                 .color(fillFinal)
                 .outlineColor(outlineFinal)
@@ -310,6 +326,11 @@ public class MultiSelectComponent extends AbstractSettingComponent {
      */
     private static final class ChipAnimations {
         final Animation selected = new DecelerateAnimation().setMs(220).setValue(1);
+        /** First-render seed flag. {@code render} snaps the
+         *  selection animation to its end value on the very first
+         *  frame so chips don't fade in when the settings panel
+         *  opens; subsequent toggles animate normally. */
+        boolean seeded = false;
 
         ChipAnimations() {
             selected.setDirection(Direction.BACKWARDS);

@@ -65,10 +65,9 @@ public final class ComboCounterHud extends RectHudModule {
     }
 
     /**
-     * Raw running-combo accessor used by other modules (currently
-     * {@link vorga.phazeclient.implement.features.modules.hud.BattleInfo})
-     * that want to share the same canonical counter without
-     * reimplementing the target-change / hit-by-enemy / world-join
+     * Raw running-combo accessor. Other modules can read this
+     * without reimplementing the target-change / hit-by-enemy /
+     * world-join reset logic that lives here.
      * reset rules. Returns 0 when no combo is active.
      */
     public int getCombo() {

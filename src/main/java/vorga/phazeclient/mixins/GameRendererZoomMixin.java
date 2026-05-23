@@ -52,10 +52,12 @@ public abstract class GameRendererZoomMixin {
 
     @ModifyVariable(method = "getFov", at = @At(value = "RETURN", shift = At.Shift.BEFORE), ordinal = 1)
     private float injectZoom(float fov) {
-        // Disable zoom when GUI is open
-        if (MinecraftClient.getInstance().currentScreen != null) {
-            return fov;
-        }
+        // No GUI early-return: when a screen opens we DO want the
+        // unzoom animation to play out via the normal targetZoom=1
+        // path. Releasing the bind on GUI open is handled in
+        // {@link ScreenOpenMixin} which flips {@link Zoom#zoomActive}
+        // off, so the rest of this method already drives the
+        // zoom-out curve correctly.
 
         float targetZoom;
 

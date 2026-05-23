@@ -12,7 +12,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import vorga.phazeclient.implement.features.modules.hud.BattleInfo;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.other.AutoEat;
 import vorga.phazeclient.implement.features.modules.other.AutoGG;
@@ -29,9 +28,18 @@ public class ClientPlayerInteractionManagerMixin {
         if (reachHud.isEnabled()) {
             reachHud.recordHitDistance(player, target);
         }
-        
+
+        // Shift Tap: only fire when the LEFT-click hits another
+        // PlayerEntity (PvP swing). Mob hits no longer trigger -
+        // sneak-tapping while farming feels jittery and was never
+        // the intended use case. Right-click / item-use no longer
+        // triggers either; the {@code interactItem} hook for shift
+        // tap was removed because the user reported sneak firing
+        // on every block / item interaction.
         ShiftTap shiftTap = ShiftTap.getInstance();
-        if (shiftTap.isEnabled()) {
+        if (shiftTap.isEnabled()
+                && target instanceof PlayerEntity victim
+                && !victim.equals(player)) {
             shiftTap.triggerShiftTap();
         }
 
@@ -72,29 +80,14 @@ public class ClientPlayerInteractionManagerMixin {
      * BattleInfo's combo metric reads from {@link
      * vorga.phazeclient.implement.features.modules.hud.ComboCounterHud}
      * which is incremented inside {@code PlayerEntity.attack} - i.e.
-     * <em>during</em> the body of {@code attackEntity}. Injecting at
-     * RETURN guarantees the combo counter has already been bumped by
-     * the time we read it, so the rolling combo average sees the
-     * post-hit value (1 on the first hit, 2 on the second, etc.)
-     * instead of the stale pre-hit value an HEAD inject would see.
-     * Reach / damage are recorded inside this method too rather than
-     * in the HEAD block above so the whole combat-summary record
-     * arrives as one atomic snapshot per attack.
+     * <em>during</em> the body of {@code attackEntity}. The
+     * BattleInfo module itself was removed in a later cleanup;
+     * keeping the RETURN inject as a no-op stub would just consume
+     * mixin slots, so it's been deleted.
      */
-    @Inject(method = "attackEntity", at = @At("RETURN"))
-    private void phaze$recordBattleInfo(PlayerEntity player, Entity target, CallbackInfo ci) {
-        BattleInfo battleInfo = BattleInfo.getInstance();
-        if (battleInfo != null) {
-            battleInfo.recordAttack(player, target);
-        }
-    }
 
     @Inject(method = "interactItem", at = @At("HEAD"))
     private void phaze$onInteractItem(PlayerEntity player, Hand hand, CallbackInfoReturnable<ActionResult> cir) {
-        ShiftTap shiftTap = ShiftTap.getInstance();
-        if (shiftTap.isEnabled()) {
-            shiftTap.triggerShiftTap();
-        }
         // Trap Timer: arm the local trapka cooldown stopwatch when
         // the held item matches the configured (item type + name)
         // pair. Module gates internally so a non-trapka click is a
