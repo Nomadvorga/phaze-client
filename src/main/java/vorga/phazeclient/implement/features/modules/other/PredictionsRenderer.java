@@ -202,6 +202,12 @@ public final class PredictionsRenderer {
                             float haloRadius = radius * (1.6F + strength * 1.4F);
                             int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength))));
                             int haloColor = (haloAlpha << 24) | (accent & 0x00FFFFFF);
+                            // Soft-particle halo: fragment shader
+                            // fades alpha based on scene-depth
+                            // proximity, so the glow blends into
+                            // walls / floors instead of hard-
+                            // cutting off where vanilla depth-test
+                            // would clip it.
                             Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                     (float) cx, (float) sphereCy, (float) cz,
                                     haloRadius, haloColor, true);
@@ -222,6 +228,8 @@ public final class PredictionsRenderer {
                             float haloRadius = radius * (1.6F + strength * 1.4F);
                             int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength))));
                             int haloColor = (haloAlpha << 24) | (accent & 0x00FFFFFF);
+                            // Soft-particle halo - smooth depth
+                            // fade instead of hard occlusion.
                             Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                     (float) markerCx, (float) markerCy, (float) markerCz,
                                     haloRadius, haloColor, true);
@@ -371,6 +379,7 @@ public final class PredictionsRenderer {
                         float haloRadius = radius * (1.6F + strength * 1.4F);
                         int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength))));
                         int haloColor = (haloAlpha << 24) | (accent & 0x00FFFFFF);
+                        // Soft-particle halo behind the sphere.
                         Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                 (float) cx, (float) sphereCy, (float) cz,
                                 haloRadius, haloColor, true);
@@ -416,6 +425,7 @@ public final class PredictionsRenderer {
                         float haloRadius = radius * (1.6F + strength * 1.4F);
                         int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength))));
                         int haloColor = (haloAlpha << 24) | (accent & 0x00FFFFFF);
+                        // Soft-particle halo - smooth depth fade.
                         Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                 (float) markerCx, (float) markerCy, (float) markerCz,
                                 haloRadius, haloColor, true);
@@ -477,12 +487,115 @@ public final class PredictionsRenderer {
             default -> 0.03;
         };
         boolean trident = type == Predictions.HeldType.TRIDENT;
+
+        // Multishot crossbow: fan three trajectories at -10°, 0°,
+        // +10° yaw around the look direction, mirroring vanilla's
+        // {@code RangedWeaponItem.shootAll} fan logic. Each shot
+        // gets its own snap-to-target and impact marker so the user
+        // sees exactly where all three bolts will go.
+        boolean multishot = type == Predictions.HeldType.CROSSBOW && module.hasMultishot(chosen);
+        if (multishot) {
+            float[] yawOffsets = { -10.0F, 0.0F, 10.0F };
+            for (float yawOffset : yawOffsets) {
+                Vec3d fanLook = phaze$rotateLookYaw(look, yawOffset);
+                Vec3d fanMotion = fanLook.multiply(speed);
+                Predictions.TrajectoryResult r = module.predict(eye, fanMotion, gravity, trident, p);
+                if (r == null || r.path() == null || r.path().size() < 2) continue;
+                Predictions.TrajectoryResult s = phaze$snapToTargetedEntity(mc, p, eye, fanLook, r, speed);
+                if (s != null) r = s;
+                out.add(r);
+                if (r.type() != HitResult.Type.MISS) {
+                    marks.add(new ImpactMark(r.impact(), r.type() == HitResult.Type.ENTITY, r.face()));
+                }
+            }
+            return;
+        }
+
         Predictions.TrajectoryResult result = module.predict(eye, motion, gravity, trident, p);
         if (result == null || result.path() == null || result.path().size() < 2) return;
+
+        // Snap-to-target: if the player's crosshair is on a living
+        // entity within reasonable projectile range, override the
+        // ballistic result with a straight line to that entity. The
+        // user wants the prediction to "lock" to the moving target
+        // they're aiming at instead of computing a parabola that
+        // technically misses by a few pixels because the simulation
+        // doesn't perfectly model server-side hit reg. Rebuild the
+        // result as a 2-point path (eye -> entity center) so the
+        // line + marker land exactly on the target.
+        Predictions.TrajectoryResult snapped = phaze$snapToTargetedEntity(mc, p, eye, look, result, speed);
+        if (snapped != null) {
+            result = snapped;
+        }
+
         out.add(result);
         if (result.type() != HitResult.Type.MISS) {
             marks.add(new ImpactMark(result.impact(), result.type() == HitResult.Type.ENTITY, result.face()));
         }
+    }
+
+    /**
+     * Rotate the look vector around the world Y axis by
+     * {@code yawDegrees}. Used to fan multishot crossbow shots at
+     * {@code -10° / 0° / +10°} relative to the player's actual aim.
+     * Yaw rotation only - vanilla's multishot fan is purely
+     * horizontal, so pitch is preserved untouched.
+     */
+    private static Vec3d phaze$rotateLookYaw(Vec3d look, float yawDegrees) {
+        double rad = Math.toRadians(yawDegrees);
+        double cos = Math.cos(rad);
+        double sin = Math.sin(rad);
+        // Rotation about Y: (x', z') = (x*cos + z*sin, -x*sin + z*cos)
+        // Standard right-handed yaw matching Minecraft's coordinate
+        // convention (positive yaw = clockwise looking from above).
+        double x = look.x * cos + look.z * sin;
+        double z = -look.x * sin + look.z * cos;
+        return new Vec3d(x, look.y, z).normalize();
+    }
+
+    private static Predictions.TrajectoryResult phaze$snapToTargetedEntity(
+            MinecraftClient mc, PlayerEntity self, Vec3d eye, Vec3d look,
+            Predictions.TrajectoryResult ballistic, double speed) {
+        if (mc.world == null) return null;
+
+        // Cap snap range by the ballistic impact distance so we
+        // don't lock onto unreachable far targets. Falls back to
+        // a generous 64-block search when the ballistic ended in
+        // MISS (e.g. trajectory cleared the horizon).
+        double maxRange;
+        if (ballistic != null && ballistic.impact() != null) {
+            maxRange = Math.max(8.0, eye.distanceTo(ballistic.impact()) * 1.5);
+        } else {
+            maxRange = 64.0;
+        }
+
+        Vec3d end = eye.add(look.multiply(maxRange));
+        net.minecraft.util.math.Box searchBox = self.getBoundingBox()
+                .stretch(look.multiply(maxRange))
+                .expand(1.0, 1.0, 1.0);
+        net.minecraft.util.hit.EntityHitResult hit =
+                net.minecraft.entity.projectile.ProjectileUtil.raycast(
+                        self, eye, end, searchBox,
+                        e -> !e.isSpectator() && e instanceof net.minecraft.entity.LivingEntity && e != self,
+                        maxRange * maxRange);
+        if (hit == null || hit.getEntity() == null) {
+            return null;
+        }
+
+        net.minecraft.entity.Entity target = hit.getEntity();
+        // Marker lands exactly where the look-ray crossed the
+        // entity's bounding box - i.e. the same point vanilla
+        // would compute for a hit. This reads as "the projectile
+        // strikes wherever the crosshair is on the body" instead
+        // of always sticking to the bbox centre.
+        Vec3d impactPos = hit.getPos();
+
+        java.util.List<Vec3d> path = new java.util.ArrayList<>();
+        path.add(eye);
+        path.add(impactPos);
+        return new Predictions.TrajectoryResult(
+                path, impactPos, HitResult.Type.ENTITY,
+                net.minecraft.util.math.Direction.UP);
     }
 
     private static void emitPath(MatrixStack matrices, BufferBuilder buffer, Predictions.TrajectoryResult result, int color) {

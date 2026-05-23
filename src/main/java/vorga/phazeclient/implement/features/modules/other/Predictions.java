@@ -291,6 +291,12 @@ public final class Predictions extends Module {
     public HeldType classifyHeldStack(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return HeldType.NONE;
         var item = stack.getItem();
+        // Wind-charge extends SnowballItem in vanilla but its
+        // server-side flight model is different (linear, no gravity,
+        // explosive impact handled by WindChargeEntity). Drawing
+        // the standard parabola would lie about where it lands, so
+        // skip prediction entirely on a held wind charge.
+        if (item instanceof net.minecraft.item.WindChargeItem) return HeldType.NONE;
         if (item instanceof SnowballItem) return HeldType.SNOWBALL;
         if (item instanceof EggItem) return HeldType.EGG;
         if (item instanceof EnderPearlItem) return HeldType.ENDER_PEARL;
@@ -300,6 +306,36 @@ public final class Predictions extends Module {
         if (item instanceof BowItem) return HeldType.BOW;
         if (item instanceof CrossbowItem) return HeldType.CROSSBOW;
         return HeldType.NONE;
+    }
+
+    /**
+     * True if the held crossbow has the Multishot enchantment.
+     * Used by the renderer to fan three trajectories at the
+     * vanilla {@code -10° / 0° / +10°} yaw spread that vanilla's
+     * {@code RangedWeaponItem.shootAll} produces when the enchant
+     * is present (one shot fires straight, the other two fan out
+     * 10 degrees on each side of the look direction).
+     *
+     * <p>Reads the enchantment level directly off the stack's
+     * {@code ENCHANTMENTS} component instead of going through the
+     * server-only {@code EnchantmentHelper.getProjectileCount}, so
+     * the check works on the client without a server world.
+     */
+    public boolean hasMultishot(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        net.minecraft.component.type.ItemEnchantmentsComponent comp =
+                stack.getOrDefault(net.minecraft.component.DataComponentTypes.ENCHANTMENTS,
+                        net.minecraft.component.type.ItemEnchantmentsComponent.DEFAULT);
+        // Walk the stack's enchantments and check the registry key
+        // matches MULTISHOT directly. Avoids the server-only
+        // {@code EnchantmentHelper.getProjectileCount} which needs a
+        // ServerWorld; iteration works fine on the client.
+        for (var entry : comp.getEnchantments()) {
+            if (entry.matchesKey(net.minecraft.enchantment.Enchantments.MULTISHOT)) {
+                return comp.getLevel(entry) > 0;
+            }
+        }
+        return false;
     }
 
     /**

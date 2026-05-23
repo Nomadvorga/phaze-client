@@ -51,10 +51,28 @@ public class MouseZoomMixin {
             return;
         }
 
-        // Adjust zoom level with scroll
+        // Geometric scroll: each scroll notch multiplies / divides
+        // the current zoom by {@code multiplier}. With multiplier=2
+        // and defaultZoom=4 the progression is 4 -> 8 -> 16 -> 32.
+        // With multiplier=3 and defaultZoom=3 it's 3 -> 9 -> 27.
+        // {@code sensitivity} acts as the exponent scale - 1.0 is a
+        // full step per notch, 0.5 a half step (smoother), 2.0 a
+        // double step (faster). The legacy linear (currentZoom/10)
+        // ramp produced an additive feel that broke as soon as the
+        // user wanted predictable doubling.
         double currentZoom = Zoom.getInstance().getCurrentZoomLevel();
         double multiplier = Zoom.getInstance().getZoomScrollMultiplier();
-        double newZoom = currentZoom + vertical * (currentZoom / 10) * Zoom.getInstance().getZoomScrollSensitivity() * multiplier;
+        double sensitivity = Zoom.getInstance().getZoomScrollSensitivity();
+        double newZoom;
+        if (multiplier <= 1.0001) {
+            // Multiplier == 1 disables geometric scaling. Fall back
+            // to the additive ramp so the slider remains useful at
+            // the lower bound instead of "scroll does nothing".
+            newZoom = currentZoom + vertical * (currentZoom / 10) * sensitivity;
+        } else {
+            double exponent = vertical * sensitivity;
+            newZoom = currentZoom * Math.pow(multiplier, exponent);
+        }
 
         // Prevent zooming out below minimum (only allow zooming in)
         if (newZoom < 2.0f) {
@@ -92,8 +110,23 @@ public class MouseZoomMixin {
         float zoomLevel = Zoom.getInstance().getCurrentZoomLevel();
         
         if (Zoom.getInstance().isCinematicCamera()) {
-            // Apply cinematic smoothing with stronger effect
-            cinematic$smoothX = (float) (cinematic$smoothX + (x - cinematic$smoothX) * 0.15);
+            // FPS-independent smoothing: at the canonical 60 fps the
+            // smoothing factor is 0.15 per frame (the original
+            // hand-tuned value). For any other refresh rate we need
+            // to convert the discrete-step decay constant into a
+            // continuous one so the perceived smoothness stays the
+            // same regardless of frame rate. Standard transform:
+            //   alpha_t = 1 - (1 - 0.15)^(60 * dt)
+            // Where dt is the frame time in seconds. At dt = 1/60
+            // this collapses back to 0.15 exactly; at higher fps the
+            // exponent shrinks so the per-frame nudge is smaller,
+            // and at lower fps it grows so the camera still catches
+            // up.
+            float dt = MinecraftClient.getInstance().getRenderTickCounter().getLastFrameDuration() / 20.0F;
+            float alpha = 1.0F - (float) Math.pow(1.0F - 0.15F, 60.0F * dt);
+            if (alpha < 0.0F) alpha = 0.0F;
+            if (alpha > 1.0F) alpha = 1.0F;
+            cinematic$smoothX = (float) (cinematic$smoothX + (x - cinematic$smoothX) * alpha);
             return (cinematic$smoothX / zoomLevel);
         }
         
@@ -115,8 +148,13 @@ public class MouseZoomMixin {
         float zoomLevel = Zoom.getInstance().getCurrentZoomLevel();
         
         if (Zoom.getInstance().isCinematicCamera()) {
-            // Apply cinematic smoothing with stronger effect
-            cinematic$smoothY = (float) (cinematic$smoothY + (y - cinematic$smoothY) * 0.15);
+            // Same FPS-independent smoothing as zoomSensitivityX -
+            // see that method for the alpha conversion rationale.
+            float dt = MinecraftClient.getInstance().getRenderTickCounter().getLastFrameDuration() / 20.0F;
+            float alpha = 1.0F - (float) Math.pow(1.0F - 0.15F, 60.0F * dt);
+            if (alpha < 0.0F) alpha = 0.0F;
+            if (alpha > 1.0F) alpha = 1.0F;
+            cinematic$smoothY = (float) (cinematic$smoothY + (y - cinematic$smoothY) * alpha);
             return (cinematic$smoothY / zoomLevel);
         }
         

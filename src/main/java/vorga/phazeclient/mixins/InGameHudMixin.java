@@ -370,8 +370,18 @@ public class InGameHudMixin {
 
         // Render zoom level outside of HUD check (always fresh, not batched)
         if (client != null && client.options != null && !client.options.hudHidden) {
-            float screenWidth = client.getWindow().getWidth();
-            float screenHeight = client.getWindow().getHeight();
+            // {@code Window.getScaledWidth/Height} returns the
+            // GUI-scale-aware coordinate space that {@code drawText}
+            // renders in. The previous version passed the raw
+            // framebuffer pixels which only happened to land in the
+            // right place at GUI scale 1; on scale 2/3/4 the text
+            // drifted off-centre and below the visible area. The
+            // user explicitly reported "show current zoom uezzhaet
+            // на 2 и более". Using the scaled coords keeps the
+            // overlay centred horizontally and 50px above the bottom
+            // edge regardless of the active GUI scale.
+            float screenWidth = client.getWindow().getScaledWidth();
+            float screenHeight = client.getWindow().getScaledHeight();
             renderZoomLevel(context, client, screenWidth, screenHeight);
         }
     }
@@ -623,43 +633,10 @@ public class InGameHudMixin {
         // so we don't bother caching at the {@code getCachedHudText}
         // layer; the rect-render lambda short-circuits on empty text
         // when no metric is enabled.
-        // BattleInfo: rolling-average HUD. Renders either as a single
-        // text row (default horizontal layout) or one metric-per-line
-        // when the user enables Vertical Layout. The vertical-layout
-        // path uses an empty-text {@link #renderRectHud} call to size
-        // and paint the background / blur, then loops the metric lines
-        // ourselves so the rect height grows with the line count.
-        final vorga.phazeclient.implement.features.modules.hud.BattleInfo battleInfo =
-                vorga.phazeclient.implement.features.modules.hud.BattleInfo.getInstance();
-        renderBufferedHud(context, battleInfo, chatEditing, () -> {
-            java.util.List<String> rawLines = chatEditing
-                    ? battleInfo.getPlaceholderLines()
-                    : battleInfo.getDisplayLines();
-            if (rawLines.isEmpty()) {
-                return;
-            }
-
-            if (battleInfo.verticalLayout.isValue()) {
-                renderBattleInfoVertical(context, client, battleInfo, rawLines, chatEditing,
-                        mouseX, mouseY, mouseDown, getHudDelta(battleInfo, chatEditing, deltaSeconds),
-                        inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY);
-                return;
-            }
-
-            // Horizontal layout: stitched single-line text row.
-            StringBuilder horizontal = new StringBuilder();
-            for (String line : rawLines) {
-                if (horizontal.length() > 0) horizontal.append(' ');
-                horizontal.append(line);
-            }
-            String biText = horizontal.toString();
-            if (biText.isEmpty()) return;
-            String wrappedBiText = wrapTextWithBrackets(biText, battleInfo);
-            renderRectHud(context, client, battleInfo, wrappedBiText, HUD_BATTLE_INFO,
-                    chatEditing, mouseX, mouseY, mouseDown, getHudDelta(battleInfo, chatEditing, deltaSeconds),
-                    inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
-                    getTextHudBaseWidth(client, wrappedBiText), BASE_HEIGHT);
-        });
+        // BattleInfo HUD removed in a later cleanup. The combo /
+        // reach / damage rolling averages it provided are no longer
+        // surfaced; standalone HUDs (Combo Counter, Reach, Cps)
+        // remain available for users who want individual metrics.
 
         // Consumable: dedicated render path (icons-not-text) wired
         // through the same buffered pipeline so it gets the cached
@@ -1363,79 +1340,6 @@ public class InGameHudMixin {
                 drawOutlineNoOverlap(context, hX - 1, hY - 1, handleSize + 2, handleSize + 2, borderColor);
             }
             context.getMatrices().pop();
-        }
-
-        context.getMatrices().pop();
-    }
-
-    /**
-     * Vertical-layout renderer for {@code BattleInfo}. Uses the
-     * existing {@link #renderRectHud} pipeline to paint the rect
-     * background (with blur / preset / hover outline behaviour
-     * inherited automatically) at a height proportional to the
-     * number of metric rows, then draws each metric line as its
-     * own {@code "label:value"} row inside that rect. The rect is
-     * sized to fit the widest metric so all lines align flush-left.
-     *
-     * <p>Pulling the renderRectHud call up front means BattleInfo's
-     * vertical layout shares the exact drag / resize / hover-outline
-     * / handle behaviour of every other rect HUD - we don't have to
-     * reimplement any of it. The text pass after returns at the same
-     * matrix / scale state {@link #renderCoordinatesHud} uses, so
-     * line-height and centring math match the multi-row Coordinates
-     * HUD pixel-for-pixel.
-     */
-    private void renderBattleInfoVertical(
-            DrawContext context,
-            MinecraftClient client,
-            vorga.phazeclient.implement.features.modules.hud.BattleInfo module,
-            java.util.List<String> lines,
-            boolean chatEditing,
-            double mouseX,
-            double mouseY,
-            boolean mouseDown,
-            float deltaSeconds,
-            float inverseGuiScale,
-            float screenWidth,
-            float screenHeight,
-            float screenCenterX,
-            float screenCenterY
-    ) {
-        float paddingX = 5.0f;
-        float paddingY = 4.0f;
-        float lineHeight = 10.0f;
-        float maxLineWidth = 0.0f;
-        for (String line : lines) {
-            maxLineWidth = Math.max(maxLineWidth, getHudTextWidth(client, line, HUD_TEXT_SIZE));
-        }
-        float baseWidth = Math.max(BASE_WIDTH, paddingX * 2.0f + maxLineWidth);
-        float baseHeight = Math.max(BASE_HEIGHT, paddingY * 2.0f + lines.size() * lineHeight);
-
-        // Use empty text for the rect-pass so renderRectHud doesn't
-        // paint a centred single-line label - we draw the per-row
-        // text ourselves below.
-        renderRectHud(context, client, module, "", HUD_BATTLE_INFO, chatEditing, mouseX, mouseY, mouseDown,
-                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
-                baseWidth, baseHeight);
-
-        float x = module.getHudX();
-        float y = module.getHudY();
-        float scale = module.getHudScale();
-        context.getMatrices().push();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
-
-        // Vertically centre the line block inside the rect; clamps to
-        // the top padding when the rect is exactly the line block plus
-        // padding (the common case) so single-line / multi-line both
-        // start at a consistent top offset.
-        float textBlockHeight = lines.size() * lineHeight;
-        float textOffsetY = (baseHeight - textBlockHeight) * 0.5f;
-        if (textOffsetY < paddingY) {
-            textOffsetY = paddingY;
-        }
-        for (int i = 0; i < lines.size(); i++) {
-            float textY = textOffsetY + i * lineHeight;
-            renderScaledHudText(context, client, lines.get(i), x, y, paddingX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
         }
 
         context.getMatrices().pop();
@@ -2549,21 +2453,20 @@ public class InGameHudMixin {
         if (client.options.sneakKey.isPressed() || client.player.isSneaking()) {
             return "Sneaking (Key Held)";
         }
+        // AutoSprint label override: when the module is on AND its
+        // {@code showInSprintHud} toggle is true, the label flips
+        // from "Key Held" / "Vanilla" to "AutoSprint" so the user
+        // can see the module is the source. We override the label
+        // in any sprint-context (ground, in-air, falling) but never
+        // when the player isn't sprinting at all - "Not Sprinting
+        // (AutoSprint)" would be a lie.
+        AutoSprint autoSprint = AutoSprint.getInstance();
+        boolean autoSprintActive = autoSprint.isEnabled() && autoSprint.showInSprintHud.isValue();
         if (client.options.sprintKey.isPressed()) {
-            return "Sprinting (Key Held)";
+            return autoSprintActive ? "Sprinting (AutoSprint)" : "Sprinting (Key Held)";
         }
         if (client.player.isSprinting()) {
-            // Surface "(AutoSprint)" whenever the AutoSprint module is
-            // active so the user can see at a glance that the sprint
-            // they're observing is being sustained by the client and
-            // not by a held key. The {@code showInSprintHud} sub-toggle
-            // gates the indicator so it can be muted if the user
-            // prefers a generic "Sprinting" label.
-            AutoSprint autoSprint = AutoSprint.getInstance();
-            if (autoSprint.isEnabled() && autoSprint.showInSprintHud.isValue()) {
-                return "Sprinting (AutoSprint)";
-            }
-            return "Sprinting (Vanilla)";
+            return autoSprintActive ? "Sprinting (AutoSprint)" : "Sprinting (Vanilla)";
         }
         return "Not Sprinting";
     }
@@ -3078,7 +2981,6 @@ public class InGameHudMixin {
                 || MovementSpeedHud.getInstance().isEnabled()
                 || WailaHud.getInstance().isEnabled()
                 || HealthIndicator.getInstance().isEnabled()
-                || vorga.phazeclient.implement.features.modules.hud.BattleInfo.getInstance().isEnabled()
                 || vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance().isEnabled();
     }
 
@@ -3102,7 +3004,6 @@ public class InGameHudMixin {
                 || RECT_DRAGGING[HUD_SERVER_ADDRESS] || RECT_RESIZING[HUD_SERVER_ADDRESS]
                 || RECT_DRAGGING[HUD_SCOREBOARD] || RECT_RESIZING[HUD_SCOREBOARD]
                 || RECT_DRAGGING[HUD_HEALTH_INDICATOR] || RECT_RESIZING[HUD_HEALTH_INDICATOR]
-                || RECT_DRAGGING[HUD_BATTLE_INFO] || RECT_RESIZING[HUD_BATTLE_INFO]
                 || RECT_DRAGGING[HUD_CONSUMABLE] || RECT_RESIZING[HUD_CONSUMABLE]
                 || armorDragging || armorResizing;
     }
@@ -3992,8 +3893,31 @@ public class InGameHudMixin {
         int color = module.colorForProgress(progress);
         int textWidth = mc.textRenderer.getWidth(text);
         int drawX = x + 8 - textWidth / 2;
-        int drawY = y - 9;
+        // Anchor lifted 3px from the previous y+4 position so the
+        // digits sit near the top portion of the slot but still
+        // overlap the held-item icon. {@code DrawContext.drawText}
+        // is invoked at TAIL of {@code renderHotbarItem}, so the
+        // text already draws AFTER the item glyph in z-order - no
+        // extra translate is needed for it to read as "on top".
+        int drawY = y + 1;
+        // Push the matrix forward in Z so the digits land in front of
+        // the held item glyph. {@code DrawContext.drawText} batches
+        // text under its own draw layer that vanilla normally sorts
+        // BEHIND the 3D item model (the item runs through
+        // {@code ItemRenderer} which has its own depth contribution).
+        // Translating +200 in Z is the same trick vanilla uses for
+        // the stack-count label inside {@code drawItem}, so we copy
+        // it here to stay above the icon without touching depth
+        // state globally.
+        net.minecraft.client.util.math.MatrixStack matrices = context.getMatrices();
+        matrices.push();
+        matrices.translate(0.0F, 0.0F, 200.0F);
         context.drawText(mc.textRenderer, text, drawX, drawY, color, module.textShadow.isValue());
+        // Flush any pending text batches under this z so the pop
+        // doesn't leave the digits stuck behind subsequent
+        // post-hotbar overlays.
+        context.draw();
+        matrices.pop();
     }
 
     // ====================================================================

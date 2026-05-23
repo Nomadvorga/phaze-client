@@ -54,11 +54,11 @@ public final class BetterF3 extends Module {
             "Sections",
             "Pick which lines the F3 overlay shows. Click a label to toggle that line on / off."
     ).value(
-            "FPS", "FPS Bar", "Coordinates", "Facing", "Biome",
+            "FPS", "Coordinates", "Facing", "Biome",
             "Light", "Dimension", "Server", "Memory",
-            "Time", "System", "Targeted"
+            "Time", "System"
     ).selected(
-            "FPS", "FPS Bar", "Coordinates", "Facing", "Biome",
+            "FPS", "Coordinates", "Facing", "Biome",
             "Light", "Dimension", "Server", "Memory"
     );
 
@@ -67,9 +67,14 @@ public final class BetterF3 extends Module {
      *  unchanged. Each delegates to {@link MultiSelectSetting#getSelected()}.
      *  Marked private + paired with a tiny inner record for the renderer
      *  consumers below.
+     *
+     *  <p>{@code showFpsBar} and {@code showTargeted} were removed
+     *  from the picker but the renderer still references them; the
+     *  shims now return a hard {@code false} so the corresponding
+     *  blocks short-circuit out of the F3 overlay entirely.
      */
     public final BooleanLike showFps = () -> sectionToggles.getSelected().contains("FPS");
-    public final BooleanLike showFpsBar = () -> sectionToggles.getSelected().contains("FPS Bar");
+    public final BooleanLike showFpsBar = () -> false;
     public final BooleanLike showCoords = () -> sectionToggles.getSelected().contains("Coordinates");
     public final BooleanLike showFacing = () -> sectionToggles.getSelected().contains("Facing");
     public final BooleanLike showBiome = () -> sectionToggles.getSelected().contains("Biome");
@@ -79,7 +84,7 @@ public final class BetterF3 extends Module {
     public final BooleanLike showMemory = () -> sectionToggles.getSelected().contains("Memory");
     public final BooleanLike showTime = () -> sectionToggles.getSelected().contains("Time");
     public final BooleanLike showSystem = () -> sectionToggles.getSelected().contains("System");
-    public final BooleanLike showTargeted = () -> sectionToggles.getSelected().contains("Targeted");
+    public final BooleanLike showTargeted = () -> false;
 
     /** Functional shim mimicking {@link BooleanSetting#isValue()} so all
      *  the renderer's existing {@code module.showFps.isValue()} call

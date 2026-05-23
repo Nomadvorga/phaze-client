@@ -66,9 +66,12 @@ public class ConfigsViewComponent extends AbstractComponent {
     /** Inline separator between config name and author label.
      *  Rendered as a small {@code dot.png} between them, sized to
      *  about half the name text size so it reads as a separator
-     *  bullet rather than another glyph. */
-    private static final float NAME_DOT_SIZE = 3.5F;
-    private static final float NAME_DOT_GAP = 4.0F;
+     *  bullet rather than another glyph. Vertically centred against
+     *  the name's CAP HEIGHT (~0.7 of the font size) rather than
+     *  the full bbox so the dot sits on the optical centre line of
+     *  the surrounding letters instead of dropping below them. */
+    private static final float NAME_DOT_SIZE = 20.0F;
+    private static final float NAME_DOT_GAP = -6.0F;
     /** Size of the inline meta icons (size, clock for last-modified,
      *  cloud for imported). The cloud / clock icons are visually
      *  lighter than the size icon, so they're rendered larger to
@@ -302,7 +305,11 @@ public class ConfigsViewComponent extends AbstractComponent {
         );
         float nameWidth = MsdfFonts.bold().getWidth(name, NAME_SIZE);
         float dotX = textX + nameWidth + NAME_DOT_GAP;
-        float dotY = nameY + (NAME_SIZE - NAME_DOT_SIZE) * 0.5F;
+        // Centre against the cap-height middle (~0.42 of the font
+        // size from the text's top) instead of the full bbox - the
+        // bbox includes descender room that pushes the dot below
+        // the letters' optical mid-line.
+        float dotY = nameY + NAME_SIZE * 0.42F - NAME_DOT_SIZE * 0.5F;
         image.setTexture("textures/dot.png")
                 .render(ShapeProperties.create(matrix, dotX, dotY, NAME_DOT_SIZE, NAME_DOT_SIZE)
                         .color(MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F))

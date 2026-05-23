@@ -223,9 +223,6 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.TotemTracker.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.TotemTracker.getInstance());
         }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.BattleInfo.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.BattleInfo.getInstance());
-        }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.Consumable.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance());
         }
@@ -312,6 +309,9 @@ public class Main implements ModInitializer {
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.SkyCustomizer.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.SkyCustomizer.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.CustomFog.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.CustomFog.getInstance());
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoRespawn.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoRespawn.getInstance());

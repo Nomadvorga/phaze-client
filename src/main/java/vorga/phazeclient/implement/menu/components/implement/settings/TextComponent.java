@@ -12,6 +12,8 @@ import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
+import vorga.phazeclient.base.util.render.ScissorManager;
+import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.menu.MenuStyle;
 
 @FieldDefaults(level = AccessLevel.PRIVATE)
@@ -120,21 +122,17 @@ public class TextComponent extends AbstractSettingComponent {
 
         // Scissor-clip everything we draw inside the input box so
         // text + cursor + selection never bleed outside the rect
-        // when the cursor walks past the right edge. The clip is
-        // measured at the GL window level using the same scaled-
-        // GUI factor that DrawContext uses, so it matches the
-        // logical {@code rect*} coordinates we render into.
-        net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
-        double sf = mc.getWindow().getScaleFactor();
-        int sx0 = (int) Math.round((rectX + 1) * sf);
-        int sy0 = (int) Math.round((rectY + 1) * sf);
-        int sx1 = (int) Math.round((rectX + rectWidth - 1) * sf);
-        int sy1 = (int) Math.round((rectY + rectHeight - 1) * sf);
-        // DrawContext.enableScissor uses logical (GUI) coords on
-        // 1.21.4, not raw window pixels, so feed it the un-scaled
-        // bounds. The check ensures we don't double-scale.
-        context.enableScissor((int) (rectX + 1), (int) (rectY + 1),
-                (int) (rectX + rectWidth - 1), (int) (rectY + rectHeight - 1));
+        // when the cursor walks past the right edge. Use the
+        // stack-based {@link ScissorManager} (push/pop) instead of
+        // {@code DrawContext.enableScissor} - the DrawContext API
+        // calls {@code RenderSystem.disableScissor()} on disable
+        // which would clobber the parent panel's clip and let
+        // sibling rows render past the panel boundary. Stack
+        // intersection guarantees the input box never escapes the
+        // already-clipped panel band.
+        ScissorManager scissorManager = Main.getInstance().getScissorManager();
+        scissorManager.push(matrix.peek().getPositionMatrix(),
+                rectX + 1, rectY + 1, rectWidth - 2, rectHeight - 2);
 
         if (typing && selectionStart != -1 && selectionEnd != -1 && selectionStart != selectionEnd) {
             int start = Math.max(0, Math.min(getStartOfSelection(), text.length()));
@@ -144,7 +142,13 @@ public class TextComponent extends AbstractSettingComponent {
                 float selectionXEnd = rectX + 3 - xOffset + font.getStringWidth(text.substring(0, end));
                 float selectionWidth = selectionXEnd - selectionXStart;
 
-                rectangle.render(ShapeProperties.create(matrix, selectionXStart, cursorTop - 0.5F, selectionWidth, cursorHeight + 1.0F)
+                // Center the highlight on the rect itself; using
+                // the baseline-shifted {@code cursorTop} pinned the
+                // band low because baselines aren't symmetric in
+                // the rect's line box.
+                float selSelH = Math.max(8.0F, cursorHeight + 2.0F);
+                float selSelY = rectY + (rectHeight - selSelH) * 0.5F;
+                rectangle.render(ShapeProperties.create(matrix, selectionXStart, selSelY, selectionWidth, selSelH)
                         .color(MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, currentAlpha))
                         .build());
             }
@@ -167,7 +171,8 @@ public class TextComponent extends AbstractSettingComponent {
                     .build());
         }
 
-        context.disableScissor();
+        context.draw();
+        scissorManager.pop();
     }
 
 

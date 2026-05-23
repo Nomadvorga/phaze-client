@@ -196,6 +196,19 @@ public final class CursorManager {
      * shape doesn't reset mid-spin.
      */
     public static void notifyScroll(double horizontal, double vertical) {
+        // Defence-in-depth: even though every call site checks
+        // {@code Animations.isDynamicCursorEnabled()} before calling
+        // here, there's a race where the toggle can flip OFF between
+        // the call-site check and the {@code applyShape} invocation
+        // below. The user reported "при выключенном Animations всё
+        // равно появляется на 1 кадр" - that one frame is precisely
+        // this race plus the following {@code applyShape} call. A
+        // second guard inside the manager closes the gap: if the
+        // toggle is off right now, we drop the scroll notification
+        // entirely.
+        if (!vorga.phazeclient.implement.features.modules.other.Animations.getInstance().isDynamicCursorEnabled()) {
+            return;
+        }
         double absH = Math.abs(horizontal);
         double absV = Math.abs(vertical);
         if (absH == 0.0 && absV == 0.0) {

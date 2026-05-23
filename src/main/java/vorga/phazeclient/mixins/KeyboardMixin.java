@@ -121,8 +121,20 @@ public abstract class KeyboardMixin {
 
         int bindKey = Zoom.getInstance().keybind.getKey();
         if (bindKey == key && bindKey != GLFW.GLFW_KEY_UNKNOWN) {
+            // Block zoom activation while any GUI is open. Without
+            // this guard the user could press the bind inside the
+            // chat, our own menu, the inventory, or even on Esc
+            // and re-enter the world already zoomed in - which the
+            // user explicitly didn't want. RELEASE is also gated
+            // so a HOLD-mode bind that started in the world but
+            // gets released while a GUI is open doesn't toggle
+            // zoom off either (matches the screen-as-release
+            // semantics already implemented in {@link
+            // vorga.phazeclient.mixins.ScreenOpenMixin}).
+            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+            boolean inGui = mc != null && mc.currentScreen != null;
             if (action == GLFW.GLFW_PRESS) {
-                if (Zoom.getInstance().isEnabled()) {
+                if (Zoom.getInstance().isEnabled() && !inGui) {
                     if (Zoom.getInstance().isHold()) {
                         Zoom.setZoomActive(true);
                     } else {
@@ -131,7 +143,7 @@ public abstract class KeyboardMixin {
                 }
                 ci.cancel();
             } else if (action == GLFW.GLFW_RELEASE) {
-                if (Zoom.getInstance().isEnabled() && Zoom.getInstance().isHold()) {
+                if (Zoom.getInstance().isEnabled() && Zoom.getInstance().isHold() && !inGui) {
                     Zoom.setZoomActive(false);
                 }
                 ci.cancel();

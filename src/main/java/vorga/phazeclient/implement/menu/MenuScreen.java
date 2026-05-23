@@ -595,6 +595,17 @@ public class MenuScreen extends Screen implements QuickImports {
         if (animation.isFinished(BACKWARDS)) {
             SelectComponent.closeAllDropdowns();
             MultiSelectComponent.closeAllDropdowns();
+            // Clear the search bar so re-opening the GUI starts on
+            // a blank query. Without this, a user who typed something,
+            // closed the menu, and re-opened it would still see the
+            // old query (and an active SEARCH category), which reads
+            // as "the menu remembers stale typing across sessions".
+            searchComponent.setText("");
+            searchComponent.setCursorPosition(0);
+            SearchComponent.typing = false;
+            if (category == ModuleCategory.SEARCH) {
+                category = searchComponent.getPreviousCategory();
+            }
             super.close();
         }
     }

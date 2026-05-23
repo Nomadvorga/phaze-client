@@ -231,10 +231,22 @@ public final class Render3DUtil {
 
     /**
      * Filled UV sphere centered at {@code (cx, cy, cz)} (camera-relative)
-     * with explicit depth-test control. When {@code depthTest} is
-     * {@code false} the sphere paints OVER terrain and entities, used
-     * by the Predictions impact-marker so the sphere isn't occluded
-     * by the very entity it's marking.
+     * with explicit depth-test control. {@code depthTest=true} respects
+     * world geometry (recommended for impact markers so the sphere
+     * gets occluded by intervening blocks); {@code depthTest=false}
+     * draws on top regardless.
+     *
+     * <p>Back-face culling is always ON. The UV-sphere mesh is built
+     * with CCW winding so {@code GL_BACK} culling drops the rear
+     * hemisphere, leaving only the camera-facing half. This is the
+     * single most important correctness fix for transparent spheres:
+     * with culling disabled both hemispheres rasterise and the
+     * additive overlap reads as a two-tone seam that "depends on
+     * camera position" - exactly the artefact users reported.
+     * Combined with depthMask=false, the sphere never imprints
+     * itself into depth, so subsequent translucent passes (halo
+     * billboard, world-space ring) composite correctly without
+     * z-fighting.
      */
     public static void drawSphereSolid(MatrixStack matrices,
                                        float cx, float cy, float cz,
@@ -250,7 +262,12 @@ public final class Render3DUtil {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
+        // Back-face cull keeps only the camera-facing hemisphere
+        // visible. Without this both halves rasterise and the
+        // overlap on transparent fills produces the two-tone seam
+        // artefact reported by users. The UV-sphere mesh below
+        // emits CCW from outside, matching GL's default GL_BACK.
+        RenderSystem.enableCull();
         if (depthTest) {
             RenderSystem.enableDepthTest();
         } else {
@@ -280,10 +297,17 @@ public final class Render3DUtil {
                 float x21 = cx + r2 * c1, z21 = cz + r2 * s1;
                 float x22 = cx + r2 * c2, z22 = cz + r2 * s2;
 
+                // CCW-from-outside winding: lower-t1 -> upper-t1 ->
+                // upper-t2 -> lower-t2. The natural lat/long sweep
+                // produces CW quads when viewed from outside, so we
+                // reverse the order here. Verified by computing the
+                // surface normal at the equator: this winding gives
+                // the +radial outward direction, which is what
+                // {@code GL_BACK} culling expects to KEEP.
                 buffer.vertex(matrix, x11, cy + y1, z11).color(r, g, b, a);
-                buffer.vertex(matrix, x12, cy + y1, z12).color(r, g, b, a);
-                buffer.vertex(matrix, x22, cy + y2, z22).color(r, g, b, a);
                 buffer.vertex(matrix, x21, cy + y2, z21).color(r, g, b, a);
+                buffer.vertex(matrix, x22, cy + y2, z22).color(r, g, b, a);
+                buffer.vertex(matrix, x12, cy + y1, z12).color(r, g, b, a);
             }
         }
         net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
