@@ -91,7 +91,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
             at = @At("HEAD")
     )
     private void phaze$markOutgoingChat(String content, CallbackInfo ci) {
-        MentionHighlight.getInstance().markOutgoing();
+        MentionHighlight.getInstance().markOutgoing(content);
     }
 
     @Inject(

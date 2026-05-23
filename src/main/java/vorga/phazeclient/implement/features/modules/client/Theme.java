@@ -4,6 +4,7 @@ import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.color.ColorPalette;
 import vorga.phazeclient.base.util.color.ThemeColorPalette;
 import vorga.phazeclient.implement.menu.MenuPalette;
@@ -50,12 +51,40 @@ public final class Theme extends Module {
             .range(0, 32)
             .setValue(16);
 
+    /**
+     * UI language for the menu's user-facing strings (modals, kebab
+     * popups, etc). English is the default; selecting Russian flips
+     * {@link Lang} to its RU table on the next render frame.
+     * Module / category names are NOT translated - the user
+     * explicitly asked for those to stay in their canonical English
+     * form regardless of locale.
+     */
+    public final SelectSetting language = new SelectSetting("Language", "UI language for menu strings")
+            .value(Lang.EN, Lang.RU)
+            .selected(Lang.EN);
+
     private Theme() {
         super("themes", "Themes", ModuleCategory.OTHER, false, false);
-        setup(menuTheme, blurRadius);
+        setup(menuTheme, blurRadius, language);
+
+        // Push the initial selection through to the Lang table so
+        // any code reading {@link Lang#t} during boot sees the
+        // configured locale, not the default. Subsequent changes
+        // are picked up on each modal render via syncLanguage().
+        Lang.setActive(language.getSelected());
 
         applyTheme();
         applyMenuTheme();
+    }
+
+    /**
+     * Re-syncs {@link Lang#setActive} with the SelectSetting's
+     * current value. Called from the modal's render path so a
+     * mid-game language switch takes effect immediately without a
+     * restart. Cheap (volatile write) so per-frame is fine.
+     */
+    public void syncLanguage() {
+        Lang.setActive(language.getSelected());
     }
 
     public float getFadeSpeed() {

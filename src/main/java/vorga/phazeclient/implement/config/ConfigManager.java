@@ -60,12 +60,29 @@ public final class ConfigManager {
     private static final long AUTOSAVE_DEBOUNCE_MS = 250L;
     private volatile long dirtyAt = 0L;
     private volatile boolean autoSaveEnabled = false;
+    /** True while {@link #loadConfigInternal} is mid-flight. The
+     *  global Setting / Module change listeners route through
+     *  {@link #markDirty} / {@link #flushNow}; without this guard the
+     *  in-load resets would either:
+     *  <ul>
+     *    <li>(via Module.switchState → flushNow) immediately overwrite
+     *        the OUTGOING file with the freshly-blanked in-memory
+     *        state - exactly the "all settings reset" symptom users
+     *        hit after one config switch;</li>
+     *    <li>(via Setting.setValue → markDirty) start the debounce
+     *        timer mid-load, so the next tick after the load
+     *        completes would write the partly-applied state back to
+     *        disk before the user could change anything.</li>
+     *  </ul>
+     *  Mirrors soup's {@code isLoadingConfig} flag.
+     */
+    private volatile boolean isLoadingConfig = false;
 
     public static ConfigManager getInstance() {
         return INSTANCE;
     }
 
-    public ConfigManager() {
+    private ConfigManager() {
         File minecraftDir = MinecraftClient.getInstance().runDirectory;
         configDir = new File(minecraftDir, "Phaze");
         configsDir = new File(configDir, "configs");
@@ -180,7 +197,7 @@ public final class ConfigManager {
                     // One bad setting must not strand the whole save.
                     // Skip silently - the next load will fall back to
                     // the in-code default for this single key.
-                    System.err.println("[Phaze] failed to serialize setting " + setting.getName() + " of " + module.getName() + ": " + t);
+                    System.err.println("[Phaze] failed to serialize setting " + setting.getRawName() + " of " + module.getName() + ": " + t);
                 }
             }
             moduleData.add("settings", settings);
@@ -192,6 +209,26 @@ public final class ConfigManager {
         vorga.phazeclient.implement.features.modules.client.Theme theme = vorga.phazeclient.implement.features.modules.client.Theme.getInstance();
         config.addProperty("theme", theme.menuTheme.getSelected());
         config.addProperty("blurRadius", theme.blurRadius.getValue());
+
+        // Preserve the {@code imported} marker that
+        // {@link #importFromString} writes when a config came from a
+        // server share-key. Re-reading the existing file is cheaper
+        // than tracking the bit in memory and means the marker
+        // survives even if a future code path forgets to forward it.
+        if (configFile.exists()) {
+            try (Reader rdr = new FileReader(configFile)) {
+                JsonObject existing = GSON.fromJson(rdr, JsonObject.class);
+                if (existing != null && existing.has("imported")
+                        && existing.get("imported").getAsBoolean()) {
+                    config.addProperty("imported", true);
+                }
+            } catch (Throwable ignored) {
+                // Existing file is unreadable / corrupt - we can't
+                // know the marker, but our own write below will
+                // create a fresh one anyway, so dropping it is the
+                // safer fallback than crashing the save.
+            }
+        }
 
         Path target = configFile.toPath();
         Path tmp = target.resolveSibling(configFile.getName() + ".tmp");
@@ -275,7 +312,28 @@ public final class ConfigManager {
      * then switched to the imported one.
      */
     public String importFromString(String shareString) {
+        return importFromString(shareString, null);
+    }
+
+    /**
+     * Same as {@link #importFromString(String)} but tries to save the
+     * imported config under {@code preferredName} when supplied (and
+     * not already taken by an existing file). Falls back to the
+     * sequential {@code imported_<n>} slot otherwise. The server-
+     * side share endpoint carries the original uploader's local
+     * config name and the modal forwards it through, so the imported
+     * copy lands under the same label as on the uploader's machine.
+     */
+    public String importFromString(String shareString, String preferredName) {
         if (shareString == null) return null;
+        // Force a clean save of the currently-active config first so
+        // there's no in-flight autosave racing the import write. The
+        // earlier flow let an autosave tick fire BETWEEN the import
+        // file-write and loadConfig(name), which could clobber the
+        // freshly-imported file with the old in-memory state - the
+        // user reported this as "configs swap places after loading
+        // from the server".
+        flushNow();
         String trimmed = shareString.trim();
         // Tolerate CRLF / surrounding quotes from clipboard pastes.
         if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length() > 1) {
@@ -298,20 +356,89 @@ public final class ConfigManager {
             }
             // Persist as a brand-new config so we don't overwrite
             // anything the user already had on disk. Pick a slot that
-            // doesn't already exist on disk.
-            String name = nextImportedName();
+            // doesn't already exist on disk - prefer the name the
+            // uploader sent (when supplied + safe + free), otherwise
+            // fall back to the sequential "imported_<n>" naming.
+            String name = pickImportName(preferredName);
             File target = getConfigFile(name);
+            // Tag the file as imported-from-server so the configs UI
+            // can render a different left-side icon for these. We
+            // write the marker BEFORE persisting so the file on disk
+            // carries it alongside the rest of the parsed data; the
+            // serializer (above) round-trips arbitrary keys, so this
+            // survives later auto-saves too.
+            parsed.addProperty("imported", true);
             try (FileWriter writer = new FileWriter(target)) {
                 GSON.toJson(parsed, writer);
             }
-            // Switch to the new config; loadConfig handles the
-            // dirty-suppression / autosave-redirect interactions.
-            loadConfig(name);
+
+            // Switch the active-config pointer to the imported file
+            // BEFORE applying the JSON. The user explicitly asked
+            // for this order ("сначала сменить на импортированный а
+            // потом загрузка настроек") because the previous flow
+            // (loadConfig handles outgoing-save → reset → apply)
+            // had a window where the in-memory state was the imported
+            // settings but currentConfig still pointed at the old
+            // file - any autosave / direct save in that window would
+            // overwrite the OLD config with the imported settings.
+            //
+            // Setting the pointer first means even if a stray save
+            // fires mid-apply, it goes to the imported config's own
+            // file, which is the intended target anyway.
+            isLoadingConfig = true;
+            try {
+                currentConfig = target;
+                setCurrentConfigName(name);
+
+                // Reset everything to in-code defaults so settings
+                // missing from the imported file don't keep stale
+                // values from the previous active config.
+                applyInCodeDefaults();
+
+                // Apply the imported JSON we already have parsed -
+                // skip a redundant disk read.
+                applyConfigJson(parsed);
+            } finally {
+                dirtyAt = 0L;
+                isLoadingConfig = false;
+            }
             return name;
         } catch (Throwable t) {
             t.printStackTrace();
             return null;
         }
+    }
+
+    /**
+     * Picks a free file name for an imported config. Tries the
+     * uploader-supplied {@code preferredName} first when it (a)
+     * passes a sanity regex (no path-separator junk) and (b) isn't
+     * already taken on disk. Falls back to {@link #nextImportedName}
+     * (sequential {@code imported_<n>} slots) otherwise so the
+     * import never silently overwrites a config the user already
+     * has of the same label.
+     */
+    private String pickImportName(String preferredName) {
+        if (preferredName != null) {
+            String sanitised = preferredName.trim();
+            if (!sanitised.isEmpty()
+                    && sanitised.matches("[A-Za-z0-9_\\-]{1,32}")
+                    && !getConfigFile(sanitised).exists()) {
+                return sanitised;
+            }
+            // Name was sent but already taken on this machine - try
+            // appending a numeric suffix so the upload tag stays
+            // visible in the file name (e.g. "pvp" -> "pvp_2").
+            if (sanitised.matches("[A-Za-z0-9_\\-]{1,30}")) {
+                for (int i = 2; i < 1000; i++) {
+                    String candidate = sanitised + "_" + i;
+                    if (!getConfigFile(candidate).exists()) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return nextImportedName();
     }
 
     /**
@@ -392,6 +519,17 @@ public final class ConfigManager {
      * {@code default.Phaze} file - the in-code defaults take over.
      */
     public void saveCurrentConfig() {
+        // Honour the load-time guard like flushNow / flushIfDirty
+        // do. Without this, any onChange callback that fires during
+        // applyInCodeDefaults() (e.g. AutoSwap.swapType reset) and
+        // calls saveCurrentConfig() directly would write the
+        // partially-reset in-memory state straight back into the
+        // OUTGOING file's path - that's the exact "configs swap
+        // places after import / settings vanish after switch" bug
+        // the user reported.
+        if (isLoadingConfig) {
+            return;
+        }
         if (currentConfig != null) {
             save(currentConfig);
             saveCurrentConfigName();
@@ -413,7 +551,7 @@ public final class ConfigManager {
      * setting's notifyChange path.
      */
     public void markDirty() {
-        if (autoSaveEnabled) {
+        if (autoSaveEnabled && !isLoadingConfig) {
             dirtyAt = System.currentTimeMillis();
         }
     }
@@ -425,6 +563,9 @@ public final class ConfigManager {
      * drags / bind re-presses from spamming disk.
      */
     public void flushIfDirty() {
+        if (isLoadingConfig) {
+            return;
+        }
         long ts = dirtyAt;
         if (ts == 0L) {
             return;
@@ -448,7 +589,7 @@ public final class ConfigManager {
      * write the config dozens of times per drag.
      */
     public void flushNow() {
-        if (!autoSaveEnabled) {
+        if (!autoSaveEnabled || isLoadingConfig) {
             return;
         }
         dirtyAt = 0L;
@@ -456,20 +597,26 @@ public final class ConfigManager {
     }
     
     public void loadConfig(String configName) {
+        // Block the auto-save pipeline for the entire load duration -
+        // including the save-of-outgoing-config + applyInCodeDefaults
+        // pass that runs at the top of loadConfigInternal. Without
+        // this gate the in-load module.switchState() calls would
+        // route through the global Module change listener and call
+        // flushNow(), which writes the freshly-blanked in-memory
+        // state straight back into the OUTGOING file's path - that
+        // is the exact "all my settings vanished after one switch"
+        // bug users were hitting.
+        isLoadingConfig = true;
         try {
             loadConfigInternal(configName);
         } finally {
             // Settings updated during the load fire notifyChange() ->
             // markDirty(), which would otherwise cause the very next
             // flushIfDirty tick to write the freshly-loaded state back
-            // to disk. Worse: when the user switches to the "default"
-            // config, that flush would hit saveCurrentConfig's default
-            // -> autosave redirect and immediately flip the active
-            // config back to autosave (overwriting the autosave file
-            // with the default state in the process). Clearing the
-            // dirty timestamp here scopes auto-save to genuine post-
-            // load user actions only.
+            // to disk. Clearing the dirty timestamp here scopes auto-
+            // save to genuine post-load user actions only.
             dirtyAt = 0L;
+            isLoadingConfig = false;
         }
     }
 
@@ -513,6 +660,49 @@ public final class ConfigManager {
             return; // nothing to apply; in-code defaults stay in place
         }
 
+        applyConfigJson(config);
+    }
+
+    /**
+     * Applies a parsed config JSON tree to the live in-memory state.
+     * Pulled out of {@link #loadConfigInternal} so the import path
+     * can re-use it without going through the disk-read + outgoing-
+     * save preamble. Per-module errors are isolated so one broken
+     * entry can't strand the rest of the iteration.
+     */
+    private void applyConfigJson(JsonObject config) {
+        try {
+            if (config.has("modules")) {
+                JsonObject modules = config.getAsJsonObject("modules");
+                for (Module module : Main.getInstance().getModuleProvider().getModules()) {
+                    try {
+                        loadModule(module, modules);
+                    } catch (Throwable t) {
+                        System.err.println("[Phaze] failed to load module '"
+                                + module.getName() + "' from config: " + t);
+                    }
+                }
+            }
+
+            if (config.has("theme")) {
+                try {
+                    String theme = config.get("theme").getAsString();
+                    vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected(theme);
+                } catch (Throwable ignored) {}
+            }
+
+            if (config.has("blurRadius")) {
+                try {
+                    float blurRadius = config.get("blurRadius").getAsFloat();
+                    vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(blurRadius);
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
+    }
+
+    private void loadConfigInternalLegacyApply(JsonObject config) {
         try {
             if (config.has("modules")) {
                 JsonObject modules = config.getAsJsonObject("modules");
@@ -558,9 +748,13 @@ public final class ConfigManager {
      * file ends up at its in-code default rather than carrying over
      * from the previously-active config.
      *
-     * <p>Mirrors soup's {@code onUnload} pass + module init defaults:
-     * disables every currently-enabled module, resets HUD positions,
-     * and reverts theme name + blur radius to the boot values.
+     * <p>Each setting carries its own {@link Setting#reset()} that
+     * routes through {@code setValue} so the on-change callbacks
+     * fire identically to a manual user reset. We deliberately delay
+     * this call until AFTER the in-memory state has been captured
+     * by the previous-config save in {@link #loadConfigInternal} -
+     * resetting first would discard whatever the user just changed
+     * before it had a chance to be persisted to the outgoing config.
      */
     private void applyInCodeDefaults() {
         for (Module module : Main.getInstance().getModuleProvider().getModules()) {
@@ -572,18 +766,13 @@ public final class ConfigManager {
                 module.switchState();
             }
             module.setKey(0);
-            // Best-effort settings reset: walk every setting and ask
-            // it to revert to its declared default. Settings that
-            // don't expose a reset API are left as-is - in practice
-            // most user-visible settings extend a base that does.
-            for (Setting setting : module.settings()) {
-                try {
-                    resetSettingToDefault(setting);
-                } catch (Throwable ignored) {
-                    // Skip a single bad setting without taking the
-                    // rest of the module reset down with it.
-                }
-            }
+            // Use each setting's own reset() so the value snaps back
+            // to the value declared at construction time (captured
+            // automatically by the per-type setValue/setColor/etc on
+            // first call). This routes through notifyChange so any
+            // dependent callbacks fire identically to a user-clicked
+            // reset.
+            resetSettingsRecursive(module.settings());
             if (module instanceof RectHudModule rectHudModule) {
                 rectHudModule.resetHudTransform();
             } else if (module instanceof ArmorHud armorHud) {
@@ -596,45 +785,26 @@ public final class ConfigManager {
     }
 
     /**
-     * Best-effort reset of a single setting to its declared default
-     * value. Each setting type carries the default in a different
-     * field name; we sniff via {@code reflect} so this stays
-     * decoupled from concrete API additions. Failures are swallowed
-     * because settings that don't expose a default reset still leave
-     * the existing in-memory value, which is fine - the next loaded
-     * file will overwrite it anyway.
+     * Walks a setting list and calls {@link Setting#reset()} on each
+     * entry. Recurses into {@link GroupSetting#getSubSettings()} so
+     * nested groups (e.g. theme palette colour pickers inside a
+     * group toggle) reset alongside their parent. Per-setting
+     * exceptions are swallowed because a single bad setting must
+     * not strand the rest of the module.
      */
-    private void resetSettingToDefault(Setting setting) {
-        if (setting == null || !setting.isSaveToConfig()) return;
-        try {
-            // Most settings store the boot default in a {@code defaultValue}
-            // field; reflection avoids a per-type switch and stays
-            // forward-compat when new setting types are added.
-            java.lang.reflect.Field f = null;
-            for (Class<?> c = setting.getClass(); c != null; c = c.getSuperclass()) {
-                try {
-                    f = c.getDeclaredField("defaultValue");
-                    break;
-                } catch (NoSuchFieldException ignored) {}
-            }
-            if (f == null) return;
-            f.setAccessible(true);
-            Object def = f.get(setting);
-            if (def == null) return;
-            switch (setting) {
-                case BooleanSetting b -> b.setValue((Boolean) def);
-                case ValueSetting v -> v.setValue(((Number) def).floatValue());
-                case TextSetting t -> t.setText(def.toString());
-                case BindSetting b -> b.setKey(((Number) def).intValue());
-                case ColorSetting c -> c.setColor(((Number) def).intValue());
-                case SelectSetting s -> s.setSelected(def.toString());
-                case GroupSetting g -> {
-                    g.setValue((Boolean) def);
-                    for (Setting sub : g.getSubSettings()) resetSettingToDefault(sub);
+    private void resetSettingsRecursive(List<? extends Setting> settings) {
+        if (settings == null) return;
+        for (Setting setting : settings) {
+            try {
+                setting.reset();
+                if (setting instanceof GroupSetting group) {
+                    resetSettingsRecursive(group.getSubSettings());
                 }
-                default -> {}
+            } catch (Throwable ignored) {
+                // Skip a single bad setting reset without taking the
+                // rest of the module reset down with it.
             }
-        } catch (Throwable ignored) {}
+        }
     }
 
     /**
@@ -781,6 +951,27 @@ public final class ConfigManager {
     public boolean configExists(String configName) {
         return getConfigFile(configName).exists();
     }
+
+    /**
+     * Whether the config on disk was imported from a server share-
+     * key. The configs view reads this to render a different
+     * left-side icon for imported configs (file_import.png) versus
+     * locally created ones (file.png). Cheap-ish per-frame call -
+     * we open + parse the file each time. If this becomes a
+     * hot-path concern we'll cache by config name + last-modified.
+     */
+    public boolean isImportedConfig(String configName) {
+        File f = getConfigFile(configName);
+        if (!f.exists()) return false;
+        try (Reader r = new FileReader(f)) {
+            JsonObject obj = GSON.fromJson(r, JsonObject.class);
+            return obj != null
+                    && obj.has("imported")
+                    && obj.get("imported").getAsBoolean();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
     
     /**
      * Removes a config from disk and from the listing. If the user
@@ -801,12 +992,35 @@ public final class ConfigManager {
         File backupFile = new File(configFile.getParentFile(), configFile.getName() + ".bak");
         boolean wasActive = currentConfigName.equalsIgnoreCase(configName);
 
-        // Delete primary + .bak so the listing doesn't keep showing a
-        // stale entry. {@code File.delete} returns false on missing
-        // files, which is fine - we just want to ensure neither lives
-        // after this call.
-        if (configFile.exists()) configFile.delete();
-        if (backupFile.exists()) backupFile.delete();
+        // If the deleted name is the active config, clear the
+        // currentConfig pointer FIRST so any concurrent flushNow /
+        // markDirty fired between this delete and the subsequent
+        // loadConfig(fallback) can't re-create the file by saving
+        // into the dangling path. The previous version held the
+        // pointer through the delete and the file would silently
+        // come back if a flush ticked at the wrong moment.
+        if (wasActive) {
+            currentConfig = null;
+        }
+
+        // Use Files.deleteIfExists so a permission error / locked
+        // handle surfaces as a logged exception instead of
+        // silently failing - the previous {@code File.delete()}
+        // returned false on failure with no diagnostic, leaving
+        // the user with a "deletion didn't take" symptom and no
+        // clue why.
+        try {
+            Files.deleteIfExists(configFile.toPath());
+        } catch (IOException e) {
+            System.err.println("[Phaze] Failed to delete config '"
+                    + configFile.getAbsolutePath() + "': " + e.getMessage());
+        }
+        try {
+            Files.deleteIfExists(backupFile.toPath());
+        } catch (IOException e) {
+            System.err.println("[Phaze] Failed to delete .bak '"
+                    + backupFile.getAbsolutePath() + "': " + e.getMessage());
+        }
 
         // If we deleted what we were actively saving to, fall back to
         // a real config so subsequent setting changes have a stable
@@ -875,7 +1089,11 @@ public final class ConfigManager {
             return;
         }
 
-        String key = setting.getName();
+        // Persist by the raw English key. Translated names from
+        // {@link Setting#getName()} would otherwise key the JSON by
+        // the active locale, breaking config files when the user
+        // flips the language switch.
+        String key = setting.getRawName();
 
         switch (setting) {
             case BooleanSetting booleanSetting -> target.addProperty(key, booleanSetting.isValue());
@@ -962,7 +1180,7 @@ public final class ConfigManager {
             return;
         }
 
-        String key = setting.getName();
+        String key = setting.getRawName();
         if (!source.has(key)) {
             String[] aliases = LEGACY_KEY_ALIASES.get(key);
             if (aliases != null) {

@@ -68,38 +68,37 @@ public abstract class ChatHudMixin {
     @Unique private boolean phaze$frameActive = false;
 
     // ---------------------------------------------------------------
-    // ChatHudNickHiderMixin
+    // ChatHudNickHiderMixin + MentionHighlight (combined HEAD)
     // ---------------------------------------------------------------
+    // Order matters: MentionHighlight must see the ORIGINAL text so
+    // it can match against the player's real username; only AFTER the
+    // mention has been processed do we let NickHider replace the
+    // username with the user's configured stand-in. The previous
+    // setup ran the two as separate {@code @ModifyVariable} hooks at
+    // the same HEAD point - the order between sibling ModifyVariable
+    // hooks is undefined per Mixin spec, and on the user's machine it
+    // happened to land NickHider first, which silently stripped the
+    // username before MentionHighlight could match it. Combining the
+    // two into a single hook (mention → hide) guarantees the order
+    // and fixes the "ping doesn't fire when other players say my
+    // name" bug.
 
     @ModifyVariable(
             method = "addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
             at = @At("HEAD"),
             argsOnly = true
     )
-    private Text phaze$hideOwnNick(Text original) {
+    private Text phaze$mentionThenHide(Text original) {
+        Text afterMention = original;
+        MentionHighlight mention = MentionHighlight.getInstance();
+        if (mention != null && mention.isEnabled()) {
+            afterMention = mention.processIncoming(original);
+        }
         NickHider hider = NickHider.getInstance();
         if (hider == null) {
-            return original;
+            return afterMention;
         }
-        return hider.rewrite(original);
-    }
-
-    // ---------------------------------------------------------------
-    // ChatHudMentionHighlightMixin
-    // ---------------------------------------------------------------
-
-    @ModifyVariable(
-            method = "addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
-            at = @At("HEAD"),
-            argsOnly = true,
-            ordinal = 0
-    )
-    private Text phaze$mentionHighlight(Text original) {
-        MentionHighlight module = MentionHighlight.getInstance();
-        if (module == null || !module.isEnabled()) {
-            return original;
-        }
-        return module.processIncoming(original);
+        return hider.rewrite(afterMention);
     }
 
     // ---------------------------------------------------------------

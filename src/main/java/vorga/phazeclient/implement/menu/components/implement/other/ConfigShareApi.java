@@ -144,38 +144,56 @@ public final class ConfigShareApi {
     }
 
     /**
+     * Result envelope for {@link #download} - carries the share-
+     * string payload alongside the optional original config name
+     * uploaded by the original sharer. Receivers use {@link #name}
+     * to save the imported config under the same local name as the
+     * uploader rather than an opaque {@code imported_<n>} slot.
+     */
+    public static final class DownloadResult {
+        public final String payload;
+        public final String name;
+        public DownloadResult(String payload, String name) {
+            this.payload = payload;
+            this.name = name;
+        }
+    }
+
+    /**
      * POST a share-string to {@code /api/configs}. Returns the
      * generated id ({@code <nick>-NNNN-NNNN}) on success or
      * {@code null} on any error.
      */
-    public static String upload(String share, String author, Integer maxUses) {
-        // Try primary endpoint, then each fallback in order. Each
-        // host gets a single one-retry attempt before we move on -
-        // a carrier blocking one *.dev subdomain rarely blocks the
-        // other, so one fallback hop is usually enough.
-        String result = uploadWithRetry(API_BASE, share, author, maxUses);
+    public static String upload(String share, String author, Integer maxUses, String name) {
+        // Try primary endpoint, then each fallback in order.
+        String result = uploadWithRetry(API_BASE, share, author, maxUses, name);
         if (result != null) return result;
         for (String alt : API_FALLBACKS) {
-            result = uploadWithRetry(alt, share, author, maxUses);
+            result = uploadWithRetry(alt, share, author, maxUses, name);
             if (result != null) return result;
         }
         return null;
     }
 
-    private static String uploadWithRetry(String base, String share, String author, Integer maxUses) {
-        String result = uploadOnce(base, share, author, maxUses);
+    /** Back-compat for callers that don't yet pass a config name. */
+    public static String upload(String share, String author, Integer maxUses) {
+        return upload(share, author, maxUses, null);
+    }
+
+    private static String uploadWithRetry(String base, String share, String author, Integer maxUses, String name) {
+        String result = uploadOnce(base, share, author, maxUses, name);
         if (result == null && lastError != null
                 && (lastError.contains("SocketTimeout") || lastError.contains("SSL")
                         || lastError.contains("handshake")
                         || lastError.contains("SocketException")
                         || lastError.contains("Unexpected end"))) {
             try { Thread.sleep(400); } catch (InterruptedException ignored) {}
-            result = uploadOnce(base, share, author, maxUses);
+            result = uploadOnce(base, share, author, maxUses, name);
         }
         return result;
     }
 
-    private static String uploadOnce(String base, String share, String author, Integer maxUses) {
+    private static String uploadOnce(String base, String share, String author, Integer maxUses, String name) {
         HttpURLConnection conn = null;
         try {
             URL url = URI.create(base + "/api/configs").toURL();
@@ -185,12 +203,6 @@ public final class ConfigShareApi {
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("User-Agent", UA);
-            // Force HTTP/1.0 connection: close to defeat carrier DPI
-            // boxes that buffer-close the TCP socket mid-stream when
-            // they see TLS-over-HTTPS keep-alive POSTs to unfamiliar
-            // hosts. The legacy URLConnection respects this header
-            // by reusing nothing, so the next request opens a fresh
-            // socket - slow but actually delivers the body.
             conn.setRequestProperty("Connection", "close");
             conn.setInstanceFollowRedirects(true);
             conn.setDoOutput(true);
@@ -204,6 +216,14 @@ public final class ConfigShareApi {
             }
             if (maxUses != null && maxUses > 0) {
                 payload.addProperty("maxUses", maxUses.intValue());
+            }
+            // Carry the local config file name so the receiver can
+            // import under the same name. The server-side regex
+            // accepts [A-Za-z0-9_-]{1,32}; anything outside that is
+            // dropped to null on the worker, NOT a hard reject, so
+            // sending a sanitised value here is purely a hint.
+            if (name != null && !name.isEmpty()) {
+                payload.addProperty("name", name);
             }
             byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
             conn.setFixedLengthStreamingMode(body.length);
@@ -250,7 +270,17 @@ public final class ConfigShareApi {
      * payload on success or {@code null} on any error.
      */
     public static String download(String code) {
-        String result = downloadWithRetry(API_BASE, code);
+        DownloadResult res = downloadFull(code);
+        return res == null ? null : res.payload;
+    }
+
+    /**
+     * Same as {@link #download} but also surfaces the original
+     * config name attached at upload time, so the caller can save
+     * the imported config under the same local name.
+     */
+    public static DownloadResult downloadFull(String code) {
+        DownloadResult result = downloadWithRetry(API_BASE, code);
         if (result != null) return result;
         // 404/410 are NOT network errors - don't try fallbacks for them.
         if (lastError != null
@@ -268,8 +298,8 @@ public final class ConfigShareApi {
         return null;
     }
 
-    private static String downloadWithRetry(String base, String code) {
-        String result = downloadOnce(base, code);
+    private static DownloadResult downloadWithRetry(String base, String code) {
+        DownloadResult result = downloadOnce(base, code);
         if (result == null && lastError != null
                 && (lastError.contains("SocketTimeout") || lastError.contains("SSL")
                         || lastError.contains("handshake")
@@ -281,7 +311,7 @@ public final class ConfigShareApi {
         return result;
     }
 
-    private static String downloadOnce(String base, String code) {
+    private static DownloadResult downloadOnce(String base, String code) {
         HttpURLConnection conn = null;
         try {
             URL url = URI.create(base + "/api/configs/" + code).toURL();
@@ -315,8 +345,11 @@ public final class ConfigShareApi {
                 lastError = "пустой ответ сервера";
                 return null;
             }
+            String name = parsed.has("name") && !parsed.get("name").isJsonNull()
+                    ? parsed.get("name").getAsString()
+                    : null;
             lastError = null;
-            return parsed.get("payload").getAsString();
+            return new DownloadResult(parsed.get("payload").getAsString(), name);
         } catch (IOException e) {
             lastError = "network: " + e.getClass().getSimpleName() + " " + e.getMessage();
             return null;

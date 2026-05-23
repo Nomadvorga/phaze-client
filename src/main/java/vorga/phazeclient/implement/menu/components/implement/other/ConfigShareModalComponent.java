@@ -10,8 +10,10 @@ import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.config.ConfigManager;
+import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 
@@ -158,6 +160,10 @@ public class ConfigShareModalComponent extends AbstractComponent {
         if (!open && openAnimation.getOutputFloat() <= 0.001F) {
             return;
         }
+        // Pull the latest language selection from Theme so a
+        // language flip while this modal is open repaints in the
+        // new locale on the very next frame.
+        Theme.getInstance().syncLanguage();
         // Combine our own open/close fade with the menu's outer
         // open/close fade (globalAlpha) so the modal softly trails
         // off when the user closes the menu instead of disappearing
@@ -223,35 +229,35 @@ public class ConfigShareModalComponent extends AbstractComponent {
 
     private String titleText() {
         switch (mode) {
-            case SHARE: return "Создание ключа";
-            case RENAME: return "Переименование конфига";
-            case IMPORT: return "Загрузить конфиг из ключа";
+            case SHARE: return Lang.t("modal.share.title");
+            case RENAME: return Lang.t("modal.rename.title");
+            case IMPORT: return Lang.t("modal.import.title");
         }
         return "";
     }
 
     private String subText() {
         if (mode == Mode.IMPORT) {
-            return "Введите код, полученный от друга";
+            return Lang.t("modal.import.subtitle");
         }
         String name = configName == null ? ConfigManager.getInstance().getCurrentConfigName() : configName;
-        return "Конфиг " + name + "  •  " + authorLabel;
+        return Lang.t("modal.share.subtitle.prefix") + " " + name + "  •  " + authorLabel;
     }
 
     private String placeholderText() {
         switch (mode) {
-            case SHARE: return "Количество использований";
-            case RENAME: return "Новое имя";
-            case IMPORT: return "nomad-9wxf-49k7";
+            case SHARE: return Lang.t("modal.share.placeholder");
+            case RENAME: return Lang.t("modal.rename.placeholder");
+            case IMPORT: return Lang.t("modal.import.placeholder");
         }
         return "";
     }
 
     private String primaryLabel() {
         switch (mode) {
-            case SHARE: return "Создать";
-            case RENAME: return "Сохранить";
-            case IMPORT: return "Загрузить";
+            case SHARE: return Lang.t("modal.share.primary");
+            case RENAME: return Lang.t("modal.rename.primary");
+            case IMPORT: return Lang.t("modal.import.primary");
         }
         return "";
     }
@@ -318,7 +324,32 @@ public class ConfigShareModalComponent extends AbstractComponent {
                 0.0F);
         if (inputFocused && !placeholder
                 && (System.currentTimeMillis() / 530L) % 2L == 0L) {
-            float caretX = ix + 9.0F + MsdfFonts.bold().getWidth(inputText, INPUT_TEXT_SIZE) + 1.0F;
+            // Position the caret to land exactly at the right edge
+            // of the rendered text. We can't just use ix + padding +
+            // getWidth(...) because MsdfRenderer.renderText adds two
+            // adjustments getWidth doesn't account for:
+            //   1. it shifts the first glyph by -0.75 px so the
+            //      stroke's anti-aliased halo doesn't crop against
+            //      the caller-supplied x;
+            //   2. applyGlyphs inside the renderer advances by
+            //      {thickness*0.5*size + spacing} after EVERY glyph
+            //      (= 0.025*size per character at the default
+            //      thickness=0.05, spacing=0 we use here).
+            // Mirroring those two offsets keeps the caret pinned
+            // flush against the last glyph regardless of input
+            // length - without them, "rt" leaves a visible gap and
+            // "333" overshoots into the last digit.
+            // For our input fields the text is only digits / ASCII
+            // letters / hyphen / underscore - all of which are in
+            // the bold MSDF atlas - so the per-glyph advance count
+            // equals inputText.length(). If we ever start letting
+            // users type characters that may be missing from the
+            // atlas, this needs to walk the string and count present
+            // glyphs explicitly.
+            float thicknessPerChar = 0.025F * INPUT_TEXT_SIZE;
+            float caretX = ix + 9.0F - 0.75F
+                    + MsdfFonts.bold().getWidth(inputText, INPUT_TEXT_SIZE)
+                    + thicknessPerChar * inputText.length();
             rectangle.render(ShapeProperties.create(matrix, caretX, iy + 4.0F, 1.0F, INPUT_HEIGHT - 8.0F)
                     .color(MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha))
                     .build());
@@ -362,7 +393,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
         // text color to give visual feedback.
         float cHover = cancelHover.getOutputFloat();
         int cancelText = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.40F + cHover * 0.50F);
-        String cancelLabel = "Отмена";
+        String cancelLabel = Lang.t("button.cancel");
         float labelX = MenuStyle.centerMsdfTextX(MsdfFonts.bold(), cancelLabel, BUTTON_TEXT_SIZE, cancelX, SECONDARY_W);
         float labelY = MenuStyle.centerMsdfTextY(BUTTON_TEXT_SIZE, by, BUTTON_HEIGHT);
         MsdfRenderer.renderText(
@@ -477,7 +508,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
         // Filter character class per mode.
         if (mode == Mode.SHARE) {
             if (chr < '0' || chr > '9') return true;
-            if (inputText.length() >= 9) return true;
+            if (inputText.length() >= 15) return true;
             if (inputText.isEmpty() && chr == '0') return true;
         } else if (mode == Mode.IMPORT) {
             // Share keys are lower-case letters / digits / hyphens.
@@ -520,7 +551,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
     }
 
     private void triggerShare() {
-        statusMessage = "Загрузка...";
+        statusMessage = Lang.t("status.loading");
         statusError = false;
         long token = ++actionToken;
         String share;
@@ -530,7 +561,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
             share = null;
         }
         if (share == null) {
-            statusMessage = "Не удалось упаковать конфиг";
+            statusMessage = Lang.t("status.copy_failed");
             statusError = true;
             return;
         }
@@ -548,8 +579,15 @@ public class ConfigShareModalComponent extends AbstractComponent {
             maxUsesParsed = null;
         }
         final Integer maxUsesCaptured = maxUsesParsed;
+        // Carry the local config file name so importers can save the
+        // imported copy under the same name (server stores it next to
+        // the share-string and downloadFull returns it; see
+        // {@link #triggerImport}).
+        final String nameToShare = configName != null && !configName.isEmpty()
+                ? configName
+                : ConfigManager.getInstance().getCurrentConfigName();
         CompletableFuture
-                .supplyAsync(() -> ConfigShareApi.upload(captured, authorCaptured, maxUsesCaptured))
+                .supplyAsync(() -> ConfigShareApi.upload(captured, authorCaptured, maxUsesCaptured, nameToShare))
                 .thenAccept(id -> {
                     if (token != actionToken) return;
                     if (id == null) {
@@ -559,13 +597,13 @@ public class ConfigShareModalComponent extends AbstractComponent {
                         // Keeps the message short - the panel only
                         // has room for ~30 chars before truncation.
                         statusMessage = detail == null
-                                ? "Сервер недоступен"
-                                : "Ошибка: " + (detail.length() > 60 ? detail.substring(0, 60) + "..." : detail);
+                                ? Lang.t("status.server_unreachable")
+                                : Lang.t("status.error_prefix") + ": " + (detail.length() > 60 ? detail.substring(0, 60) + "..." : detail);
                         statusError = true;
                         return;
                     }
                     writeClipboard(id);
-                    statusMessage = "Код " + id + " скопирован";
+                    statusMessage = Lang.t("status.copied_prefix") + " " + id + " " + Lang.t("status.copied_suffix");
                     statusError = false;
                 });
     }
@@ -582,7 +620,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
     private void triggerImport() {
         String code = inputText.trim().toLowerCase();
         if (code.isEmpty()) {
-            statusMessage = "Введите код";
+            statusMessage = Lang.t("status.enter_code");
             statusError = true;
             return;
         }
@@ -590,46 +628,70 @@ public class ConfigShareModalComponent extends AbstractComponent {
         // round-trip on input that obviously isn't a share-id. The
         // server uses the same regex on its end.
         if (!code.matches("^[a-z0-9_]{1,5}-[a-z0-9]{4}-[a-z0-9]{4}$")) {
-            statusMessage = "Неверный формат кода";
+            statusMessage = Lang.t("status.invalid_code_format");
             statusError = true;
             return;
         }
-        statusMessage = "Загрузка...";
+        statusMessage = Lang.t("status.loading");
         statusError = false;
         long token = ++actionToken;
         CompletableFuture
-                .supplyAsync(() -> ConfigShareApi.download(code))
-                .thenAccept(share -> {
+                .supplyAsync(() -> ConfigShareApi.downloadFull(code))
+                .thenAccept(result -> {
                     if (token != actionToken) return;
-                    if (share == null) {
+                    if (result == null) {
                         String detail = ConfigShareApi.getLastError();
                         statusMessage = detail == null
-                                ? "Ключ не найден"
-                                : "Ошибка: " + (detail.length() > 60 ? detail.substring(0, 60) + "..." : detail);
+                                ? Lang.t("status.key_not_found")
+                                : Lang.t("status.error_prefix") + ": " + (detail.length() > 60 ? detail.substring(0, 60) + "..." : detail);
                         statusError = true;
                         return;
                     }
-                    String name = ConfigManager.getInstance().importFromString(share);
-                    if (name == null) {
-                        statusMessage = "Не удалось импортировать";
-                        statusError = true;
-                        return;
+                    // Hand the import path the suggested name from
+                    // the server. ConfigManager picks an "imported_<n>"
+                    // fallback when the suggested name is null OR
+                    // already taken locally so we never overwrite a
+                    // user's existing config of the same label.
+                    //
+                    // Marshalled onto the render thread because
+                    // {@link ConfigManager#importFromString} touches
+                    // the same in-memory state that the per-tick
+                    // autosave reads/writes from. Running it on the
+                    // {@code supplyAsync} pool race-conditioned with
+                    // autosave: the new file would land first, then
+                    // an outgoing-autosave on the render thread would
+                    // copy the (still-old) in-memory state OVER the
+                    // freshly imported file - the user reported this
+                    // as "configs swap places after import".
+                    MinecraftClient mc = MinecraftClient.getInstance();
+                    Runnable importTask = () -> {
+                        String name = ConfigManager.getInstance().importFromString(result.payload, result.name);
+                        if (name == null) {
+                            statusMessage = Lang.t("status.import_failed");
+                            statusError = true;
+                            return;
+                        }
+                        statusMessage = Lang.t("status.imported_prefix") + " " + name;
+                        statusError = false;
+                        if (onRenamed != null) onRenamed.run();
+                    };
+                    if (mc != null) {
+                        mc.execute(importTask);
+                    } else {
+                        importTask.run();
                     }
-                    statusMessage = "Импортирован: " + name;
-                    statusError = false;
-                    if (onRenamed != null) onRenamed.run();
                 });
     }
 
     private void triggerRename() {
         if (configName == null) {
-            statusMessage = "Имя конфига не задано";
+            statusMessage = Lang.t("status.config_name_missing");
             statusError = true;
             return;
         }
         String newName = inputText.trim();
         if (newName.isEmpty()) {
-            statusMessage = "Введите новое имя";
+            statusMessage = Lang.t("status.enter_new_name");
             statusError = true;
             return;
         }
@@ -639,7 +701,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
         }
         ConfigManager mgr = ConfigManager.getInstance();
         if (mgr.getConfigFile(newName).exists()) {
-            statusMessage = "Имя уже занято";
+            statusMessage = Lang.t("status.name_taken");
             statusError = true;
             return;
         }
@@ -653,7 +715,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
                 File to = mgr.getConfigFile(newName);
                 if (from.exists() && !to.exists()) {
                     if (!from.renameTo(to)) {
-                        statusMessage = "Не удалось переименовать";
+                        statusMessage = Lang.t("status.rename_failed");
                         statusError = true;
                         return;
                     }
@@ -663,7 +725,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
                 }
             }
         } catch (Throwable t) {
-            statusMessage = "Ошибка переименования";
+            statusMessage = Lang.t("status.rename_error");
             statusError = true;
             return;
         }

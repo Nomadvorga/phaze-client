@@ -98,7 +98,21 @@ public class ValueComponent extends AbstractSettingComponent {
 
         renderLabelText(matrices, wrapped, x + 10 + animatedTextOffset, primaryText());
 
-        String value = String.valueOf(setting.getValue());
+        // Format the value cleanly: when the step is a whole
+        // number AND the value itself is a whole number, hide the
+        // trailing ".0" so an integer-stepped slider doesn't read
+        // as "2.0" when "2" is what the user expects. Anything
+        // with a fractional step or a fractional value keeps the
+        // raw String.valueOf output so 0.5-step sliders still show
+        // their precision.
+        float rawValue = setting.getValue();
+        float stepSize = setting.getStep();
+        String value;
+        if (stepSize >= 1.0F && Math.abs(rawValue - Math.round(rawValue)) < 0.0001F) {
+            value = String.valueOf(Math.round(rawValue));
+        } else {
+            value = String.valueOf(rawValue);
+        }
         float valueWidth = MsdfFonts.bold().getWidth(value, VALUE_TEXT_SIZE);
         float valueX = cachedSliderStartX - valueWidth - 6;
         MsdfRenderer.renderText(
@@ -216,18 +230,45 @@ public class ValueComponent extends AbstractSettingComponent {
 
 
     private void changeValue(float difference) {
-        BigDecimal bd = BigDecimal.valueOf((difference / cachedSliderWidth) * (setting.getMax() - setting.getMin()) + setting.getMin())
-                .setScale(2, RoundingMode.HALF_UP);
-
-        if (dragging) {
-            float newValue = difference == 0 ? setting.getMin() : bd.floatValue();
-            if (setting.isInteger()) newValue = (int) newValue;
-
-            if (newValue != previousValue) {
-                previousValue = newValue;
-            }
-
-            setting.setValue(newValue);
+        if (!dragging) {
+            return;
         }
+
+        // Raw position-derived value. Snapped down to the
+        // configured step so an integer-stepped slider can never
+        // land on, e.g., 4.7 - the user explicitly asked for the
+        // ползунок to scroll only whole-number values when the
+        // setting declares step >= 1. Sub-1 steps still get their
+        // intended granularity (e.g. 0.05).
+        float rangeMin = setting.getMin();
+        float rangeMax = setting.getMax();
+        float rawValue = difference == 0
+                ? rangeMin
+                : (difference / cachedSliderWidth) * (rangeMax - rangeMin) + rangeMin;
+
+        float step = setting.getStep();
+        if (step <= 0.0F) step = 0.01F;
+        // Snap to the nearest step boundary: round((value - min)/step)
+        // gives an integer step index, multiplied back to get the
+        // actual snapped value. Add a tiny epsilon before rounding
+        // so float drift doesn't tip a clean step boundary the
+        // wrong way (e.g. 1.9999... rounding down to 1 instead of
+        // up to 2).
+        float steps = Math.round((rawValue - rangeMin) / step + 1e-6F);
+        float snapped = rangeMin + steps * step;
+        if (snapped < rangeMin) snapped = rangeMin;
+        if (snapped > rangeMax) snapped = rangeMax;
+
+        // Two-decimal cleanup for fractional steps (avoids
+        // 0.300000004 artefacts from FP accumulation).
+        BigDecimal bd = BigDecimal.valueOf(snapped).setScale(2, RoundingMode.HALF_UP);
+        float newValue = bd.floatValue();
+        if (setting.isInteger()) newValue = (int) newValue;
+
+        if (newValue != previousValue) {
+            previousValue = newValue;
+        }
+
+        setting.setValue(newValue);
     }
 }

@@ -267,8 +267,14 @@ public class MenuScreen extends Screen implements QuickImports {
         animation.setDirection(Direction.FORWARDS);
         categoryContainerComponent.initializeCategoryComponents();
         closeModuleDetail();
+        // Reset to MODS / ALL on every open. Without this, closing the
+        // GUI while in CONFIGS or SETTINGS would re-open the menu on
+        // the same view next time, which reads as "the menu doesn't
+        // remember the home tab".
+        closeConfigsView();
+        category = ModuleCategory.ALL;
         Theme.getInstance().applyMenuTheme();
-        
+
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null) {
             client.setScreen(this);

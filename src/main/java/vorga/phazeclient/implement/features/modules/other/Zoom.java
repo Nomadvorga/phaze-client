@@ -11,6 +11,7 @@ import net.minecraft.util.Identifier;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
@@ -26,10 +27,20 @@ public final class Zoom extends Module {
     public final BindSetting keybind = new BindSetting("Keybind", "Key to toggle zoom");
     public final BooleanSetting hold = new BooleanSetting("Hold", "Hold key to zoom (release to disable)").setValue(false);
     public final BooleanSetting resumeZoom = new BooleanSetting("Resume Zoom", "Resume zoom level after disabling").setValue(false);
-    public final ValueSetting defaultZoom = new ValueSetting("Default Zoom", "Default zoom level").range(2.0f, 15.0f).step(0.5f).setValue(2.0f);
+    public final ValueSetting defaultZoom = new ValueSetting("Default Zoom", "Default zoom level").range(2.0f, 15.0f).step(1.0f).setValue(4.0f);
     public final BooleanSetting cinematicCamera = new BooleanSetting("Cinematic Camera", "Use cinematic camera when zooming").setValue(false);
     public final ValueSetting zoomInDuration = new ValueSetting("Zoom In Duration", "Duration of zoom in animation").range(0.1f, 2.0f).step(0.1f).setValue(0.5f);
+    public final SelectSetting zoomInInterpolation = new SelectSetting(
+            "Zoom In Interpolation",
+            "Easing curve used while zooming in. Default keeps the legacy exponential-approach behaviour."
+    ).value("Default", "Linear", "Smooth", "Fast", "Balanced", "Ease Out")
+     .selected(vorga.phazeclient.base.util.animation.Interpolations.DEFAULT_NAME);
     public final ValueSetting zoomOutDuration = new ValueSetting("Zoom Out Duration", "Duration of zoom out animation").range(0.1f, 2.0f).step(0.1f).setValue(0.5f);
+    public final SelectSetting zoomOutInterpolation = new SelectSetting(
+            "Zoom Out Interpolation",
+            "Easing curve used while zooming out. Default keeps the legacy exponential-approach behaviour."
+    ).value("Default", "Linear", "Smooth", "Fast", "Balanced", "Ease Out")
+     .selected(vorga.phazeclient.base.util.animation.Interpolations.DEFAULT_NAME);
     public final ValueSetting zoomScrollMultiplier = new ValueSetting("Scroll Multiplier", "Zoom scroll multiplier").range(1.0f, 5.0f).setValue(2.0f);
     public final ValueSetting zoomScrollSensitivity = new ValueSetting("Scroll Sensitivity", "Zoom scroll sensitivity").range(0.1f, 5.0f).setValue(1.0f);
     public final BooleanSetting showCurrentZoom = new BooleanSetting("Show Current Zoom", "Show current zoom level above hotbar").setValue(false);
@@ -48,14 +59,16 @@ public final class Zoom extends Module {
         defaultZoom.setFullWidth(true);
         resumeZoom.setFullWidth(true);
         zoomInDuration.setFullWidth(true);
+        zoomInInterpolation.setFullWidth(true);
         zoomOutDuration.setFullWidth(true);
+        zoomOutInterpolation.setFullWidth(true);
         zoomScrollMultiplier.setFullWidth(true);
         zoomScrollSensitivity.setFullWidth(true);
         showCurrentZoom.setFullWidth(true);
         enableLimits.setFullWidth(true);
         maxZoom.setFullWidth(true);
         
-        setup(zoomSection, keybind, hold, cinematicCamera, defaultZoom, resumeZoom, zoomInDuration, zoomOutDuration, zoomScrollMultiplier, zoomScrollSensitivity, showCurrentZoom, limitsSection, enableLimits, maxZoom);
+        setup(zoomSection, keybind, hold, cinematicCamera, defaultZoom, resumeZoom, zoomInDuration, zoomInInterpolation, zoomOutDuration, zoomOutInterpolation, zoomScrollMultiplier, zoomScrollSensitivity, showCurrentZoom, limitsSection, enableLimits, maxZoom);
     }
 
     public static Zoom getInstance() {
@@ -117,6 +130,14 @@ public final class Zoom extends Module {
 
     public float getZoomOutDuration() {
         return zoomOutDuration.getValue();
+    }
+
+    public String getZoomInInterpolation() {
+        return zoomInInterpolation.getSelected();
+    }
+
+    public String getZoomOutInterpolation() {
+        return zoomOutInterpolation.getSelected();
     }
 
     public float getZoomScrollMultiplier() {

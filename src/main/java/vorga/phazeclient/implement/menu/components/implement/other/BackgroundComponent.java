@@ -12,6 +12,7 @@ import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuScreen;
@@ -59,6 +60,10 @@ public class BackgroundComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        // Apply the language selection from Theme each frame so a
+        // mid-session locale flip repaints in the new strings without
+        // a restart.
+        Theme.getInstance().syncLanguage();
         MatrixStack matrix = context.getMatrices();
         // Sidebar is hidden while the CONFIGS view is active so the
         // configs list spans the full width of the menu's content
@@ -130,21 +135,27 @@ public class BackgroundComponent extends AbstractComponent {
                 totalTabsWidth += TOP_TAB_GAP;
             }
         }
-        // Reserve space for the import-key "+" button that lives
-        // just to the right of the CONFIGS tab. Including it in the
-        // centring math keeps the tab cluster + plus visually
-        // balanced about the menu's horizontal centreline instead of
-        // shifting left when the plus is shown.
-        totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
+        // Reserve space for the import-key "+" button only while
+        // the CONFIGS tab is active. The plus is irrelevant on the
+        // MODS / SETTINGS screens and the user explicitly asked for
+        // it to be hidden there. Skipping the reservation when it's
+        // not shown lets the three-tab strip recentre on the menu's
+        // horizontal centreline.
+        if (configsActive) {
+            totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
+        }
 
         float tabsX = x + width / 2F - totalTabsWidth / 2.0F;
         for (int i = 0; i < labels.length; i++) {
             tabsX += drawTopTab(context, mouseX, mouseY, tabsX, labels[i], active[i]) + TOP_TAB_GAP;
         }
-        // "+" - opens the import-from-key modal. We render it as a
-        // square chip the same height as the top tabs so the strip
-        // reads as one cohesive row of controls.
-        drawImportPlus(context, mouseX, mouseY, tabsX);
+        // "+" - opens the import-from-key modal. Only rendered (and
+        // only clickable) while CONFIGS is the active top-tab so it
+        // doesn't sit there as a dead chip on the MODS / SETTINGS
+        // screens.
+        if (configsActive) {
+            drawImportPlus(context, mouseX, mouseY, tabsX);
+        }
     }
 
     private float getTopTabWidth(String label) {
@@ -206,7 +217,7 @@ public class BackgroundComponent extends AbstractComponent {
                 .round(2).thickness(2.0F)
                 .outlineColor(MenuStyle.BORDER)
                 .color(MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.TEXT_PRIMARY, 0.06F * hoverProgress)).build());
-        String label = "NEW CONFIG";
+        String label = Lang.t("sidebar.new_config");
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
                 label,
@@ -337,7 +348,7 @@ public class BackgroundComponent extends AbstractComponent {
                 .round(2).thickness(2.0F)
                 .outlineColor(applyGlobalAlpha(MenuStyle.BORDER))
                 .color(applyGlobalAlpha(MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.TEXT_PRIMARY, 0.06F * newConfigHoverProgress))).build());
-        String newConfigLabel = "NEW CONFIG";
+        String newConfigLabel = Lang.t("sidebar.new_config");
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
                 newConfigLabel,
@@ -584,6 +595,7 @@ public class BackgroundComponent extends AbstractComponent {
 
     private boolean handleTopTabClick(double mouseX, double mouseY) {
         String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
+        boolean configsActive = isConfigsTabActive();
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
             totalTabsWidth += getTopTabWidth(labels[i]);
@@ -591,9 +603,13 @@ public class BackgroundComponent extends AbstractComponent {
                 totalTabsWidth += TOP_TAB_GAP;
             }
         }
-        // Match the offset reservation in renderHeader so the plus
-        // hit-target sits exactly under what the user sees.
-        totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
+        // Match the offset reservation in renderHeader: the import
+        // plus only contributes to the strip's width when CONFIGS is
+        // active. Otherwise the hit-test would read tabs at the
+        // wrong x-positions.
+        if (configsActive) {
+            totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
+        }
 
         float tabsX = x + width / 2F - totalTabsWidth / 2.0F;
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
@@ -615,8 +631,9 @@ public class BackgroundComponent extends AbstractComponent {
             }
             tabsX += tabWidth + TOP_TAB_GAP;
         }
-        // Plus button right after the last tab.
-        if (MathUtil.isHovered(mouseX, mouseY, tabsX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)) {
+        // Plus button - only clickable when CONFIGS is open.
+        if (configsActive
+                && MathUtil.isHovered(mouseX, mouseY, tabsX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)) {
             playButtonClickSound();
             MenuScreen.INSTANCE.openConfigImportModal();
             return true;
@@ -626,6 +643,7 @@ public class BackgroundComponent extends AbstractComponent {
 
     private boolean isTopTabHovered(double mouseX, double mouseY) {
         String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
+        boolean configsActive = isConfigsTabActive();
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
             totalTabsWidth += getTopTabWidth(labels[i]);
@@ -633,7 +651,9 @@ public class BackgroundComponent extends AbstractComponent {
                 totalTabsWidth += TOP_TAB_GAP;
             }
         }
-        totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
+        if (configsActive) {
+            totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
+        }
 
         float tabsX = x + width / 2F - totalTabsWidth / 2.0F;
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
@@ -644,7 +664,8 @@ public class BackgroundComponent extends AbstractComponent {
             }
             tabsX += tabWidth + TOP_TAB_GAP;
         }
-        if (MathUtil.isHovered(mouseX, mouseY, tabsX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)) {
+        if (configsActive
+                && MathUtil.isHovered(mouseX, mouseY, tabsX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)) {
             return true;
         }
         return false;
@@ -665,30 +686,60 @@ public class BackgroundComponent extends AbstractComponent {
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float hoverProgress = hoverAnimation.getOutputFloat();
 
+        // Match the visual styling of the regular top-tabs so the
+        // plus chip reads as a sibling of MODS / SETTINGS / CONFIGS
+        // rather than a floating outline. Light-tint base fill +
+        // visible border outline + brighter on hover - identical
+        // weight curve to drawTopTab.
+        int baseTabColor = MenuStyle.PANEL_CHIP;
+        int hoverTabColor = MenuStyle.mix(baseTabColor, 0xFFFFFFFF, 0.08F);
+        int tabColor = MenuStyle.mix(baseTabColor, hoverTabColor, hoverProgress);
+
         int baseBorderColor = MenuStyle.BORDER;
         int hoverBorderColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.BORDER_LIGHT, 0.45F);
         int borderColor = MenuStyle.mix(baseBorderColor, hoverBorderColor, hoverProgress);
-        int textColor = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.45F + hoverProgress * 0.55F);
 
+        int baseIconColor = MenuStyle.TEXT_MUTED;
+        int hoverIconColor = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.55F);
+        int iconColor = MenuStyle.mix(baseIconColor, hoverIconColor, hoverProgress);
+
+        // Draw the chip outline first - matches drawTopTab styling.
         rectangle.render(ShapeProperties.create(matrix, tabX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)
                 .round(2).thickness(3.0F)
                 .outlineColor(applyGlobalAlpha(borderColor))
-                .color(MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, 0))
+                .color(MenuStyle.withAlpha(tabColor, 0))
                 .build());
 
-        // "+" drawn as two thin rounded bars centred in the chip.
-        // Easier than relying on font glyph metrics for a single
-        // character that has to look pixel-aligned against the chip.
-        float cx = tabX + TOP_TAB_HEIGHT * 0.5F;
-        float cy = tabY + TOP_TAB_HEIGHT * 0.5F;
-        float arm = TOP_TAB_HEIGHT * 0.30F;
-        float thick = 1.2F;
-        rectangle.render(ShapeProperties.create(matrix,
-                cx - arm, cy - thick * 0.5F, arm * 2.0F, thick)
-                .round(thick * 0.5F).color(applyGlobalAlpha(textColor)).build());
-        rectangle.render(ShapeProperties.create(matrix,
-                cx - thick * 0.5F, cy - arm, thick, arm * 2.0F)
-                .round(thick * 0.5F).color(applyGlobalAlpha(textColor)).build());
+        // Cross icon centred on the chip. Image's render path
+        // pivots around (x+width, y) of the supplied rect at a
+        // default 90° rotation, so to land the centre of the icon
+        // on the chip's centre we compensate by translating to the
+        // chip centre, rotating, then translating back. We push
+        // through the matrix stack so the bookkeeping is local to
+        // this draw call.
+        float iconSize = TOP_TAB_HEIGHT * 0.50F;
+        float chipCx = tabX + TOP_TAB_HEIGHT * 0.5F;
+        float chipCy = tabY + TOP_TAB_HEIGHT * 0.5F;
+        matrix.push();
+        // Translate-pivot-translate pattern: anchor the rotation at
+        // the chip centre. Image internally rotates +90° around
+        // its rect's (x+width, y) corner; combined with the matrix
+        // rotation here the net effect lands the cross glyph
+        // upright (vertical+horizontal bars) and centred on the
+        // chip. The iconSize square is drawn with its top-left at
+        // (chipCx - iconSize/2, chipCy - iconSize/2) so after the
+        // 90° internal rotation around (x+width, y) it covers the
+        // chip-centred area.
+        matrix.translate(chipCx, chipCy, 0.0F);
+        matrix.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(45.0F));
+        matrix.translate(-chipCx, -chipCy, 0.0F);
+        image.setTexture("textures/cross.png")
+                .render(ShapeProperties.create(matrix,
+                        chipCx - iconSize * 0.5F, chipCy - iconSize * 0.5F,
+                        iconSize, iconSize)
+                        .color(applyGlobalAlpha(iconColor))
+                        .build());
+        matrix.pop();
     }
 
     private boolean isSettingsTabActive() {

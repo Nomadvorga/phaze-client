@@ -3,12 +3,15 @@ package vorga.phazeclient.mixins;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ChatScreen;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.features.modules.other.Animations;
+import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 
 /**
  * Slides the chat-screen input field (the box at the bottom of the screen
@@ -114,5 +117,100 @@ public abstract class ChatScreenInputFieldMixin {
     private void phaze$onRemoved(CallbackInfo ci) {
         // Reset so the next open re-triggers the slide.
         phaze$wasOpenedLastFrame = false;
+    }
+
+    /**
+     * Stash for the original text between the StreamerMode HEAD swap
+     * and TAIL restore on the chat-input render call. {@code null}
+     * when no swap happened on the current frame.
+     */
+    @Unique
+    private String phaze$savedChatText = null;
+
+    /**
+     * Wraps {@link TextFieldWidget#render} on the chat-input field
+     * with a temporary text swap so the StreamerMode password mask
+     * actually shows on screen. We bypass {@code setText} (which
+     * would fire {@code setChangedListener} and trigger a Brigadier
+     * re-parse on the masked text) by writing directly to the
+     * {@code private String text} field via reflection - the swap
+     * is a single-frame visual rewrite and never touches the
+     * onChanged path. Restored to the original text immediately
+     * after the render call so the next frame / suggestor parse
+     * sees the user's actual input.
+     *
+     * <p>Only the chat-input goes through this mixin because that
+     * is the only {@code TextFieldWidget} where a slash-command can
+     * carry a password. Other text fields (server names, book
+     * editor, etc.) are untouched.
+     */
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/widget/TextFieldWidget;render(Lnet/minecraft/client/gui/DrawContext;IIF)V"
+            )
+    )
+    private void phaze$maskedChatRender(TextFieldWidget chatField,
+                                        DrawContext context, int mouseX, int mouseY, float delta) {
+        StreamerMode streamer = StreamerMode.getInstance();
+        String original = chatField.getText();
+        boolean swap = streamer != null
+                && streamer.isHidePasswordsEnabled()
+                && original != null
+                && !original.isEmpty()
+                && original.charAt(0) == '/';
+        String masked = swap ? StreamerMode.maskPasswordIfMatching(original) : null;
+        boolean didSwap = masked != null && !masked.equals(original);
+        java.lang.reflect.Field textField = null;
+        if (didSwap) {
+            try {
+                textField = phaze$resolveTextField();
+                textField.set(chatField, masked);
+            } catch (Throwable ignored) {
+                didSwap = false;
+            }
+        }
+        chatField.render(context, mouseX, mouseY, delta);
+        if (didSwap) {
+            try {
+                textField.set(chatField, original);
+            } catch (Throwable ignored) {
+                // Last-ditch: setText restores even if we can't
+                // touch the field directly, at the cost of one
+                // spurious onChanged callback.
+                chatField.setText(original);
+            }
+        }
+    }
+
+    /**
+     * Cached {@code text} field reflection. Resolved lazily on the
+     * first masked render so we don't pay the lookup cost on every
+     * un-masked frame. Yarn maps the field name to {@code text} on
+     * 1.21.4; mojang-mapped builds carry the same name. We probe
+     * both candidates plus the obfuscated {@code field_2092} as a
+     * fallback so a future remap doesn't silently disable the mask.
+     */
+    @Unique
+    private static java.lang.reflect.Field phaze$cachedTextField = null;
+
+    @Unique
+    private static java.lang.reflect.Field phaze$resolveTextField() throws NoSuchFieldException {
+        java.lang.reflect.Field f = phaze$cachedTextField;
+        if (f != null) return f;
+        Class<?> c = TextFieldWidget.class;
+        NoSuchFieldException last = null;
+        for (String name : new String[]{"text", "field_2092"}) {
+            try {
+                java.lang.reflect.Field candidate = c.getDeclaredField(name);
+                candidate.setAccessible(true);
+                phaze$cachedTextField = candidate;
+                return candidate;
+            } catch (NoSuchFieldException e) {
+                last = e;
+            }
+        }
+        throw last == null ? new NoSuchFieldException("text") : last;
     }
 }

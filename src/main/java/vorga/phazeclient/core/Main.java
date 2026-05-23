@@ -43,7 +43,7 @@ public class Main implements ModInitializer {
     private static Main instance;
     private final ScissorManager scissorManager = new ScissorManager();
     private final ModuleProvider moduleProvider = new ModuleProvider(new ArrayList<>());
-    private final ConfigManager configManager = new ConfigManager();
+    private final ConfigManager configManager = ConfigManager.getInstance();
     private final DiscordManager discordManager = new DiscordManager();
 
     public Main() {
@@ -170,9 +170,6 @@ public class Main implements ModInitializer {
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.DiscordRpc.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.DiscordRpc.getInstance());
-        }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ServerListPlus.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ServerListPlus.getInstance());
         }
         if (moduleProvider.get(Zoom.class) == null) {
             moduleProvider.getModules().add(Zoom.getInstance());

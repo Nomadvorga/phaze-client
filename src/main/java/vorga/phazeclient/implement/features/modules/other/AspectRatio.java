@@ -54,6 +54,7 @@ public final class AspectRatio extends Module {
         super("aspect_ratio", "Aspect Ratio", ModuleCategory.OTHER);
 
         usePreset.setFullWidth(true);
+        preset.setFullWidth(true);
         preset.setVisible(usePreset::isValue);
         factor.setFullWidth(true);
         factor.setVisible(() -> !usePreset.isValue());
