@@ -61,7 +61,8 @@ public final class ArmorHud extends Module {
             .range(0, 32)
             .setValue(0)
             .visible(() -> background.isValue());
-    public final SectionSetting colorSection = new SectionSetting("Color Settings");
+    public final SectionSetting colorSection = new SectionSetting("Color Settings")
+            .visible(() -> background.isValue());
     public final SectionSetting otherSection = new SectionSetting("Other");
     public final SelectSetting durabilityMode = new SelectSetting("Durability Mode", "How to display armor durability")
             .value("Units", "Percent")

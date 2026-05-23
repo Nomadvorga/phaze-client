@@ -75,7 +75,7 @@ public final class DeathCoords extends Module {
     }
 
     private DeathCoords() {
-        super("death_coords", "Death Coords", ModuleCategory.UTILITIES);
+        super("death_coords", "Death Coords", ModuleCategory.OTHER);
         outputMode.setFullWidth(true);
         format.setFullWidth(true);
         customPrefix.setFullWidth(true);

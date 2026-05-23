@@ -20,6 +20,15 @@ public class ResetIconComponent implements QuickImports {
     private float alpha = 1.0f;
     private boolean isModified = false;
     private final Animation visibilityAnimation = new DecelerateAnimation().setMs(140).setValue(1);
+    /** Tracks whether the visibility animation has been seeded for
+     *  this component yet. The first render after a tab switch
+     *  should NOT play a fade-in: the user explicitly asked to drop
+     *  the appear animation when flipping between MODS / SETTINGS /
+     *  CONFIGS. We still want the fade when {@link #isModified}
+     *  toggles during normal use, so the animation stays in place -
+     *  it just gets snapped to its end state on the very first
+     *  render frame. */
+    private boolean visibilitySeeded = false;
 
     public ResetIconComponent position(float parentX, float parentY) {
         this.x = parentX + ICON_X_OFFSET;
@@ -44,7 +53,19 @@ public class ResetIconComponent implements QuickImports {
     }
 
     public void render(MatrixStack matrix) {
-        visibilityAnimation.setDirection(isModified ? Direction.FORWARDS : Direction.BACKWARDS);
+        Direction targetDir = isModified ? Direction.FORWARDS : Direction.BACKWARDS;
+        if (!visibilitySeeded) {
+            // First render after a fresh attach: snap directly to
+            // the resting end value so an in-flight category switch
+            // doesn't replay the fade. Subsequent toggles (the user
+            // changing a setting away from / back to its default)
+            // still go through the regular setDirection path and
+            // animate normally.
+            visibilityAnimation.setDirectionAndFinish(targetDir);
+            visibilitySeeded = true;
+        } else {
+            visibilityAnimation.setDirection(targetDir);
+        }
         float visible = visibilityAnimation.getOutputFloat();
         float iconAlpha = alpha * visible;
         if (iconAlpha <= 0.01f) {

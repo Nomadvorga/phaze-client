@@ -105,7 +105,7 @@ public final class ChatHelper extends Module {
     private final AtomicLong lastClipboardWriteMs = new AtomicLong(0L);
 
     private ChatHelper() {
-        super("chat_helper", "Chat Helper", ModuleCategory.UTILITIES);
+        super("chat_helper", "Chat Helper", ModuleCategory.OTHER);
         collapseRepeats.setFullWidth(true);
         screencopy.setFullWidth(true);
         longerHistory.setFullWidth(true);

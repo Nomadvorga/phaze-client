@@ -36,7 +36,9 @@ __server_staging/
 __*.cjs
 __*.js
 __*.log
+__settings_dump.txt
 build_log.txt
+build_log*.txt
 abs.txt
 mc.txt
 mcbody.txt

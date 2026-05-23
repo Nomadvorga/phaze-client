@@ -25,8 +25,8 @@ public final class AutoSwap extends Module {
     public final SectionSetting generalSection = new SectionSetting("General");
     public final BindSetting keybind = new BindSetting("Keybind", "Key to activate swap");
     public final SelectSetting swapType = new SelectSetting("Swap Type", "Automatic swap type")
-            .value("None", "Sphere -> Totem", "Sphere -> Talisman", "Talisman -> Totem", "Talisman -> Talisman", "Sphere -> Sphere")
-            .selected("None")
+            .value("Sphere -> Totem", "Sphere -> Talisman", "Talisman -> Totem", "Talisman -> Talisman", "Sphere -> Sphere")
+            .selected("Sphere -> Totem")
             .onChange(this::onSwapTypeChanged);
 
     // Runtime state
@@ -225,10 +225,6 @@ public final class AutoSwap extends Module {
         String rule = swapType.getSelected();
         String lowerItem = currentItem == null ? "" : currentItem.toLowerCase();
 
-        if ("None".equals(rule)) {
-            return null;
-        }
-
         // If offhand is empty, find first available item based on rule
         if (currentItem == null || currentItem.isEmpty()) {
             if ("Talisman -> Talisman".equals(rule)) {
@@ -412,8 +408,13 @@ public final class AutoSwap extends Module {
      * Called when swap type is changed
      */
     private void onSwapTypeChanged(String newType) {
-        // Save config when swap type changes
-        vorga.phazeclient.implement.config.ConfigManager.getInstance().saveCurrentConfig();
+        // No direct save: Setting.notifyChange already routes
+        // through ConfigManager.markDirty() via the global change
+        // listener, so a user-triggered swap-type change persists
+        // within the autosave debounce window. The previous direct
+        // saveCurrentConfig() call ignored the load-time guard and
+        // could write half-reset state during applyInCodeDefaults,
+        // which manifested as configs swapping places after import.
     }
 }
 

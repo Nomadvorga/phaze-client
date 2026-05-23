@@ -49,6 +49,7 @@ public final class StreamerMode extends Module {
     private static final String[] PASSWORD_COMMANDS = {
             "/l",
             "/login",
+            "/log",
             "/r",
             "/reg",
             "/register",
@@ -62,7 +63,18 @@ public final class StreamerMode extends Module {
             "/pass",
             "/password",
             "/unreg",
-            "/unregister"
+            "/unregister",
+            // Russian aliases - many RU servers (FunTime, HoneyMine,
+            // ReallyWorld, etc.) accept Cyrillic commands. We can't
+            // typo-match every server's auth plugin, but the common
+            // shorthand spellings are well-covered.
+            "/л",
+            "/логин",
+            "/р",
+            "/рег",
+            "/регистрация",
+            "/смп",
+            "/сменапароля",
     };
 
     public final SectionSetting generalSection = new SectionSetting("General");

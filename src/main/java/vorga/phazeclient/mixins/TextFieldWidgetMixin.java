@@ -61,36 +61,22 @@ public abstract class TextFieldWidgetMixin {
 
     @Inject(method = "renderWidget", at = @At("HEAD"))
     private void phaze$maskPasswordHead(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        StreamerMode streamer = StreamerMode.getInstance();
-        if (streamer == null || !streamer.isHidePasswordsEnabled()) {
-            return;
-        }
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || !(mc.currentScreen instanceof ChatScreen)) {
-            // Only mask the chat input - other text fields (server
-            // name, book editor, sign etc.) never carry chat
-            // commands so a slash there is just literal text and
-            // must render verbatim.
-            return;
-        }
-        if (this.text == null || this.text.isEmpty()) {
-            return;
-        }
-        String masked = StreamerMode.maskPasswordIfMatching(this.text);
-        if (masked == null || masked.equals(this.text)) {
-            return;
-        }
-        phaze$savedText = this.text;
-        this.text = masked;
+        // No-op. The chat-input mask now lives in
+        // {@link ChatScreenInputFieldMixin} which redirects
+        // TextFieldWidget#render itself - that path catches the
+        // chat field's anonymous subclass cleanly, while this
+        // base-class hook on {@code renderWidget} ran too late for
+        // the chat-screen render to see the swap. Kept as a stub
+        // so the mixin file stays a well-defined parking spot for
+        // future per-widget password handling (book editor's
+        // chat-relay, sign editor /msg pipes, etc.) without us
+        // having to rewire the whole mixin entry.
     }
 
     @Inject(method = "renderWidget", at = @At("TAIL"))
     private void phaze$maskPasswordTail(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        if (phaze$savedText == null) {
-            return;
-        }
-        this.text = phaze$savedText;
-        phaze$savedText = null;
+        // No-op. See the HEAD twin above; the chat-input mask path
+        // lives in {@link ChatScreenInputFieldMixin}.
     }
 
     @Inject(method = "renderWidget", at = @At("TAIL"))

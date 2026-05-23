@@ -1,5 +1,6 @@
 package vorga.phazeclient.implement.features.modules.other;
 
+import net.minecraft.client.MinecraftClient;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
@@ -97,12 +98,114 @@ public final class SkyCustomizer extends Module {
         nightColor.visible(() -> "Gradient".equalsIgnoreCase(mode.getSelected()));
         intensity.visible(() -> !"Replace".equalsIgnoreCase(mode.getSelected()));
 
+        // Sodium caches sky / cloud uniforms inside its own renderer
+        // pipeline. Our per-frame {@code @ModifyReturnValue} on
+        // {@code ClientWorld.getSkyColor} updates the vanilla path,
+        // but Sodium reads from its own cache that only refreshes on
+        // a full world-renderer reload. Without a kick the user has
+        // to relog / change dimension before the tint becomes
+        // visible, which the user reported as "переходить в мир
+        // чтобы он применился".
+        //
+        // Reload triggers are picked carefully:
+        //   - mode switch is a structural change (e.g. Replace bypass
+        //     vs Tint blend) and definitely needs a fresh upload.
+        //   - colour changes need a refresh because Sodium resolves
+        //     fog / sky colour uniforms once per chunk-mesh upload.
+        //   - the affectClouds toggle gates the cloud path entirely.
+        // Sliders (intensity / brightness / boost) are kept off the
+        // reload list - they update naturally per-frame and a reload
+        // for every drag-tick would cause a perceptible stutter.
+        mode.onChange(v -> reloadWorldRenderer());
+        baseColor.onChange(v -> reloadWorldRenderer());
+        nightColor.onChange(v -> reloadWorldRenderer());
+        affectClouds.onChange(v -> reloadWorldRenderer());
+
         setup(
                 modeSection, mode,
                 tintSection, baseColor, nightColor, intensity,
                 cloudsSection, affectClouds, cloudBrightness,
                 twilightSection, sunsetBoost
         );
+    }
+
+    @Override
+    public void activate() {
+        reloadWorldRenderer();
+    }
+
+    @Override
+    public void deactivate() {
+        reloadWorldRenderer();
+    }
+
+    /**
+     * Asks the active world renderer (vanilla or Sodium - same
+     * {@code WorldRenderer.reload()} entry point) to drop its
+     * cached chunk meshes and re-upload everything. That's the
+     * supported way to invalidate Sodium's sky / cloud uniforms
+     * without poking into its internals: Sodium's own settings
+     * panel uses the exact same hook when its options change.
+     *
+     * <p>No-op when the world renderer hasn't been created yet
+     * (main menu) or when there's no world loaded - either way
+     * there's nothing cached to invalidate.
+     *
+     * <p><b>Debounced.</b> Sodium logs
+     * {@code "Started/Stopping worker threads"} on every reload,
+     * so calling this on every {@code ColorSetting} drag-tick
+     * spammed the chat with hundreds of lines per second. The
+     * scheduler holds a single pending reload up to
+     * {@link #RELOAD_DEBOUNCE_MS}, coalescing rapid changes into
+     * one final reload after the user stops fiddling.
+     */
+    private static final long RELOAD_DEBOUNCE_MS = 250L;
+    private static volatile long pendingReloadAtMs = 0L;
+    private static volatile boolean reloadScheduled = false;
+
+    private static void reloadWorldRenderer() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) return;
+        if (mc.worldRenderer == null) return;
+        if (mc.world == null) return;
+
+        long now = System.currentTimeMillis();
+        pendingReloadAtMs = now + RELOAD_DEBOUNCE_MS;
+        if (reloadScheduled) {
+            // Already a reload pending - the scheduled task will
+            // pick up the new pendingReloadAtMs and wait further.
+            return;
+        }
+        reloadScheduled = true;
+        scheduleReloadTick(mc);
+    }
+
+    private static void scheduleReloadTick(MinecraftClient mc) {
+        // execute() defers to the render thread - reload() must run
+        // there because it touches GL state. Posting from setting
+        // callbacks (which fire from the GUI thread on click) directly
+        // would risk a glState-on-wrong-thread crash on AMD drivers.
+        mc.execute(() -> {
+            long now = System.currentTimeMillis();
+            if (now < pendingReloadAtMs) {
+                // Still inside the debounce window - re-post to the
+                // render thread so we re-check after the next frame.
+                // No tight loop / sleep: we just keep yielding back
+                // until the user stops triggering changes.
+                scheduleReloadTick(mc);
+                return;
+            }
+            reloadScheduled = false;
+            try {
+                if (mc.worldRenderer != null && mc.world != null) {
+                    mc.worldRenderer.reload();
+                }
+            } catch (Throwable ignored) {
+                // Reload is best-effort: if Sodium is mid-frame we
+                // swallow and try again on the next change. Better
+                // than a hard crash from a transient internal state.
+            }
+        });
     }
 
     public static SkyCustomizer getInstance() {

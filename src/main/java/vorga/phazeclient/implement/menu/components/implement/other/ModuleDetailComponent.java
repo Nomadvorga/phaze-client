@@ -15,6 +15,7 @@ import vorga.phazeclient.api.system.font.msdf.MsdfFont;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.render.ScissorManager;
 import vorga.phazeclient.core.Main;
@@ -170,6 +171,13 @@ public class ModuleDetailComponent extends AbstractComponent {
         if (description == null || description.isEmpty()) {
             description = "Custom themes for GUI";
         }
+        // Auto-translate the module description through Lang. The
+        // table is keyed by the canonical English string itself, so
+        // modules don't need to be touched - if a translation exists
+        // we render it, otherwise the original English text shows
+        // through (Lang.t falls back to the input). Names of modules
+        // and categories are intentionally NOT translated.
+        description = Lang.translate(description);
 
         float descX = backButtonX() + BACK_BUTTON_SIZE + 8.0F;
         float descY = backButtonY() + DESCRIPTION_TOP_OFFSET;

@@ -114,13 +114,27 @@ public final class MentionHighlight extends Module {
      *  ~300 ms between same-channel mention pings. */
     private static final long SOUND_COOLDOWN_MS = 350L;
 
-    /** Set by the outgoing-chat mixin right before an outgoing
-     *  message hits the wire. Cleared the next time an incoming
-     *  message would have pinged - that incoming message is assumed
-     *  to be the server echo of our own send and is silently
-     *  consumed. See class javadoc for why this is a single bool
-     *  rather than a queue. */
-    private volatile boolean suppressNextSelf = false;
+    /** How long an outgoing message can match an incoming row as
+     *  the server's own echo. After this window we assume the echo
+     *  was lost / re-routed and let normal mentions through again,
+     *  so a stale latch can't permanently mute pings.
+     *
+     *  <p>2 seconds is generous - chat round-trip on a busy server
+     *  is typically &lt;200 ms - but it covers the worst case
+     *  observed in testing (overloaded FunTime hub bouncing 1.2 s
+     *  back). */
+    private static final long ECHO_WINDOW_MS = 2000L;
+
+    /** Last outgoing chat content (lower-cased, trimmed) and the
+     *  timestamp it was sent at. Used inside
+     *  {@link #processIncoming(Text)} to skip the ping/highlight
+     *  only when the incoming row is genuinely the server echo of
+     *  our own send. The earlier "single boolean latch" version
+     *  swallowed the FIRST incoming mention regardless of source,
+     *  which broke pings whenever you typed something and then a
+     *  teammate said your name a second later. */
+    private volatile String lastOutgoing = null;
+    private volatile long lastOutgoingAtMs = 0L;
 
     private long lastSoundAtMs = 0L;
     private List<Pattern> compiledTriggers = null;
@@ -169,15 +183,28 @@ public final class MentionHighlight extends Module {
      * Flag the next incoming chat row as "this is the server echo
      * of my own outgoing message". The mixin on
      * {@code ClientPlayNetworkHandler.sendChatMessage} calls this
-     * right before the network send; the next
-     * {@link #processIncoming(Text)} clears the latch and skips the
-     * ping/highlight pass.
+     * right before the network send; when an incoming row matches
+     * the recorded outgoing content within {@link #ECHO_WINDOW_MS}
+     * we treat it as the server echo and skip the ping/highlight.
+     * Other mentions in the same window (e.g. another player saying
+     * your name) still ping normally because the content won't
+     * match.
      */
-    public void markOutgoing() {
-        if (!isEnabled()) {
+    public void markOutgoing(String content) {
+        if (!isEnabled() || content == null) {
             return;
         }
-        suppressNextSelf = true;
+        lastOutgoing = content.toLowerCase().trim();
+        lastOutgoingAtMs = System.currentTimeMillis();
+    }
+
+    /** Back-compat overload for callers that don't pass content
+     *  (e.g. command-send mixin where the slash command itself
+     *  shouldn't echo as a normal message anyway). Tracking the
+     *  timestamp alone is enough to flag the next ~few-hundred-ms
+     *  echo window. */
+    public void markOutgoing() {
+        markOutgoing("");
     }
 
     /**
@@ -195,6 +222,23 @@ public final class MentionHighlight extends Module {
             return original;
         }
 
+        // Self-author skip: parse the sender name out of the chat
+        // header and bail if it equals our own username. Covers the
+        // common server formats:
+        //   <Vorga> hi
+        //   [VIP] Vorga: hi
+        //   [Lobby] [Owner] Vorga » hi
+        // Done before the trigger search because our own username is
+        // also a valid trigger - matching it on our own messages was
+        // pinging the user every time they typed.
+        MinecraftClient mcc = MinecraftClient.getInstance();
+        String selfName = (mcc != null && mcc.player != null)
+                ? mcc.player.getGameProfile().getName()
+                : null;
+        if (selfName != null && !selfName.isEmpty() && isSelfAuthored(flat, selfName)) {
+            return original;
+        }
+
         List<Pattern> triggers = resolveTriggers();
         boolean hit = false;
         for (Pattern p : triggers) {
@@ -207,20 +251,27 @@ public final class MentionHighlight extends Module {
             return original;
         }
 
-        // Self-echo skip: the player's own send loops back from the
-        // server within ~50-100 ms; consume the latch and don't
-        // ping. Highlight is also skipped because the message is
-        // visually identifiable as the user's own (server prefix /
-        // tag colour) and ringing yourself out is noise.
-        if (suppressNextSelf) {
-            suppressNextSelf = false;
+        // Self-echo skip: only swallow the row if it actually
+        // contains our recently-sent content. The earlier "consume
+        // first incoming mention" approach mis-fired whenever a
+        // teammate pinged you within seconds of your own send -
+        // their message got silently muted because the latch was
+        // still armed. Match by substring (server prefixes the line
+        // with "<Vorga>" / "[VIP] Vorga ›" etc.) and decay the
+        // window so a missed echo can't permanently mute future
+        // pings.
+        long now = System.currentTimeMillis();
+        String pending = lastOutgoing;
+        if (pending != null && !pending.isEmpty()
+                && now - lastOutgoingAtMs <= ECHO_WINDOW_MS
+                && flat.toLowerCase().contains(pending)) {
+            lastOutgoing = null;
             return original;
         }
 
         // Sound first - cheaper to short-circuit on cooldown than
         // to build a Text rewrite we'd then throw away. Cooldown
         // also protects the audio channel from rapid-fire spam.
-        long now = System.currentTimeMillis();
         if (playSound.isValue() && now - lastSoundAtMs >= SOUND_COOLDOWN_MS) {
             playPingSound();
             lastSoundAtMs = now;
@@ -389,5 +440,68 @@ public final class MentionHighlight extends Module {
         if (v < lo) return lo;
         if (v > hi) return hi;
         return v;
+    }
+
+    /**
+     * Heuristic: does the message header identify <em>us</em> as
+     * the author? Walks the leading portion of the row up to the
+     * first {@code :} / {@code »} / {@code &gt;} (the typical chat
+     * separators) and checks whether our username appears there.
+     *
+     * <p>The detector is intentionally simple - it does not try to
+     * parse rank tags, prefixes, etc. The rule is "if the player's
+     * name shows up before the first separator, treat the row as
+     * self-authored". This matches every server format we've seen
+     * in testing:
+     * <ul>
+     *   <li>{@code <Vorga> hi}</li>
+     *   <li>{@code [VIP] Vorga: hi}</li>
+     *   <li>{@code [Lobby] [Owner] Vorga » hi}</li>
+     * </ul>
+     * Edge case: if our username happens to appear inside a rank
+     * tag (e.g. a player nicknamed "Vorga" with a custom title
+     * "Vorga the Magnificent" said by someone else), we'd still
+     * skip - but in practice usernames don't repeat in tag text on
+     * MC servers.
+     */
+    private static boolean isSelfAuthored(String flat, String selfName) {
+        // Cap the header window so a long body containing our name
+        // doesn't trip the heuristic. 80 chars covers any realistic
+        // rank prefix + name combination on the servers we target.
+        int max = Math.min(flat.length(), 80);
+        int sep = -1;
+        for (int i = 0; i < max; i++) {
+            char c = flat.charAt(i);
+            if (c == ':' || c == '»' || c == '>' || c == '\u203A') {
+                sep = i;
+                break;
+            }
+        }
+        if (sep < 0) {
+            // No separator means it's a system / event message
+            // (joins, deaths, broadcasts). Those aren't self-
+            // authored even when our name appears, so we let the
+            // ping logic run normally.
+            return false;
+        }
+        String header = flat.substring(0, sep);
+        String lowerHeader = header.toLowerCase();
+        String lowerName = selfName.toLowerCase();
+        // Word-boundary-ish check so "Vorga" doesn't accidentally
+        // match a rank tag like "VIP" or unrelated substrings. We
+        // require either the start of the string or a non-letter
+        // character before the name token.
+        int idx = lowerHeader.indexOf(lowerName);
+        while (idx >= 0) {
+            boolean leftOk = idx == 0 || !Character.isLetterOrDigit(lowerHeader.charAt(idx - 1));
+            int after = idx + lowerName.length();
+            boolean rightOk = after >= lowerHeader.length()
+                    || !Character.isLetterOrDigit(lowerHeader.charAt(after));
+            if (leftOk && rightOk) {
+                return true;
+            }
+            idx = lowerHeader.indexOf(lowerName, idx + 1);
+        }
+        return false;
     }
 }

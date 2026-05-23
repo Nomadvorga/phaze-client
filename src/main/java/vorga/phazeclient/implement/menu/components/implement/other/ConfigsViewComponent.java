@@ -9,6 +9,7 @@ import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.implement.menu.MenuScreen;
@@ -46,15 +47,36 @@ import java.util.Map;
  */
 public class ConfigsViewComponent extends AbstractComponent {
 
-    private static final float ROW_HEIGHT = 32.0F;
-    private static final float ROW_GAP = 5.0F;
+    private static final float ROW_HEIGHT = 40.0F;
+    private static final float ROW_GAP = 6.0F;
     private static final float ROW_RADIUS = 5.0F;
     private static final float ROW_PAD_X = 12.0F;
     private static final float TIMESTAMP_SIZE = 5.6F;
     private static final float NAME_SIZE = 7.0F;
-    private static final float KEBAB_AREA_W = 22.0F;
+    private static final float META_SIZE = 5.6F;
+    /** Single inline action button. Three of them stack right-edge:
+     *  rename, share, delete. Hover-anim per (config, kind) so each
+     *  button glows independently when the cursor lands on it. */
+    private static final float ACTION_ICON_SIZE = 11.0F;
+    private static final float ACTION_BUTTON_W = 22.0F;
+    private static final float ACTION_BUTTON_GAP = 2.0F;
+    private static final float ACTIONS_TRAIL_PAD = 6.0F;
     private static final float DOT_SIZE = 1.6F;
     private static final float DOT_GAP = 1.4F;
+    /** Inline separator between config name and author label.
+     *  Rendered as a small {@code dot.png} between them, sized to
+     *  about half the name text size so it reads as a separator
+     *  bullet rather than another glyph. */
+    private static final float NAME_DOT_SIZE = 3.5F;
+    private static final float NAME_DOT_GAP = 4.0F;
+    /** Size of the inline meta icons (size, clock for last-modified,
+     *  cloud for imported). The cloud / clock icons are visually
+     *  lighter than the size icon, so they're rendered larger to
+     *  read at the same weight in the strip. */
+    private static final float META_ICON_SIZE = 6.5F;
+    private static final float META_ICON_SIZE_LARGE = 7.8F;
+    private static final float META_ICON_GAP = 3.5F;
+    private static final float META_GROUP_GAP = 12.0F;
 
     /** Top + bottom inset from the menu's content area. Keeps the
      *  list out from under the top tabs and the bottom blur frame. */
@@ -64,11 +86,27 @@ public class ConfigsViewComponent extends AbstractComponent {
 
     private final Animation openAnim = new DecelerateAnimation().setMs(1).setValue(1);
     private final Map<String, Animation> rowHoverAnims = new HashMap<>();
-    private final Map<String, Animation> kebabHoverAnims = new HashMap<>();
+    /** Hover animations per (config name + action kind) so each
+     *  inline icon button (rename / share / delete) animates
+     *  independently. Key format: {@code <name>::<kind>}. */
+    private final Map<String, Animation> actionHoverAnims = new HashMap<>();
+    /** Per-row "is this the active config?" animation. Tweens the
+     *  outline colour from the standard BORDER to the green-tinted
+     *  CHIP_ACTIVE mix when a config becomes active and back when
+     *  another config takes its place. Same approach the module
+     *  card uses for its enable/disable outline pulse, so the two
+     *  surfaces feel like one design language. */
+    private final Map<String, Animation> activeAnims = new HashMap<>();
 
     /** Popup attached to the row whose kebab the user clicked.
      *  Lives until its fade-out animation finishes so close-clicks
-     *  visually trail off instead of snapping. */
+     *  visually trail off instead of snapping.
+     *
+     *  <p>Kept around because the share / rename modals are still
+     *  spawned via the same constants the popup formerly used. The
+     *  popup itself is no longer rendered or instantiated - the row
+     *  shows three inline icon buttons (rename / share / delete)
+     *  instead. */
     private KebabPopup popup = null;
 
     private boolean open = false;
@@ -181,6 +219,12 @@ public class ConfigsViewComponent extends AbstractComponent {
         context.disableScissor();
     }
 
+    /** Left padding inside the row, before the type icon. */
+    private static final float ICON_AREA_W = 28.0F;
+    /** Visual size of the file / file_import icon. Smaller than the
+     *  area itself so the icon has comfortable breathing room. */
+    private static final float ICON_SIZE = 15.75F;
+
     private void renderRow(MatrixStack matrix, int mouseX, int mouseY,
                            float listX, float rowY, float listW,
                            String name, String authorLabel, float fadeAlpha) {
@@ -190,55 +234,274 @@ public class ConfigsViewComponent extends AbstractComponent {
         rowAnim.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float h = rowAnim.getOutputFloat();
 
+        // Active config gets the same green-tinted outline that an
+        // enabled module card uses (BORDER → CHIP_ACTIVE 75% mix);
+        // every other row keeps the standard BORDER outline like a
+        // disabled module card. The per-row activeAnim tweens the
+        // mix factor, so a row visibly fades INTO the active look
+        // when the user picks it (and the previously-active row
+        // fades back out at the same time) instead of snapping.
+        boolean isActive = name.equalsIgnoreCase(ConfigManager.getInstance().getCurrentConfigName());
+        Animation activeAnim = activeAnims.computeIfAbsent(name,
+                k -> new DecelerateAnimation().setMs(300).setValue(1));
+        activeAnim.setDirection(isActive ? Direction.FORWARDS : Direction.BACKWARDS);
+        float activeT = activeAnim.getOutputFloat();
+        int baseOutline = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, activeT * 0.75F);
         int fill = MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.CARD_OPTIONS, 0.30F + h * 0.10F);
-        int outline = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.BORDER_LIGHT, h * 0.40F);
+        int outline = MenuStyle.mix(baseOutline, MenuStyle.BORDER_LIGHT, h * 0.40F);
         rectangle.render(ShapeProperties.create(matrix, listX, rowY, listW, ROW_HEIGHT)
-                .round(ROW_RADIUS).thickness(1.2F)
+                .round(ROW_RADIUS).thickness(3.2F)
                 .outlineColor(MenuStyle.withAlpha(outline, fadeAlpha))
                 .color(MenuStyle.withAlpha(fill, fadeAlpha * 0.92F))
                 .build());
 
-        // Timestamp at the top, name + author below. Vertically the
-        // two stack with a small inter-line gap; horizontally both
-        // share the same left padding.
+        // Type icon on the left. {@code file_import.png} for configs
+        // imported from a server share-key, {@code file.png} for
+        // locally created configs. The marker comes from
+        // {@link ConfigManager#isImportedConfig}.
+        boolean imported = ConfigManager.getInstance().isImportedConfig(name);
+        String iconTexture = imported ? "textures/file_import.png" : "textures/file.png";
+        float iconX = listX + (ICON_AREA_W - ICON_SIZE) * 0.5F + 3.0F;
+        float iconY = rowY + (ROW_HEIGHT - ICON_SIZE) * 0.5F;
+        image.setTexture(iconTexture)
+                .render(ShapeProperties.create(matrix, iconX, iconY, ICON_SIZE, ICON_SIZE)
+                        .color(MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F))
+                        .build());
+
+        // Top: timestamp
+        // Middle: name • author (with dot.png separator)
+        // Bottom: size + last-modified / imported-from-cloud
+        float textX = listX + ROW_PAD_X + ICON_AREA_W;
+        float lineGap = 1.6F;
+        float metaGap = 1.6F;
+        float blockHeight = TIMESTAMP_SIZE + lineGap + NAME_SIZE + metaGap + META_SIZE;
+        float timestampY = rowY + (ROW_HEIGHT - blockHeight) * 0.5F;
+        float nameY = timestampY + TIMESTAMP_SIZE + lineGap;
+        float metaY = nameY + NAME_SIZE + metaGap;
+
         String ts = timestampCache.getOrDefault(name, "—");
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), ts, TIMESTAMP_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F),
                 matrix.peek().getPositionMatrix(),
-                listX + ROW_PAD_X,
-                rowY + 5.5F,
-                0.0F
-        );
-        String label = name + "  •  " + authorLabel;
-        MsdfRenderer.renderText(
-                MsdfFonts.bold(), label, NAME_SIZE,
-                MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha),
-                matrix.peek().getPositionMatrix(),
-                listX + ROW_PAD_X,
-                rowY + ROW_HEIGHT - NAME_SIZE - 6.0F,
+                textX,
+                timestampY,
                 0.0F
         );
 
-        // Kebab.
-        float kebabX = listX + listW - KEBAB_AREA_W;
-        boolean kHover = MathUtil.isHovered(mouseX, mouseY, kebabX, rowY, KEBAB_AREA_W, ROW_HEIGHT);
-        Animation kAnim = kebabHoverAnims.computeIfAbsent(name,
-                k -> new DecelerateAnimation().setMs(140).setValue(1));
-        kAnim.setDirection(kHover ? Direction.FORWARDS : Direction.BACKWARDS);
-        renderKebab(matrix, kebabX, rowY, kAnim.getOutputFloat(), fadeAlpha);
+        // Name (bold) + dot separator + author (lighter).
+        int nameColor = MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha);
+        int authorColor = MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F);
+        MsdfRenderer.renderText(
+                MsdfFonts.bold(), name, NAME_SIZE,
+                nameColor,
+                matrix.peek().getPositionMatrix(),
+                textX,
+                nameY,
+                0.0F
+        );
+        float nameWidth = MsdfFonts.bold().getWidth(name, NAME_SIZE);
+        float dotX = textX + nameWidth + NAME_DOT_GAP;
+        float dotY = nameY + (NAME_SIZE - NAME_DOT_SIZE) * 0.5F;
+        image.setTexture("textures/dot.png")
+                .render(ShapeProperties.create(matrix, dotX, dotY, NAME_DOT_SIZE, NAME_DOT_SIZE)
+                        .color(MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F))
+                        .build());
+        float authorX = dotX + NAME_DOT_SIZE + NAME_DOT_GAP;
+        if (authorLabel != null && !authorLabel.isEmpty()) {
+            MsdfRenderer.renderText(
+                    MsdfFonts.bold(), authorLabel, NAME_SIZE,
+                    authorColor,
+                    matrix.peek().getPositionMatrix(),
+                    authorX,
+                    nameY,
+                    0.0F
+            );
+        }
+
+        // Bottom meta line. Imported configs swap the
+        // "Last modified ..." chip for an "Imported from cloud"
+        // marker so the user can spot remote-origin entries at a
+        // glance without hovering. Size is shown for both.
+        renderRowMeta(matrix, textX, metaY, name, imported, fadeAlpha);
+
+        // Three inline action buttons on the right side: rename →
+        // share (create key) → delete, in that visual order. Each
+        // button has its own hover animation and click hit-area.
+        // The buttons sit RIGHT-aligned with a small trailing pad
+        // so they don't kiss the row's outer border.
+        renderActionButtons(matrix, mouseX, mouseY, listX, rowY, listW, name, fadeAlpha);
     }
 
-    private void renderKebab(MatrixStack matrix, float kebabX, float rowY, float hover, float fadeAlpha) {
-        int color = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.30F + hover * 0.55F);
-        float cx = kebabX + KEBAB_AREA_W * 0.5F - DOT_SIZE * 0.5F;
-        float cy = rowY + ROW_HEIGHT * 0.5F - DOT_SIZE * 0.5F;
-        for (int i = -1; i <= 1; i++) {
-            rectangle.render(ShapeProperties.create(matrix,
-                    cx, cy + i * (DOT_SIZE + DOT_GAP), DOT_SIZE, DOT_SIZE)
-                    .round(DOT_SIZE * 0.5F).color(MenuStyle.withAlpha(color, fadeAlpha))
-                    .build());
+    /**
+     * Bottom-line meta strip: size + (imported badge OR last-modified
+     * humanised). Each chip is an inline icon followed by a label,
+     * separated by a fixed gap so the strip layout stays predictable
+     * across different label widths.
+     */
+    private void renderRowMeta(MatrixStack matrix, float startX, float metaY,
+                               String configName, boolean imported, float fadeAlpha) {
+        float cursorX = startX;
+        int metaColor = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.95F);
+
+        // Size chip - dedicated size.png icon, tinted with the same
+        // muted text colour so it reads as part of the meta strip
+        // instead of standing out as a stray accent. Label nudged
+        // 1px down so the text sits on the icon's optical centre.
+        cursorX = renderMetaChip(matrix, cursorX, metaY,
+                "textures/size.png",
+                "Size: " + humanReadableSize(configName),
+                metaColor, fadeAlpha, 1.0F, META_ICON_SIZE);
+        cursorX += META_GROUP_GAP;
+
+        if (imported) {
+            // Imported chip - cloud-arrow-down. Icon at 1.5× the
+            // base meta-icon size (the cloud glyph reads lighter at
+            // 6.5px); text nudged down 1.5px to sit on the icon's
+            // visual centre line.
+            renderMetaChip(matrix, cursorX, metaY,
+                    "textures/cloud.png",
+                    "Imported from cloud",
+                    metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
+        } else {
+            renderMetaChip(matrix, cursorX, metaY,
+                    "textures/clock.png",
+                    "Last modified: " + humanReadableModified(configName),
+                    metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
         }
+    }
+
+    /** Renders one icon+label chip and returns the x coordinate
+     *  immediately after the label, so the caller can append the
+     *  next chip with a fixed group gap. {@code labelDeltaY} nudges
+     *  the text vertically without moving the icon - useful when an
+     *  icon is asymmetrically weighted in its bbox. {@code iconSize}
+     *  picks between the standard 6.5px rendering and the 1.5×
+     *  oversized variant for the cloud / clock glyphs. */
+    private float renderMetaChip(MatrixStack matrix, float startX, float baselineY,
+                                 String iconTexture, String label,
+                                 int color, float fadeAlpha,
+                                 float labelDeltaY, float iconSize) {
+        float iconY = baselineY + (META_SIZE - iconSize) * 0.5F + 0.4F;
+        image.setTexture(iconTexture)
+                .render(ShapeProperties.create(matrix, startX, iconY, iconSize, iconSize)
+                        .color(color)
+                        .build());
+        float labelX = startX + iconSize + META_ICON_GAP;
+        MsdfRenderer.renderText(
+                MsdfFonts.bold(), label, META_SIZE,
+                color,
+                matrix.peek().getPositionMatrix(),
+                labelX, baselineY + labelDeltaY, 0.0F
+        );
+        return labelX + MsdfFonts.bold().getWidth(label, META_SIZE);
+    }
+
+    private String humanReadableSize(String configName) {
+        try {
+            File f = ConfigManager.getInstance().getConfigFile(configName);
+            if (!f.exists()) return "—";
+            long bytes = f.length();
+            if (bytes < 1024L) return bytes + " B";
+            double kb = bytes / 1024.0;
+            if (kb < 1024.0) return String.format(Locale.ROOT, "%.1f KB", kb);
+            double mb = kb / 1024.0;
+            return String.format(Locale.ROOT, "%.1f MB", mb);
+        } catch (Throwable ignored) {
+            return "—";
+        }
+    }
+
+    private String humanReadableModified(String configName) {
+        try {
+            File f = ConfigManager.getInstance().getConfigFile(configName);
+            if (!f.exists()) return "—";
+            long delta = System.currentTimeMillis() - f.lastModified();
+            if (delta < 0L) delta = 0L;
+            long sec = delta / 1000L;
+            if (sec < 60L) return "just now";
+            long min = sec / 60L;
+            if (min < 60L) return min + (min == 1 ? " minute ago" : " minutes ago");
+            long hr = min / 60L;
+            if (hr < 24L) return hr + (hr == 1 ? " hour ago" : " hours ago");
+            long day = hr / 24L;
+            if (day < 30L) return day + (day == 1 ? " day ago" : " days ago");
+            long mon = day / 30L;
+            if (mon < 12L) return mon + (mon == 1 ? " month ago" : " months ago");
+            long yr = mon / 12L;
+            return yr + (yr == 1 ? " year ago" : " years ago");
+        } catch (Throwable ignored) {
+            return "—";
+        }
+    }
+
+    /** Visual order of the inline action buttons on every row.
+     *  Indexed by the {@link ActionKind} ordinal. The kebab popup's
+     *  legacy constants ({@code "kebab.share"} etc.) still drive the
+     *  share / rename modals, but the row UI itself now uses
+     *  these icons instead. */
+    private enum ActionKind {
+        RENAME("textures/edit.png"),
+        SHARE("textures/share.png"),
+        DELETE("textures/trash.png");
+
+        final String texture;
+        ActionKind(String texture) {
+            this.texture = texture;
+        }
+    }
+
+    private void renderActionButtons(MatrixStack matrix, int mouseX, int mouseY,
+                                     float listX, float rowY, float listW,
+                                     String configName, float fadeAlpha) {
+        ActionKind[] kinds = ActionKind.values();
+        float totalW = kinds.length * ACTION_BUTTON_W
+                + (kinds.length - 1) * ACTION_BUTTON_GAP;
+        float startX = listX + listW - totalW - ACTIONS_TRAIL_PAD;
+
+        // Group container behind the three buttons. Slightly inset
+        // top/bottom (centered on the row) with a soft rounded
+        // panel so the buttons read as a unit instead of three
+        // floating glyphs. Background is fully opaque per the user
+        // request, with the panel's border tinted by the menu's
+        // standard outline so it sits on the row without fighting
+        // the row's own outline.
+        float groupPadX = 2.0F;
+        float groupPadY = 10.0F;
+        float groupX = startX - groupPadX;
+        float groupY = rowY + groupPadY;
+        float groupW = totalW + groupPadX * 2.0F;
+        float groupH = ROW_HEIGHT - groupPadY * 2.0F;
+        rectangle.render(ShapeProperties.create(matrix, groupX, groupY, groupW, groupH)
+                .round(4.0F).thickness(1.0F)
+                .outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER, fadeAlpha))
+                .color(MenuStyle.withAlpha(MenuStyle.PANEL_BG, fadeAlpha))
+                .build());
+
+        for (int i = 0; i < kinds.length; i++) {
+            ActionKind kind = kinds[i];
+            float btnX = startX + i * (ACTION_BUTTON_W + ACTION_BUTTON_GAP);
+            renderActionButton(matrix, mouseX, mouseY, btnX, rowY, configName, kind, fadeAlpha);
+        }
+    }
+
+    private void renderActionButton(MatrixStack matrix, int mouseX, int mouseY,
+                                    float btnX, float rowY, String configName,
+                                    ActionKind kind, float fadeAlpha) {
+        boolean hover = MathUtil.isHovered(mouseX, mouseY, btnX, rowY, ACTION_BUTTON_W, ROW_HEIGHT);
+        String key = configName + "::" + kind.name();
+        Animation a = actionHoverAnims.computeIfAbsent(key,
+                k -> new DecelerateAnimation().setMs(140).setValue(1));
+        a.setDirection(hover ? Direction.FORWARDS : Direction.BACKWARDS);
+        float h = a.getOutputFloat();
+
+        int color = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.30F + h * 0.55F);
+        float iconX = btnX + (ACTION_BUTTON_W - ACTION_ICON_SIZE) * 0.5F;
+        float iconY = rowY + (ROW_HEIGHT - ACTION_ICON_SIZE) * 0.5F;
+        image.setTexture(kind.texture)
+                .render(ShapeProperties.create(matrix, iconX, iconY, ACTION_ICON_SIZE, ACTION_ICON_SIZE)
+                        .color(MenuStyle.withAlpha(color, fadeAlpha))
+                        .build());
     }
 
     /* ============================================================ */
@@ -279,16 +542,32 @@ public class ConfigsViewComponent extends AbstractComponent {
         ConfigManager mgr = ConfigManager.getInstance();
         String[] names = mgr.getConfigList();
         float rowY = listTop - scrollOffset;
+        ActionKind[] kinds = ActionKind.values();
+        float actionsTotalW = kinds.length * ACTION_BUTTON_W
+                + (kinds.length - 1) * ACTION_BUTTON_GAP;
+        float actionsStartX = listX + listW - actionsTotalW - ACTIONS_TRAIL_PAD;
+        float bodyEndX = actionsStartX - 2.0F;
         for (String name : names) {
             if (rowY + ROW_HEIGHT > listTop && rowY < listBottom) {
-                float kebabX = listX + listW - KEBAB_AREA_W;
-                if (MathUtil.isHovered(mouseX, mouseY, kebabX, rowY, KEBAB_AREA_W, ROW_HEIGHT)) {
+                // Inline action buttons take precedence over the
+                // body-click "load this config" hit-area, so the
+                // user can rename / share / delete without the row
+                // also activating itself underneath.
+                ActionKind hit = null;
+                for (int i = 0; i < kinds.length; i++) {
+                    float btnX = actionsStartX + i * (ACTION_BUTTON_W + ACTION_BUTTON_GAP);
+                    if (MathUtil.isHovered(mouseX, mouseY, btnX, rowY, ACTION_BUTTON_W, ROW_HEIGHT)) {
+                        hit = kinds[i];
+                        break;
+                    }
+                }
+                if (hit != null) {
                     playButtonClickSound();
-                    popup = new KebabPopup(name, kebabX + KEBAB_AREA_W * 0.5F,
-                            rowY + ROW_HEIGHT - 2.0F, this);
+                    handleActionClick(name, hit);
                     return true;
                 }
-                if (MathUtil.isHovered(mouseX, mouseY, listX, rowY, listW - KEBAB_AREA_W, ROW_HEIGHT)) {
+
+                if (MathUtil.isHovered(mouseX, mouseY, listX, rowY, bodyEndX - listX, ROW_HEIGHT)) {
                     playButtonClickSound();
                     mgr.loadConfig(name);
                     refreshTimestamps();
@@ -298,6 +577,23 @@ public class ConfigsViewComponent extends AbstractComponent {
             rowY += ROW_HEIGHT + ROW_GAP;
         }
         return false;
+    }
+
+    /** Routes an inline action button click to the appropriate
+     *  flow. Renames go through the rename modal so the user can
+     *  type a new name; share spawns the share-key creation modal;
+     *  delete is one-shot through {@link ConfigManager#deleteConfig}.
+     *  All three mirror what the old kebab popup used to do, just
+     *  without the popup intermediate UI. */
+    private void handleActionClick(String configName, ActionKind kind) {
+        switch (kind) {
+            case RENAME -> MenuScreen.INSTANCE.openConfigRenameModal(configName, this::refreshTimestamps);
+            case SHARE -> MenuScreen.INSTANCE.openConfigShareModal(configName);
+            case DELETE -> {
+                ConfigManager.getInstance().deleteConfig(configName);
+                refreshTimestamps();
+            }
+        }
     }
 
     /**
@@ -379,7 +675,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         private static final float ITEM_H = 16.0F;
         private static final float WIDTH = 100.0F;
         private static final float TEXT_SIZE = 6.5F;
-        private static final String[] ITEMS = {"Поделиться", "Переименовать", "Удалить"};
+        private static final String[] ITEMS = {"kebab.share", "kebab.rename", "kebab.delete"};
 
         private final String configName;
         private final float anchorX;
@@ -477,7 +773,7 @@ public class ConfigsViewComponent extends AbstractComponent {
                         ? MenuStyle.mix(baseTextColor, 0xFFE05050, hoverAlpha)
                         : baseTextColor;
                 MsdfRenderer.renderText(
-                        MsdfFonts.bold(), ITEMS[i], TEXT_SIZE,
+                        MsdfFonts.bold(), Lang.t(ITEMS[i]), TEXT_SIZE,
                         MenuStyle.withAlpha(textColor, a),
                         matrix.peek().getPositionMatrix(),
                         popupX + 10.0F,

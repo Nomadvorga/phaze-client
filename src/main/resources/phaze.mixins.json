@@ -62,7 +62,6 @@
     "ParticleManagerNoRenderMixin",
     "HeldItemRendererMixin",
     "DeathScreenBetterMixin",
-    "ServerEntryServerListPlusMixin",
     "ScreenCursorMixin",
     "ScreenScrollCursorMixin",
     "MouseCursorMixin",
