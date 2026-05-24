@@ -1,6 +1,31 @@
+/*
+ * Portions of the chest-frame rendering approach (9-slice GUI sprite
+ * + slot-highlight pattern + per-vertex tint flow) are adapted from
+ * ShulkerBoxTooltip by MisterPeModder (Yanis Guaye), MIT License.
+ *
+ *   Source: https://github.com/MisterPeModder/ShulkerBoxTooltip
+ *   Specifically: common/src/main/java/com/misterpemodder/shulkerboxtooltip/
+ *                 impl/renderer/ModPreviewRenderer.java
+ *
+ * The bundled {@code shulker_box_tooltip.png} sprite + .mcmeta in
+ * {@code assets/phaze/textures/gui/sprites/} are the same texture
+ * shipped under MIT in the upstream project's
+ * {@code shulkerboxtooltip} resource pack.
+ *
+ * MIT License
+ * Copyright (c) 2019 Yanis Guaye
+ *
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the standard MIT license terms.
+ * Full license text in {@code .scripts/sbt-LICENSE}.
+ */
 package vorga.phazeclient.implement.features.modules.other;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.block.Block;
 import net.minecraft.block.ShulkerBoxBlock;
 import net.minecraft.client.MinecraftClient;
@@ -22,93 +47,93 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
 /**
  * Tooltip-style preview of a shulker-box's contents while hovering
- * the stack in any inventory screen. Rendered with the vanilla
- * chest-GUI texture so the preview reads as a familiar mini chest
- * UI instead of a stray rectangle.
+ * the stack in any inventory screen. Adapted from MisterPeModder's
+ * {@code ModPreviewRenderer} (MIT, see file header).
  *
- * <h3>Tinting</h3>
- * When {@link #colorByShulker} is on, the chest-GUI texture is
- * tinted with the shulker box's dye colour ({@link DyeColor#getEntityColor})
- * so a hovered red shulker shows a red chest, a green one a green
- * chest, etc. Tint is applied at the texture-bind level via
- * {@link DrawContext#setShaderColor}; the icon-pass that follows
- * resets the tint back to white so item sprites render at their
- * native colours.
+ * <h3>Rendering</h3>
+ * Single 9-slice GUI sprite call paints the entire chest-frame
+ * panel - background, all four borders, drop-shadow - via the
+ * vanilla {@code RenderType.guiTextured} pipeline. The sprite is
+ * registered in our own {@code phaze} namespace through the
+ * {@code .mcmeta} sidecar, so it does NOT collide with vanilla GUI
+ * atlas entries (those live under {@code minecraft}).
+ *
+ * <h3>Slot highlight</h3>
+ * Hovered slot gets a 24x24 halo using vanilla's
+ * {@code container/slot_highlight_back} (under the item) and
+ * {@code container/slot_highlight_front} (over the item) sprites,
+ * matching the upstream mod and the vanilla bundle behaviour.
+ *
+ * <h3>Tinting (Color By Shulker)</h3>
+ * Dye-coloured shulker boxes tint the panel sprite via the
+ * per-vertex {@code int color} channel of {@code drawGuiTexture}.
+ * The 1.21.4 GUI shader samples that channel directly, so the tint
+ * reaches every pixel including the chest-frame borders. Each RGB
+ * channel is clamped to a minimum of 0.15 (matching upstream
+ * {@code ColorKey.ofDye}) so very dark dyes (black, gray) don't
+ * crush the texture detail to mud. Uncolored shulker boxes get a
+ * fixed light-purple tint ({@code 0x977FD7}) matching upstream
+ * {@code ColorKey.SHULKER_BOX}.
+ *
+ * <h3>Per-tick caching</h3>
+ * Container contents change at server-tick rate (~20 Hz). Re-walking
+ * {@code container.streamNonEmpty()} at 240 FPS would be wasted
+ * work, so we cache the resolved stacks + overlay flags and refresh
+ * only when the hovered stack identity changes or the game tick
+ * counter advances.
  */
 public final class ShulkerPreview extends Module {
     private static final ShulkerPreview INSTANCE = new ShulkerPreview();
 
-    /** Vanilla chest GUI texture - the same one
-     *  {@code GenericContainerScreen} uses for its background. */
-    private static final Identifier CHEST_TEXTURE =
-            Identifier.ofVanilla("textures/gui/container/generic_54.png");
+    /** 9-slice chest-frame sprite. Resource path:
+     *  {@code assets/phaze/textures/gui/sprites/shulker_box_tooltip.png}.
+     *  Sidecar {@code .mcmeta} declares {@code nine_slice} scaling
+     *  (border=7, 32x32 source, {@code stretch_inner=false}) so all
+     *  four corners stay pixel-locked while the inner area tiles to
+     *  fit the panel footprint - identical to upstream's bundled
+     *  sprite. */
+    private static final Identifier PANEL_SPRITE =
+            Identifier.of("phaze", "shulker_box_tooltip");
 
-    /** Texture atlas size; vanilla constant. */
-    private static final int ATLAS_SIZE = 256;
+    /** Light-purple tint applied to uncolored shulker boxes, taken
+     *  verbatim from upstream {@code ColorKey.SHULKER_BOX}
+     *  ({@code ofRgb(9922455)}). Matches the chest-frame colour the
+     *  upstream mod shows for the default purple shulker. */
+    private static final int UNCOLORED_SHULKER_RGB = 9922455;
 
-    /** Width of the chest-GUI window. Lifted from
-     *  {@code HandledScreen.backgroundWidth} which defaults to 176
-     *  for {@code GenericContainerScreen}. */
-    private static final int PREVIEW_W = 176;
+    /** Vanilla slot-highlight sprites - same ones MisterPeModder's
+     *  mod uses. The "back" sprite goes UNDER the item icon, the
+     *  "front" sprite goes OVER it. */
+    private static final Identifier SLOT_HIGHLIGHT_BACK =
+            Identifier.ofVanilla("container/slot_highlight_back");
+    private static final Identifier SLOT_HIGHLIGHT_FRONT =
+            Identifier.ofVanilla("container/slot_highlight_front");
 
-    /** Top closing frame: pull the first 7px decorative strip
-     *  from the chest texture (atlas y=0..7). Used as a thin cap
-     *  matching the bottom border, so the preview doesn't carry
-     *  the vanilla 10px title-bar gap that would otherwise sit
-     *  between the top edge and row 1 of slots. */
-    private static final int TOP_BORDER_HEIGHT = 7;
-
-    /** Source y in the atlas where the 3-row slot strip starts.
-     *  Vanilla's chest panel reserves y=7..17 for the container
-     *  title; we skip it and pick up rendering exactly at the
-     *  first slot row. */
-    private static final int SLOTS_SRC_Y = 18;
-
-    /** 3 slot rows worth of pixels. */
-    private static final int SLOTS_HEIGHT = 3 * 18;
-
-    /** Height of the closing bottom border carved out of the
-     *  texture's lower block. The full bottom block in
-     *  {@code generic_54.png} is 96px tall (y=126..222) and ends in
-     *  a ~7px decorative frame; we only need that last strip to
-     *  cap our preview without stamping the whole player-inventory
-     *  section underneath. The strip's source y in the atlas is
-     *  {@code 222 - 7 = 215}. */
-    private static final int BOTTOM_BORDER_HEIGHT = 7;
-    private static final int BOTTOM_BORDER_SRC_Y = 215;
-
-    /** Total preview height: thin top border + 3 slot rows + thin bottom border. */
-    private static final int PREVIEW_H = TOP_BORDER_HEIGHT + SLOTS_HEIGHT + BOTTOM_BORDER_HEIGHT;
-
-    /** Inset inside the chest texture before the first slot starts.
-     *  Horizontal inset matches vanilla (8px). Vertical inset is
-     *  just the top border height now since we strip out the
-     *  title-bar region. */
-    private static final int SLOT_ORIGIN_X = 8;
-    private static final int SLOT_ORIGIN_Y = TOP_BORDER_HEIGHT;
-
+    /** Slot footprint and grid. Mirrors
+     *  {@code ModPreviewRenderer(18, 18, 8, 8)} from upstream:
+     *  18x18 cells, 8px inset = 7px 9-slice border + 1px breathing
+     *  room. */
     private static final int SLOT_SIZE = 18;
     private static final int GRID_COLS = 9;
     private static final int GRID_ROWS = 3;
+    private static final int SLOT_OFFSET_X = 8;
+    private static final int SLOT_OFFSET_Y = 8;
+
+    /** Total panel footprint. {@code 14 + cols*18} by
+     *  {@code 14 + rows*18}, where 14 = 2 * 7 accounts for the
+     *  9-slice border. Mirrors {@code getWidth()/getHeight()} in
+     *  upstream. */
+    private static final int PREVIEW_W = 14 + GRID_COLS * SLOT_SIZE;
+    private static final int PREVIEW_H = 14 + GRID_ROWS * SLOT_SIZE;
+
+    /** Slot-highlight sprite dimensions: 24x24, centred on a slot
+     *  with a 4px outer offset (so the halo extends past the slot
+     *  border by 3px on every side). */
+    private static final int HIGHLIGHT_SIZE = 24;
+    private static final int HIGHLIGHT_OFFSET = 4;
+
     private static final int CURSOR_OFFSET = 14;
 
-    /**
-     * Per-tick cache of the resolved shulker contents for the
-     * stack the user is currently hovering. Refreshed when either
-     * the hovered stack identity changes (different shulker, or
-     * cursor moved off the preview-eligible slot) OR a new game
-     * tick has started since the last refresh.
-     *
-     * <p>Why per tick: shulker contents only change when the user
-     * shuffles items between inventory slots, which is gated by the
-     * server-side "interaction" tick rate. Re-walking
-     * {@code container.streamNonEmpty()} every render frame at
-     * 240 FPS is wasted work - the visible result is identical
-     * across all 12 frames within one tick. The cache also
-     * pre-evaluates the overlay flag (count != 1 / damaged /
-     * cooldown) so the per-frame loop becomes a flat array
-     * lookup + drawItem call.
-     */
     private static final ItemStack[] CACHED_STACKS = new ItemStack[GRID_COLS * GRID_ROWS];
     private static final boolean[] CACHED_OVERLAYS = new boolean[GRID_COLS * GRID_ROWS];
     private static int cachedSlotsToDraw = 0;
@@ -158,10 +183,6 @@ public final class ShulkerPreview extends Module {
         return 21.0F;
     }
 
-    /**
-     * True if the user wants the preview to render right now: either Always
-     * Show is on, or the configured bind key is currently held.
-     */
     public boolean shouldShow() {
         if (alwaysShow.isValue()) {
             return true;
@@ -177,10 +198,6 @@ public final class ShulkerPreview extends Module {
         return InputUtil.isKeyPressed(mc.getWindow().getHandle(), key);
     }
 
-    /**
-     * @return the {@link ContainerComponent} stored on the stack if it's a
-     *         shulker box (any color) carrying contents, otherwise null.
-     */
     public ContainerComponent extractContainer(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return null;
@@ -195,11 +212,6 @@ public final class ShulkerPreview extends Module {
         return stack.get(DataComponentTypes.CONTAINER);
     }
 
-    /**
-     * Resolve the {@link DyeColor} of a shulker stack, or {@code null}
-     * when the box is the un-dyed (purple) variant. Used by the
-     * tint pass to pick the right colour.
-     */
     private static DyeColor resolveShulkerColor(ItemStack stack) {
         if (stack == null || !(stack.getItem() instanceof BlockItem blockItem)) {
             return null;
@@ -210,17 +222,23 @@ public final class ShulkerPreview extends Module {
         return null;
     }
 
+    private static boolean isShulkerBox(ItemStack stack) {
+        return stack != null
+                && stack.getItem() instanceof BlockItem blockItem
+                && blockItem.getBlock() instanceof ShulkerBoxBlock;
+    }
+
+    /** Clamp a 0-255 channel value to the equivalent of
+     *  {@code Math.max(0.15F, channel / 255F)} from upstream's
+     *  {@code ColorKey.ofDye}. 0.15 * 255 = 38.25, rounded to 38. */
+    private static int clampDyeChannel(int channel) {
+        return channel < 38 ? 38 : channel;
+    }
+
     public void renderPreview(DrawContext context, int mouseX, int mouseY, ContainerComponent container) {
         renderPreview(context, mouseX, mouseY, container, null);
     }
 
-    /**
-     * Render the chest-style preview at {@code mouseX, mouseY}.
-     * {@code hoveredStack} is the stack the cursor is on; needed
-     * here to resolve the shulker dye colour for the tint pass.
-     * Falls back to the un-tinted ("purple") look when the stack
-     * isn't a coloured shulker or {@code colorByShulker} is off.
-     */
     public void renderPreview(DrawContext context, int mouseX, int mouseY,
                               ContainerComponent container, ItemStack hoveredStack) {
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -248,72 +266,42 @@ public final class ShulkerPreview extends Module {
         context.getMatrices().push();
         context.getMatrices().translate(0.0F, 0.0F, 500.0F);
 
-        // Texture pass: vanilla chest-GUI sprite, optionally tinted
-        // with the shulker dye colour. setShaderColor is global GL
-        // state and must be reset before drawItem runs the icon
-        // pass - otherwise every item sprite would inherit the
-        // tint. We restore right after the drawTexture call by
-        // flushing the texture batch and setting the colour back to
-        // white.
-        DyeColor dye = colorByShulker.isValue() ? resolveShulkerColor(hoveredStack) : null;
-        if (dye != null) {
-            int rgb = dye.getEntityColor();
-            float r = ((rgb >> 16) & 0xFF) / 255.0F;
-            float g = ((rgb >> 8) & 0xFF) / 255.0F;
-            float b = (rgb & 0xFF) / 255.0F;
-            // Lift tint toward white so the chest texture stays
-            // readable under saturated dye colours like red / blue.
-            // 0.65 is the same factor vanilla uses for shulker
-            // entity tinting.
-            float lift = 0.65F;
-            r = r + (1.0F - r) * lift;
-            g = g + (1.0F - g) * lift;
-            b = b + (1.0F - b) * lift;
-            RenderSystem.setShaderColor(r, g, b, 1.0F);
-        }
-        // Top border: 7px decorative strip from the very top of
-        // the atlas (y=0..7). Replaces the full vanilla 17px
-        // title-bar header so the preview's top edge mirrors the
-        // bottom edge instead of leaving a wide empty band above
-        // the first slot row.
-        context.drawTexture(RenderLayer::getGuiTextured, CHEST_TEXTURE,
-                x, y,
-                0.0F, 0.0F,
-                PREVIEW_W, TOP_BORDER_HEIGHT,
-                ATLAS_SIZE, ATLAS_SIZE);
-        // Slot strip: 3 rows of slots pulled from atlas y=18..72.
-        // Skipping the y=7..18 title region keeps the panel
-        // compact and avoids an empty band above the first row.
-        context.drawTexture(RenderLayer::getGuiTextured, CHEST_TEXTURE,
-                x, y + TOP_BORDER_HEIGHT,
-                0.0F, SLOTS_SRC_Y,
-                PREVIEW_W, SLOTS_HEIGHT,
-                ATLAS_SIZE, ATLAS_SIZE);
-        // Bottom closing frame: pull the last 7px strip from the
-        // chest texture (atlas y=215..222) and stamp it directly
-        // under the slot rows. Without this the panel would have
-        // no bottom border and the lowest slot row would sit
-        // visually open.
-        context.drawTexture(RenderLayer::getGuiTextured, CHEST_TEXTURE,
-                x, y + TOP_BORDER_HEIGHT + SLOTS_HEIGHT,
-                0.0F, BOTTOM_BORDER_SRC_Y,
-                PREVIEW_W, BOTTOM_BORDER_HEIGHT,
-                ATLAS_SIZE, ATLAS_SIZE);
-        // Flush the texture batch BEFORE resetting the shader
-        // colour - drawTexture queues into the GUI buffer, and the
-        // colour state is captured at flush time, so resetting too
-        // early would draw the chest at full white.
-        context.draw();
-        if (dye != null) {
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        // Tint resolution. The 1.21.4 GUI render layer samples
+        // {@code .color(int)} per vertex - global setShaderColor is
+        // ignored. So we feed the tint through drawGuiTexture's
+        // {@code int color} overload. -1 (0xFFFFFFFF) = no tint.
+        //
+        // Mirrors upstream's {@code ModPreviewRenderer.getColor()}:
+        //   - colors disabled -> ColorKey.DEFAULT (white, no tint)
+        //   - uncolored shulker -> ColorKey.SHULKER_BOX (light purple)
+        //   - dyed shulker -> ColorKey.ofDye(dye), which clamps each
+        //     RGB channel to a min of 0.15 (38/255) so very dark dyes
+        //     stay visible.
+        int tintArgb = -1;
+        if (colorByShulker.isValue()) {
+            DyeColor dye = resolveShulkerColor(hoveredStack);
+            if (dye != null) {
+                int rgb = dye.getEntityColor();
+                int rr = clampDyeChannel((rgb >> 16) & 0xFF);
+                int gg = clampDyeChannel((rgb >> 8) & 0xFF);
+                int bb = clampDyeChannel(rgb & 0xFF);
+                tintArgb = 0xFF000000 | (rr << 16) | (gg << 8) | bb;
+            } else if (isShulkerBox(hoveredStack)) {
+                tintArgb = 0xFF000000 | UNCOLORED_SHULKER_RGB;
+            }
         }
 
-        // Refresh the per-tick cache if either the hovered stack
-        // changed (cursor moved to a different slot) or at least
-        // one game tick has elapsed. This collapses the
-        // {@code container.streamNonEmpty()} walk + per-stack
-        // overlay-flag computation to once per tick instead of
-        // once per frame.
+        // Single 9-slice draw paints the whole chest-frame panel
+        // (background + all four borders + drop-shadow) with the
+        // dye tint baked into the per-vertex color channel. The
+        // {@code .mcmeta} sidecar declares nine_slice scaling
+        // (border=7, source 32x32), so corners stay pixel-locked
+        // while the inner area stretches to PREVIEW_W x PREVIEW_H.
+        context.drawGuiTexture(RenderLayer::getGuiTextured, PANEL_SPRITE,
+                x, y, PREVIEW_W, PREVIEW_H, tintArgb);
+        context.draw();
+
+        // Refresh the per-tick cache.
         int tick = mc.inGameHud != null ? mc.inGameHud.getTicks() : 0;
         if (hoveredStack != lastHoveredStack || container != lastContainer || tick != lastTick) {
             lastHoveredStack = hoveredStack;
@@ -321,9 +309,9 @@ public final class ShulkerPreview extends Module {
             lastTick = tick;
             int idx = 0;
             int cap = GRID_COLS * GRID_ROWS;
-            // streamNonEmpty allocates an iterator per call; we keep
-            // it confined to the once-per-tick refresh path so the
-            // per-frame render path stays alloc-free.
+            // streamNonEmpty allocates an iterator; confined to the
+            // once-per-tick refresh path so the per-frame render
+            // stays alloc-free.
             java.util.Iterator<ItemStack> iter = container.streamNonEmpty().iterator();
             while (iter.hasNext() && idx < cap) {
                 ItemStack stack = iter.next();
@@ -332,23 +320,35 @@ public final class ShulkerPreview extends Module {
                 idx++;
             }
             cachedSlotsToDraw = idx;
-            // Null out tail so a previous, larger payload doesn't
-            // leak references through the cache.
             for (int i = idx; i < cap; i++) {
                 CACHED_STACKS[i] = null;
                 CACHED_OVERLAYS[i] = false;
             }
         }
 
-        int gridOriginX = x + SLOT_ORIGIN_X;
-        int gridOriginY = y + SLOT_ORIGIN_Y;
+        int gridOriginX = x + SLOT_OFFSET_X;
+        int gridOriginY = y + SLOT_OFFSET_Y;
 
-        // Icon pass. Slot bg is already painted by the chest
-        // texture, so this loop only handles items + the optional
-        // count overlay. drawItem bakes the model and binds the
-        // texture; the overlay flag was already evaluated during
-        // the once-per-tick refresh above so this loop only does
-        // a flat array read + the unavoidable drawItem call.
+        // Determine which slot (if any) the cursor is currently
+        // over. We use the SAME bbox math as MisterPeModder's
+        // {@code BasePreviewRenderer.getSlotAt}: the slot is
+        // {@code (mouseX - panelX - slotOffsetX) / slotSize}, with
+        // a -1 fudge to compensate for the 1px breathing room the
+        // upstream panel uses. Returns -1 when out of bounds.
+        int hoveredSlot = -1;
+        int relX = mouseX + 1 - x - SLOT_OFFSET_X;
+        int relY = mouseY + 1 - y - SLOT_OFFSET_Y;
+        if (relX >= 0 && relY >= 0) {
+            int sx = relX / SLOT_SIZE;
+            int sy = relY / SLOT_SIZE;
+            if (sx >= 0 && sx < GRID_COLS && sy >= 0 && sy < GRID_ROWS) {
+                hoveredSlot = sy * GRID_COLS + sx;
+            }
+        }
+
+        // Slot pass: highlight (back) -> item -> overlay -> highlight (front).
+        // Layering matches upstream so the halo halo's outer rim
+        // sits OVER the item, while the inner glow sits UNDER it.
         for (int i = 0; i < cachedSlotsToDraw; i++) {
             ItemStack stack = CACHED_STACKS[i];
             if (stack == null || stack.isEmpty()) continue;
@@ -356,32 +356,38 @@ public final class ShulkerPreview extends Module {
             int col = i % GRID_COLS;
             int slotX = gridOriginX + col * SLOT_SIZE;
             int slotY = gridOriginY + row * SLOT_SIZE;
+            boolean highlighted = i == hoveredSlot;
+
+            // Layer order matches upstream ModPreviewRenderer.drawSlot:
+            //   1. BACK sprite via getGuiTexturedOverlay (under item,
+            //      additive blend so the inner glow shines through)
+            //   2. Item icon + count/durability overlay
+            //   3. FRONT sprite via getGuiTextured (over item, opaque
+            //      so the outer rim sits cleanly on top)
+            if (highlighted) {
+                context.drawGuiTexture(RenderLayer::getGuiTexturedOverlay,
+                        SLOT_HIGHLIGHT_BACK,
+                        slotX - HIGHLIGHT_OFFSET, slotY - HIGHLIGHT_OFFSET,
+                        HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
+            }
+
             context.drawItem(stack, slotX, slotY);
             if (CACHED_OVERLAYS[i]) {
                 context.drawStackOverlay(mc.textRenderer, stack, slotX, slotY);
             }
+
+            if (highlighted) {
+                context.drawGuiTexture(RenderLayer::getGuiTextured,
+                        SLOT_HIGHLIGHT_FRONT,
+                        slotX - HIGHLIGHT_OFFSET, slotY - HIGHLIGHT_OFFSET,
+                        HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
+            }
         }
 
-        // Flush our preview before popping so the high-Z translation actually
-        // sticks for the queued draws (DrawContext snapshots the matrix at
-        // submit time, so popping before draw() would still be correct, but
-        // explicit flushing here keeps our preview from re-batching with
-        // anything rendered later in the same frame).
         context.draw();
         context.getMatrices().pop();
     }
 
-    /**
-     * Cheap predicate guarding {@code drawStackOverlay} - the
-     * vanilla helper formats the count int into a string and
-     * pushes both a text-renderer batch and two damage / cooldown
-     * fills even when none of them produce visible pixels. For
-     * plain stacks (count 1, undamaged, no active cooldown) the
-     * skip is invisible and saves a noticeable chunk of CPU on
-     * dense previews where most slots are single-item. Result is
-     * cached per tick so the per-frame render path doesn't pay
-     * for the cooldown lookup.
-     */
     private static boolean computeOverlayFlag(ItemStack stack, MinecraftClient mc) {
         if (stack == null || stack.isEmpty()) return false;
         if (stack.getCount() != 1) return true;

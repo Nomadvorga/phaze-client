@@ -26,6 +26,18 @@ public class DiscordManager {
             return;
         }
 
+        // Bail out cleanly when the bundled DLL couldn't be
+        // extracted / loaded - DiscordRPC.INSTANCE returns null in
+        // that case (see DiscordRPC#loadInstance). Without this
+        // check the very next line would NPE through the entire
+        // boot path and the client would silently hang on the
+        // first time the daemon thread tries to use Discord_*.
+        if (DiscordRPC.INSTANCE == null) {
+            System.err.println("[Phaze] Discord RPC native unavailable - module disabled for this session");
+            this.running = false;
+            return;
+        }
+
         DiscordEventHandlers handlers = new DiscordEventHandlers.Builder().ready((user) -> {
             Main.getInstance().getDiscordManager().setInfo(
                     new DiscordInfo(
@@ -61,20 +73,24 @@ public class DiscordManager {
                 .setLargeImage(imageUrl, "Phaze Client");
 
         if (rpc == null || !rpc.isEnabled()) {
-            builder.setStartTimestamp(startTimestamp).setState("Phaze Client");
-            DiscordRPC.INSTANCE.Discord_UpdatePresence(builder.build());
+            // Module turned off: clear the activity entirely so the
+            // user's Discord profile shows nothing instead of the
+            // legacy "Phaze Client" fallback card. Discord_ClearPresence
+            // tells the daemon to drop the current activity, which
+            // is what the user expects from the toggle.
+            DiscordRPC.INSTANCE.Discord_ClearPresence();
             return;
         }
 
-        // Hide-in-menus: if the user is on the title / multiplayer /
-        // pause-with-no-world screen we just zero the lines so the
-        // activity card reads "idle". Discord still keeps the entry
-        // alive (which avoids the per-15s flicker of clearing and
-        // re-creating presence) but with no visible text.
+        // Hide-in-menus: when the user is on the title / multiplayer /
+        // pause-with-no-world screen the activity is fully cleared
+        // so Discord shows the user as idle. Without ClearPresence
+        // the previous in-world card lingered with the static large
+        // image, which read as "still playing" to other users.
         net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
         boolean inWorld = mc != null && mc.world != null && mc.player != null;
         if (rpc.hideInMenus.isValue() && !inWorld) {
-            DiscordRPC.INSTANCE.Discord_UpdatePresence(builder.build());
+            DiscordRPC.INSTANCE.Discord_ClearPresence();
             return;
         }
 

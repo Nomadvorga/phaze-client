@@ -102,10 +102,19 @@ public abstract class ClickableWidgetDragSelectMixin {
         }
         // Pick whichever index landed closest to the cursor x.
         int chosen = bestDist < Integer.MAX_VALUE ? best : idx;
-        // shift=true keeps the original mouse-down anchor in
-        // selectionEnd while moving selectionStart, which produces
-        // the highlight band the user expects from a drag-select.
-        tf.setCursor(chosen, true);
+        // We want to move ONLY {@code selectionStart} and leave
+        // {@code selectionEnd} as the original mouse-down anchor.
+        // {@code TextFieldWidget#setCursor(int, true)} would also
+        // reach this state, but it additionally fires {@code onChanged}
+        // on every drag tick - which the chat-input subclass routes
+        // through {@code ChatInputSuggestor.refresh()} and various
+        // text-changed callbacks that on some screens silently reset
+        // selection or steal focus. Calling {@code setSelectionStart}
+        // directly skips the change callback entirely (the text didn't
+        // actually change, only the cursor moved) so the highlight
+        // band the user sees is exactly what {@code getSelectedText}
+        // returns when Ctrl+C runs.
+        tf.setSelectionStart(chosen);
         cir.setReturnValue(true);
     }
 }

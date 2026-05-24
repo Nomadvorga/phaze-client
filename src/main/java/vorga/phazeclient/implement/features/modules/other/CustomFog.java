@@ -86,7 +86,7 @@ public final class CustomFog extends Module {
 
     @Override
     public String getIcon() {
-        return "no_render.png";
+        return "custom_fog.png";
     }
 
     @Override

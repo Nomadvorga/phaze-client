@@ -49,7 +49,6 @@ import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 public abstract class TextFieldWidgetMixin {
 
     @Shadow private String text;
-
     /**
      * Stash for the original text between the password-mask HEAD
      * swap and TAIL restore. {@code null} when no swap happened on
