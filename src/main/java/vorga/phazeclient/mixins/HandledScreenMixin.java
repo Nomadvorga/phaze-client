@@ -3,11 +3,9 @@ package vorga.phazeclient.mixins;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.item.ItemStack;
-import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
@@ -20,7 +18,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.base.util.ServerUtil;
-import vorga.phazeclient.implement.features.modules.hud.InventoryHud;
 import vorga.phazeclient.implement.features.modules.other.HealingHelper;
 import vorga.phazeclient.implement.features.modules.other.ItemHighlighter;
 import vorga.phazeclient.implement.features.modules.other.ItemScroller;
@@ -32,8 +29,8 @@ import java.util.Set;
 
 /**
  * Consolidated mixin for {@link HandledScreen}, merging the previous
- * six sibling mixins (ItemScroller, ShulkerPreview, MaceIndicator,
- * InventoryHud ender-chest snapshot, ItemHighlighter, HealingHelper).
+ * sibling mixins (ItemScroller, ShulkerPreview, MaceIndicator,
+ * ItemHighlighter, HealingHelper).
  * Each original injector is preserved with a unique {@code phaze$}
  * method name; shadow fields and unique state are merged at the top.
  *
@@ -185,30 +182,7 @@ public abstract class HandledScreenMixin {
         if (container == null) {
             return;
         }
-        module.renderPreview(context, mouseX, mouseY, container);
-    }
-
-    // ---------------------------------------------------------------
-    // InventoryHud: ender-chest snapshot every tick
-    // ---------------------------------------------------------------
-
-    @Inject(method = "handledScreenTick", at = @At("TAIL"))
-    private void phaze$snapshotEnderChest(CallbackInfo ci) {
-        HandledScreen<?> self = (HandledScreen<?>) (Object) this;
-        if (!(self instanceof GenericContainerScreen genericScreen)) {
-            return;
-        }
-        String title = self.getTitle().getString().toLowerCase();
-        if (!title.contains("ender chest")) {
-            return;
-        }
-
-        GenericContainerScreenHandler handler = genericScreen.getScreenHandler();
-        int upper = Math.min(27, handler.getInventory().size());
-        InventoryHud hud = InventoryHud.getInstance();
-        for (int i = 0; i < upper; i++) {
-            hud.updateEnderChestSlot(i, handler.getInventory().getStack(i));
-        }
+        module.renderPreview(context, mouseX, mouseY, container, stack);
     }
 
     // ---------------------------------------------------------------

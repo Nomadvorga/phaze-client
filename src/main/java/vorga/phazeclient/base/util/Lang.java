@@ -224,6 +224,17 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Better Death", "Улучшенная смерть");
         SETTING_TRANSLATIONS.put("Better F3", "Улучшенный F3");
         SETTING_TRANSLATIONS.put("Bind", "Бинд");
+        // Per-slot Binds module labels - the module preallocates 8
+        // slots numbered 1..8 and synthesises three settings per
+        // slot ({@code "Bind N"} section, {@code "Bind N Key"} bind,
+        // {@code "Bind N Message"} text). Adding the localized
+        // entries here lets the existing Lang.translate dispatch
+        // pick them up without touching the module's storage keys.
+        for (int i = 1; i <= 8; i++) {
+            SETTING_TRANSLATIONS.put("Bind " + i, "Бинд " + i);
+            SETTING_TRANSLATIONS.put("Bind " + i + " Key", "Бинд " + i + " — клавиша");
+            SETTING_TRANSLATIONS.put("Bind " + i + " Message", "Бинд " + i + " — сообщение");
+        }
         SETTING_TRANSLATIONS.put("Binds", "Привязки");
         SETTING_TRANSLATIONS.put("Blacklist", "Чёрный список");
         SETTING_TRANSLATIONS.put("Block Reach", "Дальность блока");
@@ -266,6 +277,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Clouds", "Облака");
         SETTING_TRANSLATIONS.put("Collapse Repeats", "Сворачивать повторы");
         SETTING_TRANSLATIONS.put("Color", "Цвет");
+        SETTING_TRANSLATIONS.put("Color By Shulker", "Цвет по шалкеру");
         SETTING_TRANSLATIONS.put("Color Based On Usage", "Цвет от использований");
         SETTING_TRANSLATIONS.put("Color Brightness", "Яркость цвета");
         SETTING_TRANSLATIONS.put("Color By Cooldown", "Цвет по перезарядке");
@@ -435,6 +447,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Hunger", "Голод");
         SETTING_TRANSLATIONS.put("Hunger Threshold", "Порог голода");
         SETTING_TRANSLATIONS.put("Impact Marker", "Маркер попадания");
+        SETTING_TRANSLATIONS.put("Imported from cloud", "Импортировано из облака");
         SETTING_TRANSLATIONS.put("In Range Color", "Цвет в радиусе");
         SETTING_TRANSLATIONS.put("Info", "Инфо");
         SETTING_TRANSLATIONS.put("Info Display", "Информация");
@@ -455,7 +468,170 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Key", "Клавиша");
         SETTING_TRANSLATIONS.put("Keybind", "Бинд");
         SETTING_TRANSLATIONS.put("Language", "Язык");
+        SETTING_TRANSLATIONS.put("Last modified", "Изменён");
+        // ---- Theme names ----
+        // Translated as a friendly Russian phrase rather than a
+        // literal word-for-word so the picker reads naturally in
+        // the same way the English originals do (e.g. "Mocha Gold"
+        // is a coffee-and-gold mood, not "мокка золото"). Each
+        // entry is also a fixed key in {@code MenuPalettes.byName}
+        // - storage stays English so configs save / load on either
+        // locale, only the displayed label changes.
+        SETTING_TRANSLATIONS.put("Lunar Blue", "Синий Лунар");
+        SETTING_TRANSLATIONS.put("Mocha Gold", "Мокка с золотом");
+        SETTING_TRANSLATIONS.put("Rose Quartz", "Розовый кварц");
+        SETTING_TRANSLATIONS.put("Emerald Frost", "Изумрудный иней");
+        SETTING_TRANSLATIONS.put("Arctic Mint", "Арктическая мята");
+        SETTING_TRANSLATIONS.put("Crimson Silk", "Алый шёлк");
+        SETTING_TRANSLATIONS.put("Solar Ember", "Солнечный жар");
+        SETTING_TRANSLATIONS.put("Midnight Bloom", "Полуночный цвет");
+        SETTING_TRANSLATIONS.put("Desert Mirage", "Пустынный мираж");
+        SETTING_TRANSLATIONS.put("Sapphire Steel", "Сапфировая сталь");
+        SETTING_TRANSLATIONS.put("Velvet Plum", "Бархатная слива");
+        SETTING_TRANSLATIONS.put("Frosted Peach", "Морозный персик");
+        SETTING_TRANSLATIONS.put("Moss Smoke", "Мшистый дым");
+        SETTING_TRANSLATIONS.put("Polar Night", "Полярная ночь");
+        SETTING_TRANSLATIONS.put("Snow", "Снег");
+        SETTING_TRANSLATIONS.put("Obsidian", "Обсидиан");
+        SETTING_TRANSLATIONS.put("Nebula", "Туманность");
+        SETTING_TRANSLATIONS.put("Coral", "Коралл");
+        SETTING_TRANSLATIONS.put("Jade", "Нефрит");
+        SETTING_TRANSLATIONS.put("Sunset", "Закат");
+        SETTING_TRANSLATIONS.put("Violet", "Фиолетовый");
+        SETTING_TRANSLATIONS.put("Ocean", "Океан");
         SETTING_TRANSLATIONS.put("Layout", "Расположение");
+        // ---- Select-value lexicon ----
+        // Centralised pool of localised choice labels used by every
+        // SelectSetting in the project. Stored here (instead of next
+        // to each module) so the wording can be tuned in one place;
+        // storage keys remain English so saved configs are
+        // language-agnostic and any
+        // {@code .getSelected().equals("Linear")}-style logic in
+        // module code keeps working untouched.
+        SETTING_TRANSLATIONS.put("Linear", "Линейная");
+        SETTING_TRANSLATIONS.put("Fast", "Быстрая");
+        SETTING_TRANSLATIONS.put("Balanced", "Сбалансированная");
+        SETTING_TRANSLATIONS.put("Back", "Возврат");
+        SETTING_TRANSLATIONS.put("Overshoot", "Перелёт");
+        SETTING_TRANSLATIONS.put("Elastic", "Упругая");
+        SETTING_TRANSLATIONS.put("Bounce", "Отскок");
+        SETTING_TRANSLATIONS.put("Ease Out", "Замедление");
+        SETTING_TRANSLATIONS.put("Spring", "Пружина");
+        SETTING_TRANSLATIONS.put("Decelerate", "Торможение");
+        SETTING_TRANSLATIONS.put("Slide", "Сдвиг");
+        SETTING_TRANSLATIONS.put("Slide+Scale", "Сдвиг+Масштаб");
+        SETTING_TRANSLATIONS.put("Up", "Вверх");
+        SETTING_TRANSLATIONS.put("Left", "Влево");
+        SETTING_TRANSLATIONS.put("North", "Север");
+        SETTING_TRANSLATIONS.put("South", "Юг");
+        SETTING_TRANSLATIONS.put("East", "Восток");
+        SETTING_TRANSLATIONS.put("West", "Запад");
+        SETTING_TRANSLATIONS.put("Top", "Сверху");
+        SETTING_TRANSLATIONS.put("Bottom", "Снизу");
+        SETTING_TRANSLATIONS.put("Side", "Сторона");
+        SETTING_TRANSLATIONS.put("Outline", "Контур");
+        SETTING_TRANSLATIONS.put("Filled", "Заливка");
+        SETTING_TRANSLATIONS.put("Chat", "Чат");
+        SETTING_TRANSLATIONS.put("Clipboard", "Буфер обмена");
+        SETTING_TRANSLATIONS.put("Both", "Оба");
+        SETTING_TRANSLATIONS.put("Long", "Длинный");
+        SETTING_TRANSLATIONS.put("Short", "Короткий");
+        SETTING_TRANSLATIONS.put("Session", "Сессия");
+        SETTING_TRANSLATIONS.put("World", "Мир");
+        SETTING_TRANSLATIONS.put("Off", "Выкл");
+        SETTING_TRANSLATIONS.put("Custom", "Свой");
+        SETTING_TRANSLATIONS.put("Theme", "Тема");
+        SETTING_TRANSLATIONS.put("Vanilla", "Ванильный");
+        SETTING_TRANSLATIONS.put("Line", "Линия");
+        SETTING_TRANSLATIONS.put("Thick", "Толстая");
+        SETTING_TRANSLATIONS.put("Sphere", "Сфера");
+        SETTING_TRANSLATIONS.put("Circle", "Круг");
+        SETTING_TRANSLATIONS.put("Ukrainian", "Украинский");
+        SETTING_TRANSLATIONS.put("Belarusian", "Белорусский");
+        SETTING_TRANSLATIONS.put("Spanish", "Испанский");
+        SETTING_TRANSLATIONS.put("French", "Французский");
+        SETTING_TRANSLATIONS.put("German", "Немецкий");
+        SETTING_TRANSLATIONS.put("Italian", "Итальянский");
+        SETTING_TRANSLATIONS.put("Portuguese", "Португальский");
+        SETTING_TRANSLATIONS.put("Polish", "Польский");
+        SETTING_TRANSLATIONS.put("Turkish", "Турецкий");
+        SETTING_TRANSLATIONS.put("Chinese", "Китайский");
+        SETTING_TRANSLATIONS.put("Japanese", "Японский");
+        SETTING_TRANSLATIONS.put("Korean", "Корейский");
+        SETTING_TRANSLATIONS.put("Arabic", "Арабский");
+        SETTING_TRANSLATIONS.put("Hindi", "Хинди");
+        SETTING_TRANSLATIONS.put("Vietnamese", "Вьетнамский");
+        SETTING_TRANSLATIONS.put("Indonesian", "Индонезийский");
+        // ArmorHud / RectHudModule durability mode
+        SETTING_TRANSLATIONS.put("Units", "Единицы");
+        SETTING_TRANSLATIONS.put("Percent", "Проценты");
+        // Consumable.layout
+        SETTING_TRANSLATIONS.put("Column", "Столбец");
+        SETTING_TRANSLATIONS.put("Table", "Таблица");
+        // InventoryHud.source
+        SETTING_TRANSLATIONS.put("Main", "Основной");
+        SETTING_TRANSLATIONS.put("Ender Chest", "Эндер-сундук");
+        // MemoryHud.format
+        SETTING_TRANSLATIONS.put("Percentage", "Проценты");
+        SETTING_TRANSLATIONS.put("Megabytes", "Мегабайты");
+        SETTING_TRANSLATIONS.put("Gigabytes", "Гигабайты");
+        // MovementSpeedHud.precision
+        SETTING_TRANSLATIONS.put("Nearest", "Ближайшее");
+        SETTING_TRANSLATIONS.put("1 Decimal", "1 знак");
+        SETTING_TRANSLATIONS.put("2 Decimals", "2 знака");
+        SETTING_TRANSLATIONS.put("3 Decimals", "3 знака");
+        // PlayerModelHud.mode
+        SETTING_TRANSLATIONS.put("Follow Mouse", "Следовать за мышью");
+        SETTING_TRANSLATIONS.put("Auto Rotate", "Авто-вращение");
+        SETTING_TRANSLATIONS.put("Static", "Статично");
+        // Saturation.mode
+        SETTING_TRANSLATIONS.put("Yellow Bar", "Жёлтая полоса");
+        SETTING_TRANSLATIONS.put("Second Hunger Bar", "Вторая полоса голода");
+        // TrapTimer.mode
+        SETTING_TRANSLATIONS.put("Normal", "Обычный");
+        SETTING_TRANSLATIONS.put("Dragon", "Дракон");
+        // WeatherChanger.weatherType
+        SETTING_TRANSLATIONS.put("Clear", "Ясно");
+        SETTING_TRANSLATIONS.put("Rain", "Дождь");
+        SETTING_TRANSLATIONS.put("Thunder", "Гроза");
+        // NoFluid.mode (Water/Lava already share lexicon needs)
+        SETTING_TRANSLATIONS.put("Water", "Вода");
+        SETTING_TRANSLATIONS.put("Lava", "Лава");
+        // MouseClicker.hand
+        SETTING_TRANSLATIONS.put("Right", "Правая");
+        // Translator.provider
+        SETTING_TRANSLATIONS.put("Google", "Google");
+        SETTING_TRANSLATIONS.put("Apify", "Apify");
+        // Predictions / FTHelper neutral preset
+        SETTING_TRANSLATIONS.put("Black", "Чёрный");
+        // Consumable.itemTypes (vanilla item names; localised for the
+        // Russian audience - storage stays English so each entry maps
+        // back to the canonical ItemRegistry id without ambiguity).
+        SETTING_TRANSLATIONS.put("Snowball", "Снежок");
+        SETTING_TRANSLATIONS.put("Egg", "Яйцо");
+        SETTING_TRANSLATIONS.put("Wind Charge", "Заряд ветра");
+        SETTING_TRANSLATIONS.put("Golden Apple", "Золотое яблоко");
+        SETTING_TRANSLATIONS.put("Enchanted Golden Apple", "Зачарованное яблоко");
+        SETTING_TRANSLATIONS.put("Arrow", "Стрела");
+        SETTING_TRANSLATIONS.put("Spectral Arrow", "Призрачная стрела");
+        SETTING_TRANSLATIONS.put("Tipped Arrow", "Стрела с эффектом");
+        SETTING_TRANSLATIONS.put("Totem", "Тотем");
+        SETTING_TRANSLATIONS.put("Chorus Fruit", "Плод хоруса");
+        SETTING_TRANSLATIONS.put("Ender Pearl", "Жемчуг эндера");
+        SETTING_TRANSLATIONS.put("Firework Rocket", "Фейерверк");
+        SETTING_TRANSLATIONS.put("Experience Bottle", "Бутылочка опыта");
+        // BetterF3.sections multiselect (sub-set of the F3 overlay).
+        // {@code Coordinates}, {@code Biome}, {@code Light},
+        // {@code Dimension}, {@code Server}, {@code Memory},
+        // {@code Time}, {@code System} are the F3 overlay categories.
+        SETTING_TRANSLATIONS.put("Coordinates", "Координаты");
+        SETTING_TRANSLATIONS.put("Facing", "Направление");
+        SETTING_TRANSLATIONS.put("Biome", "Биом");
+        SETTING_TRANSLATIONS.put("Light", "Свет");
+        SETTING_TRANSLATIONS.put("Dimension", "Измерение");
+        SETTING_TRANSLATIONS.put("Server", "Сервер");
+        SETTING_TRANSLATIONS.put("Memory", "Память");
+        SETTING_TRANSLATIONS.put("System", "Система");
         SETTING_TRANSLATIONS.put("Left Slide Interpolation", "Интерполяция слайда влево");
         SETTING_TRANSLATIONS.put("Limits", "Лимиты");
         SETTING_TRANSLATIONS.put("Line", "Линия");
@@ -553,6 +729,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Particle Density", "Плотность частиц");
         SETTING_TRANSLATIONS.put("Particle Size", "Размер частиц");
         SETTING_TRANSLATIONS.put("Particle Speed", "Скорость частиц");
+        SETTING_TRANSLATIONS.put("Particle Types", "Типы частиц");
         SETTING_TRANSLATIONS.put("Particles", "Частицы");
         SETTING_TRANSLATIONS.put("Periodically attacks or uses item based on selected hand", "Периодически атакует или использует предмет в выбранной руке");
         SETTING_TRANSLATIONS.put("Ping HUD", "Пинг HUD");
@@ -598,8 +775,11 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Render-pipeline tweaks: hide glowing outlines, fire overlay, particles", "Твики рендера: скрыть свечение, оверлей огня, частицы");
         SETTING_TRANSLATIONS.put("Renders a 3D mini-version of your skin in the corner", "Рендерит 3D-мини-версию вашего скина в углу");
         SETTING_TRANSLATIONS.put("Renders your 27 storage slots or last-seen ender chest on the HUD", "Рендерит 27 слотов инвентаря или последний эндер-сундук на HUD");
+        SETTING_TRANSLATIONS.put("English", "Английский");
+        SETTING_TRANSLATIONS.put("Russian", "Русский");
         SETTING_TRANSLATIONS.put("Repeat", "Повторять");
         SETTING_TRANSLATIONS.put("Repeat Delay", "Задержка повтора");
+        SETTING_TRANSLATIONS.put("Replace", "Замена");
         SETTING_TRANSLATIONS.put("Replace Message", "Заменять сообщение");
         SETTING_TRANSLATIONS.put("Replace Own Name Color", "Менять цвет своего ника");
         SETTING_TRANSLATIONS.put("Replacement", "Замена");
@@ -770,6 +950,11 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Swap chestplate and elytra with a single keybind", "Меняет нагрудник и элитры одним бидом");
         SETTING_TRANSLATIONS.put("Swap Slot", "Слот замены");
         SETTING_TRANSLATIONS.put("Swap Type", "Тип замены");
+        SETTING_TRANSLATIONS.put("Sphere -> Totem", "Сфера -> Тотем");
+        SETTING_TRANSLATIONS.put("Sphere -> Talisman", "Сфера -> Талисман");
+        SETTING_TRANSLATIONS.put("Talisman -> Totem", "Талисман -> Тотем");
+        SETTING_TRANSLATIONS.put("Talisman -> Talisman", "Талисман -> Талисман");
+        SETTING_TRANSLATIONS.put("Sphere -> Sphere", "Сфера -> Сфера");
         SETTING_TRANSLATIONS.put("Swaps items on button press", "Меняет предметы по нажатию кнопки");
         SETTING_TRANSLATIONS.put("Switch Side", "Сменить сторону");
         SETTING_TRANSLATIONS.put("Tab Animation", "Анимация таба");
@@ -794,6 +979,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Threshold (%)", "Порог (%)");
         SETTING_TRANSLATIONS.put("Thunder Strength", "Сила грозы");
         SETTING_TRANSLATIONS.put("Tier", "Уровень");
+        SETTING_TRANSLATIONS.put("Tint", "Окрашивание");
         SETTING_TRANSLATIONS.put("Time", "Время");
         SETTING_TRANSLATIONS.put("Time Changer", "Изменение времени");
         SETTING_TRANSLATIONS.put("Timestamp", "Время");

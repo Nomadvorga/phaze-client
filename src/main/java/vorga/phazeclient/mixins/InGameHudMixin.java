@@ -4287,14 +4287,16 @@ public class InGameHudMixin {
         if (mc == null || mc.player == null || mc.options == null) return;
         if (mc.options.hudHidden) return;
 
-        ItemStack[] stacks = new ItemStack[27];
-        if (module.isEnderChestMode()) {
-            ItemStack[] snap = module.getEnderChestSnapshot();
-            System.arraycopy(snap, 0, stacks, 0, 27);
-        } else {
-            PlayerInventory inv = mc.player.getInventory();
-            for (int i = 0; i < 27; i++) stacks[i] = inv.main.get(9 + i);
-        }
+        // Snapshot the live inventory at most once per game tick.
+        // The 27 storage slots are a server-driven state - they
+        // only change when packets land - so re-querying them per
+        // frame plus re-evaluating cooldown / damage flags is
+        // wasted work at modern HUD rates. Refresh is a no-op when
+        // the tick counter hasn't advanced, so calling it every
+        // frame is essentially free on the hot path.
+        InventoryHud.refreshSnapshotIfStale(mc);
+        ItemStack[] snapshot = InventoryHud.getSnapshotStacks();
+        boolean[] overlayFlags = InventoryHud.getSnapshotOverlayFlags();
 
         float scale = module.getHudScale();
         int innerW = PHAZE_INV_SLOT * 9;
@@ -4346,27 +4348,56 @@ public class InGameHudMixin {
         context.getMatrices().translate(panelX, panelY, 0);
         context.getMatrices().scale(scale, scale, 1.0F);
 
+        // Backdrop + 27 slot-bg fills are cheap (one BufferBuilder
+        // batch flushed at the end of the frame). drawItem on the
+        // other hand binds a texture and submits a freshly-baked
+        // model per slot, so we keep the slot loop tight: read
+        // stacks + overlay flags from the per-tick snapshot, skip
+        // empty slots, skip the stack-count overlay when the
+        // pre-evaluated flag says it would draw nothing.
         context.fill(0, 0, panelW, panelH, 0x90000000);
+        boolean drawCounts = module.drawCounts.isValue();
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
                 int sx = PHAZE_INV_PADDING + col * PHAZE_INV_SLOT + 1;
                 int sy = PHAZE_INV_PADDING + row * PHAZE_INV_SLOT + 1;
                 context.fill(sx, sy, sx + PHAZE_INV_ICON, sy + PHAZE_INV_ICON, 0x55_8B8B8B);
-            }
-        }
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 9; col++) {
-                ItemStack stack = stacks[row * 9 + col];
+                int idx = row * 9 + col;
+                ItemStack stack = snapshot[idx];
                 if (stack == null || stack.isEmpty()) continue;
-                int sx = PHAZE_INV_PADDING + col * PHAZE_INV_SLOT + 1;
-                int sy = PHAZE_INV_PADDING + row * PHAZE_INV_SLOT + 1;
                 context.drawItem(stack, sx, sy);
-                if (module.drawCounts.isValue()) {
+                if (drawCounts && overlayFlags[idx]) {
                     context.drawStackOverlay(mc.textRenderer, stack, sx, sy);
                 }
             }
         }
+        // Single flush at the end of the HUD pass: drawItem queues
+        // its sprites into the global immediate buffer, and without
+        // an explicit flush the next HUD module reading from the
+        // framebuffer (e.g. blur) would see uncomposited geometry.
+        context.draw();
         context.getMatrices().pop();
+    }
+
+    /**
+     * @deprecated superseded by the per-tick snapshot maintained in
+     *             {@link InventoryHud#refreshSnapshotIfStale(MinecraftClient)}.
+     *             Kept around because {@code phaze$drawInventoryHud}
+     *             now reads the precomputed flag directly from the
+     *             snapshot array, but other call sites in this mixin
+     *             may still rely on the live predicate during early
+     *             tear-down before the first snapshot refresh.
+     */
+    @Unique
+    private static boolean phaze$shouldDrawSlotOverlay(ItemStack stack) {
+        if (stack.getCount() != 1) return true;
+        if (stack.isItemBarVisible()) return true;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc != null && mc.player != null
+                && mc.player.getItemCooldownManager().getCooldownProgress(stack, 0.0F) > 0.0F) {
+            return true;
+        }
+        return false;
     }
 
     // ====================================================================

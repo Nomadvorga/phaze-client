@@ -8,6 +8,7 @@ import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
@@ -178,15 +179,24 @@ public class SelectComponent extends AbstractSettingComponent {
         float textY = MenuStyle.centerMsdfTextY(VALUE_TEXT_SIZE, boxY, SELECT_BOX_HEIGHT);
 
         String selectedName = setting.getSelected();
+        // Display values are localized through Lang while the
+        // underlying storage stays English. Settings still write
+        // and compare against canonical English keys (e.g.
+        // "Sphere -> Totem"), but the user reading Russian sees
+        // the translated label. The cycler's previousValue is
+        // also localized so the cross-fade animation mid-transition
+        // shows two localized labels rather than one raw key.
+        String selectedDisplay = Lang.translate(selectedName);
+        String previousDisplay = previousValue == null ? null : Lang.translate(previousValue);
 
         if (previousValue != null && progress < 1.0F) {
             float oldAlpha = (1.0F - progress) * currentAlpha;
             float oldSlide = progress * SLIDE_OFFSET * cycleDirection;
-            float oldWidth = MsdfFonts.bold().getWidth(previousValue, VALUE_TEXT_SIZE);
+            float oldWidth = MsdfFonts.bold().getWidth(previousDisplay, VALUE_TEXT_SIZE);
             float oldCenterX = textAreaX + (textAreaWidth - oldWidth) / 2.0F + oldSlide;
             MsdfRenderer.renderText(
                     MsdfFonts.bold(),
-                    previousValue,
+                    previousDisplay,
                     VALUE_TEXT_SIZE,
                     MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, oldAlpha),
                     positionMatrix,
@@ -197,11 +207,11 @@ public class SelectComponent extends AbstractSettingComponent {
 
             float newAlpha = progress * currentAlpha;
             float newSlide = (1.0F - progress) * SLIDE_OFFSET * -cycleDirection;
-            float newWidth = MsdfFonts.bold().getWidth(selectedName, VALUE_TEXT_SIZE);
+            float newWidth = MsdfFonts.bold().getWidth(selectedDisplay, VALUE_TEXT_SIZE);
             float newCenterX = textAreaX + (textAreaWidth - newWidth) / 2.0F + newSlide;
             MsdfRenderer.renderText(
                     MsdfFonts.bold(),
-                    selectedName,
+                    selectedDisplay,
                     VALUE_TEXT_SIZE,
                     MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, newAlpha),
                     positionMatrix,
@@ -211,11 +221,11 @@ public class SelectComponent extends AbstractSettingComponent {
             );
         } else {
             previousValue = null;
-            float valueWidth = MsdfFonts.bold().getWidth(selectedName, VALUE_TEXT_SIZE);
+            float valueWidth = MsdfFonts.bold().getWidth(selectedDisplay, VALUE_TEXT_SIZE);
             float centerX = textAreaX + (textAreaWidth - valueWidth) / 2.0F;
             MsdfRenderer.renderText(
                     MsdfFonts.bold(),
-                    selectedName,
+                    selectedDisplay,
                     VALUE_TEXT_SIZE,
                     MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, currentAlpha),
                     positionMatrix,
