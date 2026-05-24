@@ -110,8 +110,69 @@ vec3 sampleBlurSoup() {
 }
 
 vec3 sampleBlurKawase() {
-    // Fallback to smooth blur kernel to avoid blocky artifacts in HUD one-pass pipeline.
-    return sampleBlurCurrent();
+    vec2 texSize = vec2(textureSize(Sampler0, 0));
+    vec2 texCoord = gl_FragCoord.xy / texSize;
+    vec2 texel = 1.0 / texSize;
+
+    if (BlurRadius <= 0.10) {
+        return texture(Sampler0, texCoord).rgb;
+    }
+
+    // Real Kawase, single-pass collapse. Classic Kawase is multiple
+    // tiny passes with growing offsets (0.5, 1.5, 2.5, ...), each pass
+    // sampling 4 diagonal taps. Multi-pass Kawase produces a wide
+    // visual blur for very few samples - the canonical "blur with
+    // 4 taps that looks like 35-tap Gaussian" trick.
+    //
+    // We collapse the pass loop into one fragment shader by emitting
+    // every ring at once and accumulating. Sample count: up to
+    // 1 + 6 * 4 = 25 taps, vs. 64 for the separable Gaussian path
+    // and 192 for the Soup radial - 2.5x to 7.7x cheaper at matching
+    // perceptual radius.
+    //
+    // Without per-ring weighting a single-pass Kawase shows visible
+    // banding at the ring edges (the original algorithm hides this by
+    // ping-ponging between FBOs which spatially low-passes between
+    // rings). To compensate we apply a Gaussian falloff per ring so
+    // outer rings contribute progressively less - this matches the
+    // smoothness of multi-pass Kawase without the second framebuffer.
+
+    int passes = int(clamp(BlurRadius * 0.5, 1.0, 6.0));
+    float invPasses = 1.0 / float(passes);
+
+    vec3 acc = texture(Sampler0, texCoord).rgb;
+    float weightSum = 1.0;
+
+    for (int p = 0; p < 6; p++) {
+        if (p >= passes) {
+            continue;
+        }
+
+        // Ring offset in pixels, mapped so the outermost ring lands at
+        // {@code BlurRadius} regardless of how many rings we run.
+        float passOffset = (float(p) + 0.5) * BlurRadius * invPasses;
+        vec2 o = texel * passOffset;
+
+        // The four diagonal taps - canonical Kawase pattern.
+        vec3 ring = texture(Sampler0, texCoord + vec2( o.x,  o.y)).rgb
+                  + texture(Sampler0, texCoord + vec2( o.x, -o.y)).rgb
+                  + texture(Sampler0, texCoord + vec2(-o.x,  o.y)).rgb
+                  + texture(Sampler0, texCoord + vec2(-o.x, -o.y)).rgb;
+
+        // Gaussian-shaped per-ring falloff: outer rings contribute
+        // less so the cumulative result reads as a smooth bell curve
+        // rather than a stack of flat rings. Sigma here (1.5 * passes)
+        // is wide enough that all rings get a meaningful weight while
+        // still tapering toward the edge.
+        float fp = float(p);
+        float sigma = max(1.0, float(passes) * 0.6);
+        float w = exp(-0.5 * (fp * fp) / (sigma * sigma));
+
+        acc += ring * w;
+        weightSum += 4.0 * w;
+    }
+
+    return acc / max(weightSum, 0.0001);
 }
 
 vec3 sampleBlurBox() {

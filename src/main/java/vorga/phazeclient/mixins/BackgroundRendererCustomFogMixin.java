@@ -1,11 +1,12 @@
 package vorga.phazeclient.mixins;
 
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
+import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.block.enums.CameraSubmersionType;
 import net.minecraft.client.render.BackgroundRenderer;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.Fog;
 import net.minecraft.client.render.FogShape;
-import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffects;
@@ -13,40 +14,15 @@ import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.other.CustomFog;
 
 /**
- * Replaces vanilla fog with the {@link CustomFog} module's
- * configuration. Two hooks are necessary because vanilla splits
- * fog evaluation into two distinct passes:
- *
- * <ul>
- *   <li>{@code BackgroundRenderer.getFogColor} - returns the
- *       background clear colour the framebuffer is wiped with
- *       BEFORE world geometry draws. Without overriding this the
- *       sky / horizon behind objects keeps its vanilla colour, so
- *       the user only sees the tint on far terrain and the result
- *       reads as "like vanilla". Soup-visuals fixed this exact bug
- *       by overriding both hooks; we mirror that approach.</li>
- *   <li>{@code BackgroundRenderer.applyFog} - returns the
- *       {@link Fog} record fed into the shader uniforms (start /
- *       end / shape / colour). This is what controls the actual
- *       distance falloff and the colour terrain fades INTO.</li>
- * </ul>
- *
- * <p>Both hooks are HEAD + cancellable so we replace vanilla's
- * value entirely instead of letting it run first - that keeps
- * the override pixel-perfect across MC versions where the
- * intermediate math has changed (1.20 -&gt; 1.21.4 reorganised
- * the night-vision boost, water-fog interpolation, etc.).
- *
- * <p>Submersion fog (water / lava / powder snow) and the
- * blindness / darkness status-effect overrides are skipped so
- * gameplay-critical visibility cues are preserved. The
- * {@link #shouldntApplyCustomFog} guard centralises every
- * such early-return.
+ * Custom fog colour + distance override. Both hooks run as
+ * {@code @ModifyReturnValue} so vanilla's full pipeline executes
+ * first and we just override the final value. Submersion fog
+ * (water / lava / powder snow) and blindness / darkness status
+ * effects are skipped so gameplay-critical visibility cues are
+ * preserved.
  */
 @Mixin(BackgroundRenderer.class)
 public class BackgroundRendererCustomFogMixin {
@@ -57,18 +33,13 @@ public class BackgroundRendererCustomFogMixin {
         if (module == null || !module.isEnabled()) {
             return true;
         }
-        // Sky-fog opt-out: if the user picked terrain-only, skip
-        // the FOG_SKY pass and let vanilla's sky pipeline render
-        // a clear horizon.
         if (fogType == BackgroundRenderer.FogType.FOG_SKY && !module.isAffectSky()) {
             return true;
         }
-
         CameraSubmersionType submersion = camera.getSubmersionType();
         if (submersion != CameraSubmersionType.NONE) {
             return true;
         }
-
         Entity entity = camera.getFocusedEntity();
         if (entity instanceof LivingEntity living) {
             if (living.hasStatusEffect(StatusEffects.BLINDNESS)
@@ -79,59 +50,47 @@ public class BackgroundRendererCustomFogMixin {
         return false;
     }
 
-    @Inject(method = "getFogColor", at = @At("HEAD"), cancellable = true)
-    private static void phaze$getFogColor(
-            Camera camera,
-            float tickDelta,
-            ClientWorld world,
-            int clampedViewDistance,
-            float skyDarkness,
-            CallbackInfoReturnable<Vector4f> cir
-    ) {
+    @ModifyReturnValue(method = "getFogColor", at = @At("RETURN"))
+    private static Vector4f phaze$getFogColor(Vector4f vanilla, @Local(argsOnly = true) Camera camera) {
         if (phaze$shouldntApplyCustomFog(camera, BackgroundRenderer.FogType.FOG_TERRAIN)) {
-            return;
+            return vanilla;
         }
         CustomFog module = CustomFog.getInstance();
-        int argb = module.getResolvedColorArgb();
-        float r = ((argb >> 16) & 0xFF) / 255.0F;
-        float g = ((argb >> 8) & 0xFF) / 255.0F;
-        float b = (argb & 0xFF) / 255.0F;
-        float a = ((argb >>> 24) & 0xFF) / 255.0F;
-        cir.setReturnValue(new Vector4f(r, g, b, a));
+        int rgb = module.getResolvedRgb();
+        float r = ((rgb >> 16) & 0xFF) / 255.0F;
+        float g = ((rgb >> 8) & 0xFF) / 255.0F;
+        float b = (rgb & 0xFF) / 255.0F;
+        return new Vector4f(r, g, b, 1.0F);
     }
 
-    @Inject(method = "applyFog", at = @At("HEAD"), cancellable = true)
-    private static void phaze$applyFog(
-            Camera camera,
-            BackgroundRenderer.FogType fogType,
-            Vector4f color,
-            float viewDistance,
-            boolean thickenFog,
-            float tickDelta,
-            CallbackInfoReturnable<Fog> cir
-    ) {
+    @ModifyReturnValue(method = "applyFog", at = @At("RETURN"))
+    private static Fog phaze$applyFog(Fog vanillaFog,
+                                      @Local(argsOnly = true) Camera camera,
+                                      @Local(argsOnly = true) BackgroundRenderer.FogType fogType) {
         if (phaze$shouldntApplyCustomFog(camera, fogType)) {
-            return;
+            return vanillaFog;
         }
         CustomFog module = CustomFog.getInstance();
 
         float distance = module.getDistance();
-        float density = module.getDensity();
-        if (density < 0.0F) density = 0.0F;
-        if (density > 1.0F) density = 1.0F;
+        float density = clamp01(module.getDensity());
         float start = distance * (1.0F - density);
         float end = distance;
 
-        int argb = module.getResolvedColorArgb();
-        float r = ((argb >> 16) & 0xFF) / 255.0F;
-        float g = ((argb >> 8) & 0xFF) / 255.0F;
-        float b = (argb & 0xFF) / 255.0F;
-        float a = ((argb >>> 24) & 0xFF) / 255.0F;
+        int rgb = module.getResolvedRgb();
+        float r = ((rgb >> 16) & 0xFF) / 255.0F;
+        float g = ((rgb >> 8) & 0xFF) / 255.0F;
+        float b = (rgb & 0xFF) / 255.0F;
 
-        // CYLINDER matches the soup-visuals reference and keeps the
-        // fog edge horizontally consistent regardless of pitch -
-        // SPHERE would make the fog bend over the camera in a way
-        // that reads weirdly when the user looks up / down.
-        cir.setReturnValue(new Fog(start, end, FogShape.CYLINDER, r, g, b, a));
+        // CYLINDER keeps the fog edge horizontally consistent
+        // regardless of pitch.
+        return new Fog(start, end, FogShape.CYLINDER, r, g, b, 1.0F);
+    }
+
+    @Unique
+    private static float clamp01(float v) {
+        if (v < 0.0F) return 0.0F;
+        if (v > 1.0F) return 1.0F;
+        return v;
     }
 }

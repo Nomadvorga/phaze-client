@@ -31,6 +31,11 @@ public class ColorSetting extends Setting {
     private int[] presets;
     private Integer defaultColor;
     private Consumer<Integer> onChangeCallback;
+    /** When true, the alpha picker row is hidden in the GUI and
+     *  alpha is locked to 1. Used by modules where alpha is
+     *  irrelevant (e.g. fog colour, where the engine takes a flat
+     *  RGB and writes alpha itself). Set via {@link #noAlpha()}. */
+    private boolean noAlpha = false;
 
     public ColorSetting(String name, String description) {
         super(name, description);
@@ -58,6 +63,17 @@ public class ColorSetting extends Setting {
     public ColorSetting onChange(Consumer<Integer> callback) {
         this.onChangeCallback = callback;
         return this;
+    }
+
+    /** Hide the alpha picker row and lock alpha to full. */
+    public ColorSetting noAlpha() {
+        this.noAlpha = true;
+        this.alpha = 1.0F;
+        return this;
+    }
+
+    public boolean isNoAlpha() {
+        return noAlpha;
     }
 
     public int getColor() {

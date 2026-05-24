@@ -85,6 +85,12 @@ public final class PredictionsRenderer {
         // the visual reads as a single coherent highlight rather than
         // a multi-colored mix when the user picks a non-default theme.
         int accent = module.resolveAccentColor();
+        // Entity-hit colour. May equal {@code accent} when the user
+        // disabled the override (so call sites can branch on the
+        // {@code isEntity} flag without reading the toggle every
+        // time). Resolved once per frame for the same reason as
+        // {@code accent}.
+        int entityAccent = module.resolveEntityHitColor();
 
         // ---- Live projectile trails ---------------------------------
         // For every projectile WE threw / shot, render the REMAINING
@@ -127,6 +133,12 @@ public final class PredictionsRenderer {
                         pts = new java.util.ArrayList<>(pts);
                         pts.set(pts.size() - 1, t.smoothedImpact);
                     }
+                    // Trail lines that end on a living entity get
+                    // the entity-hit colour so the user can tell at
+                    // a glance whether their projectile is going to
+                    // hit a target or just splash into a wall.
+                    int lineColor = (t.result != null && t.result.type() == HitResult.Type.ENTITY)
+                            ? entityAccent : accent;
                     if (module.fadeTrail.isValue()) {
                         // Fade the head end of the line (the part
                         // closest to the projectile, i.e. the bit
@@ -136,9 +148,9 @@ public final class PredictionsRenderer {
                         // behind the projectile rather than ending
                         // abruptly at the head.
                         float fadeDist = module.fadeDistance.getValue();
-                        Render3DUtil.drawPolylineFaded(matrices, pts, accent, trailWidth, fadeDist, true);
+                        Render3DUtil.drawPolylineFaded(matrices, pts, lineColor, trailWidth, fadeDist, true);
                     } else {
-                        Render3DUtil.drawPolyline(matrices, pts, accent, trailWidth, true);
+                        Render3DUtil.drawPolyline(matrices, pts, lineColor, trailWidth, true);
                     }
                 }
             }
@@ -155,7 +167,6 @@ public final class PredictionsRenderer {
                 boolean sphere = !"Circle".equalsIgnoreCase(style);
                 int sphereAlpha = Math.max(0, Math.min(255,
                         Math.round(module.sphereOpacity.getValue() * 2.55F)));
-                int sphereColor = (sphereAlpha << 24) | (accent & 0x00FFFFFF);
 
                 matrices.push();
                 matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
@@ -188,6 +199,12 @@ public final class PredictionsRenderer {
                     Vec3d impact = t.smoothedImpact;
                     boolean isEntity = result.type() == HitResult.Type.ENTITY;
                     float radius = baseRadius;
+                    // Per-marker accent: entity hits use the
+                    // dedicated entity-hit colour so the warning
+                    // signal "your projectile is locked onto a
+                    // mob" reads instantly even from a distance.
+                    int markerAccent = isEntity ? entityAccent : accent;
+                    int sphereColor = (sphereAlpha << 24) | (markerAccent & 0x00FFFFFF);
 
                     Vec3d toward = cameraPos.subtract(impact).normalize();
                     double frontShift = isEntity ? radius * 1.05 : 0.0;
@@ -200,14 +217,14 @@ public final class PredictionsRenderer {
                         if (module.showGlow.isValue()) {
                             float strength = module.glowStrength.getValue();
                             float haloRadius = radius * (1.6F + strength * 1.4F);
-                            int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength))));
-                            int haloColor = (haloAlpha << 24) | (accent & 0x00FFFFFF);
-                            // Soft-particle halo: fragment shader
-                            // fades alpha based on scene-depth
-                            // proximity, so the glow blends into
-                            // walls / floors instead of hard-
-                            // cutting off where vanilla depth-test
-                            // would clip it.
+                            float pulse = phaze$pulseFactor(module);
+                            int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength) * pulse)));
+                            int haloColor = (haloAlpha << 24) | (markerAccent & 0x00FFFFFF);
+                            // Single bloom billboard - the user
+                            // explicitly asked for the original
+                            // halo look (not the volumetric stack).
+                            // Pulse multiplier breathes the alpha
+                            // 10%..100% when Glow Pulsate is on.
                             Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                     (float) cx, (float) sphereCy, (float) cz,
                                     haloRadius, haloColor, true);
@@ -226,10 +243,9 @@ public final class PredictionsRenderer {
                         if (module.showGlow.isValue()) {
                             float strength = module.glowStrength.getValue();
                             float haloRadius = radius * (1.6F + strength * 1.4F);
-                            int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength))));
-                            int haloColor = (haloAlpha << 24) | (accent & 0x00FFFFFF);
-                            // Soft-particle halo - smooth depth
-                            // fade instead of hard occlusion.
+                            float pulse = phaze$pulseFactor(module);
+                            int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength) * pulse)));
+                            int haloColor = (haloAlpha << 24) | (markerAccent & 0x00FFFFFF);
                             Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                     (float) markerCx, (float) markerCy, (float) markerCz,
                                     haloRadius, haloColor, true);
@@ -239,12 +255,12 @@ public final class PredictionsRenderer {
                             Render3DUtil.drawThickRingOnFace(matrices,
                                     (float) cx, (float) cy, (float) cz,
                                     0.0F, 1.0F, 0.0F,
-                                    radius, ringThickness, accent, 64, true);
+                                    radius, ringThickness, markerAccent, 64, true);
                         } else {
                             Render3DUtil.drawThickRingOnFace(matrices,
                                     (float) markerCx, (float) markerCy, (float) markerCz,
                                     nx, ny, nz,
-                                    radius * 1.35F, ringThickness, accent, 64, true);
+                                    radius * 1.35F, ringThickness, markerAccent, 64, true);
                         }
                     }
                 }
@@ -295,7 +311,14 @@ public final class PredictionsRenderer {
             matrices.push();
             matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
             for (Predictions.TrajectoryResult r : trajectories) {
-                emitPath(matrices, buffer, r, accent);
+                // Same per-trajectory rule as the trail lines above:
+                // recolor to the entity-hit accent when this path
+                // ends on a living entity, so the user sees a red
+                // "you'll hit a target" line vs. the regular accent
+                // for block hits / misses.
+                int lineColor = (r != null && r.type() == HitResult.Type.ENTITY)
+                        ? entityAccent : accent;
+                emitPath(matrices, buffer, r, lineColor);
             }
             matrices.pop();
 
@@ -326,7 +349,6 @@ public final class PredictionsRenderer {
             // solid sphere without adding a separate color picker.
             int sphereAlpha = Math.max(0, Math.min(255,
                     Math.round(module.sphereOpacity.getValue() * 2.55F)));
-            int sphereColor = (sphereAlpha << 24) | (accent & 0x00FFFFFF);
 
             // Drive the entity-hit grow animation. Flip the
             // direction every frame; the DecelerateAnimation
@@ -346,6 +368,12 @@ public final class PredictionsRenderer {
             matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
             for (ImpactMark m : marks) {
                 float radius = m.entity ? baseRadius * entityScale : baseRadius;
+                // Per-marker accent: entity hits use the dedicated
+                // entity-hit colour. Falls back to {@code accent}
+                // when the override is disabled (resolveEntityHitColor
+                // returns the regular accent in that case).
+                int markerAccent = m.entity ? entityAccent : accent;
+                int sphereColor = (sphereAlpha << 24) | (markerAccent & 0x00FFFFFF);
 
                 // Center the marker. For ENTITY hits we nudge it
                 // slightly TOWARD the camera so the sphere reads as
@@ -377,9 +405,9 @@ public final class PredictionsRenderer {
                     if (module.showGlow.isValue()) {
                         float strength = module.glowStrength.getValue();
                         float haloRadius = radius * (1.6F + strength * 1.4F);
-                        int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength))));
-                        int haloColor = (haloAlpha << 24) | (accent & 0x00FFFFFF);
-                        // Soft-particle halo behind the sphere.
+                        float pulse = phaze$pulseFactor(module);
+                        int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength) * pulse)));
+                        int haloColor = (haloAlpha << 24) | (markerAccent & 0x00FFFFFF);
                         Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                 (float) cx, (float) sphereCy, (float) cz,
                                 haloRadius, haloColor, true);
@@ -423,9 +451,9 @@ public final class PredictionsRenderer {
                     if (module.showGlow.isValue()) {
                         float strength = module.glowStrength.getValue();
                         float haloRadius = radius * (1.6F + strength * 1.4F);
-                        int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength))));
-                        int haloColor = (haloAlpha << 24) | (accent & 0x00FFFFFF);
-                        // Soft-particle halo - smooth depth fade.
+                        float pulse = phaze$pulseFactor(module);
+                        int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength) * pulse)));
+                        int haloColor = (haloAlpha << 24) | (markerAccent & 0x00FFFFFF);
                         Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                 (float) markerCx, (float) markerCy, (float) markerCz,
                                 haloRadius, haloColor, true);
@@ -442,12 +470,12 @@ public final class PredictionsRenderer {
                         Render3DUtil.drawThickRingOnFace(matrices,
                                 (float) cx, (float) cy, (float) cz,
                                 0.0F, 1.0F, 0.0F,
-                                radius, ringThickness, accent, 64, true);
+                                radius, ringThickness, markerAccent, 64, true);
                     } else {
                         Render3DUtil.drawThickRingOnFace(matrices,
                                 (float) markerCx, (float) markerCy, (float) markerCz,
                                 nx, ny, nz,
-                                radius * 1.35F, ringThickness, accent, 64, true);
+                                radius * 1.35F, ringThickness, markerAccent, 64, true);
                     }
                 }
             }
@@ -582,6 +610,26 @@ public final class PredictionsRenderer {
             return null;
         }
 
+        // Block-raycast along the same look ray. If a block sits
+        // closer than the entity, the user isn't actually looking
+        // at the entity (a wall is in between) - the projectile
+        // would smack the wall first, so we DON'T snap. Without
+        // this check the marker would teleport across walls onto
+        // mobs the player can't even see.
+        net.minecraft.world.RaycastContext blockCtx = new net.minecraft.world.RaycastContext(
+                eye, end,
+                net.minecraft.world.RaycastContext.ShapeType.COLLIDER,
+                net.minecraft.world.RaycastContext.FluidHandling.NONE,
+                self);
+        net.minecraft.util.hit.HitResult blockHit = mc.world.raycast(blockCtx);
+        if (blockHit != null && blockHit.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK) {
+            double blockDistSq = eye.squaredDistanceTo(blockHit.getPos());
+            double entityDistSq = eye.squaredDistanceTo(hit.getPos());
+            if (blockDistSq < entityDistSq) {
+                return null;
+            }
+        }
+
         net.minecraft.entity.Entity target = hit.getEntity();
         // Marker lands exactly where the look-ray crossed the
         // entity's bounding box - i.e. the same point vanilla
@@ -596,6 +644,29 @@ public final class PredictionsRenderer {
         return new Predictions.TrajectoryResult(
                 path, impactPos, HitResult.Type.ENTITY,
                 net.minecraft.util.math.Direction.UP);
+    }
+
+    /**
+     * Pulse multiplier for the glow alpha. When the user enables
+     * Glow Pulsate, the halo's alpha breathes between 10% and 100%
+     * on a sine wave at the configured speed. When the toggle is
+     * off, returns {@code 1.0} so the alpha stays at the strength-
+     * driven baseline (no behaviour change).
+     *
+     * <p>Time source is {@link System#nanoTime} to stay independent
+     * of game-tick rate / pause state - the user wanted the pulse
+     * to keep breathing at a constant cadence regardless of fps.
+     */
+    private static float phaze$pulseFactor(Predictions module) {
+        if (!module.glowPulsate.isValue()) return 1.0F;
+        float speed = module.glowPulsateSpeed.getValue();
+        if (speed <= 0.0F) speed = 0.0001F;
+        double t = (System.nanoTime() / 1_000_000_000.0) * speed;
+        // sin-derived 0..1 wave, then mapped to [0.1, 1.0] so the
+        // halo never fully disappears - matches the user's "10% до
+        // 100%" spec.
+        float s = (float) (0.5 + 0.5 * Math.sin(t * Math.PI * 2.0));
+        return 0.1F + s * 0.9F;
     }
 
     private static void emitPath(MatrixStack matrices, BufferBuilder buffer, Predictions.TrajectoryResult result, int color) {

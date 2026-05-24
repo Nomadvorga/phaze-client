@@ -1,30 +1,25 @@
 package vorga.phazeclient.implement.features.modules.other;
 
-import net.minecraft.client.MinecraftClient;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
-import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
 /**
- * Recolors the sky and clouds. Hooks
- * {@code ClientWorld.getSkyColor} / {@code ClientWorld.getCloudsColor}
- * via {@code ClientWorldSkyCustomizerMixin} and applies the
- * configured tint blended with the vanilla output, so day-night
- * transitions still happen naturally and the user's custom tint
- * just leans the colour in their preferred direction instead of
- * stamping a flat colour over everything.
+ * Recolors the sky. Hooks {@code ClientWorld.getSkyColor} via
+ * {@code ClientWorldSkyCustomizerMixin} and applies the configured
+ * tint blended with the vanilla output, so day-night transitions still
+ * happen naturally and the user's custom tint just leans the colour
+ * in their preferred direction instead of stamping a flat colour over
+ * everything.
  *
  * <h3>Modes</h3>
  * <ul>
  *   <li><b>Tint</b> - linearly interpolate vanilla colour towards
  *       the configured colour by {@code intensity}. {@code 0.0}
- *       leaves vanilla untouched, {@code 1.0} fully replaces it.
- *       Clouds inherit the same tint at half-strength so the tint
- *       reads as "atmosphere" rather than two flat layers.</li>
+ *       leaves vanilla untouched, {@code 1.0} fully replaces it.</li>
  *   <li><b>Replace</b> - hard override, ignores vanilla. Useful for
  *       photoshoots / consistent custom-shader looks.</li>
  *   <li><b>Gradient</b> - sky leans toward {@code colorDay} while
@@ -42,6 +37,23 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
  * boost factor before clamping. {@code 1.0} is a no-op, {@code 2.0}
  * roughly doubles the warm component, the cap at {@code 4.0} stops
  * the channel from wrapping to white.
+ *
+ * <h3>Compatibility</h3>
+ * Two mixin points: {@code ClientWorld.getSkyColor} (sky-dome and
+ * Iris {@code skyColor} uniform) and {@code BackgroundRenderer.getFogColor}
+ * (horizon haze, fog uniform, framebuffer clear). Together they
+ * cover vanilla, Sodium, BadOptimizations cache hits, and Iris with
+ * shader packs.
+ *
+ * <p><b>Shader-pack caveat.</b> Packs like Complementary, BSL,
+ * Sildur's and Photon draw their own sky through
+ * {@code gbuffers_skybasic} which procedurally scatters light from
+ * the sun direction and ignores the vanilla sky colour. The dome
+ * itself stays on the pack's atmospheric model; what we change in
+ * that case is the {@code fogColor} uniform, which most packs read
+ * for the horizon haze and distance fade. End result with shaders:
+ * the horizon and distant air pick up the tint, the procedural
+ * sky-dome stays as the pack drew it.
  */
 public final class SkyCustomizer extends Module {
     private static final SkyCustomizer INSTANCE = new SkyCustomizer();
@@ -56,25 +68,15 @@ public final class SkyCustomizer extends Module {
     public final ColorSetting baseColor = new ColorSetting(
             "Base Color",
             "Used by Tint and Replace modes; also the day color in Gradient mode"
-    ).setColor(0xFF7AB6FF);
+    ).setColor(0xFF7AB6FF).noAlpha();
     public final ColorSetting nightColor = new ColorSetting(
             "Night Color",
             "Gradient mode only - the colour the sky leans toward at night"
-    ).setColor(0xFF1A1233);
+    ).setColor(0xFF1A1233).noAlpha();
     public final ValueSetting intensity = new ValueSetting(
             "Intensity",
             "Tint strength. 0 = vanilla, 1 = fully tinted"
     ).range(0.0F, 1.0F).step(0.05F).setValue(0.5F);
-
-    public final SectionSetting cloudsSection = new SectionSetting("Clouds");
-    public final BooleanSetting affectClouds = new BooleanSetting(
-            "Affect Clouds",
-            "Apply the same tint to cloud color (at half strength)"
-    ).setValue(true);
-    public final ValueSetting cloudBrightness = new ValueSetting(
-            "Cloud Brightness",
-            "Multiplier on the final cloud color. 1.0 = unchanged, <1 darker, >1 brighter"
-    ).range(0.2F, 2.0F).step(0.05F).setValue(1.0F);
 
     public final SectionSetting twilightSection = new SectionSetting("Twilight");
     public final ValueSetting sunsetBoost = new ValueSetting(
@@ -89,8 +91,6 @@ public final class SkyCustomizer extends Module {
         baseColor.setFullWidth(true);
         nightColor.setFullWidth(true);
         intensity.setFullWidth(true);
-        affectClouds.setFullWidth(true);
-        cloudBrightness.setFullWidth(true);
         sunsetBoost.setFullWidth(true);
 
         // Hide nightColor unless the user actually picked Gradient -
@@ -98,114 +98,19 @@ public final class SkyCustomizer extends Module {
         nightColor.visible(() -> "Gradient".equalsIgnoreCase(mode.getSelected()));
         intensity.visible(() -> !"Replace".equalsIgnoreCase(mode.getSelected()));
 
-        // Sodium caches sky / cloud uniforms inside its own renderer
-        // pipeline. Our per-frame {@code @ModifyReturnValue} on
-        // {@code ClientWorld.getSkyColor} updates the vanilla path,
-        // but Sodium reads from its own cache that only refreshes on
-        // a full world-renderer reload. Without a kick the user has
-        // to relog / change dimension before the tint becomes
-        // visible, which the user reported as "переходить в мир
-        // чтобы он применился".
-        //
-        // Reload triggers are picked carefully:
-        //   - mode switch is a structural change (e.g. Replace bypass
-        //     vs Tint blend) and definitely needs a fresh upload.
-        //   - colour changes need a refresh because Sodium resolves
-        //     fog / sky colour uniforms once per chunk-mesh upload.
-        //   - the affectClouds toggle gates the cloud path entirely.
-        // Sliders (intensity / brightness / boost) are kept off the
-        // reload list - they update naturally per-frame and a reload
-        // for every drag-tick would cause a perceptible stutter.
-        mode.onChange(v -> reloadWorldRenderer());
-        baseColor.onChange(v -> reloadWorldRenderer());
-        nightColor.onChange(v -> reloadWorldRenderer());
-        affectClouds.onChange(v -> reloadWorldRenderer());
-
         setup(
                 modeSection, mode,
                 tintSection, baseColor, nightColor, intensity,
-                cloudsSection, affectClouds, cloudBrightness,
                 twilightSection, sunsetBoost
         );
     }
 
     @Override
     public void activate() {
-        reloadWorldRenderer();
     }
 
     @Override
     public void deactivate() {
-        reloadWorldRenderer();
-    }
-
-    /**
-     * Asks the active world renderer (vanilla or Sodium - same
-     * {@code WorldRenderer.reload()} entry point) to drop its
-     * cached chunk meshes and re-upload everything. That's the
-     * supported way to invalidate Sodium's sky / cloud uniforms
-     * without poking into its internals: Sodium's own settings
-     * panel uses the exact same hook when its options change.
-     *
-     * <p>No-op when the world renderer hasn't been created yet
-     * (main menu) or when there's no world loaded - either way
-     * there's nothing cached to invalidate.
-     *
-     * <p><b>Debounced.</b> Sodium logs
-     * {@code "Started/Stopping worker threads"} on every reload,
-     * so calling this on every {@code ColorSetting} drag-tick
-     * spammed the chat with hundreds of lines per second. The
-     * scheduler holds a single pending reload up to
-     * {@link #RELOAD_DEBOUNCE_MS}, coalescing rapid changes into
-     * one final reload after the user stops fiddling.
-     */
-    private static final long RELOAD_DEBOUNCE_MS = 250L;
-    private static volatile long pendingReloadAtMs = 0L;
-    private static volatile boolean reloadScheduled = false;
-
-    private static void reloadWorldRenderer() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) return;
-        if (mc.worldRenderer == null) return;
-        if (mc.world == null) return;
-
-        long now = System.currentTimeMillis();
-        pendingReloadAtMs = now + RELOAD_DEBOUNCE_MS;
-        if (reloadScheduled) {
-            // Already a reload pending - the scheduled task will
-            // pick up the new pendingReloadAtMs and wait further.
-            return;
-        }
-        reloadScheduled = true;
-        scheduleReloadTick(mc);
-    }
-
-    private static void scheduleReloadTick(MinecraftClient mc) {
-        // execute() defers to the render thread - reload() must run
-        // there because it touches GL state. Posting from setting
-        // callbacks (which fire from the GUI thread on click) directly
-        // would risk a glState-on-wrong-thread crash on AMD drivers.
-        mc.execute(() -> {
-            long now = System.currentTimeMillis();
-            if (now < pendingReloadAtMs) {
-                // Still inside the debounce window - re-post to the
-                // render thread so we re-check after the next frame.
-                // No tight loop / sleep: we just keep yielding back
-                // until the user stops triggering changes.
-                scheduleReloadTick(mc);
-                return;
-            }
-            reloadScheduled = false;
-            try {
-                if (mc.worldRenderer != null && mc.world != null) {
-                    mc.worldRenderer.reload();
-                }
-            } catch (Throwable ignored) {
-                // Reload is best-effort: if Sodium is mid-frame we
-                // swallow and try again on the next change. Better
-                // than a hard crash from a transient internal state.
-            }
-        });
     }
 
     public static SkyCustomizer getInstance() {
@@ -214,7 +119,7 @@ public final class SkyCustomizer extends Module {
 
     @Override
     public String getDescription() {
-        return "Custom sky and cloud tint with day/night gradient and sunset boost";
+        return "Custom sky tint with day/night gradient and sunset boost";
     }
 
     @Override
@@ -239,30 +144,6 @@ public final class SkyCustomizer extends Module {
         int target = pickTargetColor(skyBrightness);
         int blended = blendForCurrentMode(vanillaArgb, target);
         return applySunsetBoost(blended, skyBrightness);
-    }
-
-    /**
-     * Compute the final cloud colour. Mirrors {@link #applyToSky}
-     * with the half-strength rule and an optional brightness scale.
-     */
-    public int applyToClouds(int vanillaArgb, float skyBrightness) {
-        if (!isEnabled()) {
-            return vanillaArgb;
-        }
-        int result = vanillaArgb;
-        if (affectClouds.isValue()) {
-            int target = pickTargetColor(skyBrightness);
-            // Half-strength tint on clouds so they read as
-            // atmosphere-blended rather than a flat second layer
-            // painted on top of the sky.
-            float scaled = clamp01(intensity.getValue() * 0.5F);
-            result = blend(vanillaArgb, target, scaled);
-        }
-        float bright = cloudBrightness.getValue();
-        if (Math.abs(bright - 1.0F) > 0.001F) {
-            result = scaleRgb(result, bright);
-        }
-        return result;
     }
 
     private int pickTargetColor(float skyBrightness) {
@@ -322,14 +203,6 @@ public final class SkyCustomizer extends Module {
         int og = Math.round(ag + (bg - ag) * t);
         int ob = Math.round(ab + (bb - ab) * t);
         return (oa << 24) | (or << 16) | (og << 8) | ob;
-    }
-
-    private static int scaleRgb(int color, float scale) {
-        int a = (color >> 24) & 0xFF;
-        int r = clamp255(Math.round(((color >> 16) & 0xFF) * scale));
-        int g = clamp255(Math.round(((color >> 8) & 0xFF) * scale));
-        int b = clamp255(Math.round(((color) & 0xFF) * scale));
-        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     private static float clamp01(float v) {

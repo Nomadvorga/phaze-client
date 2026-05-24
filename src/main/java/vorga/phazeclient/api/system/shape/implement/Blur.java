@@ -188,10 +188,6 @@ public class Blur implements Shape {
         if (shader != null) {
             Theme theme = Theme.getInstance();
             int blurMode = theme.getHudBlurMode();
-            // Use Kawase blur for better performance (blurMode = 1 is Kawase)
-            if (blurMode == 2) {
-                blurMode = 1;
-            }
             shader.getUniformOrDefault("Size").set(Math.max(1.0f, width), Math.max(1.0f, height));
             shader.getUniformOrDefault("Radius").set(new Vector4f(0.0f));
             shader.getUniformOrDefault("Smoothness").set(0.001f);
@@ -256,9 +252,6 @@ public class Blur implements Shape {
         Theme theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
-        if (blurMode == 2) {
-            blurMode = 1; // fixed "Kawase" preset uses smooth Soup kernel
-        }
 
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
@@ -312,9 +305,6 @@ public class Blur implements Shape {
         Theme theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
-        if (blurMode == 2) {
-            blurMode = 1; // fixed "Kawase" preset uses smooth Soup kernel
-        }
 
         boolean useHudBatch = cacheFrame && hudBatchMode;
         if (useHudBatch) {
@@ -360,9 +350,6 @@ public class Blur implements Shape {
         Theme theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
-        if (blurMode == 2) {
-            blurMode = 1; // fixed "Kawase" preset uses smooth Soup kernel
-        }
 
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];

@@ -127,7 +127,7 @@ public final class Theme extends Module {
     }
 
     public float getHudBlurRadiusMultiplier() {
-        return 1.25f;
+        return 2.5f;
     }
 
     @Override
