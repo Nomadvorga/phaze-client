@@ -137,7 +137,8 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
      */
     private static final Set<String> IRIS_ONLY = Set.of(
             "vorga.phazeclient.mixins.iris.IrisGlShaderChunkAnimatorMixin",
-            "vorga.phazeclient.mixins.iris.IrisElementWidgetCursorMixin"
+            "vorga.phazeclient.mixins.iris.IrisElementWidgetCursorMixin",
+            "vorga.phazeclient.mixins.iris.IrisSkyColorUniformMixin"
     );
 
     /**

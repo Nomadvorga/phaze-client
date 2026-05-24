@@ -136,6 +136,15 @@ public final class Predictions extends Module {
             "How bright / large the bloom halo around the marker is"
     ).range(0.20f, 4.0f).step(0.05f).setValue(1.5f)
             .visible(() -> showImpactSphere.isValue() && showGlow.isValue());
+    public final BooleanSetting glowPulsate = new BooleanSetting(
+            "Glow Pulsate",
+            "Smoothly pulse the glow opacity between 10% and 100%"
+    ).setValue(false).visible(() -> showImpactSphere.isValue() && showGlow.isValue());
+    public final ValueSetting glowPulsateSpeed = new ValueSetting(
+            "Pulsate Speed",
+            "Pulses per second. 1.0 = one full pulse per second."
+    ).range(0.1f, 4.0f).step(0.05f).setValue(1.0f)
+            .visible(() -> showImpactSphere.isValue() && showGlow.isValue() && glowPulsate.isValue());
 
     // ---- Color selection -----------------------------------------------
     // Two-mode color: by default we follow the active client Theme so
@@ -180,6 +189,54 @@ public final class Predictions extends Module {
     ).selected("Lunar Blue")
             .visible(() -> !useThemeColor.isValue());
 
+    // ---- Entity-hit color override -------------------------------------
+    // When the prediction lands on a mob / player, override the
+    // accent with a dedicated colour (default red) so the visual
+    // distinction "you'll hit a target vs. you'll hit a wall" is
+    // immediate at a glance. Mode mirrors the main color: a Theme
+    // toggle that follows the active menu accent, a preset picker
+    // when the toggle is off (with a "Default" option that locks to
+    // the requested {@code #FE5053} red).
+    public final BooleanSetting entityColorEnabled = new BooleanSetting(
+            "Entity Hit Color",
+            "Use a different colour when the prediction lands on a mob or player"
+    ).setValue(true);
+    public final BooleanSetting entityUseThemeColor = new BooleanSetting(
+            "Entity Theme Color",
+            "Use the active Theme accent for entity hits instead of a preset"
+    ).setValue(false)
+            .visible(() -> entityColorEnabled.isValue());
+    public final SelectSetting entityColorPreset = new SelectSetting(
+            "Entity Color Preset",
+            "Pick a fixed colour for entity hits. Default = #FE5053"
+    ).value(
+            "Default",
+            "Black",
+            "Lunar Blue",
+            "Mocha Gold",
+            "Rose Quartz",
+            "Emerald Frost",
+            "Arctic Mint",
+            "Crimson Silk",
+            "Solar Ember",
+            "Midnight Bloom",
+            "Desert Mirage",
+            "Sapphire Steel",
+            "Velvet Plum",
+            "Frosted Peach",
+            "Moss Smoke",
+            "Polar Night",
+            "Snow",
+            "Obsidian",
+            "Nebula",
+            "Coral",
+            "Jade",
+            "Sunset",
+            "Violet",
+            "Ocean"
+    ).selected("Default")
+            .visible(() -> entityColorEnabled.isValue() && !entityUseThemeColor.isValue());
+
     private Predictions() {
         super("predictions", "Predictions", ModuleCategory.UTILITIES);
         predictHeld.setFullWidth(true);
@@ -194,8 +251,13 @@ public final class Predictions extends Module {
         circleThickness.setFullWidth(true);
         showGlow.setFullWidth(true);
         glowStrength.setFullWidth(true);
+        glowPulsate.setFullWidth(true);
+        glowPulsateSpeed.setFullWidth(true);
         useThemeColor.setFullWidth(true);
         colorPreset.setFullWidth(true);
+        entityColorEnabled.setFullWidth(true);
+        entityUseThemeColor.setFullWidth(true);
+        entityColorPreset.setFullWidth(true);
         // Order: Trajectory -> Impact Marker -> Color. Within
         // Impact Marker we go style-first then size, opacity, the
         // mode-specific tweaks (Y offset for Sphere, thickness for
@@ -205,7 +267,9 @@ public final class Predictions extends Module {
         setup(trajectorySection, predictHeld, lineWidth, fadeTrail, fadeDistance,
                 markerSection, showImpactSphere, impactMarkerStyle, impactSphereRadius,
                 sphereOpacity, sphereYOffset, circleThickness, showGlow, glowStrength,
-                colorSection, useThemeColor, colorPreset);
+                glowPulsate, glowPulsateSpeed,
+                colorSection, useThemeColor, colorPreset,
+                entityColorEnabled, entityUseThemeColor, entityColorPreset);
     }
 
     public static Predictions getInstance() {
@@ -264,6 +328,51 @@ public final class Predictions extends Module {
         // one used for "selected" highlights in the GUI - perfect
         // for a high-contrast world overlay. Force full alpha; per
         // draw site re-applies its own alpha as needed.
+        return 0xFF000000 | (palette.chipActive() & 0x00FFFFFF);
+    }
+
+    /**
+     * Resolve the colour used when the prediction lands on a living
+     * entity (mob or player). Returns {@link #resolveAccentColor()}
+     * when the entity-color override is disabled, so callers can
+     * use the same code path regardless of the toggle state.
+     *
+     * <p>Modes:
+     * <ul>
+     *   <li><b>Theme on</b> - active palette {@code chipActive},
+     *       same accent the rest of the GUI uses.</li>
+     *   <li><b>Preset = Default</b> - the requested {@code #FE5053}
+     *       red, which doesn't exist in any palette and so needs an
+     *       explicit fallback.</li>
+     *   <li><b>Preset = Black</b> - mirrors the main color picker's
+     *       Black escape hatch.</li>
+     *   <li><b>Other preset</b> - palette lookup by name.</li>
+     * </ul>
+     * Always returns ARGB with full alpha; per-element alpha is
+     * applied at the draw site.
+     */
+    public int resolveEntityHitColor() {
+        if (!entityColorEnabled.isValue()) {
+            return resolveAccentColor();
+        }
+        if (entityUseThemeColor.isValue()) {
+            vorga.phazeclient.implement.menu.MenuPalette palette =
+                    vorga.phazeclient.implement.features.modules.client.Theme
+                            .getInstance().getCurrentMenuPalette();
+            return 0xFF000000 | (palette.chipActive() & 0x00FFFFFF);
+        }
+        String preset = entityColorPreset.getSelected();
+        // "Default" is the requested fixed red - it isn't a palette
+        // name so we hardcode the ARGB here. Same idea as the main
+        // picker's Black, just on a different accent colour.
+        if ("Default".equalsIgnoreCase(preset)) {
+            return 0xFFFE5053;
+        }
+        if ("Black".equalsIgnoreCase(preset)) {
+            return 0xFF000000;
+        }
+        vorga.phazeclient.implement.menu.MenuPalette palette =
+                vorga.phazeclient.implement.menu.MenuPalettes.byName(preset);
         return 0xFF000000 | (palette.chipActive() & 0x00FFFFFF);
     }
 
@@ -449,6 +558,14 @@ public final class Predictions extends Module {
         // prediction is meaningless for them. Skip the firework
         // family entirely.
         if (projectile instanceof net.minecraft.entity.projectile.FireworkRocketEntity) return;
+        // Wind charges fly on a linear, gravity-less, fast-decaying
+        // trajectory handled entirely by WindChargeEntity. Drawing
+        // the standard ballistic-parabola trail would mislead the
+        // user about where the charge actually lands, so skip
+        // tracking them entirely - the held-hand check already
+        // refuses to predict from a held wind charge stack, this
+        // mirrors the same rule for in-flight entities.
+        if (projectile instanceof net.minecraft.entity.projectile.WindChargeEntity) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null) return;
         // Only track projectiles WE threw / shot. The local player
@@ -503,6 +620,19 @@ public final class Predictions extends Module {
                 it.remove();
                 continue;
             }
+            // Drop trails for projectiles that have effectively
+            // stopped moving. Persistent projectiles (arrows /
+            // tridents) zero their velocity the moment the server
+            // pins them to a block, and snowball-like projectiles
+            // also leave a near-zero velocity once they've hit and
+            // are pending despawn. A single velocity-magnitude
+            // check covers both cases without needing access to
+            // the protected {@code isInGround} flag.
+            Vec3d v = t.entity.getVelocity();
+            if (v.lengthSquared() < 1.0E-4) {
+                it.remove();
+                continue;
+            }
             // Re-simulate from current state. Player owner is the
             // entity-collision blacklist for the predict() helper -
             // it skips intersecting our own player so the line
@@ -510,7 +640,7 @@ public final class Predictions extends Module {
             Entity owner = t.entity.getOwner();
             if (owner == null && mc != null) owner = mc.player;
             Vec3d startPos = t.entity.getPos();
-            Vec3d startMotion = t.entity.getVelocity();
+            Vec3d startMotion = v;
             double gravity = 0.03;
             boolean trident = false;
             if (t.entity instanceof net.minecraft.entity.projectile.PersistentProjectileEntity) {

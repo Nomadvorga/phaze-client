@@ -212,15 +212,22 @@ public class MultiSelectComponent extends AbstractSettingComponent {
 
         // Outline always rendered at full chip alpha (gated only by
         // the menu's open/close globalAlpha) so even the unselected
-        // chips show a 1px border instead of being a fill-only
-        // pill. The user explicitly asked for the outline to be
-        // visible on every chip.
-        int outline = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, selP);
+        // chips show a visible border instead of being a fill-only
+        // pill. Active outline tone is offset toward TEXT_PRIMARY so
+        // it visibly separates from the fill - without that lift,
+        // CHIP_ACTIVE outline on a CHIP_ACTIVE-tinted fill blends
+        // into a single flat shape and the user can't tell at a
+        // glance which chip is selected. The mix factor is small
+        // enough to keep the active accent dominant while still
+        // providing the rim contrast the user asked for.
+        int outlineIdle = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.BORDER_LIGHT, 0.40F);
+        int outlineActive = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, MenuStyle.TEXT_PRIMARY, 0.45F);
+        int outline = MenuStyle.mix(outlineIdle, outlineActive, selP);
         int outlineFinal = MenuStyle.withAlpha(outline, currentAlpha);
 
         rectangle.render(ShapeProperties.create(matrices, entry.x, entry.y, entry.width, CHIP_HEIGHT)
                 .round(2.5F)
-                .thickness(1.2F)
+                .thickness(1.5F)
                 .softness(0.6F)
                 .color(fillFinal)
                 .outlineColor(outlineFinal)

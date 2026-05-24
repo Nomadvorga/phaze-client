@@ -79,6 +79,14 @@ public class ColorComponent extends AbstractSettingComponent {
         colorEditorComponent.position(x + 5, y + 5);
 
         components.forEach(component -> {
+            // Hide the alpha column entirely when the ColorSetting
+            // opted out via {@code noAlpha()}. Skipping render() is
+            // enough - the AlphaComponent is also blocked from
+            // mouse / scroll input below so the click area doesn't
+            // overlap the (now invisible) widget.
+            if (setting.isNoAlpha() && component == alphaComponent) {
+                return;
+            }
             component.globalAlpha = currentAlpha;
             component.render(context, mouseX, mouseY, delta);
         });
@@ -170,25 +178,37 @@ public class ColorComponent extends AbstractSettingComponent {
             return false;
         }
 
-        components.forEach(component -> component.mouseClicked(mouseX, mouseY, button));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) return;
+            component.mouseClicked(mouseX, mouseY, button);
+        });
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-        components.forEach(component -> component.mouseScrolled(mouseX, mouseY, amount));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) return;
+            component.mouseScrolled(mouseX, mouseY, amount);
+        });
         return super.mouseScrolled(mouseX, mouseY, amount);
     }
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        components.forEach(component -> component.mouseDragged(mouseX, mouseY, button, deltaX, deltaY));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) return;
+            component.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        });
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        components.forEach(component -> component.mouseReleased(mouseX, mouseY, button));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) return;
+            component.mouseReleased(mouseX, mouseY, button);
+        });
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
