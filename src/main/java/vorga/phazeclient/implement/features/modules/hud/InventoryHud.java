@@ -1,35 +1,17 @@
 package vorga.phazeclient.implement.features.modules.hud;
 
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
-import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 
 /**
- * On-screen mini-inventory: paints the 27 main inventory slots (or
- * the player's ender chest as last seen) directly on the HUD so the
- * user can read their loadout without opening the full inventory
- * screen.
- *
- * <h3>Source mode</h3>
- * <ul>
- *   <li><b>Main</b> - the 27 storage slots from {@code ClientPlayerEntity}.
- *       Always live, no extra state needed.</li>
- *   <li><b>Ender Chest</b> - snapshot captured the last time the
- *       player opened a real ender chest GUI. The client doesn't
- *       receive ender chest contents until the screen is open, so
- *       a cached snapshot is the best we can do; it stays visible
- *       until the player opens another ender chest, which refreshes
- *       it. {@link #getEnderChestSnapshot()} returns the cache.</li>
- * </ul>
- *
- * <h3>Snapshot capture</h3>
- * {@code HandledScreenInventoryHudMixin} watches for
- * {@code GenericContainerScreenHandler} screens whose title contains
- * "Ender Chest" and copies the upper inventory's slot contents into
- * the snapshot array on each tick the screen is open. Capture is
- * passive - no packets are sent, so this is purely a client-side
- * UI feature.
+ * On-screen mini-inventory: paints the 27 main inventory slots from
+ * {@code ClientPlayerEntity.getInventory().main} directly on the HUD
+ * so the user can read their loadout without opening the full
+ * inventory screen.
  *
  * <h3>Layout</h3>
  * 9 slots wide, 3 rows tall. Each slot is 18x18 GUI pixels (vanilla
@@ -40,14 +22,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 public final class InventoryHud extends RectHudModule {
     private static final InventoryHud INSTANCE = new InventoryHud();
 
-    /** 27 slots cached from the last ender chest GUI the player opened. */
-    private final ItemStack[] enderChestSnapshot = new ItemStack[27];
-
     public final SectionSetting otherSection = new SectionSetting("Other");
-    public final SelectSetting source = new SelectSetting(
-            "Source",
-            "Which inventory to display"
-    ).value("Main", "Ender Chest").selected("Main");
     public final BooleanSetting drawCounts = new BooleanSetting(
             "Item Counts",
             "Draw the stack count badge on each item"
@@ -77,22 +52,100 @@ public final class InventoryHud extends RectHudModule {
         backgroundBlurRadius.setVisible(() -> false);
         textShadow.setVisible(() -> false);
         showBrackets.setVisible(() -> false);
-        // The "Color Settings" section divider is already gated on
-        // background.isValue() in the base class, so it's auto-
-        // hidden when we hide background above.
+        // Hide the inherited section headers too: General + Color
+        // Settings own no visible children in this HUD, so leaving
+        // their dividers in the panel produces empty "Общее" /
+        // "Настройки цвета" labels floating above nothing. The
+        // colorSection visibility predicate already gates on
+        // {@code background.isValue()} which we just nailed to
+        // false, so it auto-hides; mainSection has no predicate
+        // upstream so we set one explicitly here.
+        mainSection.setVisible(() -> false);
 
-        // Initialise snapshot with empty stacks so the renderer can
-        // walk the array unconditionally without null checks.
-        for (int i = 0; i < enderChestSnapshot.length; i++) {
-            enderChestSnapshot[i] = ItemStack.EMPTY;
-        }
-        source.setFullWidth(true);
         drawCounts.setFullWidth(true);
-        setup(otherSection, source, drawCounts);
+        setup(otherSection, drawCounts);
     }
 
     public static InventoryHud getInstance() {
         return INSTANCE;
+    }
+
+    /**
+     * Per-tick snapshot of the 27 main-inventory slots (indices
+     * 9..35 in {@link PlayerInventory#main}) plus per-slot
+     * "needs overlay" flags. The HUD render path reads from this
+     * array every frame instead of poking the live inventory and
+     * re-evaluating cooldown / damage state on every redraw.
+     *
+     * <p>The user's inventory only changes on server-driven inventory
+     * packets (~20 ticks per second), so refreshing this snapshot at
+     * vanilla tick rate keeps the visual identical while collapsing
+     * the per-frame cost from O(27 cooldownManager + 27 isItemBarVisible)
+     * down to a flat array lookup. At 240 FPS that's ~12x fewer
+     * cooldown queries per second.
+     *
+     * <p>Slot 0 of {@code SNAPSHOT} maps to inventory index 9
+     * (top-left of the storage grid), slot 26 to inventory index 35
+     * (bottom-right). Mirrors {@code drawInventoryHud}'s row-major
+     * iteration. Stacks are kept by identity reference - we only
+     * read {@link ItemStack#isEmpty()} / {@link ItemStack#getCount()} /
+     * {@link net.minecraft.client.gui.DrawContext#drawItem} from
+     * them, all of which tolerate concurrent reads against the same
+     * instance.
+     *
+     * <p>{@code OVERLAY_FLAGS} is the precomputed result of
+     * {@code shouldDrawSlotOverlay} (count != 1 || damaged ||
+     * on cooldown). Cooldown progresses every tick, so resampling
+     * once per tick keeps the cooldown sweep frame-accurate enough.
+     */
+    private static final ItemStack[] SNAPSHOT = new ItemStack[27];
+    private static final boolean[] OVERLAY_FLAGS = new boolean[27];
+    /** Last known tick timestamp the snapshot was refreshed at. Compared
+     *  against {@link MinecraftClient#getTicks()} so we only walk the
+     *  inventory once per server tick instead of once per render frame. */
+    private static int lastSnapshotTick = Integer.MIN_VALUE;
+
+    /**
+     * Refresh {@link #SNAPSHOT} / {@link #OVERLAY_FLAGS} from the
+     * live player inventory if at least one tick has elapsed since
+     * the last refresh. Cheap to call every frame: the early-return
+     * is a single int compare on the fast path.
+     */
+    public static void refreshSnapshotIfStale(MinecraftClient mc) {
+        if (mc == null || mc.player == null) {
+            return;
+        }
+        int tick = mc.inGameHud != null ? mc.inGameHud.getTicks() : 0;
+        if (tick == lastSnapshotTick) {
+            return;
+        }
+        lastSnapshotTick = tick;
+        ClientPlayerEntity player = mc.player;
+        PlayerInventory inv = player.getInventory();
+        for (int i = 0; i < 27; i++) {
+            ItemStack stack = inv.main.get(9 + i);
+            SNAPSHOT[i] = stack;
+            OVERLAY_FLAGS[i] = computeOverlayFlag(stack, mc, player);
+        }
+    }
+
+    /** @return cached snapshot of the 27 storage slots; row-major,
+     *          index {@code row*9 + col}. Refreshed at most once per tick. */
+    public static ItemStack[] getSnapshotStacks() {
+        return SNAPSHOT;
+    }
+
+    /** @return cached "needs stack overlay" flag for each of the 27 slots,
+     *          aligned with {@link #getSnapshotStacks()}. */
+    public static boolean[] getSnapshotOverlayFlags() {
+        return OVERLAY_FLAGS;
+    }
+
+    private static boolean computeOverlayFlag(ItemStack stack, MinecraftClient mc, ClientPlayerEntity player) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (stack.getCount() != 1) return true;
+        if (stack.isItemBarVisible()) return true;
+        return player.getItemCooldownManager().getCooldownProgress(stack, 0.0F) > 0.0F;
     }
 
     @Override
@@ -108,24 +161,5 @@ public final class InventoryHud extends RectHudModule {
     @Override
     public float getIconSize() {
         return 21.0F;
-    }
-
-    public boolean isEnderChestMode() {
-        return "Ender Chest".equalsIgnoreCase(source.getSelected());
-    }
-
-    /** Returns the cached ender chest snapshot. Length always 27. */
-    public ItemStack[] getEnderChestSnapshot() {
-        return enderChestSnapshot;
-    }
-
-    /**
-     * Copy a freshly-seen ender chest slot into the cache. Called
-     * from the HandledScreen mixin while the user has an ender
-     * chest GUI open. Index is 0..26.
-     */
-    public void updateEnderChestSlot(int index, ItemStack stack) {
-        if (index < 0 || index >= enderChestSnapshot.length) return;
-        enderChestSnapshot[index] = stack == null ? ItemStack.EMPTY : stack.copy();
     }
 }

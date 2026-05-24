@@ -28,6 +28,7 @@
     "ClientPlayNetworkHandlerMixin",
     "ClientWorldSkyCustomizerMixin",
     "BackgroundRendererSkyCustomizerMixin",
+    "WorldRendererSkyDomeTintMixin",
     "BackgroundRendererCustomFogMixin",
     "InventoryScreenAutoSwapMixin",
     "ScreenOpenMixin",

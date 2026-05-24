@@ -87,12 +87,30 @@ public class MouseZoomMixin {
         ci.cancel();
     }
 
-    @Inject(method = "updateMouse", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;changeLookDirection(DD)V"), cancellable = true)
-    private void phaze$onUpdateMouse(double timeDelta, CallbackInfo ci) {
+    @org.spongepowered.asm.mixin.injection.Redirect(
+            method = "updateMouse",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/network/ClientPlayerEntity;changeLookDirection(DD)V")
+    )
+    private void phaze$redirectChangeLookDirection(net.minecraft.client.network.ClientPlayerEntity player,
+                                                   double cursorDeltaX, double cursorDeltaY) {
+        // {@code cursorDeltaX/Y} here are the FINAL per-frame
+        // yaw/pitch step in degrees: vanilla's {@code updateMouse}
+        // has already run the sensitivity ramp, the optional
+        // Smooth Camera smoother, and our {@link #zoomSensitivityX}/
+        // {@code Y} {@code @ModifyArg} hooks (Zoom + Cinematic
+        // Camera) on the locals before calling this method. So
+        // when FreeLook is active we feed those processed deltas
+        // into its accumulator and skip the player rotation - the
+        // freelook camera now inherits Smooth Camera + Cinematic
+        // Zoom for free instead of getting raw cursor delta as
+        // before.
         FreeLook freeLook = FreeLook.getInstance();
-        if (freeLook != null && freeLook.isEnabled() && freeLook.onMouseLook(cursorDeltaX, cursorDeltaY)) {
-            ci.cancel();
+        if (freeLook != null && freeLook.isEnabled() && freeLook.isActive()) {
+            freeLook.onMouseLook(cursorDeltaX, cursorDeltaY);
+            return;
         }
+        player.changeLookDirection(cursorDeltaX, cursorDeltaY);
     }
 
     @ModifyArg(method = "updateMouse", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;changeLookDirection(DD)V"), index = 0)

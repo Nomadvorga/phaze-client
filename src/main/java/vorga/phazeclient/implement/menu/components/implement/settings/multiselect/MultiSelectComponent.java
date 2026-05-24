@@ -11,6 +11,7 @@ import vorga.phazeclient.api.system.font.msdf.MsdfFont;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
@@ -237,10 +238,18 @@ public class MultiSelectComponent extends AbstractSettingComponent {
         int textFinal = MenuStyle.withAlpha(textColor, currentAlpha);
 
         MsdfFont font = MsdfFonts.bold();
-        float textW = font.getWidth(entry.name, CHIP_TEXT_SIZE);
+        // Display localized label (Lang map) but keep selection
+        // storage on canonical English keys: setting.getSelected()
+        // and the chip animation cache are still keyed on
+        // {@code entry.name}. This way RU users see "Частицы атаки"
+        // while the underlying setting still writes "Hit Particles"
+        // and any onChange callback / config file stays language-
+        // agnostic.
+        String chipLabel = Lang.translate(entry.name);
+        float textW = font.getWidth(chipLabel, CHIP_TEXT_SIZE);
         float textX = entry.x + (entry.width - textW) / 2.0F;
         float textY = MenuStyle.centerMsdfTextY(CHIP_TEXT_SIZE, entry.y, CHIP_HEIGHT);
-        MsdfRenderer.renderText(font, entry.name, CHIP_TEXT_SIZE, textFinal, positionMatrix, textX, textY, 0.0F);
+        MsdfRenderer.renderText(font, chipLabel, CHIP_TEXT_SIZE, textFinal, positionMatrix, textX, textY, 0.0F);
     }
 
     /**
@@ -267,7 +276,11 @@ public class MultiSelectComponent extends AbstractSettingComponent {
         int rows = 1;
 
         for (String option : options) {
-            float labelW = font.getWidth(option, CHIP_TEXT_SIZE);
+            // Width is measured against the localized label so a
+            // long Russian translation gets a proportionally wider
+            // chip - otherwise "Splash Potion Particles" -> "Частицы
+            // взрывных зелий" would overflow the chip's box.
+            float labelW = font.getWidth(Lang.translate(option), CHIP_TEXT_SIZE);
             float chipW = Math.max(20.0F, labelW + CHIP_PADDING_X * 2.0F);
 
             // Wrap if the chip won't fit on the current row. The

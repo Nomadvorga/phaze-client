@@ -70,7 +70,7 @@ public class ConfigsViewComponent extends AbstractComponent {
      *  the name's CAP HEIGHT (~0.7 of the font size) rather than
      *  the full bbox so the dot sits on the optical centre line of
      *  the surrounding letters instead of dropping below them. */
-    private static final float NAME_DOT_SIZE = 20.0F;
+    private static final float NAME_DOT_SIZE = 16.7F;
     private static final float NAME_DOT_GAP = -6.0F;
     /** Size of the inline meta icons (size, clock for last-modified,
      *  cloud for imported). The cloud / clock icons are visually
@@ -357,7 +357,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         // 1px down so the text sits on the icon's optical centre.
         cursorX = renderMetaChip(matrix, cursorX, metaY,
                 "textures/size.png",
-                "Size: " + humanReadableSize(configName),
+                Lang.translate("Size") + ": " + humanReadableSize(configName),
                 metaColor, fadeAlpha, 1.0F, META_ICON_SIZE);
         cursorX += META_GROUP_GAP;
 
@@ -368,12 +368,12 @@ public class ConfigsViewComponent extends AbstractComponent {
             // visual centre line.
             renderMetaChip(matrix, cursorX, metaY,
                     "textures/cloud.png",
-                    "Imported from cloud",
+                    Lang.translate("Imported from cloud"),
                     metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
         } else {
             renderMetaChip(matrix, cursorX, metaY,
                     "textures/clock.png",
-                    "Last modified: " + humanReadableModified(configName),
+                    Lang.translate("Last modified") + ": " + humanReadableModified(configName),
                     metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
         }
     }
