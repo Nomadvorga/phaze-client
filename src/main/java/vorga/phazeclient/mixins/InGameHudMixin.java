@@ -500,6 +500,14 @@ public class InGameHudMixin {
                         BASE_WIDTH + 6.0f, BASE_HEIGHT));
         renderBufferedHud(context, ArmorHud.getInstance(), chatEditing, () ->
                 renderArmorHud(context, client, ArmorHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(ArmorHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+        // InventoryHud routes through the same buffered pipeline so
+        // HudOptimizer can park its 27-slot draw inside Pass 1's
+        // throttled FBO cache instead of redrawing every frame -
+        // the user reported it was the heaviest HUD on their
+        // machine, and the icon pass (drawItem x 27 + overlay
+        // submit) is exactly what the cache is meant to absorb.
+        renderBufferedHud(context, InventoryHud.getInstance(), chatEditing, () ->
+                phaze$drawInventoryHudGuts(context));
         String sprintText = getCachedHudText(SprintHud.getInstance(), HUD_SPRINT, chatEditing, () -> getSprintHudText(client));
         final String sprintTextWrapped = wrapTextWithBrackets(sprintText, SprintHud.getInstance());
         renderBufferedHud(context, SprintHud.getInstance(), chatEditing, () ->
@@ -4279,8 +4287,21 @@ public class InGameHudMixin {
     // 9) InventoryHud: render TAIL — 9x3 panel with optional drag
     // ====================================================================
 
-    @Inject(method = "render", at = @At("TAIL"))
-    private void phaze$drawInventoryHud(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+    /**
+     * Render the InventoryHud panel. Refactored out of the
+     * legacy {@code @Inject(method="render", at=TAIL)} entry point
+     * so it can flow through {@code renderBufferedHud} like every
+     * other HUD module - HudOptimizer routes it into Pass 1 (cached
+     * FBO at the user's refresh rate) instead of redrawing the 27
+     * slot icons every render frame, which is what made it spike
+     * frame time on the user's machine.
+     *
+     * <p>Self-contained: the method pulls mouse / world / screen
+     * state from {@link MinecraftClient} so the
+     * {@code renderBufferedHud} call site doesn't need to thread
+     * any extra context.
+     */
+    private void phaze$drawInventoryHudGuts(DrawContext context) {
         InventoryHud module = InventoryHud.getInstance();
         if (module == null || !module.isEnabled()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
