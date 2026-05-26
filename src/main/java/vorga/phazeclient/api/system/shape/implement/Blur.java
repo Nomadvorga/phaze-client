@@ -142,6 +142,65 @@ public class Blur implements Shape {
         render(shape, false);
     }
 
+    /**
+     * Renders a blurred region using the high-quality two-pass separable
+     * Gaussian (horizontal + vertical, via {@code blur_gaussian.fsh}).
+     * The result visually outperforms the single-pass Kawase path at the
+     * cost of two extra FBO blit passes - acceptable for per-frame GUI
+     * rendering (once per menu open) but too expensive for per-HUD-widget
+     * use. Used exclusively by {@code MenuScreen.renderGuiRegionBlur}.
+     */
+    public void renderGaussian(ShapeProperties shape) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
+            return;
+        }
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
+        if (!prepareFramebuffers(client, false, true)) {
+            return;
+        }
+        Theme theme = Theme.getInstance();
+        float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
+        applyGaussianBlur(client, blurRadius);
+        float scale = (float) client.getWindow().getScaleFactor();
+        float alpha = RenderSystem.getShaderColor()[3];
+        Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
+        Vector3f size = matrix4f.getScale(new Vector3f()).mul(scale);
+        Vector4f round = new Vector4f(shape.getRound()).mul(size.y);
+        float softness = Math.max(0.001F, shape.getSoftness());
+        float width = shape.getWidth() * size.x;
+        float height = shape.getHeight() * size.y;
+        int color = ColorUtil.multAlpha(shape.getColor().x, alpha);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
+        RenderSystem.disableDepthTest();
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        drawEngine.quad(
+                matrix4f,
+                buffer,
+                shape.getX() - softness / 2.0F,
+                shape.getY() - softness / 2.0F,
+                shape.getWidth() + softness,
+                shape.getHeight() + softness,
+                color
+        );
+        RenderSystem.setShaderTexture(0, pong.getColorAttachment());
+        ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
+        if (shader != null) {
+            shader.getUniformOrDefault("Size").set(width, height);
+            shader.getUniformOrDefault("Radius").set(round);
+            shader.getUniformOrDefault("Smoothness").set(softness);
+            shader.getUniformOrDefault("BlurRadius").set(0.0F);
+            shader.getUniformOrDefault("BlurMode").set(0);
+            BufferRenderer.drawWithGlobalProgram(buffer.end());
+        } else {
+            buffer.end();
+        }
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
+    }
+
     public void renderCached(ShapeProperties shape) {
         render(shape, true);
     }

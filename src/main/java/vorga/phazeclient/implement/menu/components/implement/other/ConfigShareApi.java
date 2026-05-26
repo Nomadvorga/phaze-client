@@ -69,7 +69,7 @@ public final class ConfigShareApi {
      * {@code -Dphaze.share.api=http://127.0.0.1:8788}.
      */
     private static final String API_BASE =
-            System.getProperty("phaze.share.api", "https://phaze-rules.49814981dany.workers.dev");
+            System.getProperty("phaze.share.api", "https://phazeclient.ru");
 
     /**
      * Backup endpoints tried on network failures. The {@code pages.dev}

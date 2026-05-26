@@ -385,8 +385,6 @@ public final class ChatHelper extends Module {
         long now = System.currentTimeMillis();
         long previous = lastClipboardWriteMs.get();
         if (now - previous < 50L) {
-            // Two screenshots fired in the same ~tick window: skip the
-            // second clipboard push to avoid thrashing the AWT lock.
             return;
         }
         lastClipboardWriteMs.set(now);
@@ -418,10 +416,6 @@ public final class ChatHelper extends Module {
             try {
                 Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                 clipboard.setContents(new ImageTransferable(buf), null);
-                if (messageReceiver != null) {
-                    messageReceiver.accept(Text.literal("Screenshot copied to clipboard")
-                            .formatted(Formatting.GREEN));
-                }
             } catch (Throwable err) {
                 if (messageReceiver != null) {
                     messageReceiver.accept(Text.literal("Screencopy failed: " + err.getMessage())
