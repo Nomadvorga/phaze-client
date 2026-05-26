@@ -207,7 +207,7 @@ public class MenuScreen extends Screen implements QuickImports {
             return;
         }
 
-        Blur.INSTANCE.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
+        Blur.INSTANCE.renderGaussian(ShapeProperties.create(context.getMatrices(), x, y, width, height)
                 .round(8.0F)
                 .softness(1.2F)
                 .quality(blurRadius * 2.0F)

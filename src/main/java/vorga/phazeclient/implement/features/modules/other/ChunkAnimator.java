@@ -192,22 +192,37 @@ public final class ChunkAnimator extends Module {
             "Duration",
             "Animation length in milliseconds. Lower = snappier."
     ).range(100, 5000).step(50).setValue(600);
-    public final ValueSetting distance = new ValueSetting(
-            "Distance",
-            "How many blocks chunks travel before reaching their final position."
-    ).range(8, 256).step(1).setValue(64);
     /**
      * Direction the animation enters from. {@code Bottom} reproduces
      * the classic "chunks rise up out of the ground" effect: each
      * section first appears {@code distance} blocks below its real
      * position and slides up to land. {@code Side} routes the entry
      * along the chosen cardinal direction instead - chunks slide in
-     * horizontally from {@link #directionSide}.
+     * horizontally from {@link #directionSide}. {@code Fade} skips
+     * spatial movement entirely and dissolves each section in via a
+     * per-fragment Bayer-dither alpha discard - the easing dropdown
+     * has no effect under Fade because progress is intentionally
+     * linear (the dither pattern is what hides the linearity).
+     *
+     * <p>Declared BEFORE the dependent settings ({@link #distance},
+     * {@link #easing}) because their visibility predicates close over
+     * this field; Java's "no forward reference" rule for instance
+     * field initialisers means the predicate captures the actual
+     * field reference, so the field must already exist when the
+     * lambda is compiled into the initialiser.
      */
     public final SelectSetting animationType = new SelectSetting(
             "Animation Type",
-            "Direction chunks enter from. Top = fall from above, Bottom = rise from below, Side = slide in from a chosen cardinal direction."
-    ).value("Top", "Bottom", "Side").selected("Bottom");
+            "How chunks enter view. Top/Bottom/Side slide chunks in from a direction. Fade dissolves chunks via alpha (Sodium only). Scale grows each section out from its centre (Sodium only - shader patch required)."
+    ).value("Top", "Bottom", "Side", "Fade", "Scale").selected("Bottom");
+    public final ValueSetting distance = new ValueSetting(
+            "Distance",
+            "How many blocks chunks travel before reaching their final position."
+    ).range(8, 256).step(1).setValue(64)
+            // No spatial travel under Fade (alpha-only) or Scale (the
+            // section grows from its centre, no translation involved).
+            .visible(() -> !animationType.isSelected("Fade")
+                    && !animationType.isSelected("Scale"));
     /**
      * Cardinal direction for {@link #animationType} = {@code Side}.
      * Hidden when the type is {@code Bottom} via the visibility
@@ -225,7 +240,46 @@ public final class ChunkAnimator extends Module {
     public final SelectSetting easing = new SelectSetting(
             "Easing",
             "Easing curve for the slide. Decelerate gives a soft landing; Bounce / Elastic add an overshoot."
-    ).value(Interpolations.getAllNames()).selected("Decelerate");
+    ).value(Interpolations.getAllNames()).selected("Decelerate")
+            // Fade is a pure-alpha dissolve and Scale is a pure-size
+            // grow, both driven by linear progress through
+            // {@link #duration}. Neither has a spatial slide curve to
+            // shape, so the easing dropdown would be misleading.
+            .visible(() -> !animationType.isSelected("Fade")
+                    && !animationType.isSelected("Scale"));
+
+    /**
+     * Visual flavour for the {@code Fade} animation type. Two modes
+     * are compiled into the patched fragment shader simultaneously
+     * and selected at runtime via the {@code u_PhazeFadeStyle}
+     * uniform (shader recompile per pick would freeze the world for
+     * the duration of a glLink, which is several frames):
+     *
+     * <ul>
+     *   <li><b>Dither</b> (index 0) - per-fragment Bayer-4x4
+     *       threshold {@code discard} produces a hard-edged stippled
+     *       reveal, like a paper-grainy print materialising. Costs
+     *       one comparison + one LUT fetch per fragment per frame
+     *       only while the section is actually mid-fade; the
+     *       {@code v_PhazeChunkAnimFade < 1.0} short-circuit skips
+     *       it entirely once the section settles.</li>
+     *   <li><b>Fog Mix</b> (index 1) - {@code mix(fragColor, u_FogColor, 1.0 - fade)}
+     *       blends the fragment toward the current fog colour as
+     *       progress runs from 0 to 1. Visually the section
+     *       coalesces out of the distance haze instead of stippling
+     *       in. No discards, so the depth buffer fills normally
+     *       (which matters for translucent layers behind the
+     *       fading section).</li>
+     * </ul>
+     *
+     * <p>Hidden when the {@link #animationType} isn't {@code Fade} -
+     * the styling only matters under the dither/discard pipeline.
+     */
+    public final SelectSetting fadeStyle = new SelectSetting(
+            "Fade Style",
+            "Dither: Bayer 4x4 alpha-discard stipple. Fog Mix: smooth blend toward the current fog colour. Both apply only when Animation Type is Fade."
+    ).value("Dither", "Fog Mix").selected("Dither")
+            .visible(() -> animationType.isSelected("Fade"));
 
     private ChunkAnimator() {
         super("chunk_animator", "Chunk Animator", ModuleCategory.OTHER);
@@ -234,11 +288,14 @@ public final class ChunkAnimator extends Module {
         animationType.setFullWidth(true);
         directionSide.setFullWidth(true);
         easing.setFullWidth(true);
+        fadeStyle.setFullWidth(true);
         // Order matches the requested UI layout: Animation Type and
         // its dependent Side picker sit between Distance and Easing
         // so the operator picks WHERE chunks enter from before
-        // tweaking HOW they ease in.
-        setup(generalSection, duration, distance, animationType, directionSide, easing);
+        // tweaking HOW they ease in. Fade Style sits last because it
+        // only surfaces under the Fade type and is a "nice to have"
+        // tweak.
+        setup(generalSection, duration, distance, animationType, directionSide, easing, fadeStyle);
 
         // Wire the per-column "fresh load" signal: Fabric fires
         // CHUNK_LOAD whenever Minecraft materializes a chunk that just
@@ -311,6 +368,19 @@ public final class ChunkAnimator extends Module {
      */
     public void writeAnimationDirection(float[] out) {
         if (out == null || out.length < 3) return;
+        // Fade is a pure-alpha effect and Scale is a pure-size grow,
+        // neither has a spatial slide component. The vanilla /
+        // Iris-fallback offset path needs an identity direction (the
+        // magnitude is also clamped to 0 below in
+        // {@link #getYOffset}). Emitting {@code (0,1,0)} here would
+        // be harmless because magnitude is 0 anyway, but a true
+        // zero vector makes the intent obvious in profiler traces
+        // and ensures any downstream multiplication is a guaranteed
+        // no-op even if a caller forgets the magnitude=0 check.
+        if (animationType.isSelected("Fade") || animationType.isSelected("Scale")) {
+            out[0] = 0.0F; out[1] = 0.0F; out[2] = 0.0F;
+            return;
+        }
         if (animationType.isSelected("Top")) {
             // Top: chunks first appear above their final position and
             // fall downward as the offset magnitude eases to zero.
@@ -364,6 +434,14 @@ public final class ChunkAnimator extends Module {
      */
     public void writeAnimationDirectionPerSection(float[] out) {
         if (out == null || out.length < 3) return;
+        // Fade uses the dither-discard fragment path and Scale uses
+        // the mix-to-centre vertex path - neither touches the
+        // per-section position-offset path, so the direction
+        // multiplier must be a no-op. See {@link #writeAnimationDirection}.
+        if (animationType.isSelected("Fade") || animationType.isSelected("Scale")) {
+            out[0] = 0.0F; out[1] = 0.0F; out[2] = 0.0F;
+            return;
+        }
         if (animationType.isSelected("Top") || animationType.isSelected("Bottom")) {
             out[0] = 0.0F; out[1] = 1.0F; out[2] = 0.0F;
             return;
@@ -398,6 +476,17 @@ public final class ChunkAnimator extends Module {
      */
     public float getYOffset(BlockPos origin) {
         if (!isEnabled() || origin == null) {
+            return 0.0F;
+        }
+        // Fade has no positional component (alpha-only via the
+        // dither-discard fragment patch). Scale has no positional
+        // component either (the section grows from its centre via
+        // the vertex {@code mix(...)} patch, no world-space
+        // translation). Vanilla (non-Sodium) users see no animation
+        // under either mode because the vanilla path only honours
+        // additive Y offsets; graceful degradation matches the
+        // user-facing tooltip on the Animation Type dropdown.
+        if (animationType.isSelected("Fade") || animationType.isSelected("Scale")) {
             return 0.0F;
         }
 
@@ -521,6 +610,16 @@ public final class ChunkAnimator extends Module {
         // than a Java-level loop.
         java.util.Arrays.fill(outOffsets, 0, 256, 0.0F);
         if (!isEnabled() || drawableSlots == null || drawableCount <= 0) {
+            return false;
+        }
+        // Fade routes through {@link #writeRegionSectionFadeValues}
+        // and Scale routes through {@link #writeRegionSectionScaleValues}.
+        // Returning false here leaves the GPU-side offset uniform at
+        // the all-zero state the caller just wrote, which is exactly
+        // the no-spatial-movement identity we want under either of
+        // those modes - the actual animation is driven by their
+        // dedicated progress arrays in the patched shaders.
+        if (animationType.isSelected("Fade") || animationType.isSelected("Scale")) {
             return false;
         }
 
@@ -709,6 +808,274 @@ public final class ChunkAnimator extends Module {
             hasNonZero = true;
         }
         return hasNonZero;
+    }
+
+    /**
+     * Convenience predicate. {@code true} when the user picked the
+     * pure-alpha fade variant; consumers that branch on this choose
+     * between uploading position offsets (Top/Bottom/Side) versus
+     * per-section fade-progress values (Fade).
+     */
+    public boolean isFadeMode() {
+        return animationType.isSelected("Fade");
+    }
+
+    /**
+     * Convenience predicate. {@code true} when the user picked the
+     * grow-from-centre variant; consumers that branch on this choose
+     * between uploading position offsets (Top/Bottom/Side), per-section
+     * fade-progress values (Fade), or per-section scale-progress
+     * values (Scale).
+     *
+     * <p>Scale and Fade share the same 0..1 linear progress curve
+     * (driven by {@link #duration} alone, no easing); only the
+     * uniform they write to and the shader-side interpretation
+     * differ. See {@link #writeRegionSectionScaleValues} for the
+     * scale-progress write path.
+     */
+    public boolean isScaleMode() {
+        return animationType.isSelected("Scale");
+    }
+
+    /**
+     * Resolves the current animation type into the integer code the
+     * patched vertex shader expects in its {@code u_PhazeChunkAnimMode}
+     * uniform. This drives the three-branch dispatcher inside the
+     * shader (offset add / fade varying / scale mix). The mapping
+     * matches the patcher's documented contract:
+     *
+     * <ul>
+     *   <li>{@code 0} - module disabled or no-op (identity vec4)</li>
+     *   <li>{@code 1} - offset (Top, Bottom, Side)</li>
+     *   <li>{@code 2} - fade (alpha-only via fragment shader)</li>
+     *   <li>{@code 3} - scale (mix-to-centre via vertex shader)</li>
+     * </ul>
+     *
+     * <p>Returning {@code 0} when disabled lets the mixin skip
+     * uploading meaningful per-section data while still leaving the
+     * UBO in a known-identity state - the shader's mode comparison
+     * ensures every per-vertex branch becomes a no-op even if the
+     * payload happens to carry stale values from before the user
+     * disabled the module.
+     */
+    public int getAnimationModeIndex() {
+        if (!isEnabled()) {
+            return 0;
+        }
+        if (isFadeMode()) {
+            return 2;
+        }
+        if (isScaleMode()) {
+            return 3;
+        }
+        // Top / Bottom / Side - all routed through the offset-add
+        // path in the patched vertex shader.
+        return 1;
+    }
+
+    /**
+     * Resolves {@link #fadeStyle} into the integer code the patched
+     * fragment shader expects in its {@code u_PhazeFadeStyle}
+     * uniform. The mapping is hard-coded to match the branches the
+     * patcher injects:
+     *
+     * <ul>
+     *   <li>{@code 0} - Dither (Bayer-discard, default)</li>
+     *   <li>{@code 1} - Fog Mix (linear blend toward {@code u_FogColor})</li>
+     * </ul>
+     *
+     * <p>Any unrecognised selection falls back to {@code 0} so a
+     * corrupted config can't drive the shader into an undefined
+     * branch (uninitialised int reads as 0 in GLSL too, so {@code 0}
+     * is the natural "do nothing weird" default).
+     */
+    public int getFadeStyleIndex() {
+        return fadeStyle.isSelected("Fog Mix") ? 1 : 0;
+    }
+
+    /**
+     * Per-section fade-progress for one Sodium region. Companion to
+     * {@link #writeRegionSectionYOffsets} - mutually exclusive with
+     * it, since Fade is its own animation type and the position
+     * offsets are forced to zero in that case.
+     *
+     * <p>Each slot gets a {@code [0..1]} progress value where
+     * {@code 0} means "fully transparent / about to dissolve in" and
+     * {@code 1} means "fully visible / no discard". The shader-side
+     * patch compares this varying against a 4x4 Bayer threshold
+     * keyed on {@code gl_FragCoord.xy} and {@code discard}s the
+     * fragment when the threshold beats the progress, producing the
+     * dithered fade-in effect.
+     *
+     * <p>Progress is intentionally <em>linear</em> ({@code elapsed /
+     * total}) - the visual interest comes from the dither pattern,
+     * not from an easing curve, and the spec the user requested is
+     * "Fade, no interpolations, just duration". Slots that aren't
+     * mid-animation (frustum returns, already finished, never
+     * registered) get {@code 1.0} so the shader leaves them alone.
+     *
+     * <p>Returns {@code true} when at least one slot is below 1.0
+     * (i.e., still mid-fade), so the caller can skip the {@code
+     * glUniform1fv} upload when the entire region has already
+     * settled - mirroring the {@code hasNonZero} convention from
+     * {@link #writeRegionSectionYOffsets}.
+     */
+    public boolean writeRegionSectionFadeValues(
+            int regionOriginBlockX, int regionOriginBlockY, int regionOriginBlockZ,
+            int[] drawableSlots, int drawableCount,
+            float[] outFade) {
+        // Default every slot to "fully opaque" so the shader's
+        // {@code v_PhazeChunkAnimFade < 1.0} branch is skipped for
+        // anything we don't explicitly mark as animating. Critical
+        // for the steady-state case: a region that's just sitting
+        // there uploads all-1.0s and the fragment-shader cost stays
+        // at one comparison per pixel.
+        java.util.Arrays.fill(outFade, 0, 256, 1.0F);
+        return writeRegionSectionProgressInternal(
+                regionOriginBlockX, regionOriginBlockZ,
+                drawableSlots, drawableCount,
+                outFade,
+                isFadeMode());
+    }
+
+    /**
+     * Per-section scale-progress for one Sodium region. Companion to
+     * {@link #writeRegionSectionFadeValues} - same 0..1 linear ramp
+     * driven by {@link #duration}, same per-column timestamp keying,
+     * differs only in where the patched shader plugs the value in:
+     *
+     * <ul>
+     *   <li>Fade: the value lands in {@code u_PhazeChunkAnimFade}
+     *       and the fragment shader dithers / blends it.</li>
+     *   <li>Scale: the value lands in {@code u_PhazeChunkAnimScale}
+     *       and the vertex shader {@code mix()}es the chunk-local
+     *       position toward the section centre when below 1.0,
+     *       collapsing the section to a point and growing it back
+     *       out as the value ramps to 1.0.</li>
+     * </ul>
+     *
+     * <p>Returns {@code true} when at least one slot is below 1.0
+     * (i.e., still mid-grow), so the caller can short-circuit the
+     * GPU upload once the entire region has settled. Mirrors the
+     * {@code hasNonOne} convention used by
+     * {@link #writeRegionSectionFadeValues}.
+     *
+     * <p>Defaults to 1.0 (no shrink) for every slot before the
+     * progress loop runs - so disabled / non-Scale modes and slots
+     * the per-region iterator skips never collapse anything to a
+     * point. This is the same defensive default as the fade-values
+     * write path.
+     */
+    public boolean writeRegionSectionScaleValues(
+            int regionOriginBlockX, int regionOriginBlockY, int regionOriginBlockZ,
+            int[] drawableSlots, int drawableCount,
+            float[] outScale) {
+        java.util.Arrays.fill(outScale, 0, 256, 1.0F);
+        return writeRegionSectionProgressInternal(
+                regionOriginBlockX, regionOriginBlockZ,
+                drawableSlots, drawableCount,
+                outScale,
+                isScaleMode());
+    }
+
+    /**
+     * Shared per-section progress-write loop for Fade and Scale.
+     * Caller pre-fills {@code out} with the steady-state value
+     * (1.0F) and passes {@code active=true} only when the relevant
+     * animation mode is selected; this method then overwrites slots
+     * for sections that are currently mid-animation with their 0..1
+     * linear progress value.
+     *
+     * <p>Three-case state machine per slot, identical to the offset
+     * path's gating logic:
+     *
+     * <ol>
+     *   <li>Column has a {@code firstSeenMs} timestamp - it's
+     *       animating or finished; compute elapsed / total and
+     *       write the slot.</li>
+     *   <li>Column has no timestamp but is in
+     *       {@link #pendingAnimationKeys} (fresh
+     *       {@code CHUNK_LOAD}) - register the timestamp and emit
+     *       {@code 0.0F} this frame (full transparency / full
+     *       shrink).</li>
+     *   <li>Column has no timestamp and isn't pending (frustum
+     *       return) - leave the slot at the default {@code 1.0F}
+     *       so no animation plays.</li>
+     * </ol>
+     *
+     * <p>{@code regionOriginBlockY} is intentionally absent from the
+     * parameter list: column keys ignore Y so every section in a
+     * vertical strip shares one timestamp and animates in sync (see
+     * {@link #writeRegionSectionFadeValues}'s docstring for the
+     * fragmented-strip artifact this prevents).
+     */
+    private boolean writeRegionSectionProgressInternal(
+            int regionOriginBlockX, int regionOriginBlockZ,
+            int[] drawableSlots, int drawableCount,
+            float[] out,
+            boolean active) {
+        if (!isEnabled() || !active || drawableSlots == null || drawableCount <= 0) {
+            return false;
+        }
+
+        int regionChunkX = regionOriginBlockX >> 4;
+        int regionChunkZ = regionOriginBlockZ >> 4;
+
+        long now = System.currentTimeMillis();
+        long total = Math.max(1L, (long) duration.getInt());
+
+        if (firstSeenMs.size() >= MAX_TRACKED) {
+            evictExpired(now, total);
+        }
+
+        boolean hasNonOne = false;
+        for (int i = 0; i < drawableCount; i++) {
+            int slot = drawableSlots[i] & 0xFF;
+            // Same slot decoding as the offset path - section
+            // identity is keyed per-column (X,Z) so every Y stratum
+            // of one chunk shares one progress clock. Without this
+            // each Y stratum starts its own animation at slightly
+            // different times (Sodium uploads them as build tasks
+            // complete), producing a horizontally-striped effect
+            // instead of a coherent one.
+            int relX = (slot >> 5) & 7;
+            int relZ = (slot >> 2) & 7;
+            int sx = regionChunkX + relX;
+            int sz = regionChunkZ + relZ;
+            long key = ChunkPos.toLong(sx, sz);
+
+            Long start = firstSeenMs.get(key);
+            if (start == null && !pendingAnimationKeys.contains(key)) {
+                continue;
+            }
+            if (start == null) {
+                pendingAnimationKeys.remove(key);
+                firstSeenMs.put(key, now);
+                lastAnimRegisterMs = now;
+                // First frame: fully invisible / fully collapsed.
+                // The dither pattern (Fade) or position mix (Scale)
+                // takes it from this value up to 1.0 over duration.
+                out[slot] = 0.0F;
+                hasNonOne = true;
+                continue;
+            }
+            long elapsed = now - start;
+            if (elapsed >= total) {
+                // Animation finished - leave at 1.0 (the default
+                // already written by Arrays.fill in the caller).
+                continue;
+            }
+            // Linear progress. Both modes are specced as "just
+            // duration, no interpolations" - Fade because the dither
+            // pattern does the visual lifting, Scale because the
+            // grow-from-centre effect reads as natural at uniform
+            // speed and easing would just stretch the "ugly mid-
+            // grow" frame.
+            float progress = (float) elapsed / (float) total;
+            out[slot] = progress;
+            hasNonOne = true;
+        }
+        return hasNonOne;
     }
 
     /**

@@ -12,8 +12,8 @@ import net.minecraft.client.util.ScreenshotRecorder;
 import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import vorga.phazeclient.implement.features.modules.other.ChatHelper;
 
 import java.io.File;
@@ -36,38 +36,34 @@ import java.util.function.Consumer;
  * vanilla finish writing the {@code .png} so the user keeps a local
  * copy alongside the clipboard push.
  *
- * <p>Method name {@code saveScreenshotInner} is the yarn 1.21.4
- * mapping for what older mods referenced as {@code method_1661};
- * the signature {@code (NativeImage, File, Consumer<Text>)} is
- * stable across the 1.20.x -> 1.21.x window.
+ * <p>In 1.21.4 {@code saveScreenshotInner} has the signature
+ * {@code (File, String, Framebuffer, Consumer<Text>)} and creates
+ * the {@link NativeImage} by delegating to the static helper
+ * {@code ScreenshotRecorder.takeScreenshot(Framebuffer)}. We wrap
+ * that inner call to intercept the resulting image while it is still
+ * alive, then hand it to {@link ChatHelper#copyImageToClipboardAsync}.
+ * The original call proceeds unchanged - vanilla's disk save path
+ * is not affected.
  */
 @Mixin(ScreenshotRecorder.class)
 public abstract class ScreenshotRecorderScreencopyMixin {
 
-    @Inject(method = "saveScreenshotInner", at = @At("HEAD"))
-    private static void phaze$screencopyOnSave(NativeImage image, File file, Consumer<Text> messageReceiver, CallbackInfo ci) {
+    @WrapOperation(
+            method = "saveScreenshotInner",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/util/ScreenshotRecorder;takeScreenshot(Lnet/minecraft/client/gl/Framebuffer;)Lnet/minecraft/client/texture/NativeImage;")
+    )
+    private static NativeImage phaze$screencopyWrapToImage(net.minecraft.client.gl.Framebuffer framebuffer, Operation<NativeImage> original, File file, String fileName, net.minecraft.client.gl.Framebuffer fb2, Consumer<Text> messageReceiver) {
+        NativeImage image = original.call(framebuffer);
         ChatHelper helper = ChatHelper.getInstance();
-        if (helper == null || !helper.shouldCopyScreenshot()) {
-            return;
-        }
-
-        // Capture pixels NOW on the IO worker (image is still alive
-        // here; the calling site closes it in a try-finally AFTER
-        // this method returns). The actual clipboard system call
-        // happens on a daemon thread inside copyImageToClipboardAsync
-        // so we don't pay AWT init / clipboard-lock latency on the
-        // worker queue. Vanilla then proceeds with the disk save
-        // unaffected - we don't cancel it anymore so the user always
-        // keeps a .png alongside the clipboard push.
-        try {
-            helper.copyImageToClipboardAsync(image, messageReceiver);
-        } catch (Throwable t) {
-            // Defensive: a bad pixel readout or AWT init failure must
-            // never crash the screenshot flow - vanilla still gets to
-            // save the file below.
-            if (messageReceiver != null) {
-                messageReceiver.accept(Text.literal("Screencopy failed: " + t.getClass().getSimpleName()));
+        if (image != null && helper != null && helper.shouldCopyScreenshot()) {
+            try {
+                helper.copyImageToClipboardAsync(image, messageReceiver);
+            } catch (Throwable t) {
+                if (messageReceiver != null) {
+                    messageReceiver.accept(Text.literal("Screencopy failed: " + t.getClass().getSimpleName()));
+                }
             }
         }
+        return image;
     }
 }

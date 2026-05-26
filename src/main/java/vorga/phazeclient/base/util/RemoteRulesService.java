@@ -88,7 +88,7 @@ public final class RemoteRulesService {
      * {@code -Dphaze.rules.api=http://127.0.0.1:3001} on the JVM
      * command line.
      */
-    private static final String DEFAULT_API_BASE = "https://phaze-rules.49814981dany.workers.dev";
+    private static final String DEFAULT_API_BASE = "https://phazeclient.ru";
 
     /**
      * Period for the staleness-refresh loop. With the heartbeat and the
@@ -104,10 +104,10 @@ public final class RemoteRulesService {
      * {@link #requestRefresh()} the moment it changes, which forces an
      * immediate out-of-band fetch independently of this period.
      */
-    private static final long HEARTBEAT_SECONDS = 60L;
+    private static final long HEARTBEAT_SECONDS = 300L;
 
     /** Min interval between actual HTTP refreshes when the host hasn't changed. */
-    private static final long REFRESH_INTERVAL_SECONDS = 60L;
+    private static final long REFRESH_INTERVAL_SECONDS = 300L;
 
     /**
      * Per-request timeouts as plain integers because
