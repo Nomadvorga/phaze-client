@@ -57,6 +57,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
     private static final float INPUT_HEIGHT = 17.0F;
     private static final float BUTTON_HEIGHT = 16.0F;
     private static final float PRIMARY_W = 56.0F;
+    private static final float CLOUD_PRIMARY_W = 104.0F;
     private static final float SECONDARY_W = 38.0F;
     private static final float BUTTON_GAP = 10.0F;
 
@@ -229,16 +230,16 @@ public class ConfigShareModalComponent extends AbstractComponent {
 
     private String titleText() {
         switch (mode) {
-            case SHARE: return Lang.t("modal.share.title");
+            case SHARE: return Lang.t("modal.cloud.title");
             case RENAME: return Lang.t("modal.rename.title");
-            case IMPORT: return Lang.t("modal.import.title");
+            case IMPORT: return Lang.t("modal.cloud.title");
         }
         return "";
     }
 
     private String subText() {
-        if (mode == Mode.IMPORT) {
-            return Lang.t("modal.import.subtitle");
+        if (mode == Mode.IMPORT || mode == Mode.SHARE) {
+            return Lang.t("modal.cloud.subtitle");
         }
         String name = configName == null ? ConfigManager.getInstance().getCurrentConfigName() : configName;
         return Lang.t("modal.share.subtitle.prefix") + " " + name + "  •  " + authorLabel;
@@ -255,9 +256,9 @@ public class ConfigShareModalComponent extends AbstractComponent {
 
     private String primaryLabel() {
         switch (mode) {
-            case SHARE: return Lang.t("modal.share.primary");
+            case SHARE: return Lang.t("status.cloud_disabled_short");
             case RENAME: return Lang.t("modal.rename.primary");
-            case IMPORT: return Lang.t("modal.import.primary");
+            case IMPORT: return Lang.t("status.cloud_disabled_short");
         }
         return "";
     }
@@ -360,32 +361,38 @@ public class ConfigShareModalComponent extends AbstractComponent {
                                float modalX, float modalY, float fadeAlpha) {
         MatrixStack matrix = context.getMatrices();
         float by = buttonsY(modalY);
+        float primaryW = mode == Mode.RENAME ? PRIMARY_W : CLOUD_PRIMARY_W;
 
         // Buttons centred under the input.
-        float groupW = PRIMARY_W + BUTTON_GAP + SECONDARY_W;
+        float groupW = primaryW + BUTTON_GAP + SECONDARY_W;
         float primaryX = modalX + (MODAL_W - groupW) * 0.5F;
-        float cancelX = primaryX + PRIMARY_W + BUTTON_GAP;
+        float cancelX = primaryX + primaryW + BUTTON_GAP;
 
-        boolean primaryHovered = MathUtil.isHovered(mouseX, mouseY, primaryX, by, PRIMARY_W, BUTTON_HEIGHT);
+        boolean primaryHovered = MathUtil.isHovered(mouseX, mouseY, primaryX, by, primaryW, BUTTON_HEIGHT);
         boolean cancelHovered = MathUtil.isHovered(mouseX, mouseY, cancelX, by, SECONDARY_W, BUTTON_HEIGHT);
         primaryHover.setDirection(primaryHovered ? Direction.FORWARDS : Direction.BACKWARDS);
         cancelHover.setDirection(cancelHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
         // Primary - themed accent fill (CHIP_ACTIVE = palette accent).
         float pHover = primaryHover.getOutputFloat();
-        int primaryFill = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, pHover * 0.10F);
-        int primaryOutline = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, 0.18F);
-        rectangle.render(ShapeProperties.create(matrix, primaryX, by, PRIMARY_W, BUTTON_HEIGHT)
+        int primaryFill = mode == Mode.RENAME
+                ? MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, pHover * 0.10F)
+                : MenuStyle.mix(MenuStyle.PANEL_CHIP, 0xFFE05050, 0.10F + pHover * 0.08F);
+        int primaryOutline = mode == Mode.RENAME
+                ? MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, 0.18F)
+                : MenuStyle.mix(0xFFE05050, 0xFFFFFFFF, 0.15F);
+        rectangle.render(ShapeProperties.create(matrix, primaryX, by, primaryW, BUTTON_HEIGHT)
                 .round(4.0F).thickness(1.5F)
                 .outlineColor(MenuStyle.withAlpha(primaryOutline, fadeAlpha))
                 .color(MenuStyle.withAlpha(primaryFill, fadeAlpha))
                 .build());
         String primaryLabel = primaryLabel();
+        int primaryTextColor = mode == Mode.RENAME ? 0xFFFFFFFF : 0xFFE05050;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), primaryLabel, BUTTON_TEXT_SIZE,
-                MenuStyle.withAlpha(0xFFFFFFFF, fadeAlpha),
+                MenuStyle.withAlpha(primaryTextColor, fadeAlpha),
                 matrix.peek().getPositionMatrix(),
-                MenuStyle.centerMsdfTextX(MsdfFonts.bold(), primaryLabel, BUTTON_TEXT_SIZE, primaryX, PRIMARY_W),
+                MenuStyle.centerMsdfTextX(MsdfFonts.bold(), primaryLabel, BUTTON_TEXT_SIZE, primaryX, primaryW),
                 MenuStyle.centerMsdfTextY(BUTTON_TEXT_SIZE, by, BUTTON_HEIGHT),
                 0.0F);
 
@@ -442,10 +449,11 @@ public class ConfigShareModalComponent extends AbstractComponent {
         }
         // Buttons.
         float by = buttonsY(modalY);
-        float groupW = PRIMARY_W + BUTTON_GAP + SECONDARY_W;
+        float primaryW = mode == Mode.RENAME ? PRIMARY_W : CLOUD_PRIMARY_W;
+        float groupW = primaryW + BUTTON_GAP + SECONDARY_W;
         float primaryX = modalX + (MODAL_W - groupW) * 0.5F;
-        float cancelX = primaryX + PRIMARY_W + BUTTON_GAP;
-        if (MathUtil.isHovered(mouseX, mouseY, primaryX, by, PRIMARY_W, BUTTON_HEIGHT)) {
+        float cancelX = primaryX + primaryW + BUTTON_GAP;
+        if (MathUtil.isHovered(mouseX, mouseY, primaryX, by, primaryW, BUTTON_HEIGHT)) {
             playButtonClickSound();
             triggerPrimary();
             return true;
@@ -592,6 +600,11 @@ public class ConfigShareModalComponent extends AbstractComponent {
                     if (token != actionToken) return;
                     if (id == null) {
                         String detail = ConfigShareApi.getLastError();
+                        if (Lang.t("status.cloud_disabled_detail").equals(detail)) {
+                            statusMessage = detail;
+                            statusError = true;
+                            return;
+                        }
                         // Surface the actual error so the user can
                         // tell network from server-side rejection.
                         // Keeps the message short - the panel only
@@ -641,6 +654,11 @@ public class ConfigShareModalComponent extends AbstractComponent {
                     if (token != actionToken) return;
                     if (result == null) {
                         String detail = ConfigShareApi.getLastError();
+                        if (Lang.t("status.cloud_disabled_detail").equals(detail)) {
+                            statusMessage = detail;
+                            statusError = true;
+                            return;
+                        }
                         statusMessage = detail == null
                                 ? Lang.t("status.key_not_found")
                                 : Lang.t("status.error_prefix") + ": " + (detail.length() > 60 ? detail.substring(0, 60) + "..." : detail);

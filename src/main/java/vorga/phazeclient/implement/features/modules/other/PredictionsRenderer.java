@@ -10,6 +10,7 @@ import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.hit.HitResult;
@@ -121,12 +122,9 @@ public final class PredictionsRenderer {
                 Vec3d lerpedPos = new Vec3d(lx, ly, lz);
                 var pts = t.getRemainingPath(lerpedPos);
                 if (pts != null && pts.size() >= 2) {
-                    // Replace the last point with the smoothed
-                    // impact so the line endpoint and the impact
-                    // marker stay glued together. Without this the
-                    // line tip jitters per-tick (raw prediction)
-                    // while the marker glides (smoothed), producing
-                    // a visible gap at the tip.
+                    // Replace the last point with the live impact so
+                    // the line endpoint and the marker stay glued to
+                    // the same exact predicted hit point.
                     if (t.smoothedImpact != null
                             && t.result != null
                             && t.result.type() != HitResult.Type.MISS) {
@@ -177,26 +175,14 @@ public final class PredictionsRenderer {
                     Vec3d impactRaw = result.impact();
                     if (impactRaw == null) continue;
 
-                    // Exponential smoother: each frame we ease the
-                    // marker position toward the live prediction by
-                    // {@code 1 - exp(-rate*dt)}. dt is real elapsed
-                    // time (not tickDelta) so the smoothing is
-                    // frame-rate-independent. rate=12 gives a
-                    // ~80ms half-life - fast enough to track the
-                    // projectile but slow enough to hide per-tick
-                    // jitter from the random-spread re-prediction.
-                    if (t.smoothedImpact == null) {
-                        t.smoothedImpact = impactRaw;
-                    } else {
-                        double dt = t.lastSmoothNanos == 0L ? 1.0 / 60.0
-                                : (nowNanos - t.lastSmoothNanos) / 1_000_000_000.0;
-                        if (dt > 0.25) dt = 0.25;
-                        double alpha = 1.0 - Math.exp(-12.0 * dt);
-                        t.smoothedImpact = t.smoothedImpact.add(impactRaw.subtract(t.smoothedImpact).multiply(alpha));
-                    }
+                    // Use the live predicted impact directly. This
+                    // keeps the marker pinned to the actual landing
+                    // point instead of easing toward it and visually
+                    // drifting behind fast projectiles like pearls.
+                    t.smoothedImpact = impactRaw;
                     t.lastSmoothNanos = nowNanos;
 
-                    Vec3d impact = t.smoothedImpact;
+                    Vec3d impact = impactRaw;
                     boolean isEntity = result.type() == HitResult.Type.ENTITY;
                     float radius = baseRadius;
                     // Per-marker accent: entity hits use the
@@ -207,7 +193,7 @@ public final class PredictionsRenderer {
                     int sphereColor = (sphereAlpha << 24) | (markerAccent & 0x00FFFFFF);
 
                     Vec3d toward = cameraPos.subtract(impact).normalize();
-                    double frontShift = isEntity ? radius * 1.05 : 0.0;
+                    double frontShift = 0.0;
                     double cx = impact.x + toward.x * frontShift;
                     double cy = impact.y + toward.y * frontShift;
                     double cz = impact.z + toward.z * frontShift;
@@ -499,6 +485,15 @@ public final class PredictionsRenderer {
         if (chosen == null) return;
 
         Predictions.HeldType type = module.classifyHeldStack(chosen);
+        if (type == Predictions.HeldType.BOW) {
+            // Bow predictions should only be visible while the bow is
+            // actually being drawn. Other supported items keep the
+            // previous always-visible behavior.
+            if (!p.isUsingItem()) return;
+            ItemStack active = p.getActiveItem();
+            if (active == null || active.isEmpty()) return;
+            if (!ItemStack.areItemsAndComponentsEqual(active, chosen)) return;
+        }
         double speed = module.initialVelocityFor(type, chosen, mc);
         if (speed <= 0.0) return;
 
@@ -533,7 +528,7 @@ public final class PredictionsRenderer {
                 if (s != null) r = s;
                 out.add(r);
                 if (r.type() != HitResult.Type.MISS) {
-                    marks.add(new ImpactMark(r.impact(), r.type() == HitResult.Type.ENTITY, r.face()));
+                    marks.add(new ImpactMark(r.impact(), r.type() == HitResult.Type.ENTITY, r.face(), r.entity()));
                 }
             }
             return;
@@ -558,7 +553,7 @@ public final class PredictionsRenderer {
 
         out.add(result);
         if (result.type() != HitResult.Type.MISS) {
-            marks.add(new ImpactMark(result.impact(), result.type() == HitResult.Type.ENTITY, result.face()));
+            marks.add(new ImpactMark(result.impact(), result.type() == HitResult.Type.ENTITY, result.face(), result.entity()));
         }
     }
 
@@ -604,7 +599,10 @@ public final class PredictionsRenderer {
         net.minecraft.util.hit.EntityHitResult hit =
                 net.minecraft.entity.projectile.ProjectileUtil.raycast(
                         self, eye, end, searchBox,
-                        e -> !e.isSpectator() && e instanceof net.minecraft.entity.LivingEntity && e != self,
+                        e -> !e.isSpectator()
+                                && e instanceof net.minecraft.entity.LivingEntity
+                                && e != self
+                                && (!e.isInvisible() || e.isGlowing()),
                         maxRange * maxRange);
         if (hit == null || hit.getEntity() == null) {
             return null;
@@ -643,7 +641,7 @@ public final class PredictionsRenderer {
         path.add(impactPos);
         return new Predictions.TrajectoryResult(
                 path, impactPos, HitResult.Type.ENTITY,
-                net.minecraft.util.math.Direction.UP);
+                net.minecraft.util.math.Direction.UP, target);
     }
 
     /**
@@ -684,6 +682,6 @@ public final class PredictionsRenderer {
     }
 
     /** Marker geometry record. {@code entity} flips to true on entity-hit so the renderer can place the marker forward of the body. The {@code face} is the surface normal direction for block hits, used to orient the floor ring against walls / ceilings. */
-    private record ImpactMark(Vec3d pos, boolean entity, net.minecraft.util.math.Direction face) {
+    private record ImpactMark(Vec3d pos, boolean entity, net.minecraft.util.math.Direction face, Entity entityRef) {
     }
 }
