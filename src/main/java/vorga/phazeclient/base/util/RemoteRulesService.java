@@ -53,17 +53,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *       {@link vorga.phazeclient.mixins.ClientPlayerEntityMixin}: when
  *       it observes the host change it calls {@link #requestRefresh()},
  *       so locks for the new server take effect within one tick instead
- *       of waiting for the next 60-second heartbeat.</li>
+ *       of waiting for the next 10-minute heartbeat.</li>
  * </ul>
  *
- * <h3>Fail-open</h3>
- * Network errors, malformed JSON, missing API — all of these collapse
- * to "no modules are remotely blocked". We do <em>not</em> fall back
- * to the last-known snapshot when the host changes, because that would
- * keep blocking modules on a server that was simply unreachable. Worst
- * case: the API is down and an admin loses their remote-disable lever
- * for that minute. The local server-whitelists in {@link ServerUtil}
- * still apply on top, so the safety baseline doesn't change.
+ * <h3>Outage handling</h3>
+ * We keep the last valid remote blocklist and only switch to a
+ * strict lockdown after a long API outage. This avoids the simplest
+ * bypass where a player just cuts network access to make the client
+ * instantly forget the server rules.
  *
  * <h3>Configuration</h3>
  * The base URL defaults to the production Cloudflare deployment.
@@ -98,16 +95,18 @@ public final class RemoteRulesService {
      * propagate within ~one period without the player reconnecting.
      *
      * <p>Server-change responsiveness is NOT handled here - the
-     * heartbeat would observe it on its next tick (up to 60 s of lag).
+     * heartbeat would observe it on its next tick (up to 10 minutes of lag).
      * Instead, {@link vorga.phazeclient.mixins.ClientPlayerEntityMixin}
      * watches the host string on every client tick and calls
      * {@link #requestRefresh()} the moment it changes, which forces an
      * immediate out-of-band fetch independently of this period.
      */
-    private static final long HEARTBEAT_SECONDS = 300L;
+    private static final long HEARTBEAT_SECONDS = 600L;
 
     /** Min interval between actual HTTP refreshes when the host hasn't changed. */
-    private static final long REFRESH_INTERVAL_SECONDS = 300L;
+    private static final long REFRESH_INTERVAL_SECONDS = 600L;
+    private static final long LOCKDOWN_AFTER_MS = 20L * 60L * 1000L;
+    private static final long STARTUP_GRACE_MS = 45_000L;
 
     /**
      * Per-request timeouts as plain integers because
@@ -176,6 +175,8 @@ public final class RemoteRulesService {
     private volatile Set<String> blocked = Collections.emptySet();
     private volatile String lastHost = null;          // null = "never refreshed yet"
     private volatile long lastRefreshMs = 0L;
+    private volatile long lastSuccessfulFetchMs = 0L;
+    private final long serviceStartMs = System.currentTimeMillis();
 
     /**
      * Last known online-client count from the most recent successful
@@ -212,6 +213,22 @@ public final class RemoteRulesService {
     /** Stable random identity for this install. See {@link #loadOrCreateClientId()}. */
     public String getClientId() {
         return clientId;
+    }
+
+    /**
+     * Current launcher username, if the client session is available.
+     * This is sent alongside the heartbeat so the dashboard can show
+     * a real nick and avatar instead of just the opaque client id.
+     */
+    private String getCurrentUsername() {
+        try {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null || client.getSession() == null) return null;
+            String username = client.getSession().getUsername();
+            return username == null || username.isBlank() ? null : username;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     /**
@@ -282,9 +299,9 @@ public final class RemoteRulesService {
         }
         // Immediate first fetch (initialDelay=0) so the very first
         // ruleset is applied the moment the mod finishes initialising
-        // - the player should not see a 60-second window where the
+        // - the player should not see a 10-minute window where the
         // server-disable list is empty. Subsequent runs fire on the
-        // 60-second heartbeat. Server-change responsiveness is added
+        // 10-minute heartbeat. Server-change responsiveness is added
         // on top by ClientPlayerEntityMixin via requestRefresh().
         scheduler.scheduleWithFixedDelay(
                 this::heartbeat,
@@ -304,7 +321,20 @@ public final class RemoteRulesService {
         if (!enabled || moduleId == null || moduleId.isEmpty()) {
             return false;
         }
+        if (isStrictLockdownNow()) {
+            return true;
+        }
         return blocked.contains(moduleId.toLowerCase());
+    }
+
+    private boolean isStrictLockdownNow() {
+        String host = ServerUtil.getCurrentServerHost();
+        if (host == null || host.isEmpty()) return false;
+
+        long now = System.currentTimeMillis();
+        if (now - serviceStartMs < STARTUP_GRACE_MS) return false;
+        if (lastSuccessfulFetchMs <= 0L) return true;
+        return (now - lastSuccessfulFetchMs) > LOCKDOWN_AFTER_MS;
     }
 
     /**
@@ -339,11 +369,9 @@ public final class RemoteRulesService {
             boolean stale = (now - lastRefreshMs) >= REFRESH_INTERVAL_SECONDS * 1000L;
 
             if (hostChanged) {
-                // Wipe the previous snapshot the moment we land on a
-                // new server. We don't want to keep applying funtime's
-                // ban list to the player on holyworld just because the
-                // API hasn't responded yet.
-                blocked = Collections.emptySet();
+                // Keep the previous snapshot until we get a fresh one
+                // for the new host. Clearing instantly makes outages
+                // an easy bypass vector for remote blocks.
                 lastHost = host;
                 // Always fetch on host change, including when the host
                 // is empty (singleplayer / main menu). An empty-host
@@ -392,38 +420,20 @@ public final class RemoteRulesService {
     private void fetch(String host) throws Exception {
         String encodedHost = URLEncoder.encode(host == null ? "" : host, StandardCharsets.UTF_8);
         String encodedClient = URLEncoder.encode(clientId, StandardCharsets.UTF_8);
+        String encodedUsername = URLEncoder.encode(
+                getCurrentUsername() == null ? "" : getCurrentUsername(),
+                StandardCharsets.UTF_8);
 
-        // Player metadata for the dashboard PLAYERS tab. We pull the
-        // session info on every fetch (rather than caching it once)
-        // because the user can swap accounts mid-session via the
-        // launcher and we want the dashboard to reflect that. Both
-        // params are optional server-side - the worker validates the
-        // shape and ignores garbage.
-        String username = "";
-        String playerUuid = "";
-        try {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc != null && mc.getSession() != null) {
-                String u = mc.getSession().getUsername();
-                if (u != null) username = u;
-                UUID pid = mc.getSession().getUuidOrNull();
-                if (pid != null) playerUuid = pid.toString();
-            }
-        } catch (Throwable ignored) {
-            // Session not available (very early startup): leave both
-            // empty so the worker treats the row as anonymous.
-        }
-        String encodedUsername = URLEncoder.encode(username, StandardCharsets.UTF_8);
-        String encodedUuid = URLEncoder.encode(playerUuid, StandardCharsets.UTF_8);
-
-        // clientId tells the worker to record a heartbeat for us and
-        // include the live online count in the response. The server
-        // tolerates older mod builds that omit it - it just won't
-        // count them in the presence number.
-        URI uri = URI.create(apiBase + "/api/module-rules?host=" + encodedHost
-                + "&clientId=" + encodedClient
-                + "&username=" + encodedUsername
-                + "&uuid=" + encodedUuid);
+        // Poll the rules endpoint with a stable client identity so
+        // the server can count this install as online right away.
+        URI uri = URI.create(
+                apiBase
+                        + "/api/module-rules?host="
+                        + encodedHost
+                        + "&clientId="
+                        + encodedClient
+                        + "&username="
+                        + encodedUsername);
 
         URL url = uri.toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -476,19 +486,16 @@ public final class RemoteRulesService {
             }
         }
 
-        // The online counter updates regardless of whether the host
-        // changed mid-flight: a stale ruleset would be wrong to show,
-        // but the live-user count is a global value that doesn't
-        // depend on which server we ended up on. Worker emits -1 when
-        // it can't compute the count; we forward that through so the
-        // UI can render a placeholder.
         if (obj.has("online") && obj.get("online").isJsonPrimitive()) {
             try {
                 onlineCount = obj.get("online").getAsInt();
-            } catch (NumberFormatException ignored) {
-                // leave previous value in place
+            } catch (Exception ignored) {
+                // Keep the previous value if the payload is malformed.
             }
         }
+
+        // This request doubles as the heartbeat, so the online count
+        // tracks real client activity rather than a shared snapshot.
 
         // Only apply if the host hasn't changed under us mid-request -
         // otherwise we'd briefly stamp an old server's ruleset onto a
@@ -497,6 +504,7 @@ public final class RemoteRulesService {
         if (host == null ? lastHost == null : host.equals(lastHost)) {
             blocked = Collections.unmodifiableSet(next);
             lastRefreshMs = System.currentTimeMillis();
+            lastSuccessfulFetchMs = lastRefreshMs;
         }
 
         // Fire the manifest upload from the same thread (it's already

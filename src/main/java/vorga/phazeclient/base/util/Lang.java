@@ -84,6 +84,8 @@ public final class Lang {
         en("modal.share.subtitle.prefix", "Config");
         en("modal.share.placeholder", "Number of uses");
         en("modal.share.primary", "Create");
+        en("modal.cloud.title", "Cloud Configs");
+        en("modal.cloud.subtitle", "Temporarily unavailable");
 
         // Modal: RENAME
         en("modal.rename.title", "Rename Config");
@@ -104,6 +106,8 @@ public final class Lang {
         en("status.copy_failed", "Failed to pack config");
         en("status.copied_prefix", "Code");
         en("status.copied_suffix", "copied");
+        en("status.cloud_disabled_short", "Unavailable");
+        en("status.cloud_disabled_detail", "This is not a bug. It is intentionally disabled.");
         en("status.import_failed", "Import failed");
         en("status.imported_prefix", "Imported:");
         en("status.key_not_found", "Key not found");
@@ -127,6 +131,8 @@ public final class Lang {
         en("sidebar.edit_hud", "EDIT HUD");
 
         // ---- RU translations -----------------------------------
+        ru("modal.cloud.title", "Облачные конфиги");
+        ru("modal.cloud.subtitle", "Временно недоступно");
         ru("modal.share.title", "Создание ключа");
         ru("modal.share.subtitle.prefix", "Конфиг");
         ru("modal.share.placeholder", "Количество использований");
@@ -148,6 +154,8 @@ public final class Lang {
         ru("status.copy_failed", "Не удалось упаковать конфиг");
         ru("status.copied_prefix", "Код");
         ru("status.copied_suffix", "скопирован");
+        ru("status.cloud_disabled_short", "Недоступно");
+        ru("status.cloud_disabled_detail", "Это не баг. Это сделано специально.");
         ru("status.import_failed", "Не удалось импортировать");
         ru("status.imported_prefix", "Импортирован:");
         ru("status.key_not_found", "Ключ не найден");

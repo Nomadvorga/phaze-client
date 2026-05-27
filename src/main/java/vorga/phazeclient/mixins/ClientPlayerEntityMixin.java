@@ -83,8 +83,8 @@ public class ClientPlayerEntityMixin {
     /**
      * Out-of-band trigger for {@link RemoteRulesService#requestRefresh()}.
      *
-     * <p>{@link RemoteRulesService} runs its own scheduler at a 60-second
-     * cadence ({@code HEARTBEAT_SECONDS=60}) - that's the cap on how
+     * <p>{@link RemoteRulesService} runs its own scheduler at a 10-minute
+     * cadence ({@code HEARTBEAT_SECONDS=600}) - that's the cap on how
      * often we'll hit the rules API for a player who stays on the same
      * server. But if the player swaps servers between heartbeats, we
      * don't want them to keep applying the OLD server's lock list for

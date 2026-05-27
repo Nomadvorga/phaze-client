@@ -4,6 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.projectile.ProjectileEntity;
+import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.BowItem;
 import net.minecraft.item.CrossbowItem;
 import net.minecraft.item.EggItem;
@@ -485,50 +486,45 @@ public final class Predictions extends Module {
                                 ? bhr.getSide()
                                 : net.minecraft.util.math.Direction.UP;
                 path.add(result.getPos());
-                return new TrajectoryResult(path, result.getPos(), HitResult.Type.BLOCK, face);
+                return new TrajectoryResult(path, result.getPos(), HitResult.Type.BLOCK, face, null);
             }
 
-            // Cheap entity intersect: any living non-self entity whose
-            // expanded box crosses the segment counts as a hit.
-            // Crucially we do NOT filter by visibility - an entity
-            // that's fully invisible (invisibility potion, no armor,
-            // no glow) still has a server-tracked bounding box, so
-            // checking the box geometry directly lets the prediction
-            // marker land on a target even when nothing is rendered
-            // there visually. This is the "see-through invisibles"
-            // behaviour: invisibility is a render-side trick, the
-            // hitbox still exists.
+            // Exact entity raycast on this segment. Using
+            // ProjectileUtil.raycast (instead of a coarse
+            // box.intersects segment test) stabilizes impact points:
+            // we get the nearest real intersection point on the
+            // entity hitbox, so the marker no longer jumps
+            // "inside/outside" when the path runs close to edges.
+            // Skip fully invisible entities, but keep glowing ones
+            // so outlined targets still get a valid prediction.
             Vec3d a = prev, b = pos;
-            Entity hitEntity = null;
-            if (mc.world != null) {
-                for (Entity ent : mc.world.getEntities()) {
-                    if (!(ent instanceof LivingEntity)) continue;
-                    if (ent == mc.player) continue;
-                    if (owner != null && ent == owner) continue;
-                    if (!ent.isAlive()) continue;
-                    // No isInvisible() filter - we deliberately treat
-                    // invisible entities the same as visible ones so
-                    // the prediction can still target them.
-                    if (ent.getBoundingBox().expand(0.25).intersects(a, b)) {
-                        hitEntity = ent;
-                        break;
-                    }
-                }
-            }
-            if (hitEntity != null) {
-                path.add(pos);
-                return new TrajectoryResult(path, pos, HitResult.Type.ENTITY,
-                        net.minecraft.util.math.Direction.UP);
+            net.minecraft.util.math.Box searchBox = new net.minecraft.util.math.Box(a, b).expand(1.0);
+            Entity source = owner != null ? owner : mc.player;
+            net.minecraft.util.hit.EntityHitResult entityHit = ProjectileUtil.raycast(
+                    source, a, b, searchBox,
+                    ent -> ent instanceof LivingEntity
+                            && ent != mc.player
+                            && (owner == null || ent != owner)
+                            && ent.isAlive()
+                            && !ent.isSpectator()
+                            && (!ent.isInvisible() || ent.isGlowing()),
+                    a.squaredDistanceTo(b) + 1.0E-7
+            );
+            if (entityHit != null && entityHit.getEntity() != null) {
+                Vec3d hitPos = entityHit.getPos();
+                path.add(hitPos);
+                return new TrajectoryResult(path, hitPos, HitResult.Type.ENTITY,
+                        net.minecraft.util.math.Direction.UP, entityHit.getEntity());
             }
 
             path.add(pos);
             if (pos.y < -128) {
                 return new TrajectoryResult(path, pos, HitResult.Type.MISS,
-                        net.minecraft.util.math.Direction.UP);
+                        net.minecraft.util.math.Direction.UP, null);
             }
         }
         return new TrajectoryResult(path, pos, HitResult.Type.MISS,
-                net.minecraft.util.math.Direction.UP);
+                net.minecraft.util.math.Direction.UP, null);
     }
 
     /** Held-stack throwable classification used by the renderer to pick the launch math. */
@@ -770,6 +766,6 @@ public final class Predictions extends Module {
 
     /** Path + impact info returned by {@link #predict}. */
     public record TrajectoryResult(java.util.List<Vec3d> path, Vec3d impact, HitResult.Type type,
-                                    net.minecraft.util.math.Direction face) {
+                                    net.minecraft.util.math.Direction face, Entity entity) {
     }
 }
