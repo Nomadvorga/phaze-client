@@ -64,6 +64,7 @@
     "LivingEntityMixin",
     "PlayerEntityMixin",
     "TitleScreenOnlineCounterMixin",
+    "TitleScreenLunarLayoutMixin",
     "InGameOverlayRendererNoFireMixin",
     "ParticleManagerNoRenderMixin",
     "HeldItemRendererMixin",
