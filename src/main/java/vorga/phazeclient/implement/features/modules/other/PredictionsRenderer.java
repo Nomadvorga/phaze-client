@@ -112,8 +112,6 @@ public final class PredictionsRenderer {
             // producing a visible jitter at the join.
             float tickDelta = tickCounter.getTickDelta(false);
             // ---- Lines ----
-            matrices.push();
-            matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
             for (var t : trails) {
                 if (t.entity == null) continue;
                 double lx = net.minecraft.util.math.MathHelper.lerp(tickDelta, t.entity.lastRenderX, t.entity.getX());
@@ -146,13 +144,12 @@ public final class PredictionsRenderer {
                         // behind the projectile rather than ending
                         // abruptly at the head.
                         float fadeDist = module.fadeDistance.getValue();
-                        Render3DUtil.drawPolylineFaded(matrices, pts, lineColor, trailWidth, fadeDist, true);
+                        Render3DUtil.drawPolylineFaded(matrices, phaze$toCameraRelative(pts, cameraPos), lineColor, trailWidth, fadeDist, true);
                     } else {
-                        Render3DUtil.drawPolyline(matrices, pts, lineColor, trailWidth, true);
+                        Render3DUtil.drawPolyline(matrices, phaze$toCameraRelative(pts, cameraPos), lineColor, trailWidth, true);
                     }
                 }
             }
-            matrices.pop();
 
             // ---- Impact markers at path end ----
             // Only draw if the user has the marker enabled. Reuse
@@ -166,8 +163,6 @@ public final class PredictionsRenderer {
                 int sphereAlpha = Math.max(0, Math.min(255,
                         Math.round(module.sphereOpacity.getValue() * 2.55F)));
 
-                matrices.push();
-                matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
                 long nowNanos = System.nanoTime();
                 for (var t : trails) {
                     var result = t.result;
@@ -184,6 +179,9 @@ public final class PredictionsRenderer {
 
                     Vec3d impact = impactRaw;
                     boolean isEntity = result.type() == HitResult.Type.ENTITY;
+                    if (isEntity && !phaze$shouldTargetEntityForPrediction(result.entity())) {
+                        continue;
+                    }
                     float radius = baseRadius;
                     // Per-marker accent: entity hits use the
                     // dedicated entity-hit colour so the warning
@@ -212,10 +210,10 @@ public final class PredictionsRenderer {
                             // Pulse multiplier breathes the alpha
                             // 10%..100% when Glow Pulsate is on.
                             Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
-                                    (float) cx, (float) sphereCy, (float) cz,
+                                    (float) (cx - cameraPos.x), (float) (sphereCy - cameraPos.y), (float) (cz - cameraPos.z),
                                     haloRadius, haloColor, true);
                         }
-                        Render3DUtil.drawSphereSolid(matrices, (float) cx, (float) sphereCy, (float) cz,
+                        Render3DUtil.drawSphereSolid(matrices, (float) (cx - cameraPos.x), (float) (sphereCy - cameraPos.y), (float) (cz - cameraPos.z),
                                 radius, sphereColor, 12, 18, true);
                     } else {
                         net.minecraft.util.math.Direction face = result.face();
@@ -233,24 +231,23 @@ public final class PredictionsRenderer {
                             int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength) * pulse)));
                             int haloColor = (haloAlpha << 24) | (markerAccent & 0x00FFFFFF);
                             Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
-                                    (float) markerCx, (float) markerCy, (float) markerCz,
+                                    (float) (markerCx - cameraPos.x), (float) (markerCy - cameraPos.y), (float) (markerCz - cameraPos.z),
                                     haloRadius, haloColor, true);
                         }
                         float ringThickness = module.circleThickness.getValue();
                         if (isEntity) {
                             Render3DUtil.drawThickRingOnFace(matrices,
-                                    (float) cx, (float) cy, (float) cz,
+                                    (float) (cx - cameraPos.x), (float) (cy - cameraPos.y), (float) (cz - cameraPos.z),
                                     0.0F, 1.0F, 0.0F,
                                     radius, ringThickness, markerAccent, 64, true);
                         } else {
                             Render3DUtil.drawThickRingOnFace(matrices,
-                                    (float) markerCx, (float) markerCy, (float) markerCz,
+                                    (float) (markerCx - cameraPos.x), (float) (markerCy - cameraPos.y), (float) (markerCz - cameraPos.z),
                                     nx, ny, nz,
                                     radius * 1.35F, ringThickness, markerAccent, 64, true);
                         }
                     }
                 }
-                matrices.pop();
             }
         }
 
@@ -294,8 +291,6 @@ public final class PredictionsRenderer {
             RenderSystem.lineWidth(Math.max(1.0F, module.lineWidth.getInt()));
 
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
-            matrices.push();
-            matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
             for (Predictions.TrajectoryResult r : trajectories) {
                 // Same per-trajectory rule as the trail lines above:
                 // recolor to the entity-hit accent when this path
@@ -304,9 +299,8 @@ public final class PredictionsRenderer {
                 // for block hits / misses.
                 int lineColor = (r != null && r.type() == HitResult.Type.ENTITY)
                         ? entityAccent : accent;
-                emitPath(matrices, buffer, r, lineColor);
+                emitPath(matrices, buffer, r, lineColor, cameraPos);
             }
-            matrices.pop();
 
             net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
             if (built != null) {
@@ -350,9 +344,10 @@ public final class PredictionsRenderer {
             float growProgress = entityGrow.getOutputFloat();
             float entityScale = 1.0F + 0.30F * growProgress;
 
-            matrices.push();
-            matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
             for (ImpactMark m : marks) {
+                if (m.entity && !phaze$shouldTargetEntityForPrediction(m.entityRef)) {
+                    continue;
+                }
                 float radius = m.entity ? baseRadius * entityScale : baseRadius;
                 // Per-marker accent: entity hits use the dedicated
                 // entity-hit colour. Falls back to {@code accent}
@@ -395,11 +390,11 @@ public final class PredictionsRenderer {
                         int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength) * pulse)));
                         int haloColor = (haloAlpha << 24) | (markerAccent & 0x00FFFFFF);
                         Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
-                                (float) cx, (float) sphereCy, (float) cz,
+                                (float) (cx - cameraPos.x), (float) (sphereCy - cameraPos.y), (float) (cz - cameraPos.z),
                                 haloRadius, haloColor, true);
                     }
 
-                    Render3DUtil.drawSphereSolid(matrices, (float) cx, (float) sphereCy, (float) cz,
+                    Render3DUtil.drawSphereSolid(matrices, (float) (cx - cameraPos.x), (float) (sphereCy - cameraPos.y), (float) (cz - cameraPos.z),
                             radius, sphereColor, 12, 18, true);
                     // Floor ring intentionally omitted for Sphere
                     // style - the user wants only the sphere as the
@@ -441,7 +436,7 @@ public final class PredictionsRenderer {
                         int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength) * pulse)));
                         int haloColor = (haloAlpha << 24) | (markerAccent & 0x00FFFFFF);
                         Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
-                                (float) markerCx, (float) markerCy, (float) markerCz,
+                                (float) (markerCx - cameraPos.x), (float) (markerCy - cameraPos.y), (float) (markerCz - cameraPos.z),
                                 haloRadius, haloColor, true);
                     }
                     // World-space thick ring. depthTest=true so the
@@ -454,18 +449,17 @@ public final class PredictionsRenderer {
                         // Normal is UP because we want the ring on
                         // the floor under the entity hitbox.
                         Render3DUtil.drawThickRingOnFace(matrices,
-                                (float) cx, (float) cy, (float) cz,
+                                (float) (cx - cameraPos.x), (float) (cy - cameraPos.y), (float) (cz - cameraPos.z),
                                 0.0F, 1.0F, 0.0F,
                                 radius, ringThickness, markerAccent, 64, true);
                     } else {
                         Render3DUtil.drawThickRingOnFace(matrices,
-                                (float) markerCx, (float) markerCy, (float) markerCz,
+                                (float) (markerCx - cameraPos.x), (float) (markerCy - cameraPos.y), (float) (markerCz - cameraPos.z),
                                 nx, ny, nz,
                                 radius * 1.35F, ringThickness, markerAccent, 64, true);
                     }
                 }
             }
-            matrices.pop();
         } else {
             // No marker this frame - decay grow back to 0 so a
             // future entity-hit starts cleanly from the resting
@@ -602,7 +596,7 @@ public final class PredictionsRenderer {
                         e -> !e.isSpectator()
                                 && e instanceof net.minecraft.entity.LivingEntity
                                 && e != self
-                                && (!e.isInvisible() || e.isGlowing()),
+                                && phaze$shouldTargetEntityForPrediction(e),
                         maxRange * maxRange);
         if (hit == null || hit.getEntity() == null) {
             return null;
@@ -667,12 +661,36 @@ public final class PredictionsRenderer {
         return 0.1F + s * 0.9F;
     }
 
-    private static void emitPath(MatrixStack matrices, BufferBuilder buffer, Predictions.TrajectoryResult result, int color) {
+    private static boolean phaze$shouldTargetEntityForPrediction(Entity entity) {
+        if (entity == null || entity.isSpectator()) return false;
+        if (entity.isGlowing()) return true;
+        if (!entity.isInvisible()) return true;
+        if (!(entity instanceof net.minecraft.entity.LivingEntity living)) return false;
+        for (ItemStack armor : living.getArmorItems()) {
+            if (armor != null && !armor.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void emitPath(MatrixStack matrices, BufferBuilder buffer, Predictions.TrajectoryResult result, int color, Vec3d cameraPos) {
         var path = result.path();
         if (path.size() < 2) return;
         for (int i = 0; i < path.size() - 1; i++) {
-            Render3DUtil.vertexLine(matrices, buffer, path.get(i), path.get(i + 1), color);
+            Render3DUtil.vertexLine(matrices, buffer,
+                    path.get(i).subtract(cameraPos),
+                    path.get(i + 1).subtract(cameraPos),
+                    color);
         }
+    }
+
+    private static java.util.List<Vec3d> phaze$toCameraRelative(java.util.List<Vec3d> points, Vec3d cameraPos) {
+        java.util.ArrayList<Vec3d> out = new java.util.ArrayList<>(points.size());
+        for (Vec3d p : points) {
+            out.add(p.subtract(cameraPos));
+        }
+        return out;
     }
 
     private static ItemStack pickThrowable(Predictions module, ItemStack main, ItemStack off) {

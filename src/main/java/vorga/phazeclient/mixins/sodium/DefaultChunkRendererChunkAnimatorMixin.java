@@ -17,6 +17,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
+import vorga.phazeclient.base.util.render.FogColorTracker;
 import vorga.phazeclient.base.util.shader.ChunkAnimatorShaderPatcher;
 import vorga.phazeclient.implement.features.modules.other.ChunkAnimator;
 
@@ -98,6 +99,7 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
     private static int phaze$cachedBlockIdx     = GL31.GL_INVALID_INDEX;
     private static int phaze$cachedModeLoc      = -1;
     private static int phaze$cachedFadeStyleLoc = -1;
+    private static int phaze$cachedFogMixColorLoc = -1;
 
     /**
      * GL buffer object name backing the {@code PhazeChunkAnimBlock}
@@ -130,6 +132,9 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
      * as {@link #phaze$lastUploadedMode}.
      */
     private static int phaze$lastUploadedFadeStyle = -1;
+    private static float phaze$lastFogMixR = Float.NaN;
+    private static float phaze$lastFogMixG = Float.NaN;
+    private static float phaze$lastFogMixB = Float.NaN;
 
     /**
      * Tracks whether the last UBO payload uploaded to the currently
@@ -271,6 +276,8 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
                     GL20.glGetUniformLocation(programId, "u_PhazeChunkAnimMode");
             phaze$cachedFadeStyleLoc =
                     GL20.glGetUniformLocation(programId, "u_PhazeFadeStyle");
+            phaze$cachedFogMixColorLoc =
+                    GL20.glGetUniformLocation(programId, "u_PhazeFogMixColor");
             // Force re-upload of every cached scalar uniform on the
             // new program. Uniform state persists per-GL-program for
             // the program's lifetime; when Iris swaps between
@@ -282,6 +289,9 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
             // forces the TAIL flush to seed the new program's state.
             phaze$lastUploadedFadeStyle = -1;
             phaze$lastUploadedMode = -1;
+            phaze$lastFogMixR = Float.NaN;
+            phaze$lastFogMixG = Float.NaN;
+            phaze$lastFogMixB = Float.NaN;
             // Identity flag resets to false - the new program's UBO
             // binding might point to whatever buffer the previous
             // program left there (UBO bindings are global GL state),
@@ -445,6 +455,19 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
             if (currentStyle != phaze$lastUploadedFadeStyle) {
                 GL20.glUniform1i(phaze$cachedFadeStyleLoc, currentStyle);
                 phaze$lastUploadedFadeStyle = currentStyle;
+            }
+        }
+        if (phaze$cachedFogMixColorLoc >= 0 && animator.isFadeMode()) {
+            float r = FogColorTracker.red();
+            float g = FogColorTracker.green();
+            float b = FogColorTracker.blue();
+            if (Float.compare(r, phaze$lastFogMixR) != 0
+                    || Float.compare(g, phaze$lastFogMixG) != 0
+                    || Float.compare(b, phaze$lastFogMixB) != 0) {
+                GL20.glUniform3f(phaze$cachedFogMixColorLoc, r, g, b);
+                phaze$lastFogMixR = r;
+                phaze$lastFogMixG = g;
+                phaze$lastFogMixB = b;
             }
         }
     }

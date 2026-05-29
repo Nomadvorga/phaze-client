@@ -147,4 +147,9 @@ public abstract class MinecraftClientMixin {
         currentFps = fake;
         cir.setReturnValue(fake);
     }
+
+    @Inject(method = "getWindowTitle", at = @At("HEAD"), cancellable = true)
+    private void phaze$windowTitle(CallbackInfoReturnable<String> cir) {
+        cir.setReturnValue("Phaze Client* 1.21.4");
+    }
 }

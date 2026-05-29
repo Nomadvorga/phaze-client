@@ -1,12 +1,16 @@
 package vorga.phazeclient.implement.features.modules.other;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.EquippableComponent;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.ItemGroup;
+import net.minecraft.item.ItemGroups;
 import net.minecraft.item.Items;
+import net.minecraft.registry.Registries;
 import net.minecraft.screen.slot.SlotActionType;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
@@ -14,6 +18,8 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.base.util.ServerUtil;
+
+import java.lang.reflect.Method;
 
 /**
  * Quick-swap chestplate <-> elytra utility. Triggered by a dedicated keybind
@@ -77,7 +83,9 @@ public final class ElytraUtility extends Module {
             return;
         }
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.currentScreen != null) {
+        // Allow ElytraSwap inside Creative inventory. For all other
+        // screens keep the old guard to avoid accidental swaps in UI.
+        if (mc.currentScreen != null && !(mc.currentScreen instanceof CreativeInventoryScreen)) {
             return;
         }
         if (!ServerUtil.isElytraUtilitySupported()) {
@@ -114,7 +122,10 @@ public final class ElytraUtility extends Module {
         Thread worker = new Thread(() -> {
             try {
                 Thread.sleep(SWAP_DELAY_MS);
-                mc.execute(() -> performSwap(sourceSlotId));
+                mc.execute(() -> {
+                    phaze$ensureCreativeInventoryTab();
+                    performSwap(sourceSlotId);
+                });
                 Thread.sleep(SWAP_DELAY_MS + 60L);
                 mc.execute(this::finishSwap);
             } catch (InterruptedException ignored) {
@@ -124,6 +135,34 @@ public final class ElytraUtility extends Module {
         }, "PhazeClient-ElytraSwap");
         worker.setDaemon(true);
         worker.start();
+    }
+
+    private void phaze$ensureCreativeInventoryTab() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || !mc.player.isCreative()) {
+            return;
+        }
+        if (mc.currentScreen instanceof CreativeInventoryScreen creativeScreen) {
+            try {
+                ItemGroup inventoryGroup = Registries.ITEM_GROUP.get(ItemGroups.INVENTORY);
+                if (inventoryGroup == null) {
+                    return;
+                }
+                for (Method method : creativeScreen.getClass().getDeclaredMethods()) {
+                    if (method.getParameterCount() == 1 && method.getReturnType() == Void.TYPE) {
+                        Class<?> param = method.getParameterTypes()[0];
+                        if (param.isInstance(inventoryGroup)) {
+                            method.setAccessible(true);
+                            method.invoke(creativeScreen, inventoryGroup);
+                            break;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+                // Fail-safe: if mappings/mods change this method, we still
+                // continue with swap attempt instead of hard-failing.
+            }
+        }
     }
 
     private void performSwap(int sourceSlotId) {

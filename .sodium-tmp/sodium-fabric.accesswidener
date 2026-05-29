@@ -1,0 +1,19 @@
+accessWidener	v1	intermediary
+accessible	class	net/minecraft/class_630$class_618
+accessible	class	net/minecraft/class_630$class_593
+accessible	class	net/minecraft/class_7764$class_4728
+accessible	class	net/minecraft/class_7764$class_5790
+accessible	class	net/minecraft/class_7764$class_5791
+accessible	class	net/minecraft/class_7764$class_7765
+accessible	class	net/minecraft/class_2841$class_6561
+accessible	class	net/minecraft/class_2841$class_6560
+accessible	class	net/minecraft/class_758$class_7285
+accessible	class	net/minecraft/class_758$class_7286
+accessible	class	net/minecraft/class_1055$class_1056
+accessible	class	net/minecraft/class_1959$class_5482
+accessible	method	net/minecraft/class_8901	<init>	(Ljava/util/List;)V
+accessible	method	net/minecraft/class_4587$class_4665	<init>	(Lorg/joml/Matrix4f;Lorg/joml/Matrix3f;)V
+accessible	field	net/minecraft/class_4587$class_4665	field_48930	Z
+accessible	field	net/minecraft/class_1933	field_9214	[I
+accessible	field	net/minecraft/class_1926	field_9183	[I
+accessible	method	net/minecraft/class_758	method_42588	(Lnet/minecraft/class_1297;F)Lnet/minecraft/class_758$class_7286;

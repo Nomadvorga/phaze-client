@@ -875,6 +875,13 @@ public final class Render3DUtil {
                                     java.util.List<Vec3d> points,
                                     int color, float lineWidth, boolean depthTest) {
         if (points == null || points.size() < 2) return;
+        // Large-coordinate precision fix:
+        // build vertices in a local origin near the path, not in absolute
+        // world coordinates. This avoids float precision loss around
+        // millions of blocks.
+        Vec3d origin = points.get(0);
+        matrices.push();
+        matrices.translate(origin.x, origin.y, origin.z);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         float a = ((color >>> 24) & 0xFF) / 255.0F;
         float r = ((color >>> 16) & 0xFF) / 255.0F;
@@ -895,8 +902,8 @@ public final class Render3DUtil {
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
         for (int i = 0; i < points.size() - 1; i++) {
-            Vec3d s = points.get(i);
-            Vec3d e = points.get(i + 1);
+            Vec3d s = points.get(i).subtract(origin);
+            Vec3d e = points.get(i + 1).subtract(origin);
             buffer.vertex(matrix, (float) s.x, (float) s.y, (float) s.z).color(r, g, b, a).normal(0, 1, 0);
             buffer.vertex(matrix, (float) e.x, (float) e.y, (float) e.z).color(r, g, b, a).normal(0, 1, 0);
         }
@@ -906,6 +913,7 @@ public final class Render3DUtil {
         RenderSystem.enableCull();
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
+        matrices.pop();
     }
 
     /**
@@ -944,6 +952,9 @@ public final class Render3DUtil {
             drawPolyline(matrices, points, color, lineWidth, depthTest);
             return;
         }
+        Vec3d origin = points.get(0);
+        matrices.push();
+        matrices.translate(origin.x, origin.y, origin.z);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         float maxA = ((color >>> 24) & 0xFF) / 255.0F;
         float r = ((color >>> 16) & 0xFF) / 255.0F;
@@ -971,8 +982,8 @@ public final class Render3DUtil {
         // reads as smooth.
         double accLen = 0.0;
         for (int i = 0; i < points.size() - 1; i++) {
-            Vec3d s = points.get(i);
-            Vec3d e = points.get(i + 1);
+            Vec3d s = points.get(i).subtract(origin);
+            Vec3d e = points.get(i + 1).subtract(origin);
             double segLen = e.subtract(s).length();
             if (segLen < 1e-7) continue;
 
@@ -1007,5 +1018,6 @@ public final class Render3DUtil {
         RenderSystem.enableCull();
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
+        matrices.pop();
     }
 }

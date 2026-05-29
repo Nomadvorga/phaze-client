@@ -1,0 +1,15 @@
+error: pathspec 'sky' did not match any file(s) known to git
+error: pathspec 'customizer' did not match any file(s) known to git
+error: pathspec '+' did not match any file(s) known to git
+error: pathspec 'iris/badopt' did not match any file(s) known to git
+error: pathspec 'compat' did not match any file(s) known to git
+error: pathspec 'kawase' did not match any file(s) known to git
+error: pathspec 'hud' did not match any file(s) known to git
+error: pathspec 'blur' did not match any file(s) known to git
+error: pathspec 'multi-select' did not match any file(s) known to git
+error: pathspec 'chip' did not match any file(s) known to git
+error: pathspec 'outline' did not match any file(s) known to git
+error: pathspec 'predictions' did not match any file(s) known to git
+error: pathspec 'entity' did not match any file(s) known to git
+error: pathspec 'color\  ' did not match any file(s) known to git
+Everything up-to-date

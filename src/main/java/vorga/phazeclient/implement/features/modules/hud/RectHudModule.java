@@ -137,7 +137,7 @@ public abstract class RectHudModule extends Module {
     }
 
     public void setHudScale(float hudScale) {
-        this.hudScale = MathHelper.clamp(hudScale, MIN_HUD_SCALE, MAX_HUD_SCALE);
+        this.hudScale = MathHelper.clamp(hudScale, getMinHudScale(), getMaxHudScale());
     }
 
     public float getMinHudScale() {

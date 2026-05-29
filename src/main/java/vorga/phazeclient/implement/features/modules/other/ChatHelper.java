@@ -14,12 +14,10 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.mixins.ChatHudAccessor;
 import vorga.phazeclient.mixins.NativeImageGetColorInvoker;
 
-import java.awt.Toolkit;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.Transferable;
-import java.awt.datatransfer.UnsupportedFlavorException;
-import java.awt.image.BufferedImage;
+import io.github.imurx.arboard.ImageData;
+import io.github.imurx.arboard.Clipboard;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -103,6 +101,9 @@ public final class ChatHelper extends Module {
      * for the AWT clipboard lock.
      */
     private final AtomicLong lastClipboardWriteMs = new AtomicLong(0L);
+    private final AtomicLong lastClipboardErrorMs = new AtomicLong(0L);
+    private static volatile Clipboard phaze$nativeClipboard;
+    private static volatile boolean phaze$nativeClipboardBroken = false;
 
     private ChatHelper() {
         super("chat_helper", "Chat Helper", ModuleCategory.OTHER);
@@ -384,7 +385,7 @@ public final class ChatHelper extends Module {
         }
         long now = System.currentTimeMillis();
         long previous = lastClipboardWriteMs.get();
-        if (now - previous < 50L) {
+        if (now - previous < 250L) {
             return;
         }
         lastClipboardWriteMs.set(now);
@@ -395,64 +396,93 @@ public final class ChatHelper extends Module {
             return;
         }
 
-        // NativeImage.getColor returns ABGR little-endian (R is low
-        // byte, A is high byte) for the default RGBA format that
-        // ScreenshotRecorder produces. Repack to ARGB for AWT.
         NativeImageGetColorInvoker invoker = (NativeImageGetColorInvoker) (Object) image;
-        BufferedImage buf = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int abgr = invoker.phaze$invokeGetColor(x, y);
-                int r = abgr & 0xFF;
-                int g = (abgr >>> 8) & 0xFF;
-                int b = (abgr >>> 16) & 0xFF;
-                int a = (abgr >>> 24) & 0xFF;
-                int argb = (a << 24) | (r << 16) | (g << 8) | b;
-                buf.setRGB(x, y, argb);
-            }
-        }
 
         Thread t = new Thread(() -> {
             try {
-                Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-                clipboard.setContents(new ImageTransferable(buf), null);
-            } catch (Throwable err) {
-                if (messageReceiver != null) {
-                    messageReceiver.accept(Text.literal("Screencopy failed: " + err.getMessage())
-                            .formatted(Formatting.RED));
+                if (!phaze$nativeClipboardBroken) {
+                    try {
+                        byte[] rgba = phaze$toNativeRgbaBytes(image, invoker, width, height);
+                        phaze$copyNative(width, height, rgba);
+                        return;
+                    } catch (UnsatisfiedLinkError e) {
+                        phaze$nativeClipboardBroken = true;
+                    }
                 }
+                if (!phaze$copyViaWindowsClipboardBridgeNativeImage(image)) {
+                    phaze$sendClipboardError(messageReceiver, "Screencopy Failed: native + bridge unavailable");
+                }
+            } catch (Throwable err) {
+                phaze$sendClipboardError(messageReceiver, "Screencopy Failed: " + err);
             }
         }, "Phaze-Screencopy");
         t.setDaemon(true);
         t.start();
     }
 
-    /**
-     * Minimal AWT {@link Transferable} that exposes a single
-     * {@link BufferedImage} via {@link DataFlavor#imageFlavor}. AWT's
-     * default clipboard supports {@code imageFlavor} on all three
-     * desktop platforms (Windows, macOS, X11/Wayland with a working
-     * java.awt clipboard service), so we don't try to fall back to
-     * other flavors - either it works or the catch in
-     * {@link #copyImageToClipboardAsync} surfaces the error.
-     */
-    private record ImageTransferable(BufferedImage image) implements Transferable {
-        @Override
-        public DataFlavor[] getTransferDataFlavors() {
-            return new DataFlavor[] { DataFlavor.imageFlavor };
-        }
+    private void phaze$sendClipboardError(Consumer<Text> messageReceiver, String message) {
+        if (messageReceiver == null) return;
+        long now = System.currentTimeMillis();
+        long last = lastClipboardErrorMs.get();
+        if (now - last < 3000L) return;
+        lastClipboardErrorMs.set(now);
+        messageReceiver.accept(Text.literal(message).formatted(Formatting.RED));
+    }
 
-        @Override
-        public boolean isDataFlavorSupported(DataFlavor flavor) {
-            return DataFlavor.imageFlavor.equals(flavor);
-        }
-
-        @Override
-        public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
-            if (!DataFlavor.imageFlavor.equals(flavor)) {
-                throw new UnsupportedFlavorException(flavor);
+    private static Clipboard phaze$getNativeClipboard() {
+        Clipboard local = phaze$nativeClipboard;
+        if (local != null) return local;
+        synchronized (ChatHelper.class) {
+            if (phaze$nativeClipboard == null) {
+                phaze$nativeClipboard = new Clipboard();
             }
-            return image;
+            return phaze$nativeClipboard;
         }
     }
+
+    private static void phaze$copyNative(int width, int height, byte[] rgba) {
+        ImageData data = new ImageData(width, height, rgba);
+        try {
+            phaze$getNativeClipboard().setImage(data);
+        } finally {
+            data.close();
+        }
+    }
+
+    private static byte[] phaze$toNativeRgbaBytes(NativeImage image, NativeImageGetColorInvoker invoker, int width, int height) {
+        java.nio.ByteBuffer imageBytes = java.nio.ByteBuffer
+                .allocate(width * height * 4)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                imageBytes.putInt(invoker.phaze$invokeGetColor(x, y));
+            }
+        }
+        return imageBytes.array();
+    }
+
+    private static boolean phaze$copyViaWindowsClipboardBridgeNativeImage(NativeImage image) throws Exception {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        if (!os.contains("win")) return false;
+        Path temp = Files.createTempFile("phaze_screencopy_", ".png");
+        try {
+            image.writeTo(temp);
+            String p = temp.toAbsolutePath().toString().replace("'", "''");
+            String script =
+                    "$path='" + p + "'; " +
+                    "Add-Type -AssemblyName PresentationCore; " +
+                    "$fs=[System.IO.File]::OpenRead($path); " +
+                    "try { " +
+                    "$dec=[System.Windows.Media.Imaging.PngBitmapDecoder]::new($fs,[System.Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat,[System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad); " +
+                    "[System.Windows.Clipboard]::SetImage($dec.Frames[0]); " +
+                    "} finally { $fs.Close() }";
+            Process proc = new ProcessBuilder("powershell.exe", "-NoProfile", "-STA", "-Command", script)
+                    .redirectErrorStream(true)
+                    .start();
+            return proc.waitFor() == 0;
+        } finally {
+            try { Files.deleteIfExists(temp); } catch (Throwable ignored) {}
+        }
+    }
+
 }

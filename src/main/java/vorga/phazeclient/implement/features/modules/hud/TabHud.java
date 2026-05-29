@@ -8,6 +8,7 @@ public final class TabHud extends RectHudModule {
 
     public final SectionSetting colorSection2 = new SectionSetting("Tab Colors");
     public final BooleanSetting highlightOwn = new BooleanSetting("Highlight Own Name", "Highlight own name on tab").setValue(true);
+    public final BooleanSetting showSelfOnTop = new BooleanSetting("Show Self On Top", "Move your own row to the top of tab list").setValue(false);
     public final BooleanSetting displayPingAsNumber = new BooleanSetting("Display Ping Number", "Show ping as number").setValue(true);
     public final BooleanSetting pingNumberShadow = new BooleanSetting("Ping Number Shadow", "Shadow for ping number").setValue(true)
             .visible(() -> displayPingAsNumber.isValue());
@@ -29,10 +30,11 @@ public final class TabHud extends RectHudModule {
                    || name.equals("HUD Batching") || name.equals("Force HUD Update") || name.equals("HUD FPS");
         });
         highlightOwn.setFullWidth(true);
+        showSelfOnTop.setFullWidth(true);
         displayPingAsNumber.setFullWidth(true);
         pingNumberShadow.setFullWidth(true);
         dynamicPingColor.setFullWidth(true);
-        setup(colorSection2, highlightOwn, displayPingAsNumber, pingNumberShadow, dynamicPingColor);
+        setup(colorSection2, highlightOwn, showSelfOnTop, displayPingAsNumber, pingNumberShadow, dynamicPingColor);
     }
 
     @Override

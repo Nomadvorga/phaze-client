@@ -127,16 +127,6 @@ public class ModuleComponent extends AbstractComponent {
      * changes harder to validate.
      */
     private void preUpdateAnimations(int mouseX, int mouseY, boolean inSearchMode) {
-        if (inSearchMode) {
-            hoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
-            optionsHoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
-            stateRowHoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
-            outlineColorAnimation.setDirectionAndFinish(module.isState() ? Direction.FORWARDS : Direction.BACKWARDS);
-            lastModuleState = module.isState();
-            this.isHovered = false;
-            return;
-        }
-
         this.isHovered = isHover(mouseX, mouseY);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
@@ -385,10 +375,8 @@ public class ModuleComponent extends AbstractComponent {
 
         if (showStateRow) {
             float enabledY = optionsY + OPTIONS_ROW_HEIGHT;
-            if (!inSearchMode) {
-                boolean stateRowHovered = MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT);
-                stateRowHoverAnimation.setDirection(stateRowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-            }
+            boolean stateRowHovered = MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT);
+            stateRowHoverAnimation.setDirection(stateRowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
             renderStateRow(context, enabledY, stateRowHoverAnimation.getOutputFloat());
         }
 
@@ -408,10 +396,8 @@ public class ModuleComponent extends AbstractComponent {
         float rowX = standaloneRow ? x : x + CARD_INSET;
         float rowWidth = standaloneRow ? width : width - CARD_INSET * 2.0F;
         float dividerX = rowX + rowWidth - iconSectionWidth;
-        if (!inSearchMode) {
-            boolean rowHovered = MathUtil.isHovered(mouseX, mouseY, rowX, optionsY, rowWidth, OPTIONS_ROW_HEIGHT);
-            optionsHoverAnimation.setDirection(rowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        }
+        boolean rowHovered = MathUtil.isHovered(mouseX, mouseY, rowX, optionsY, rowWidth, OPTIONS_ROW_HEIGHT);
+        optionsHoverAnimation.setDirection(rowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float rowHoverProgress = optionsHoverAnimation.getOutputFloat();
         int rowColor = MenuStyle.mix(baseRowColor, MenuStyle.TEXT_PRIMARY, rowHoverProgress * 0.055F);
         int borderColor = MenuStyle.withAlpha(MenuStyle.BORDER_LIGHT, applyGlobalAlpha(standaloneRow ? (0.45F + rowHoverProgress * 0.17F) : (0.35F + rowHoverProgress * 0.13F)));

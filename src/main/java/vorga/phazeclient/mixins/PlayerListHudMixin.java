@@ -27,6 +27,41 @@ import java.util.UUID;
 
 @Mixin(PlayerListHud.class)
 public class PlayerListHudMixin {
+    @ModifyVariable(
+            method = "render",
+            at = @At("STORE"),
+            ordinal = 0
+    )
+    private List<PlayerListEntry> phaze$moveSelfToTop(List<PlayerListEntry> original) {
+        TabHud tabHud = TabHud.getInstance();
+        if (!tabHud.isEnabled() || !tabHud.showSelfOnTop.isValue()) {
+            return original;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null || original == null || original.size() < 2) {
+            return original;
+        }
+
+        UUID selfUuid = client.player.getUuid();
+        int selfIndex = -1;
+        for (int i = 0; i < original.size(); i++) {
+            if (original.get(i).getProfile().getId().equals(selfUuid)) {
+                selfIndex = i;
+                break;
+            }
+        }
+
+        if (selfIndex <= 0) {
+            return original;
+        }
+
+        List<PlayerListEntry> reordered = new ArrayList<>(original);
+        PlayerListEntry self = reordered.remove(selfIndex);
+        reordered.add(0, self);
+        return reordered;
+    }
+
 
     @Inject(method = "renderLatencyIcon", at = @At("HEAD"), cancellable = true)
     private void phaze$renderPingAsNumber(DrawContext context, int width, int x, int y, PlayerListEntry entry, CallbackInfo ci) {

@@ -277,8 +277,8 @@ public final class ChunkAnimator extends Module {
      */
     public final SelectSetting fadeStyle = new SelectSetting(
             "Fade Style",
-            "Dither: Bayer 4x4 alpha-discard stipple. Fog Mix: smooth blend toward the current fog colour. Both apply only when Animation Type is Fade."
-    ).value("Dither", "Fog Mix").selected("Dither")
+            "Fog Mix: smooth blend toward fog-like distance colour. Applies only when Animation Type is Fade."
+    ).value("Fog Mix").selected("Fog Mix")
             .visible(() -> animationType.isSelected("Fade"));
 
     private ChunkAnimator() {
@@ -890,7 +890,7 @@ public final class ChunkAnimator extends Module {
      * is the natural "do nothing weird" default).
      */
     public int getFadeStyleIndex() {
-        return fadeStyle.isSelected("Fog Mix") ? 1 : 0;
+        return 1;
     }
 
     /**

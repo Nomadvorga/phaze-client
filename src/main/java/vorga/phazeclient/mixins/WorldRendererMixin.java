@@ -39,10 +39,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.render.Render3DUtil;
+import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.features.modules.other.BlockOverlay;
 import vorga.phazeclient.implement.features.modules.other.FTHelperRenderer;
 import vorga.phazeclient.implement.features.modules.other.HitRange;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
+import vorga.phazeclient.implement.features.modules.other.NoRender;
 import vorga.phazeclient.implement.features.modules.other.PredictionsRenderer;
 import vorga.phazeclient.implement.features.modules.other.WeatherChanger;
 import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
@@ -89,6 +91,11 @@ public abstract class WorldRendererMixin {
 
     @Inject(method = "renderWeather", at = @At("HEAD"), cancellable = true)
     private void phaze$cancelWeatherIfClear(FrameGraphBuilder builder, Vec3d cameraPos, float tickDelta, Fog fog, CallbackInfo ci) {
+        NoRender noRender = NoRender.getInstance();
+        if (noRender != null && noRender.isEnabled() && noRender.rain.isValue()) {
+            ci.cancel();
+            return;
+        }
         WeatherChanger weatherChanger = WeatherChanger.getInstance();
         if (weatherChanger.isWeatherOverrideActive() && weatherChanger.weatherType.getSelected().equals("Clear")) {
             ci.cancel();
@@ -101,6 +108,9 @@ public abstract class WorldRendererMixin {
 
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$motionBlurSetMatrices(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, Matrix4f positionMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
+        // Prepare a single stable world snapshot for nametag blur before
+        // any entity labels are drawn this frame.
+        Blur.INSTANCE.captureWorldSpaceFrame();
         if (!MotionBlur.getInstance().isEnabled()) return;
         float tickDelta = tickCounter.getTickDelta(true);
         float fov = ((GameRendererAccessor) gameRenderer).invokeGetFov(camera, tickDelta, true);

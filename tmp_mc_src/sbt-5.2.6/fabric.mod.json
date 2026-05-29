@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "shulkerboxtooltip",
+  "version": "5.2.6+1.21.4",
+  "name": "Shulker Box Tooltip",
+  "icon": "assets/shulkerboxtooltip/icon.png",
+  "description": "What\u0027s in my shulker box?",
+  "license": "MIT",
+  "authors": [
+    "MisterPeModder"
+  ],
+  "contributors": [
+    "Samekichi",
+    "disguys",
+    "Felix14-v2",
+    "egeesin",
+    "gbl",
+    "gyular",
+    "notlin4",
+    "JustEmo",
+    "ReneMuetti",
+    "yichifauzi",
+    "Alexander317",
+    "TheLegendofSaram",
+    "yumunet",
+    "Texaliuz",
+    "pilahito"
+  ],
+  "contact": {
+    "homepage": "https://minecraft.curseforge.com/projects/shulkerboxtooltip",
+    "sources": "https://github.com/MisterPeModder/ShulkerBoxTooltip",
+    "issues": "https://github.com/MisterPeModder/ShulkerBoxTooltip/issues",
+    "maven": "https://maven.misterpemodder.com/libs-release/com/misterpemodder/shulkerboxtooltip/"
+  },
+  "environment": "*",
+  "mixins": [
+    "shulkerboxtooltip-common.mixins.json",
+    "shulkerboxtooltip-fabric.mixins.json"
+  ],
+  "depends": {
+    "fabric-resource-loader-v0": "*",
+    "fabricloader": "\u003e\u003d0.15.0",
+    "minecraft": "\u003e\u003d1.21.4"
+  },
+  "entrypoints": {
+    "main": [
+      "com.misterpemodder.shulkerboxtooltip.fabric.ShulkerBoxTooltipImpl"
+    ],
+    "client": [
+      "com.misterpemodder.shulkerboxtooltip.fabric.ShulkerBoxTooltipClientImpl"
+    ],
+    "shulkerboxtooltip": [
+      "com.misterpemodder.shulkerboxtooltip.fabric.ShulkerBoxTooltipImpl"
+    ],
+    "modmenu": [
+      "com.misterpemodder.shulkerboxtooltip.impl.ModMenuCompat"
+    ]
+  },
+  "suggests": {
+    "modmenu": "*"
+  },
+  "accessWidener": "shulkerboxtooltip.accesswidener"
+}

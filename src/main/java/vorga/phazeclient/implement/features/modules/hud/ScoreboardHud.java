@@ -13,14 +13,17 @@ public final class ScoreboardHud extends RectHudModule {
 
     public final SectionSetting otherSection = new SectionSetting("Other");
     public final BooleanSetting showNumbers = new BooleanSetting("Show Numbers", "Show score numbers on the right").setValue(true);
+    public final BooleanSetting showZeros = new BooleanSetting("Show Zeros", "Show zero values in score numbers").setValue(true)
+            .visible(() -> showNumbers.isValue());
     public final BooleanSetting showTitle = new BooleanSetting("Show Title", "Show scoreboard title").setValue(true);
 
     private ScoreboardHud() {
         // Default position: right side, vertically centered
-        super("scoreboard_hud", "Scoreboard", 0.0f, 0.0f, 1.5f);
+        super("scoreboard_hud", "Scoreboard", 0.0f, 0.0f, 1.0f);
         showNumbers.setFullWidth(true);
+        showZeros.setFullWidth(true);
         showTitle.setFullWidth(true);
-        setup(otherSection, showNumbers, showTitle);
+        setup(otherSection, showNumbers, showZeros, showTitle);
     }
 
     @Override
@@ -40,7 +43,12 @@ public final class ScoreboardHud extends RectHudModule {
 
     @Override
     public float getMinHudScale() {
-        return 1.0f;
+        return 0.5f;
+    }
+
+    @Override
+    public float getMaxHudScale() {
+        return 6.0f;
     }
 
     public boolean shouldUseVanillaColors() {

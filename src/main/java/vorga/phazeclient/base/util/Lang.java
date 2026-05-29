@@ -397,6 +397,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Fire", "Огонь");
         SETTING_TRANSLATIONS.put("Flash On Expiry", "Мигание при истечении");
         SETTING_TRANSLATIONS.put("Food Particles", "Частицы еды");
+        SETTING_TRANSLATIONS.put("Mace Particles", "Частицы булавы");
         SETTING_TRANSLATIONS.put("Forces maximum lightmap brightness so caves and night render at near-day levels", "Принудительно ставит макс яркость, чтобы пещеры и ночь рендерились почти как днём");
         SETTING_TRANSLATIONS.put("Format", "Формат");
         SETTING_TRANSLATIONS.put("FOV", "FOV (поле зрения)");
@@ -738,6 +739,8 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Particle Size", "Размер частиц");
         SETTING_TRANSLATIONS.put("Particle Speed", "Скорость частиц");
         SETTING_TRANSLATIONS.put("Particle Types", "Типы частиц");
+        SETTING_TRANSLATIONS.put("Scoreboard", "Скорборд");
+        SETTING_TRANSLATIONS.put("Boss Bar", "Босс-бар");
         SETTING_TRANSLATIONS.put("Particles", "Частицы");
         SETTING_TRANSLATIONS.put("Periodically attacks or uses item based on selected hand", "Периодически атакует или использует предмет в выбранной руке");
         SETTING_TRANSLATIONS.put("Ping HUD", "Пинг HUD");
