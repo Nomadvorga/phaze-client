@@ -6,6 +6,7 @@ import net.minecraft.client.particle.ParticleManager;
 import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleType;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.registry.Registries;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import org.spongepowered.asm.mixin.Mixin;
@@ -122,6 +123,17 @@ public abstract class ParticleManagerNoRenderMixin {
             // Particles" still describes the dominant path.
             if (type == ParticleTypes.ITEM) {
                 return true;
+            }
+        }
+        if (mod.maceParticles.isValue()) {
+            // Keep this resilient across mapping/minor-version renames:
+            // match by registry path instead of hard-coding enum constants.
+            var id = Registries.PARTICLE_TYPE.getId(type);
+            if (id != null) {
+                String path = id.getPath();
+                if (path.contains("gust") || path.contains("wind")) {
+                    return true;
+                }
             }
         }
         return false;

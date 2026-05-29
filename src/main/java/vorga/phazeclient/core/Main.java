@@ -4,6 +4,7 @@ import lombok.Getter;
 import net.fabricmc.api.ModInitializer;
 import vorga.phazeclient.api.feature.module.ModuleProvider;
 import vorga.phazeclient.api.system.discord.DiscordManager;
+import vorga.phazeclient.base.util.HolyWorldFeatureControlService;
 import vorga.phazeclient.base.util.render.ScissorManager;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
 import vorga.phazeclient.implement.features.modules.hud.CoordinatesHud;
@@ -59,6 +60,8 @@ public class Main implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        HolyWorldFeatureControlService.getInstance().init();
+
         if (moduleProvider.get(Theme.class) == null) {
             moduleProvider.getModules().add(Theme.getInstance());
         }
@@ -322,10 +325,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChunkAnimator.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChunkAnimator.getInstance());
         }
-// TODO: ScoreboardHud temporarily disabled for debugging
-        // if (moduleProvider.get(ScoreboardHud.class) == null) {
-        //     moduleProvider.getModules().add(ScoreboardHud.getInstance());
-        // }
+        if (moduleProvider.get(ScoreboardHud.class) == null) {
+            moduleProvider.getModules().add(ScoreboardHud.getInstance());
+        }
 
         configManager.loadCurrentConfig();
 

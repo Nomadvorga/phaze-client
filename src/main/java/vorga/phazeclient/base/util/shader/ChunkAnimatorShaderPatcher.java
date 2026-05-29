@@ -215,6 +215,7 @@ public final class ChunkAnimatorShaderPatcher {
     private static final String FRAGMENT_DECL =
               "\nin float v_PhazeChunkAnimFade;"
             + "\nuniform int u_PhazeFadeStyle;"
+            + "\nuniform vec3 u_PhazeFogMixColor;"
             + "\nconst float phaze_kBayer4x4[16] = float[16]("
             + "\n     0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,"
             + "\n    12.0/16.0,  4.0/16.0, 14.0/16.0,  6.0/16.0,"
@@ -272,7 +273,7 @@ public final class ChunkAnimatorShaderPatcher {
             Pattern.compile("((?:fragColor|out_FragColor)\\s*=\\s*[^;]+;)");
     private static final String FRAG_FOGMIX_PATCH_TEMPLATE =
               "$1\n    if (u_PhazeFadeStyle == 1 && v_PhazeChunkAnimFade < 1.0) {"
-            + "\n        {frag_color} = mix({frag_color}, u_FogColor,"
+            + "\n        {frag_color} = mix({frag_color}, vec4(u_PhazeFogMixColor, {frag_color}.a),"
             + " 1.0 - v_PhazeChunkAnimFade);"
             + "\n    }";
 

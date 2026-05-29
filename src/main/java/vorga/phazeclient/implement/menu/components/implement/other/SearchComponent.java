@@ -190,6 +190,7 @@ public class SearchComponent extends AbstractComponent {
                     int autocompleteColor = autocompleteAlpha | 0x777777;
 
                     Main.getInstance().getModuleProvider().getModules().stream()
+                            .filter(Module::isVisible)
                             .filter(mod -> mod.getLocalizedName().toLowerCase().startsWith(searchText))
                             .findFirst()
                             .ifPresentOrElse(module -> {
@@ -464,6 +465,7 @@ public class SearchComponent extends AbstractComponent {
             String searchText = text.toLowerCase();
 
             Main.getInstance().getModuleProvider().getModules().stream()
+                    .filter(Module::isVisible)
                     .filter(mod -> mod.getLocalizedName().toLowerCase().startsWith(searchText))
                     .findFirst()
                     .ifPresentOrElse(module -> {
@@ -480,6 +482,7 @@ public class SearchComponent extends AbstractComponent {
 
     private java.util.Optional<Setting> findFirstMatchingSetting(String searchText) {
         return Main.getInstance().getModuleProvider().getModules().stream()
+                .filter(Module::isVisible)
                 .flatMap(module -> findMatchingSettingInModule(module, searchText).stream())
                 .findFirst();
     }

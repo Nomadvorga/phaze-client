@@ -55,6 +55,15 @@ public abstract class HandledScreenMixin {
 
     @Shadow protected abstract void onMouseClick(@Nullable Slot slot, int slotId, int button, SlotActionType actionType);
 
+    @Unique
+    private static void phaze$resetGuiRenderState() {
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableBlend();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
     // ---------------------------------------------------------------
     // ItemScroller unique state
     // ---------------------------------------------------------------
@@ -189,6 +198,16 @@ public abstract class HandledScreenMixin {
     // HealingHelper / ItemHighlighter / MaceIndicator: trailing 36 fills
     // ---------------------------------------------------------------
 
+    @Inject(method = "render", at = @At("HEAD"))
+    private void phaze$resetStateAtRenderHead(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        phaze$resetGuiRenderState();
+    }
+
+    @Inject(method = "drawSlot", at = @At("HEAD"))
+    private void phaze$resetStateBeforeSlot(DrawContext context, Slot slot, CallbackInfo ci) {
+        phaze$resetGuiRenderState();
+    }
+
     @Inject(method = "render", at = @At("RETURN"))
     private void phaze$drawHealingHighlights(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         HealingHelper module = HealingHelper.getInstance();
@@ -211,9 +230,11 @@ public abstract class HandledScreenMixin {
     private void phaze$drawMaceIndicatorHighlights(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         MaceIndicator module = MaceIndicator.getInstance();
         if (module == null || !module.isEnabled()) {
+            phaze$resetGuiRenderState();
             return;
         }
         phaze$paintInventoryFills(context, module::colorForStack);
+        phaze$resetGuiRenderState();
     }
 
     /**
@@ -239,6 +260,8 @@ public abstract class HandledScreenMixin {
         context.draw();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        RenderSystem.depthMask(true);
 
         for (int i = playerInvStart; i < totalSlots; i++) {
             Slot slot = handler.slots.get(i);
@@ -253,5 +276,6 @@ public abstract class HandledScreenMixin {
         }
 
         context.draw();
+        phaze$resetGuiRenderState();
     }
 }

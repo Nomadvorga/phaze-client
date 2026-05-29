@@ -194,7 +194,7 @@ public final class MentionHighlight extends Module {
         if (!isEnabled() || content == null) {
             return;
         }
-        lastOutgoing = content.toLowerCase().trim();
+        lastOutgoing = normalizeForEcho(content);
         lastOutgoingAtMs = System.currentTimeMillis();
     }
 
@@ -221,6 +221,7 @@ public final class MentionHighlight extends Module {
         if (flat == null || flat.isEmpty()) {
             return original;
         }
+        String normalizedFlat = normalizeForEcho(flat);
 
         // Self-author skip: parse the sender name out of the chat
         // header and bail if it equals our own username. Covers the
@@ -262,11 +263,16 @@ public final class MentionHighlight extends Module {
         // pings.
         long now = System.currentTimeMillis();
         String pending = lastOutgoing;
-        if (pending != null && !pending.isEmpty()
-                && now - lastOutgoingAtMs <= ECHO_WINDOW_MS
-                && flat.toLowerCase().contains(pending)) {
-            lastOutgoing = null;
-            return original;
+        if (pending != null && !pending.isEmpty()) {
+            long age = now - lastOutgoingAtMs;
+            if (age > ECHO_WINDOW_MS) {
+                // Expire stale echo latch so it can't suppress
+                // unrelated mentions after network hiccups.
+                lastOutgoing = null;
+            } else if (matchesOutgoingEcho(normalizedFlat, pending)) {
+                lastOutgoing = null;
+                return original;
+            }
         }
 
         // Sound first - cheaper to short-circuit on cooldown than
@@ -440,6 +446,52 @@ public final class MentionHighlight extends Module {
         if (v < lo) return lo;
         if (v > hi) return hi;
         return v;
+    }
+
+    private static String normalizeForEcho(String s) {
+        if (s == null || s.isEmpty()) return "";
+        StringBuilder out = new StringBuilder(s.length());
+        boolean prevSpace = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = Character.toLowerCase(s.charAt(i));
+            if (Character.isLetterOrDigit(c)) {
+                out.append(c);
+                prevSpace = false;
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                if (!prevSpace) {
+                    out.append(' ');
+                    prevSpace = true;
+                }
+            }
+        }
+        int start = 0;
+        int end = out.length();
+        while (start < end && out.charAt(start) == ' ') start++;
+        while (end > start && out.charAt(end - 1) == ' ') end--;
+        return out.substring(start, end);
+    }
+
+    private static boolean matchesOutgoingEcho(String incoming, String pendingOutgoing) {
+        if (incoming == null || pendingOutgoing == null
+                || incoming.isEmpty() || pendingOutgoing.isEmpty()) {
+            return false;
+        }
+        if (incoming.contains(pendingOutgoing) || pendingOutgoing.contains(incoming)) {
+            return true;
+        }
+        // Very short snippets are noisy; require a minimum meaningful overlap.
+        if (pendingOutgoing.length() < 6) {
+            return false;
+        }
+        String[] tokens = pendingOutgoing.split(" ");
+        int matched = 0;
+        for (String t : tokens) {
+            if (t.length() < 3) continue;
+            if (incoming.contains(t)) matched++;
+        }
+        return matched >= 2;
     }
 
     /**

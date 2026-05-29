@@ -94,6 +94,7 @@ import vorga.phazeclient.implement.features.modules.other.HudOptimizer;
 import vorga.phazeclient.implement.features.modules.other.ItemHighlighter;
 import vorga.phazeclient.implement.features.modules.other.MaceIndicator;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
+import vorga.phazeclient.implement.features.modules.other.NoRender;
 import vorga.phazeclient.implement.features.modules.other.Saturation;
 import vorga.phazeclient.implement.features.modules.hud.InventoryHud;
 import vorga.phazeclient.implement.features.modules.hud.PlayerModelHud;
@@ -264,6 +265,15 @@ public class InGameHudMixin {
     private static float directionDisplayYaw = Float.NaN;
     private static final long SESSION_START_MS = System.currentTimeMillis();
 
+    @Unique
+    private static void phaze$resetGuiRenderState() {
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableBlend();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
 
     @Inject(method = "render", at = @At("HEAD"))
     private void beginHudFrame(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
@@ -284,6 +294,23 @@ public class InGameHudMixin {
     @Inject(method = "renderStatusEffectOverlay", at = @At("HEAD"), cancellable = true)
     private void phaze$suppressVanillaStatusEffectOverlay(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         if (PotionHud.getInstance().isEnabled()) {
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V", at = @At("HEAD"), cancellable = true)
+    private void phaze$suppressVanillaScoreboardSidebar(DrawContext context, ScoreboardObjective objective, CallbackInfo ci) {
+        NoRender noRender = NoRender.getInstance();
+        boolean hideByNoRender = noRender != null && noRender.isEnabled() && noRender.scoreboard.isValue();
+        if (ScoreboardHud.getInstance().isEnabled() || hideByNoRender) {
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "renderBossBar", at = @At("HEAD"), cancellable = true, require = 0)
+    private void phaze$suppressVanillaBossBar(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        NoRender noRender = NoRender.getInstance();
+        if (noRender != null && noRender.isEnabled() && noRender.bossBar.isValue()) {
             ci.cancel();
         }
     }
@@ -658,10 +685,9 @@ public class InGameHudMixin {
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(consumable, chatEditing, deltaSeconds),
                         inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
-        // TODO: Scoreboard HUD temporarily disabled for debugging
-        // renderBufferedHud(context, ScoreboardHud.getInstance(), chatEditing, () ->
-        //         renderScoreboardHud(context, client, ScoreboardHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
-        //                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+        renderBufferedHud(context, ScoreboardHud.getInstance(), chatEditing, () ->
+                renderScoreboardHud(context, client, ScoreboardHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
+                        deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
         if (lastCallThisFrame) {
             if (chatEditing) {
@@ -855,6 +881,8 @@ public class InGameHudMixin {
         module.setHudY(y);
 
         int handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
+        // Place resize handle diagonally on the bottom-right corner:
+        // half inside the HUD and half outside, like a corner grip.
         float handleX = x + hudWidth - handleSize / 2.0f;
         float handleY = y + hudHeight - handleSize / 2.0f;
 
@@ -1405,8 +1433,8 @@ public class InGameHudMixin {
         module.setHudY(y);
 
         int handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
-        float handleX = x + hudWidth - handleSize / 2.0f;
-        float handleY = y + hudHeight - handleSize / 2.0f;
+        float handleX = x + hudWidth - handleSize;
+        float handleY = y + hudHeight - handleSize;
         boolean hovered = false;
         boolean hoveredHandle = false;
         boolean nearHud = false;
@@ -1453,8 +1481,8 @@ public class InGameHudMixin {
                     module.setHudY(newY);
                     x = newX;
                     y = newY;
-                    handleX = x + hudWidth - handleSize / 2.0f;
-                    handleY = y + hudHeight - handleSize / 2.0f;
+                    handleX = x + hudWidth - handleSize;
+                    handleY = y + hudHeight - handleSize;
                 } else if (RECT_RESIZING[hudIndex]) {
                     float deltaX = (float) mouseX - RECT_RESIZE_START_MOUSE_X[hudIndex];
                     float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
@@ -1472,8 +1500,8 @@ public class InGameHudMixin {
                     module.setHudX(x);
                     module.setHudY(y);
                     handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
-                    handleX = x + hudWidth - handleSize / 2.0f;
-                    handleY = y + hudHeight - handleSize / 2.0f;
+                    handleX = x + hudWidth - handleSize;
+                    handleY = y + hudHeight - handleSize;
                 }
             }
 
@@ -1925,19 +1953,22 @@ public class InGameHudMixin {
         var entries = scoreboard.getScoreboardEntries(objective);
         var filteredEntries = entries.stream()
                 .filter(entry -> !entry.hidden())
-                .sorted((a, b) -> Integer.compare(b.value(), a.value()))
+                .sorted((a, b) -> {
+                    int byValue = Integer.compare(b.value(), a.value());
+                    if (byValue != 0) return byValue;
+                    return String.CASE_INSENSITIVE_ORDER.compare(a.owner(), b.owner());
+                })
                 .limit(15)
                 .toList();
         if (filteredEntries.isEmpty()) {
             return;
         }
 
-        var numberFormat = objective.getNumberFormat();
-
         // Create sidebar entries
         interface SidebarEntry {
             net.minecraft.text.Text name();
             net.minecraft.text.Text score();
+            boolean hasScore();
             int scoreWidth();
         }
 
@@ -1946,11 +1977,22 @@ public class InGameHudMixin {
             var team = scoreboard.getScoreHolderTeam(entry.owner());
             var name = entry.name();
             var decoratedName = net.minecraft.scoreboard.Team.decorateName(team, name);
-            var formattedScore = entry.formatted(numberFormat);
-            int scoreWidth = (int)getHudTextWidth(client, formattedScore.getString(), HUD_TEXT_SIZE);
+            // Respect server-provided number rendering. If the server omits
+            // right-side numbers, do not force-draw them.
+            net.minecraft.text.Text formattedScore = net.minecraft.text.Text.empty();
+            boolean hasScore = false;
+            try {
+                formattedScore = entry.formatted(objective.getNumberFormat());
+                String rawScore = formattedScore == null ? "" : formattedScore.getString();
+                hasScore = rawScore != null && !rawScore.trim().isEmpty();
+            } catch (Throwable ignored) {
+                hasScore = false;
+            }
+            int scoreWidth = hasScore ? (int)getHudTextWidth(client, formattedScore.getString(), HUD_TEXT_SIZE) : 0;
 
             final var finalDecoratedName = decoratedName;
             final var finalFormattedScore = formattedScore;
+            final var finalHasScore = hasScore;
             final var finalScoreWidth = scoreWidth;
 
             sidebarEntries.add(new SidebarEntry() {
@@ -1958,6 +2000,8 @@ public class InGameHudMixin {
                 public net.minecraft.text.Text name() { return finalDecoratedName; }
                 @Override
                 public net.minecraft.text.Text score() { return finalFormattedScore; }
+                @Override
+                public boolean hasScore() { return finalHasScore; }
                 @Override
                 public int scoreWidth() { return finalScoreWidth; }
             });
@@ -1967,14 +2011,19 @@ public class InGameHudMixin {
         var title = objective.getDisplayName();
         int titleWidth = (int)getHudTextWidth(client, title.getString(), HUD_TEXT_SIZE);
         int maxContentWidth = titleWidth;
-        int separatorWidth = (int)getHudTextWidth(client, ": ", HUD_TEXT_SIZE);
         int entryCount = sidebarEntries.size();
 
         for (var sidebarEntry : sidebarEntries) {
             int textWidth = (int)getHudTextWidth(client, sidebarEntry.name().getString(), HUD_TEXT_SIZE);
-            int scoreWidth = sidebarEntry.scoreWidth();
+            boolean hideZeroScore = sidebarEntry.hasScore()
+                    && module.showNumbers.isValue()
+                    && !module.showZeros.isValue()
+                    && phaze$isZeroScoreText(sidebarEntry.score());
+            int scoreWidth = (sidebarEntry.hasScore() && !hideZeroScore) ? sidebarEntry.scoreWidth() : 0;
             if (scoreWidth > 0) {
-                maxContentWidth = Math.max(maxContentWidth, textWidth + separatorWidth + scoreWidth);
+                // Vanilla sidebar aligns score to the right edge with a small
+                // fixed gap; no extra ": " separator is rendered.
+                maxContentWidth = Math.max(maxContentWidth, textWidth + scoreWidth + 2);
             } else {
                 maxContentWidth = Math.max(maxContentWidth, textWidth);
             }
@@ -1982,11 +2031,31 @@ public class InGameHudMixin {
 
         int vanillaHorizontalPadding = 3;
         float baseWidth = maxContentWidth + vanillaHorizontalPadding + 2;
-        float baseHeight = entryCount * 9.0f + (module.showTitle.isValue() ? 10.0f : 1.0f);
+        int topInset = module.showTitle.isValue() ? 10 : 1;
+        float baseHeight = entryCount * 9.0f + topInset;
 
-        // Render base frame using renderRectHud
-        renderRectHud(context, client, module, "", HUD_SCOREBOARD, chatEditing, mouseX, mouseY, mouseDown,
-                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight);
+        // If the HUD is still at its constructor default (0,0), place it at
+        // vanilla-like sidebar position (right side, vertically centered).
+        if (module.getHudX() <= 1.0f && module.getHudY() <= 1.0f) {
+            float scale = module.getHudScale();
+            float hudWidth = baseWidth * scale;
+            float hudHeight = baseHeight * scale;
+            float vanillaX = Math.max(0.0f, screenWidth - hudWidth - 2.0f);
+            float vanillaY = Math.max(0.0f, (screenHeight - hudHeight) * 0.5f);
+            module.setHudX(vanillaX);
+            module.setHudY(vanillaY);
+        }
+
+        // Keep drag/resize logic from RectHud, but prevent its own background
+        // from drawing here: scoreboard renders a vanilla-style background below.
+        boolean prevBackground = module.background.isValue();
+        module.background.setValue(false);
+        try {
+            renderRectHud(context, client, module, "", HUD_SCOREBOARD, chatEditing, mouseX, mouseY, mouseDown,
+                    deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight);
+        } finally {
+            module.background.setValue(prevBackground);
+        }
 
         // Get actual position and scale after renderRectHud
         float hudX = module.getHudX();
@@ -1994,10 +2063,9 @@ public class InGameHudMixin {
         float hudScale = module.getHudScale();
 
         // Calculate render positions in local coordinates (relative to hudX, hudY)
-        int rightEdgeLocal = maxContentWidth + vanillaHorizontalPadding;
-        int topYLocal = 0;
+        int rightEdgeLocal = Math.round(baseWidth);
+        int textLeftLocal = 2;
         int verticalPosLocal = entryCount * 9;
-        int titleYLocal = module.showTitle.isValue() ? -10 : 0;
 
         // Get colors
         int titleBgColor;
@@ -2016,10 +2084,13 @@ public class InGameHudMixin {
         context.getMatrices().push();
         context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z);
         context.getMatrices().scale(hudScale, hudScale, 1.0f);
+        // Keep all drawable pixels inside RectHud bounds so selection/resize
+        // area always matches, including the title strip.
+        context.getMatrices().translate(0.0f, topInset, 0.0f);
 
         // Render blur and background
         if (module.background.isValue()) {
-            int backgroundTopLocal = module.showTitle.isValue() ? -10 : -1;
+            int backgroundTopLocal = -topInset;
             int backgroundBottomLocal = verticalPosLocal;
 
             if (module.backgroundBlurRadius.getValue() > 0) {
@@ -2027,7 +2098,7 @@ public class InGameHudMixin {
                 context.draw();
                 if (blurQuality > 0.0f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(),
-                                    -2, backgroundTopLocal, rightEdgeLocal + 2, backgroundBottomLocal - backgroundTopLocal)
+                                    0, backgroundTopLocal, rightEdgeLocal, backgroundBottomLocal - backgroundTopLocal)
                             .round(0.0f)
                             .softness(0.0f)
                             .quality(blurQuality)
@@ -2035,25 +2106,23 @@ public class InGameHudMixin {
                             .build());
                 }
                 if (module.showTitle.isValue()) {
-                    context.fill(-2, -10, rightEdgeLocal, -1, titleBgColor);
+                    context.fill(0, -topInset, rightEdgeLocal, -1, titleBgColor);
                 }
-                context.fill(-2, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
+                context.fill(0, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
                 context.draw();
             } else {
                 if (module.showTitle.isValue()) {
-                    context.fill(-2, -10, rightEdgeLocal, -1, titleBgColor);
+                    context.fill(0, -topInset, rightEdgeLocal, -1, titleBgColor);
                 }
-                context.fill(-2, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
+                context.fill(0, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
             }
         }
-
-        context.getMatrices().pop();
 
         // Render title (in local coordinates)
         if (module.showTitle.isValue()) {
             float titleX = (rightEdgeLocal - titleWidth) / 2.0f;
             var textRenderer = client.textRenderer;
-            context.drawText(textRenderer, title, (int)titleX, -9, -1, false);
+            context.drawText(textRenderer, title, (int)titleX, -topInset + 1, -1, false);
         }
 
         // Render entries (in local coordinates)
@@ -2062,17 +2131,49 @@ public class InGameHudMixin {
             int rowY = verticalPosLocal - (entryCount - i) * 9;
 
             var textRenderer = client.textRenderer;
-            context.drawText(textRenderer, sidebarEntry.name(), 0, rowY, -1, false);
+            context.drawText(textRenderer, sidebarEntry.name(), textLeftLocal, rowY, -1, false);
 
-            if (module.showNumbers.isValue()) {
+            if (module.showNumbers.isValue() && sidebarEntry.hasScore()) {
+                if (!module.showZeros.isValue() && phaze$isZeroScoreText(sidebarEntry.score())) {
+                    continue;
+                }
                 float scoreWidth = sidebarEntry.scoreWidth();
-                float scoreX = rightEdgeLocal - scoreWidth;
+                float scoreX = rightEdgeLocal - 2.0f - scoreWidth;
                 context.drawText(textRenderer, sidebarEntry.score(), (int)scoreX, rowY, -1, false);
             }
         }
 
         context.getMatrices().pop();
         context.getMatrices().pop();
+
+    }
+
+    @Unique
+    private static boolean phaze$isZeroScoreText(Text scoreText) {
+        if (scoreText == null) {
+            return false;
+        }
+        String raw = scoreText.getString();
+        if (raw == null || raw.isEmpty()) {
+            return false;
+        }
+
+        boolean sawDigit = false;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (Character.isWhitespace(c)) {
+                continue;
+            }
+            if (Character.isDigit(c)) {
+                sawDigit = true;
+                if (c != '0') {
+                    return false;
+                }
+                continue;
+            }
+            return false;
+        }
+        return sawDigit;
     }
 
     private void renderDirectionHud(
@@ -2847,7 +2948,9 @@ public class InGameHudMixin {
         // Soft compressed curve: the 0-32 slider changes blur gently, and max blur stays controlled.
         float t = MathHelper.clamp(radius / 32.0f, 0.0f, 1.0f);
         float strength = 0.42f + 0.33f * t;
-        return radius * strength * Theme.getInstance().getHudBlurQualityMultiplier();
+        // User request: at slider 32 HUD blur must be exactly 3x weaker
+        // than before, while preserving the same smooth response curve.
+        return radius * strength * Theme.getInstance().getHudBlurQualityMultiplier() * (1.0f / 3.0f);
     }
 
     private static long makeHudBlurStateKey(float normalizedRadius, float safeScale, float x, float y, float width, float height) {
@@ -4186,6 +4289,7 @@ public class InGameHudMixin {
             context.fill(itemX, itemY, itemX + 16, itemY + 16, color);
         }
         context.draw();
+        phaze$resetGuiRenderState();
     }
 
     // ====================================================================
@@ -4194,8 +4298,8 @@ public class InGameHudMixin {
 
     @Inject(method = "renderHotbar", at = @At("TAIL"))
     private void phaze$flushHotbarBatch(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         context.draw();
+        phaze$resetGuiRenderState();
     }
 
     // ====================================================================

@@ -1,0 +1,9 @@
+[master ec8c2bc] sky customizer + iris/badopt compat, kawase hud blur, multi-select chip outline, predictions entity color
+ 19 files changed, 764 insertions(+), 490 deletions(-)
+ create mode 100644 src/main/java/vorga/phazeclient/mixins/BackgroundRendererSkyCustomizerMixin.java
+ create mode 100644 src/main/java/vorga/phazeclient/mixins/ChatScreenDragSelectMixin.java
+ delete mode 100644 src/main/java/vorga/phazeclient/mixins/ClientWorldHorizonSmoothSkiesMixin.java
+ delete mode 100644 src/main/java/vorga/phazeclient/mixins/GameRendererFarPlaneSmoothSkiesMixin.java
+ create mode 100644 src/main/java/vorga/phazeclient/mixins/iris/IrisSkyColorUniformMixin.java
+To https://github.com/Nomadvorga/phaze-client.git
+   9a74508..ec8c2bc  master -> master

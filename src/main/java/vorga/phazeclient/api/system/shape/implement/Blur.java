@@ -42,6 +42,11 @@ public class Blur implements Shape {
             VertexFormats.POSITION,
             Defines.EMPTY
     );
+    private static final ShaderProgramKey DUAL_KAWASE_SHADER_KEY = new ShaderProgramKey(
+            Identifier.of("phaze", "core/blur_dual_kawase"),
+            VertexFormats.POSITION,
+            Defines.EMPTY
+    );
 
     // Cached blur kernel weights for common blur radii (optimization)
     private static final java.util.Map<Integer, float[]> BLUR_KERNEL_CACHE = new java.util.HashMap<>();
@@ -51,6 +56,10 @@ public class Blur implements Shape {
     private Framebuffer input;
     private Framebuffer ping;
     private Framebuffer pong;
+    private Framebuffer halfA;
+    private Framebuffer halfB;
+    private Framebuffer quarterA;
+    private Framebuffer quarterB;
     private boolean cachedFramePrepared = false;
     private boolean hudBatchMode = false;
     private boolean hudBatchStateApplied = false;
@@ -76,12 +85,18 @@ public class Blur implements Shape {
     private int lastWorldCaptureWidth = -1;
     private int lastWorldCaptureHeight = -1;
     private boolean worldCaptureInitialized = false;
+    private long worldSpaceFrameStamp = Long.MIN_VALUE;
+    private float lastDualKawaseRadius = -1.0f;
+    private int lastDualKawaseWidth = -1;
+    private int lastDualKawaseHeight = -1;
+    private boolean dualKawasePrepared = false;
 
     public void beginCachedFrame() {
         cachedFramePrepared = false;
         hudBatchMode = true;
         hudBatchStateApplied = false;
         hudBatchMaskShader = null;
+        dualKawasePrepared = false;
     }
 
     /**
@@ -117,8 +132,7 @@ public class Blur implements Shape {
 
     public void endCachedFrame() {
         if (hudBatchStateApplied) {
-            RenderSystem.enableDepthTest();
-            RenderSystem.disableBlend();
+            restoreRenderState(true);
         }
         hudBatchMode = false;
         hudBatchStateApplied = false;
@@ -198,7 +212,7 @@ public class Blur implements Shape {
             buffer.end();
         }
         RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
+        restoreRenderState(true);
     }
 
     public void renderCached(ShapeProperties shape) {
@@ -216,27 +230,18 @@ public class Blur implements Shape {
 
         int framebufferWidth = Math.max(1, client.getWindow().getFramebufferWidth());
         int framebufferHeight = Math.max(1, client.getWindow().getFramebufferHeight());
-        long now = System.nanoTime();
-        boolean guiActive = client.currentScreen != null;
-        boolean cameraMoved = hasCameraMoved(client);
-        boolean resized = framebufferWidth != lastWorldCaptureWidth || framebufferHeight != lastWorldCaptureHeight;
-        boolean shouldRefreshCapture = !worldCaptureInitialized
-                || resized
-                || guiActive
-                || cameraMoved;
-        if (shouldRefreshCapture) {
-            captureWorldInput(client, framebufferWidth, framebufferHeight);
-            worldCaptureInitialized = true;
-            lastWorldCaptureNs = now;
-            lastWorldCaptureWidth = framebufferWidth;
-            lastWorldCaptureHeight = framebufferHeight;
-        }
+        // No fallback throttling for nametag blur path: always refresh source
+        // from the current world frame to avoid stale-snapshot artifacts.
+        captureWorldInput(client, framebufferWidth, framebufferHeight);
+        worldCaptureInitialized = true;
+        lastWorldCaptureNs = System.nanoTime();
+        lastWorldCaptureWidth = framebufferWidth;
+        lastWorldCaptureHeight = framebufferHeight;
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableCull();
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthFunc(GL11C.GL_LEQUAL);
+        RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -258,9 +263,39 @@ public class Blur implements Shape {
         }
 
         client.getFramebuffer().beginWrite(false);
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
+        restoreRenderState(true);
+    }
+
+    /**
+     * Captures the world framebuffer once per rendered frame for world-space
+     * blur consumers (nametag backdrop). This prevents mid-frame recaptures
+     * while labels are being drawn, which can cause visible flicker.
+     */
+    public void captureWorldSpaceFrame() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
+            return;
+        }
+        if (!prepareFramebuffers(client, false, false)) {
+            return;
+        }
+        int framebufferWidth = Math.max(1, client.getWindow().getFramebufferWidth());
+        int framebufferHeight = Math.max(1, client.getWindow().getFramebufferHeight());
+        long stamp = System.nanoTime();
+        // Quantize to ~1 frame at 240 FPS to dedupe duplicate callbacks
+        // in the same render frame.
+        long bucket = stamp / 4_000_000L;
+        if (bucket == worldSpaceFrameStamp
+                && framebufferWidth == lastWorldCaptureWidth
+                && framebufferHeight == lastWorldCaptureHeight) {
+            return;
+        }
+        worldSpaceFrameStamp = bucket;
+        captureWorldInput(client, framebufferWidth, framebufferHeight);
+        worldCaptureInitialized = true;
+        lastWorldCaptureNs = stamp;
+        lastWorldCaptureWidth = framebufferWidth;
+        lastWorldCaptureHeight = framebufferHeight;
     }
 
     public void renderCachedBatch(List<ShapeProperties> shapes) {
@@ -284,8 +319,7 @@ public class Blur implements Shape {
         ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
         hudBatchMaskShader = shader;
         if (shader == null) {
-            RenderSystem.enableDepthTest();
-            RenderSystem.disableBlend();
+            restoreRenderState(true);
             return;
         }
 
@@ -298,8 +332,7 @@ public class Blur implements Shape {
 
         int target = HudBuffer.activeCaptureTarget >= 0 ? HudBuffer.activeCaptureTarget : client.getFramebuffer().fbo;
         GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target);
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
+        restoreRenderState(true);
     }
 
     private void renderPreparedShapeWithBoundShader(ShapeProperties shape, ShaderProgram shader) {
@@ -383,8 +416,7 @@ public class Blur implements Shape {
 
         if (!renderPreparedShape(shape)) {
             if (!useHudBatch) {
-                RenderSystem.enableDepthTest();
-                RenderSystem.disableBlend();
+                restoreRenderState(true);
             }
             return;
         }
@@ -395,8 +427,7 @@ public class Blur implements Shape {
         }
 
         if (!useHudBatch) {
-            RenderSystem.enableDepthTest();
-            RenderSystem.disableBlend();
+            restoreRenderState(true);
         }
     }
 
@@ -409,6 +440,20 @@ public class Blur implements Shape {
         Theme theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
+        int effectiveBlurMode = blurMode;
+        float effectiveBlurRadius = blurRadius;
+        int sourceTexture = input.getColorAttachment();
+
+        // Dual Kawase pipeline for HUD blur mode: x2/x4 downsample + upsample.
+        if (blurMode == 2 && blurRadius > 0.10f) {
+            if (applyDualKawaseBlur(client, blurRadius)) {
+                sourceTexture = pong.getColorAttachment();
+                // Dual Kawase already produced the blurred source texture.
+                // Disable secondary in-mask blur to avoid double cost.
+                effectiveBlurMode = 0;
+                effectiveBlurRadius = 0.0f;
+            }
+        }
 
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
@@ -431,7 +476,7 @@ public class Blur implements Shape {
                 color
         );
 
-        RenderSystem.setShaderTexture(0, input.getColorAttachment());
+        RenderSystem.setShaderTexture(0, sourceTexture);
         ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
         hudBatchMaskShader = shader;
         if (shader == null) {
@@ -440,8 +485,8 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("Size").set(width, height);
         shader.getUniformOrDefault("Radius").set(round);
         shader.getUniformOrDefault("Smoothness").set(softness);
-        shader.getUniformOrDefault("BlurRadius").set(blurRadius);
-        shader.getUniformOrDefault("BlurMode").set(blurMode);
+        shader.getUniformOrDefault("BlurRadius").set(effectiveBlurRadius);
+        shader.getUniformOrDefault("BlurMode").set(effectiveBlurMode);
         BufferRenderer.drawWithGlobalProgram(buffer.end());
         return true;
     }
@@ -459,6 +504,14 @@ public class Blur implements Shape {
             ping.setTexFilter(GL11C.GL_LINEAR);
             pong = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
             pong.setTexFilter(GL11C.GL_LINEAR);
+            halfA = new SimpleFramebuffer(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
+            halfA.setTexFilter(GL11C.GL_LINEAR);
+            halfB = new SimpleFramebuffer(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
+            halfB.setTexFilter(GL11C.GL_LINEAR);
+            quarterA = new SimpleFramebuffer(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
+            quarterA.setTexFilter(GL11C.GL_LINEAR);
+            quarterB = new SimpleFramebuffer(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
+            quarterB.setTexFilter(GL11C.GL_LINEAR);
             resized = true;
         } else if (input.textureWidth != framebufferWidth || input.textureHeight != framebufferHeight) {
             input.resize(framebufferWidth, framebufferHeight);
@@ -467,10 +520,21 @@ public class Blur implements Shape {
             ping.setTexFilter(GL11C.GL_LINEAR);
             pong.resize(framebufferWidth, framebufferHeight);
             pong.setTexFilter(GL11C.GL_LINEAR);
+            halfA.resize(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2));
+            halfA.setTexFilter(GL11C.GL_LINEAR);
+            halfB.resize(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2));
+            halfB.setTexFilter(GL11C.GL_LINEAR);
+            quarterA.resize(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4));
+            quarterA.setTexFilter(GL11C.GL_LINEAR);
+            quarterB.resize(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4));
+            quarterB.setTexFilter(GL11C.GL_LINEAR);
             resized = true;
         }
 
         if (input == null || ping == null || pong == null) {
+            return false;
+        }
+        if (halfA == null || halfB == null || quarterA == null || quarterB == null) {
             return false;
         }
 
@@ -529,6 +593,78 @@ public class Blur implements Shape {
         if (HudBuffer.activeCaptureTarget >= 0) {
             GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, HudBuffer.activeCaptureTarget);
         }
+        dualKawasePrepared = false;
+    }
+
+    private boolean applyDualKawaseBlur(MinecraftClient client, float blurRadius) {
+        if (input == null || pong == null || halfA == null || halfB == null || quarterA == null || quarterB == null) {
+            return false;
+        }
+        int w = input.textureWidth;
+        int h = input.textureHeight;
+        // Keep radius continuous to avoid abrupt jumps on the HUD slider.
+        float quantizedRadius = MathHelper.clamp(blurRadius, 0.0f, 24.0f);
+        if (dualKawasePrepared
+                && Math.abs(lastDualKawaseRadius - quantizedRadius) < 0.05f
+                && lastDualKawaseWidth == w
+                && lastDualKawaseHeight == h) {
+            return true;
+        }
+
+        ShaderProgram shader = RenderSystem.setShader(DUAL_KAWASE_SHADER_KEY);
+        if (shader == null) {
+            return false;
+        }
+
+        // Downsample x2, then x4.
+        float downOffset1 = 0.35f + quantizedRadius * 0.10f;
+        float downOffset2 = 0.55f + quantizedRadius * 0.14f;
+        runDualKawasePass(shader, input, halfA, downOffset1, true);
+        runDualKawasePass(shader, halfA, quarterA, downOffset2, true);
+
+        // Blur on x4 surface using a fixed pass count for smooth slider response
+        // (no step-jumps when radius crosses thresholds).
+        int passes = 2;
+        Framebuffer src = quarterA;
+        Framebuffer dst = quarterB;
+        for (int i = 0; i < passes; i++) {
+            float offset = 0.45f + quantizedRadius * 0.22f + i * 0.35f;
+            runDualKawasePass(shader, src, dst, offset, true);
+            Framebuffer tmp = src;
+            src = dst;
+            dst = tmp;
+        }
+
+        // Upsample x4 -> x2 -> x1.
+        float upOffset1 = 0.40f + quantizedRadius * 0.10f;
+        float upOffset2 = 0.30f + quantizedRadius * 0.06f;
+        runDualKawasePass(shader, src, halfB, upOffset1, false);
+        runDualKawasePass(shader, halfB, pong, upOffset2, false);
+
+        bindMainDrawTarget(client);
+        dualKawasePrepared = true;
+        lastDualKawaseRadius = quantizedRadius;
+        lastDualKawaseWidth = w;
+        lastDualKawaseHeight = h;
+        return true;
+    }
+
+    private void runDualKawasePass(ShaderProgram shader, Framebuffer source, Framebuffer target, float offset, boolean downsample) {
+        target.beginWrite(false);
+        RenderSystem.viewport(0, 0, target.textureWidth, target.textureHeight);
+        RenderSystem.disableBlend();
+        RenderSystem.disableDepthTest();
+        RenderSystem.setShaderTexture(0, source.getColorAttachment());
+        shader = RenderSystem.setShader(DUAL_KAWASE_SHADER_KEY);
+        if (shader == null) {
+            target.endWrite();
+            return;
+        }
+        shader.getUniformOrDefault("TexelSize").set(1.0F / source.textureWidth, 1.0F / source.textureHeight);
+        shader.getUniformOrDefault("Offset").set(offset);
+        shader.getUniformOrDefault("Downsample").set(downsample ? 1 : 0);
+        ShaderHelper.drawFullScreenQuad();
+        target.endWrite();
     }
 
     private boolean hasCameraMoved(MinecraftClient client) {
@@ -737,5 +873,17 @@ public class Blur implements Shape {
         } else {
             client.getFramebuffer().beginWrite(false);
         }
+    }
+
+    private static void restoreRenderState(boolean enableDepthTest) {
+        RenderSystem.depthMask(true);
+        if (enableDepthTest) {
+            RenderSystem.enableDepthTest();
+        } else {
+            RenderSystem.disableDepthTest();
+        }
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableBlend();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 }

@@ -1,0 +1,46 @@
+{
+  "mappings": {
+    "com/misterpemodder/shulkerboxtooltip/mixin/client/AbstractContainerScreenMixin": {
+      "isHovering(Lnet/minecraft/world/inventory/Slot;DD)Z": "Lnet/minecraft/class_465;method_2387(Lnet/minecraft/class_1735;DD)Z",
+      "render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V": "Lnet/minecraft/class_465;method_25394(Lnet/minecraft/class_332;IIF)V",
+      "renderTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V": "Lnet/minecraft/class_465;method_2380(Lnet/minecraft/class_332;II)V"
+    },
+    "com/misterpemodder/shulkerboxtooltip/mixin/client/GuiGraphicsMixin": {
+      "Lnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipComponent;renderImage(Lnet/minecraft/client/gui/Font;IIIILnet/minecraft/client/gui/GuiGraphics;)V": "Lnet/minecraft/class_5684;method_32666(Lnet/minecraft/class_327;IIIILnet/minecraft/class_332;)V",
+      "Lnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;positionTooltip(IIIIII)Lorg/joml/Vector2ic;": "Lnet/minecraft/class_8000;method_47944(IIIIII)Lorg/joml/Vector2ic;",
+      "renderTooltipInternal(Lnet/minecraft/client/gui/Font;Ljava/util/List;IILnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;Lnet/minecraft/resources/ResourceLocation;)V": "Lnet/minecraft/class_332;method_51435(Lnet/minecraft/class_327;Ljava/util/List;IILnet/minecraft/class_8000;Lnet/minecraft/class_2960;)V"
+    },
+    "com/misterpemodder/shulkerboxtooltip/mixin/client/ItemStackMixin": {
+      "addToTooltip(Lnet/minecraft/core/component/DataComponentType;Lnet/minecraft/world/item/Item$TooltipContext;Ljava/util/function/Consumer;Lnet/minecraft/world/item/TooltipFlag;)V": "Lnet/minecraft/class_1799;method_57369(Lnet/minecraft/class_9331;Lnet/minecraft/class_1792$class_9635;Ljava/util/function/Consumer;Lnet/minecraft/class_1836;)V"
+    },
+    "com/misterpemodder/shulkerboxtooltip/mixin/client/KeyboardHandlerMixin": {
+      "keyPress(JIIII)V": "Lnet/minecraft/class_309;method_1466(JIIII)V"
+    },
+    "com/misterpemodder/shulkerboxtooltip/mixin/client/ShulkerBoxBlockMixin": {
+      "appendHoverText(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/Item$TooltipContext;Ljava/util/List;Lnet/minecraft/world/item/TooltipFlag;)V": "Lnet/minecraft/class_2480;method_9568(Lnet/minecraft/class_1799;Lnet/minecraft/class_1792$class_9635;Ljava/util/List;Lnet/minecraft/class_1836;)V"
+    }
+  },
+  "data": {
+    "named:intermediary": {
+      "com/misterpemodder/shulkerboxtooltip/mixin/client/AbstractContainerScreenMixin": {
+        "isHovering(Lnet/minecraft/world/inventory/Slot;DD)Z": "Lnet/minecraft/class_465;method_2387(Lnet/minecraft/class_1735;DD)Z",
+        "render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V": "Lnet/minecraft/class_465;method_25394(Lnet/minecraft/class_332;IIF)V",
+        "renderTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V": "Lnet/minecraft/class_465;method_2380(Lnet/minecraft/class_332;II)V"
+      },
+      "com/misterpemodder/shulkerboxtooltip/mixin/client/GuiGraphicsMixin": {
+        "Lnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipComponent;renderImage(Lnet/minecraft/client/gui/Font;IIIILnet/minecraft/client/gui/GuiGraphics;)V": "Lnet/minecraft/class_5684;method_32666(Lnet/minecraft/class_327;IIIILnet/minecraft/class_332;)V",
+        "Lnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;positionTooltip(IIIIII)Lorg/joml/Vector2ic;": "Lnet/minecraft/class_8000;method_47944(IIIIII)Lorg/joml/Vector2ic;",
+        "renderTooltipInternal(Lnet/minecraft/client/gui/Font;Ljava/util/List;IILnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;Lnet/minecraft/resources/ResourceLocation;)V": "Lnet/minecraft/class_332;method_51435(Lnet/minecraft/class_327;Ljava/util/List;IILnet/minecraft/class_8000;Lnet/minecraft/class_2960;)V"
+      },
+      "com/misterpemodder/shulkerboxtooltip/mixin/client/ItemStackMixin": {
+        "addToTooltip(Lnet/minecraft/core/component/DataComponentType;Lnet/minecraft/world/item/Item$TooltipContext;Ljava/util/function/Consumer;Lnet/minecraft/world/item/TooltipFlag;)V": "Lnet/minecraft/class_1799;method_57369(Lnet/minecraft/class_9331;Lnet/minecraft/class_1792$class_9635;Ljava/util/function/Consumer;Lnet/minecraft/class_1836;)V"
+      },
+      "com/misterpemodder/shulkerboxtooltip/mixin/client/KeyboardHandlerMixin": {
+        "keyPress(JIIII)V": "Lnet/minecraft/class_309;method_1466(JIIII)V"
+      },
+      "com/misterpemodder/shulkerboxtooltip/mixin/client/ShulkerBoxBlockMixin": {
+        "appendHoverText(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/Item$TooltipContext;Ljava/util/List;Lnet/minecraft/world/item/TooltipFlag;)V": "Lnet/minecraft/class_2480;method_9568(Lnet/minecraft/class_1799;Lnet/minecraft/class_1792$class_9635;Ljava/util/List;Lnet/minecraft/class_1836;)V"
+      }
+    }
+  }
+}

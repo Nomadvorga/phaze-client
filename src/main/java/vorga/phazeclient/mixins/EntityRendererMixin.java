@@ -49,7 +49,6 @@ import java.util.Map;
  */
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin {
-
     private static boolean phaze$backgroundDrawnThisLabel = false;
     private static final int NAMETAG_CACHE_MAX = 256;
     private static final Map<String, Integer> TEXT_WIDTH_CACHE = new LinkedHashMap<>(NAMETAG_CACHE_MAX, 0.75f, true) {
@@ -116,7 +115,6 @@ public abstract class EntityRendererMixin {
                 return;
             }
         }
-
         phaze$backgroundDrawnThisLabel = false;
     }
 
@@ -234,7 +232,7 @@ public abstract class EntityRendererMixin {
         if (!module.isEnabled()) {
             return vanillaBackgroundColor;
         }
-        if (!module.background.isValue() || vanillaBackgroundColor == 0) {
+        if (!module.background.isValue()) {
             return 0;
         }
 
@@ -254,8 +252,14 @@ public abstract class EntityRendererMixin {
 
     private static int phaze$drawBlurBackgroundIfNeeded(float textWidth, Matrix4f matrix, float x, float y, TextRenderer.TextLayerType layerType, int vanillaBackgroundColor) {
         NametagHud module = NametagHud.getInstance();
-        if (!module.isEnabled() || !module.background.isValue() || vanillaBackgroundColor == 0) {
+        if (!module.isEnabled() || !module.background.isValue()) {
             return phaze$resolvedBackgroundColor(vanillaBackgroundColor);
+        }
+        // Draw nametag blur backdrop only on the primary text pass.
+        // Rendering backdrop on auxiliary passes can cause frame-to-frame
+        // intensity oscillation (visible flicker) due to multi-pass blend.
+        if (layerType != TextRenderer.TextLayerType.NORMAL) {
+            return 0;
         }
 
         float blurRadius = module.backgroundBlurRadius.getValue();
@@ -264,32 +268,37 @@ public abstract class EntityRendererMixin {
             return background;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        float distance = 0.0f;
-        if (client != null && client.player != null && client.cameraEntity != null) {
-            distance = (float) client.cameraEntity.getPos().distanceTo(client.player.getPos());
-        }
-
-        float playerSpeed = Blur.INSTANCE.getPlayerSpeed(client);
-
         float left = x - 1.0f;
         float top = y - 1.0f;
         float rightExtend = -1.0f;
         float width = textWidth + 2.0f + rightExtend;
         float height = 10.0f;
+        // Stabilize backdrop against sub-pixel jitter from entity label
+        // interpolation: snap rect geometry to half-pixel grid so tiny
+        // float drift between frames doesn't show as blur flicker.
+        left = phaze$snapHalfPixel(left);
+        top = phaze$snapHalfPixel(top);
+        width = phaze$snapHalfPixel(Math.max(0.0f, width));
+        height = phaze$snapHalfPixel(Math.max(0.0f, height));
 
         if (width * height < 50.0f) {
             drawSolidRect3D(matrix, left, top, width, height, background);
             phaze$backgroundDrawnThisLabel = true;
-            return vanillaBackgroundColor;
+            return 0;
         }
 
         float quality = MathHelper.clamp(0.35f + blurRadius * 0.10f, 0.35f, 4.2f);
+        MinecraftClient client = MinecraftClient.getInstance();
+        float distance = 0.0f;
+        if (client != null && client.player != null && client.cameraEntity != null) {
+            distance = (float) client.cameraEntity.getPos().distanceTo(client.player.getPos());
+        }
+        float playerSpeed = Blur.INSTANCE.getPlayerSpeed(client);
 
         if (distance > 50.0f) {
             drawSolidRect3D(matrix, left, top, width, height, background);
             phaze$backgroundDrawnThisLabel = true;
-            return vanillaBackgroundColor;
+            return 0;
         } else if (distance > 30.0f) {
             quality *= 0.25f;
             blurRadius *= 0.3f;
@@ -310,7 +319,7 @@ public abstract class EntityRendererMixin {
         Blur.INSTANCE.renderWorldRect(matrix, left, top, width, height, quality, 0xFFFFFFFF);
         drawSolidRect3D(matrix, left, top, width, height, background);
         phaze$backgroundDrawnThisLabel = true;
-        return vanillaBackgroundColor;
+        return 0;
     }
 
     private static int phaze$getCachedTextWidth(TextRenderer textRenderer, Text text) {
@@ -366,5 +375,9 @@ public abstract class EntityRendererMixin {
         net.minecraft.client.render.BufferRenderer.drawWithGlobalProgram(buffer.end());
         com.mojang.blaze3d.systems.RenderSystem.depthMask(true);
         com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+    }
+
+    private static float phaze$snapHalfPixel(float value) {
+        return Math.round(value * 2.0f) * 0.5f;
     }
 }

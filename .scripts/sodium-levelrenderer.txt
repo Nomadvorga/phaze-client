@@ -1,0 +1,159 @@
+Classfile /D:/projects/Phaze Client/.sodium-tmp/net/caffeinemc/mods/sodium/mixin/features/render/world/sky/LevelRendererMixin.class
+  Last modified 1 џэт. 1980?у.; size 1780 bytes
+  SHA-256 checksum ebae0d17577ce8c1b8e1da882bbed11b342526e43deb5e2252066bdc80cad47d
+  Compiled from "LevelRendererMixin.java"
+public abstract class net.caffeinemc.mods.sodium.mixin.features.render.world.sky.LevelRendererMixin
+  minor version: 0
+  major version: 65
+  flags: (0x0421) ACC_PUBLIC, ACC_SUPER, ACC_ABSTRACT
+  this_class: #2                          // net/caffeinemc/mods/sodium/mixin/features/render/world/sky/LevelRendererMixin
+  super_class: #4                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 3, attributes: 2
+Constant pool:
+   #1 = Utf8               net/caffeinemc/mods/sodium/mixin/features/render/world/sky/LevelRendererMixin
+   #2 = Class              #1             // net/caffeinemc/mods/sodium/mixin/features/render/world/sky/LevelRendererMixin
+   #3 = Utf8               java/lang/Object
+   #4 = Class              #3             // java/lang/Object
+   #5 = Utf8               LevelRendererMixin.java
+   #6 = Utf8               Lorg/spongepowered/asm/mixin/Mixin;
+   #7 = Utf8               value
+   #8 = Utf8               Lnet/minecraft/class_761;
+   #9 = Utf8               <init>
+  #10 = Utf8               ()V
+  #11 = NameAndType        #9:#10         // "<init>":()V
+  #12 = Methodref          #4.#11         // java/lang/Object."<init>":()V
+  #13 = Utf8               this
+  #14 = Utf8               Lnet/caffeinemc/mods/sodium/mixin/features/render/world/sky/LevelRendererMixin;
+  #15 = Utf8               method_43788
+  #16 = Utf8               (Lnet/minecraft/class_4184;)Z
+  #17 = Utf8               Lorg/spongepowered/asm/mixin/Shadow;
+  #18 = Utf8               preRenderSky
+  #19 = Utf8               (Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V
+  #20 = Utf8               ci
+  #21 = Utf8               Lorg/spongepowered/asm/mixin/injection/Inject;
+  #22 = Utf8               method
+  #23 = Utf8               method_62215(Lnet/minecraft/class_9958;Lnet/minecraft/class_5294$class_5401;FLnet/minecraft/class_5294;)V
+  #24 = Utf8               lambda$addSkyPass$12
+  #25 = Utf8               require
+  #26 = Integer            1
+  #27 = Utf8               at
+  #28 = Utf8               Lorg/spongepowered/asm/mixin/injection/At;
+  #29 = Utf8               HEAD
+  #30 = Utf8               cancellable
+  #31 = Utf8               net/minecraft/class_310
+  #32 = Class              #31            // net/minecraft/class_310
+  #33 = Utf8               method_1551
+  #34 = Utf8               ()Lnet/minecraft/class_310;
+  #35 = NameAndType        #33:#34        // method_1551:()Lnet/minecraft/class_310;
+  #36 = Methodref          #32.#35        // net/minecraft/class_310.method_1551:()Lnet/minecraft/class_310;
+  #37 = Utf8               field_1773
+  #38 = Utf8               Lnet/minecraft/class_757;
+  #39 = NameAndType        #37:#38        // field_1773:Lnet/minecraft/class_757;
+  #40 = Fieldref           #32.#39        // net/minecraft/class_310.field_1773:Lnet/minecraft/class_757;
+  #41 = Utf8               net/minecraft/class_757
+  #42 = Class              #41            // net/minecraft/class_757
+  #43 = Utf8               method_19418
+  #44 = Utf8               ()Lnet/minecraft/class_4184;
+  #45 = NameAndType        #43:#44        // method_19418:()Lnet/minecraft/class_4184;
+  #46 = Methodref          #42.#45        // net/minecraft/class_757.method_19418:()Lnet/minecraft/class_4184;
+  #47 = Utf8               net/minecraft/class_4184
+  #48 = Class              #47            // net/minecraft/class_4184
+  #49 = Utf8               method_19334
+  #50 = Utf8               ()Lnet/minecraft/class_5636;
+  #51 = NameAndType        #49:#50        // method_19334:()Lnet/minecraft/class_5636;
+  #52 = Methodref          #48.#51        // net/minecraft/class_4184.method_19334:()Lnet/minecraft/class_5636;
+  #53 = Utf8               net/minecraft/class_5636
+  #54 = Class              #53            // net/minecraft/class_5636
+  #55 = Utf8               field_27888
+  #56 = Utf8               Lnet/minecraft/class_5636;
+  #57 = NameAndType        #55:#56        // field_27888:Lnet/minecraft/class_5636;
+  #58 = Fieldref           #54.#57        // net/minecraft/class_5636.field_27888:Lnet/minecraft/class_5636;
+  #59 = NameAndType        #15:#16        // method_43788:(Lnet/minecraft/class_4184;)Z
+  #60 = Methodref          #2.#59         // net/caffeinemc/mods/sodium/mixin/features/render/world/sky/LevelRendererMixin.method_43788:(Lnet/minecraft/class_4184;)Z
+  #61 = Utf8               org/spongepowered/asm/mixin/injection/callback/CallbackInfo
+  #62 = Class              #61            // org/spongepowered/asm/mixin/injection/callback/CallbackInfo
+  #63 = Utf8               cancel
+  #64 = NameAndType        #63:#10        // cancel:()V
+  #65 = Methodref          #62.#64        // org/spongepowered/asm/mixin/injection/callback/CallbackInfo.cancel:()V
+  #66 = Utf8               Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;
+  #67 = Utf8               Code
+  #68 = Utf8               LineNumberTable
+  #69 = Utf8               LocalVariableTable
+  #70 = Utf8               RuntimeVisibleAnnotations
+  #71 = Utf8               StackMapTable
+  #72 = Utf8               MethodParameters
+  #73 = Utf8               SourceFile
+  #74 = Utf8               RuntimeInvisibleAnnotations
+{
+  public net.caffeinemc.mods.sodium.mixin.features.render.world.sky.LevelRendererMixin();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #12                 // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 15: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lnet/caffeinemc/mods/sodium/mixin/features/render/world/sky/LevelRendererMixin;
+
+  protected abstract boolean method_43788(net.minecraft.class_4184);
+    descriptor: (Lnet/minecraft/class_4184;)Z
+    flags: (0x0404) ACC_PROTECTED, ACC_ABSTRACT
+    RuntimeVisibleAnnotations:
+      0: #17()
+        org.spongepowered.asm.mixin.Shadow
+
+  private void preRenderSky(org.spongepowered.asm.mixin.injection.callback.CallbackInfo);
+    descriptor: (Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=2, locals=2, args_size=2
+         0: invokestatic  #36                 // Method net/minecraft/class_310.method_1551:()Lnet/minecraft/class_310;
+         3: getfield      #40                 // Field net/minecraft/class_310.field_1773:Lnet/minecraft/class_757;
+         6: invokevirtual #46                 // Method net/minecraft/class_757.method_19418:()Lnet/minecraft/class_4184;
+         9: invokevirtual #52                 // Method net/minecraft/class_4184.method_19334:()Lnet/minecraft/class_5636;
+        12: getstatic     #58                 // Field net/minecraft/class_5636.field_27888:Lnet/minecraft/class_5636;
+        15: if_acmpne     34
+        18: aload_0
+        19: invokestatic  #36                 // Method net/minecraft/class_310.method_1551:()Lnet/minecraft/class_310;
+        22: getfield      #40                 // Field net/minecraft/class_310.field_1773:Lnet/minecraft/class_757;
+        25: invokevirtual #46                 // Method net/minecraft/class_757.method_19418:()Lnet/minecraft/class_4184;
+        28: invokevirtual #60                 // Method method_43788:(Lnet/minecraft/class_4184;)Z
+        31: ifeq          38
+        34: aload_1
+        35: invokevirtual #65                 // Method org/spongepowered/asm/mixin/injection/callback/CallbackInfo.cancel:()V
+        38: return
+      StackMapTable: number_of_entries = 2
+        frame_type = 34 /* same */
+        frame_type = 3 /* same */
+      LineNumberTable:
+        line 42: 0
+        line 43: 34
+        line 45: 38
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      39     0  this   Lnet/caffeinemc/mods/sodium/mixin/features/render/world/sky/LevelRendererMixin;
+            0      39     1    ci   Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;
+    RuntimeVisibleAnnotations:
+      0: #21(#22=[s#23,s#24],#25=I#26,#27=[@#28(#7=s#29)],#30=Z#26)
+        org.spongepowered.asm.mixin.injection.Inject(
+          method=["method_62215(Lnet/minecraft/class_9958;Lnet/minecraft/class_5294$class_5401;FLnet/minecraft/class_5294;)V","lambda$addSkyPass$12"]
+          require=1
+          at=[@org.spongepowered.asm.mixin.injection.At(
+            value="HEAD"
+          )]
+          cancellable=true
+        )
+    MethodParameters:
+      Name                           Flags
+      ci
+}
+SourceFile: "LevelRendererMixin.java"
+RuntimeInvisibleAnnotations:
+  0: #6(#7=[c#8])
+    org.spongepowered.asm.mixin.Mixin(
+      value=[class Lnet/minecraft/class_761;]
+    )

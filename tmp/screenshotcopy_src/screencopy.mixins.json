@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "io.github.imurx.screenshotcopy.fabric.mixins",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "client": [
+    "MixinScreenshotRecorder"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "refmap": "screenshotcopy-fabric-fabric-refmap.json"
+}

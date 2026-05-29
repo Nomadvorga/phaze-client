@@ -11,6 +11,7 @@ import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.base.QuickImports;
+import vorga.phazeclient.base.util.HolyWorldFeatureControlService;
 import vorga.phazeclient.base.util.RemoteRulesService;
 import vorga.phazeclient.base.util.ServerUtil;
 import net.minecraft.client.MinecraftClient;
@@ -109,6 +110,9 @@ public class Module extends SettingRepository implements QuickImports {
     }
 
     public void setState(boolean state) {
+        if (state) {
+            HolyWorldFeatureControlService.getInstance().requestFeatureStatus(getIdentifier());
+        }
         animation.setDirection(state ? Direction.FORWARDS : Direction.BACKWARDS);
         if (state != this.state) {
             this.state = state;
@@ -165,7 +169,7 @@ public class Module extends SettingRepository implements QuickImports {
     }
 
     public boolean isVisible() {
-        return true;
+        return !isServerLocked();
     }
 
     public void activate() {
@@ -270,6 +274,8 @@ public class Module extends SettingRepository implements QuickImports {
         if (!isServerAllowed()) {
             return true;
         }
-        return RemoteRulesService.getInstance().isModuleBlocked(getIdentifier());
+        String identifier = getIdentifier();
+        return RemoteRulesService.getInstance().isModuleBlocked(identifier)
+                || HolyWorldFeatureControlService.getInstance().isFeatureDisabled(identifier);
     }
 }

@@ -74,7 +74,8 @@ public final class NoRender extends Module {
             "Pick which particle categories to skip. Click a label to toggle that category on / off."
     ).value(
             "Hit Particles", "Potion Particles", "Break Block Particles",
-            "Splash Potion Particles", "Food Particles"
+            "Splash Potion Particles", "Food Particles", "Mace Particles",
+            "Scoreboard", "Boss Bar", "Rain"
     ).selected(
             "Hit Particles"
     );
@@ -89,6 +90,10 @@ public final class NoRender extends Module {
     public final BooleanLike breakBlockParticles = () -> particleTypes.getSelected().contains("Break Block Particles");
     public final BooleanLike splashPotionParticles = () -> particleTypes.getSelected().contains("Splash Potion Particles");
     public final BooleanLike foodParticles = () -> particleTypes.getSelected().contains("Food Particles");
+    public final BooleanLike maceParticles = () -> particleTypes.getSelected().contains("Mace Particles");
+    public final BooleanLike scoreboard = () -> particleTypes.getSelected().contains("Scoreboard");
+    public final BooleanLike bossBar = () -> particleTypes.getSelected().contains("Boss Bar");
+    public final BooleanLike rain = () -> particleTypes.getSelected().contains("Rain");
 
     /** Functional shim mimicking {@link BooleanSetting#isValue()} so
      *  every mixin's existing {@code .isValue()} call against a
@@ -121,7 +126,7 @@ public final class NoRender extends Module {
 
     @Override
     public String getDescription() {
-        return "Render-pipeline tweaks: hide glowing outlines, fire overlay, particles";
+        return "Render-pipeline tweaks: hide glowing, fire, particles, scoreboard, boss bar and rain";
     }
 
     @Override

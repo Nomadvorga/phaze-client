@@ -1,0 +1,23 @@
+ M src/main/java/vorga/phazeclient/api/feature/module/setting/implement/ColorSetting.java
+ M src/main/java/vorga/phazeclient/api/system/shape/implement/Blur.java
+ M src/main/java/vorga/phazeclient/implement/features/modules/client/Theme.java
+ M src/main/java/vorga/phazeclient/implement/features/modules/other/CustomFog.java
+ M src/main/java/vorga/phazeclient/implement/features/modules/other/Predictions.java
+ M src/main/java/vorga/phazeclient/implement/features/modules/other/PredictionsRenderer.java
+ M src/main/java/vorga/phazeclient/implement/features/modules/other/SkyCustomizer.java
+ M src/main/java/vorga/phazeclient/implement/menu/components/implement/settings/ColorComponent.java
+ M src/main/java/vorga/phazeclient/implement/menu/components/implement/settings/multiselect/MultiSelectComponent.java
+ M src/main/java/vorga/phazeclient/mixins/BackgroundRendererCustomFogMixin.java
+ D src/main/java/vorga/phazeclient/mixins/ClientWorldHorizonSmoothSkiesMixin.java
+ M src/main/java/vorga/phazeclient/mixins/ClientWorldSkyCustomizerMixin.java
+ D src/main/java/vorga/phazeclient/mixins/GameRendererFarPlaneSmoothSkiesMixin.java
+ M src/main/java/vorga/phazeclient/mixins/PhazeMixinPlugin.java
+ M src/main/resources/assets/phaze/shaders/core/blur.fsh
+ M src/main/resources/phaze.mixins.json
+?? .scripts/
+?? .sodium-tmp/
+?? src/main/java/vorga/phazeclient/mixins/BackgroundRendererSkyCustomizerMixin.java
+?? src/main/java/vorga/phazeclient/mixins/ChatScreenDragSelectMixin.java
+?? src/main/java/vorga/phazeclient/mixins/iris/IrisSkyColorUniformMixin.java
+9a74508 custom fog with smooth skies, predictions snap to target + multishot, comfortable text selection, zoom polish
+master
