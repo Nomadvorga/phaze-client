@@ -2,25 +2,45 @@ package vorga.phazeclient.api.system.font;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import java.awt.*;
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 public class Fonts {
 
-    @SneakyThrows
     public static FontRenderer create(float size, String name) {
-        String path = "assets/minecraft/fonts/" + name + ".otf";
+        float derivedSize = size / 2f;
+        for (String path : List.of(
+                "assets/minecraft/fonts/" + name + ".otf",
+                "assets/minecraft/fonts/" + name + ".ttf",
+                "assets/minecraft/font/" + name + ".otf",
+                "assets/minecraft/font/" + name + ".ttf"
+        )) {
+            try (InputStream inputStream = Fonts.class.getClassLoader().getResourceAsStream(path)) {
+                if (inputStream == null) {
+                    continue;
+                }
 
-        try (InputStream inputStream = Fonts.class.getClassLoader().getResourceAsStream(path)) {
-            Font font = Font.createFont(Font.TRUETYPE_FONT, Objects.requireNonNull(inputStream))
-                    .deriveFont(Font.PLAIN, size / 2f);
-
-            return new FontRenderer(font, size / 2f);
+                Font font = Font.createFont(Font.TRUETYPE_FONT, inputStream)
+                        .deriveFont(Font.PLAIN, derivedSize);
+                return new FontRenderer(font, derivedSize);
+            } catch (Throwable ignored) {
+            }
         }
+
+        return new FontRenderer(createFallbackFont(name, derivedSize), derivedSize);
+    }
+
+    private static Font createFallbackFont(String name, float size) {
+        String family = switch (name) {
+            case "jetbrains_mono", "jetbrains_mono_bold" -> Font.MONOSPACED;
+            case "inter", "inter_bold", "sfpromedium", "sfprosemibold" -> Font.SANS_SERIF;
+            default -> Font.DIALOG;
+        };
+        int style = name.contains("bold") || "sfprosemibold".equals(name) ? Font.BOLD : Font.PLAIN;
+        return new Font(family, style, Math.max(1, Math.round(size)));
     }
 
     private static final Map<FontKey, FontRenderer> fontCache = new HashMap<>();

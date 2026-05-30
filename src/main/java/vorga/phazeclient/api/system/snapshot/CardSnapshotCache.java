@@ -16,6 +16,10 @@ import net.minecraft.client.render.VertexFormats;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL11C;
+import org.lwjgl.opengl.GL30C;
+import org.lwjgl.opengl.GL40C;
+import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.implement.Rectangle;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 
 import java.util.ArrayList;
@@ -104,6 +108,7 @@ import java.util.Map;
  * </ul>
  */
 public final class CardSnapshotCache {
+    private static final Rectangle RECTANGLE = new Rectangle();
     /**
      * Identity map - cards are referenced by the {@code ModuleComponent}
      * instance, NOT by the underlying module, so two components that
@@ -427,5 +432,85 @@ public final class CardSnapshotCache {
 
         BufferRenderer.drawWithGlobalProgram(buffer.end());
         RenderSystem.disableBlend();
+    }
+
+    public static void blitRounded(
+            DrawContext context,
+            Snapshot snapshot,
+            float x,
+            float y,
+            float widthGui,
+            float heightGui,
+            float alpha,
+            float round,
+            int backgroundColor
+    ) {
+        if (snapshot == null || snapshot.fbo == null || !snapshot.populated) {
+            return;
+        }
+
+        BatchedRectangle.flushIfBatching();
+        RECTANGLE.render(ShapeProperties.create(context.getMatrices(), x, y, widthGui, heightGui)
+                .round(round)
+                .color(backgroundColor)
+                .build());
+
+        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
+        int alphaByte = Math.max(0, Math.min(255, Math.round(alpha * 255.0F)));
+        int color = (alphaByte << 24) | 0x00FFFFFF;
+
+        RenderSystem.enableBlend();
+        RenderSystem.blendFunc(GL40C.GL_DST_ALPHA, GL40C.GL_ONE_MINUS_DST_ALPHA);
+        RenderSystem.setShaderTexture(0, snapshot.fbo.getColorAttachment());
+        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+        buffer.vertex(matrix, x, y, 0.0F).texture(0.0F, 1.0F).color(color);
+        buffer.vertex(matrix, x, y + heightGui, 0.0F).texture(0.0F, 0.0F).color(color);
+        buffer.vertex(matrix, x + widthGui, y + heightGui, 0.0F).texture(1.0F, 0.0F).color(color);
+        buffer.vertex(matrix, x + widthGui, y, 0.0F).texture(1.0F, 1.0F).color(color);
+
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableBlend();
+    }
+
+    /**
+     * Copies a color region from an already-rendered framebuffer into
+     * the snapshot FBO exactly once, without re-running the source
+     * screen's render logic. Useful for freezing a live background as
+     * a static preview thumbnail.
+     *
+     * <p>Source coordinates are in framebuffer pixels with the GL
+     * bottom-left origin convention used by {@code glBlitFramebuffer}.
+     * The source region is linearly scaled to the snapshot FBO size.
+     */
+    public static void copyRegionFromFramebuffer(Snapshot snapshot, Framebuffer source, int srcX, int srcY, int srcWidth, int srcHeight) {
+        if (snapshot == null || snapshot.fbo == null || source == null || srcWidth <= 0 || srcHeight <= 0) {
+            return;
+        }
+
+        BatchedRectangle.flushIfBatching();
+
+        int previousRead = GL11.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING);
+        int previousDraw = GL11.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
+
+        GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, source.fbo);
+        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, snapshot.fbo.fbo);
+        GL30C.glBlitFramebuffer(
+                srcX,
+                srcY,
+                srcX + srcWidth,
+                srcY + srcHeight,
+                0,
+                0,
+                snapshot.fbWidth,
+                snapshot.fbHeight,
+                GL11C.GL_COLOR_BUFFER_BIT,
+                GL11C.GL_LINEAR
+        );
+        GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, previousRead);
+        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDraw);
+        snapshot.populated = true;
     }
 }

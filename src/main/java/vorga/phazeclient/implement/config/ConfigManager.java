@@ -21,6 +21,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
 import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
+import vorga.phazeclient.implement.menu.MenuUiSettings;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -209,6 +210,10 @@ public final class ConfigManager {
         vorga.phazeclient.implement.features.modules.client.Theme theme = vorga.phazeclient.implement.features.modules.client.Theme.getInstance();
         config.addProperty("theme", theme.menuTheme.getSelected());
         config.addProperty("blurRadius", theme.blurRadius.getValue());
+        config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
+        config.addProperty("menuGuiFpsLimit", MenuUiSettings.getInstance().getGuiFpsLimit());
+        config.addProperty("menuPanoramaPreset", MenuUiSettings.getInstance().getSelectedPanoramaPresetId());
+        config.addProperty("menuPanoramaSpeedScaleVersion", MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION);
 
         // Preserve the {@code imported} marker that
         // {@link #importFromString} writes when a config came from a
@@ -496,6 +501,10 @@ public final class ConfigManager {
         vorga.phazeclient.implement.features.modules.client.Theme theme = vorga.phazeclient.implement.features.modules.client.Theme.getInstance();
         config.addProperty("theme", theme.menuTheme.getSelected());
         config.addProperty("blurRadius", theme.blurRadius.getValue());
+        config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
+        config.addProperty("menuGuiFpsLimit", MenuUiSettings.getInstance().getGuiFpsLimit());
+        config.addProperty("menuPanoramaPreset", MenuUiSettings.getInstance().getSelectedPanoramaPresetId());
+        config.addProperty("menuPanoramaSpeedScaleVersion", MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION);
         return config;
     }
     
@@ -697,6 +706,42 @@ public final class ConfigManager {
                     vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(blurRadius);
                 } catch (Throwable ignored) {}
             }
+
+            double panoramaSpeed = MenuUiSettings.DEFAULT_PANORAMA_SPEED;
+            if (config.has("menuPanoramaSpeed")) {
+                try {
+                    panoramaSpeed = config.get("menuPanoramaSpeed").getAsDouble();
+                } catch (Throwable ignored) {}
+            }
+
+            int guiFpsLimit = MenuUiSettings.DEFAULT_GUI_FPS_LIMIT;
+            if (config.has("menuGuiFpsLimit")) {
+                try {
+                    guiFpsLimit = config.get("menuGuiFpsLimit").getAsInt();
+                } catch (Throwable ignored) {}
+            }
+
+            String panoramaPreset = MenuUiSettings.DEFAULT_PANORAMA_PRESET_ID;
+            if (config.has("menuPanoramaPreset")) {
+                try {
+                    panoramaPreset = config.get("menuPanoramaPreset").getAsString();
+                } catch (Throwable ignored) {}
+            }
+
+            int panoramaSpeedScaleVersion = 1;
+            if (config.has("menuPanoramaSpeedScaleVersion")) {
+                try {
+                    panoramaSpeedScaleVersion = config.get("menuPanoramaSpeedScaleVersion").getAsInt();
+                } catch (Throwable ignored) {}
+            }
+
+            if (panoramaSpeedScaleVersion >= MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION) {
+                MenuUiSettings.getInstance().applyConfig(panoramaSpeed, guiFpsLimit, panoramaPreset);
+            } else if (panoramaSpeedScaleVersion == 2) {
+                MenuUiSettings.getInstance().applyLegacyScaleV2Config(panoramaSpeed, guiFpsLimit, panoramaPreset);
+            } else {
+                MenuUiSettings.getInstance().applyLegacyScaleV1Config(panoramaSpeed, guiFpsLimit, panoramaPreset);
+            }
         } catch (Throwable t) {
             t.printStackTrace();
         }
@@ -782,6 +827,7 @@ public final class ConfigManager {
         // Theme + blur back to boot defaults.
         vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected("Lunar Blue");
         vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(5.0F);
+        MenuUiSettings.getInstance().resetToDefaults();
     }
 
     /**
