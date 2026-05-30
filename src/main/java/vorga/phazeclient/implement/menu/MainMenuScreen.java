@@ -213,7 +213,9 @@ public class MainMenuScreen extends Screen {
 
     @Override
     protected void renderPanoramaBackground(DrawContext context, float delta) {
-        if (MenuUiSettings.getInstance().getSelectedPanoramaPreset() == MenuUiSettings.PanoramaPreset.VANILLA) {
+        if (this.client == null
+                || this.client.getOverlay() != null
+                || MenuUiSettings.getInstance().getSelectedPanoramaPreset() == MenuUiSettings.PanoramaPreset.VANILLA) {
             super.renderPanoramaBackground(context, delta);
             return;
         }
@@ -566,21 +568,33 @@ public class MainMenuScreen extends Screen {
     }
 
     private void renderPanoramaPresetPreview(DrawContext context, MenuUiSettings.PanoramaPreset preset, float x, float y, float size) {
-        int cropInset = 32;
-        int cropSize = 192;
+        if (this.client != null) {
+            preset.getRenderer().prepareTextures(this.client);
+        }
+        int textureSize = preset.previewTextureSize();
+        int cropInset = preset.previewCropInset();
+        int cropSize = preset.previewCropSize();
+
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
         Render2DUtil.drawTexture(
-                context,
+                context.getMatrices(),
                 preset.previewTexture(),
                 x,
+                x + Math.max(1.0F, size),
                 y,
-                Math.max(1.0F, size),
-                6.0F,
-                cropInset,
+                y + Math.max(1.0F, size),
+                0.0F,
                 cropSize,
-                256,
-                0xFF0E131B,
+                cropSize,
+                cropInset,
+                cropInset,
+                textureSize,
+                textureSize,
                 0xFFFFFFFF
         );
+        RenderSystem.disableBlend();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     private float getThemeSelectorCardX(ThemeSelectorLayout layout, int index, int visibleCount) {

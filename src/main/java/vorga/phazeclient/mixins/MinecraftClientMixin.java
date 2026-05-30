@@ -8,6 +8,8 @@ package vorga.phazeclient.mixins;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
@@ -26,6 +28,7 @@ import vorga.phazeclient.implement.features.modules.other.FakeFps;
 import vorga.phazeclient.implement.features.modules.other.FastExp;
 import vorga.phazeclient.implement.features.modules.other.HitRange;
 import vorga.phazeclient.implement.features.modules.other.NoRender;
+import vorga.phazeclient.implement.menu.MainMenuScreen;
 
 /**
  * Consolidated mixin for {@link MinecraftClient}, merging the previous
@@ -45,6 +48,8 @@ public abstract class MinecraftClientMixin {
     @Shadow public HitResult crosshairTarget;
 
     @Shadow @Mutable private static int currentFps;
+
+    @Shadow public Screen currentScreen;
 
     // ---------------------------------------------------------------
     // NoGlow: cancel hasOutline when toggle is on
@@ -90,6 +95,16 @@ public abstract class MinecraftClientMixin {
                 e -> !e.equals(player)
         );
         config.setNearest(nearest);
+    }
+
+    @Inject(method = "tick", at = @At("TAIL"))
+    private void phaze$swapTitleScreenAfterInitialReload(CallbackInfo ci) {
+        MinecraftClient client = (MinecraftClient) (Object) this;
+        if (this.currentScreen instanceof TitleScreen
+                && !(this.currentScreen instanceof MainMenuScreen)
+                && client.getOverlay() == null) {
+            client.setScreen(new MainMenuScreen());
+        }
     }
 
     // ---------------------------------------------------------------
