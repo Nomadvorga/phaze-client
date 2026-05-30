@@ -13,9 +13,11 @@ public abstract class TitleScreenMainMenuMixin {
     @Inject(method = "init", at = @At("HEAD"), cancellable = true)
     private void phaze$redirectToCustomMenu(CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client != null && !(client.currentScreen instanceof MainMenuScreen)) {
+        if (client != null
+                && client.getOverlay() == null
+                && !(client.currentScreen instanceof MainMenuScreen)) {
             client.setScreen(new MainMenuScreen());
+            ci.cancel();
         }
-        ci.cancel();
     }
 }

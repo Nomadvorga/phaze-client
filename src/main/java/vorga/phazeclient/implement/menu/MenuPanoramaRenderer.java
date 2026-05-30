@@ -8,17 +8,22 @@ import net.minecraft.client.texture.TextureManager;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.ColorHelper;
 
+import java.util.stream.IntStream;
+
 public final class MenuPanoramaRenderer {
     private static final Identifier OVERLAY_TEXTURE = Identifier.ofVanilla("textures/gui/title/background/panorama_overlay.png");
 
     private final CubeMapRenderer cubeMap;
+    private final Identifier[] faceTextures;
     private long lastFrameTimeNs = -1L;
+    private boolean texturesPrepared = false;
     private float pitch;
-    private boolean texturesRegistered = false;
 
-    public MenuPanoramaRenderer(CubeMapRenderer cubeMap) {
-        this.cubeMap = cubeMap;
-        registerTexturesIfNeeded(MinecraftClient.getInstance());
+    public MenuPanoramaRenderer(Identifier cubeMapBase) {
+        this.cubeMap = new CubeMapRenderer(cubeMapBase);
+        this.faceTextures = IntStream.range(0, 6)
+                .mapToObj(face -> cubeMapBase.withPath(cubeMapBase.getPath() + "_" + face + ".png"))
+                .toArray(Identifier[]::new);
     }
 
     public void render(DrawContext context, int width, int height, float alpha) {
@@ -26,7 +31,7 @@ public final class MenuPanoramaRenderer {
         if (client == null) {
             return;
         }
-        registerTexturesIfNeeded(client);
+        prepareTextures(client);
 
         long nowNs = System.nanoTime();
         float dtSeconds = lastFrameTimeNs > 0L
@@ -61,16 +66,18 @@ public final class MenuPanoramaRenderer {
         return value > max ? value - max : value;
     }
 
-    private void registerTexturesIfNeeded(MinecraftClient client) {
-        if (texturesRegistered || client == null) {
+    public void prepareTextures(MinecraftClient client) {
+        if (client == null || this.texturesPrepared) {
             return;
         }
         TextureManager textureManager = client.getTextureManager();
         if (textureManager == null) {
             return;
         }
-        this.cubeMap.registerTextures(textureManager);
-        textureManager.registerTexture(OVERLAY_TEXTURE);
-        this.texturesRegistered = true;
+        textureManager.getTexture(OVERLAY_TEXTURE);
+        for (Identifier faceTexture : this.faceTextures) {
+            textureManager.getTexture(faceTexture);
+        }
+        this.texturesPrepared = true;
     }
 }

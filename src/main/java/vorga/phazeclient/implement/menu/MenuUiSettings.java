@@ -1,7 +1,6 @@
 package vorga.phazeclient.implement.menu;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.CubeMapRenderer;
 import net.minecraft.util.Identifier;
 import vorga.phazeclient.implement.config.ConfigManager;
 
@@ -154,9 +153,21 @@ public final class MenuUiSettings {
             return cubeMapBase.withPath(cubeMapBase.getPath() + "_0.png");
         }
 
+        public int previewTextureSize() {
+            return this == VANILLA ? 256 : 1080;
+        }
+
+        public int previewCropInset() {
+            return 0;
+        }
+
+        public int previewCropSize() {
+            return previewTextureSize();
+        }
+
         public MenuPanoramaRenderer getRenderer() {
             if (renderer == null) {
-                renderer = new MenuPanoramaRenderer(new CubeMapRenderer(cubeMapBase));
+                renderer = new MenuPanoramaRenderer(cubeMapBase);
             }
             return renderer;
         }

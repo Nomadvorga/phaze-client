@@ -1,5 +1,6 @@
 package vorga.phazeclient.mixins;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,7 +17,10 @@ public abstract class ScreenPanoramaPresetMixin {
 
     @Inject(method = "renderPanoramaBackground", at = @At("HEAD"), cancellable = true)
     private void phaze$renderCustomPanorama(DrawContext context, float delta, CallbackInfo ci) {
-        if (MenuUiSettings.getInstance().getSelectedPanoramaPreset() == MenuUiSettings.PanoramaPreset.VANILLA) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null
+                || client.getOverlay() != null
+                || MenuUiSettings.getInstance().getSelectedPanoramaPreset() == MenuUiSettings.PanoramaPreset.VANILLA) {
             return;
         }
         MenuUiSettings.getInstance().getSelectedPanoramaPreset().getRenderer().render(context, this.width, this.height, 1.0F);
