@@ -64,14 +64,11 @@ public class ConfigsViewComponent extends AbstractComponent {
     private static final float DOT_SIZE = 1.6F;
     private static final float DOT_GAP = 1.4F;
     /** Inline separator between config name and author label.
-     *  Rendered as a small {@code dot.png} between them, sized to
-     *  about half the name text size so it reads as a separator
-     *  bullet rather than another glyph. Vertically centred against
-     *  the name's CAP HEIGHT (~0.7 of the font size) rather than
-     *  the full bbox so the dot sits on the optical centre line of
-     *  the surrounding letters instead of dropping below them. */
-    private static final float NAME_DOT_SIZE = 16.7F;
-    private static final float NAME_DOT_GAP = -6.0F;
+     *  Drawn procedurally as a circle so its visual size and text
+     *  spacing stay exact instead of depending on dot.png's large
+     *  transparent padding. */
+    private static final float NAME_DOT_SIZE = (16.7F * 44.0F / 256.0F) / 1.1F;
+    private static final float NAME_DOT_TEXT_GAP = 2.0F;
     /** Size of the inline meta icons (size, clock for last-modified,
      *  cloud for imported). The cloud / clock icons are visually
      *  lighter than the size icon, so they're rendered larger to
@@ -304,17 +301,17 @@ public class ConfigsViewComponent extends AbstractComponent {
                 0.0F
         );
         float nameWidth = MsdfFonts.bold().getWidth(name, NAME_SIZE);
-        float dotX = textX + nameWidth + NAME_DOT_GAP;
+        float dotX = textX + nameWidth + NAME_DOT_TEXT_GAP;
         // Centre against the cap-height middle (~0.42 of the font
         // size from the text's top) instead of the full bbox - the
         // bbox includes descender room that pushes the dot below
         // the letters' optical mid-line.
         float dotY = nameY + NAME_SIZE * 0.42F - NAME_DOT_SIZE * 0.5F;
-        image.setTexture("textures/dot.png")
-                .render(ShapeProperties.create(matrix, dotX, dotY, NAME_DOT_SIZE, NAME_DOT_SIZE)
-                        .color(MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F))
-                        .build());
-        float authorX = dotX + NAME_DOT_SIZE + NAME_DOT_GAP;
+        rectangle.render(ShapeProperties.create(matrix, dotX, dotY, NAME_DOT_SIZE, NAME_DOT_SIZE)
+                .round(NAME_DOT_SIZE * 0.5F)
+                .color(MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F))
+                .build());
+        float authorX = dotX + NAME_DOT_SIZE + NAME_DOT_TEXT_GAP;
         if (authorLabel != null && !authorLabel.isEmpty()) {
             MsdfRenderer.renderText(
                     MsdfFonts.bold(), authorLabel, NAME_SIZE,
@@ -426,20 +423,47 @@ public class ConfigsViewComponent extends AbstractComponent {
             long delta = System.currentTimeMillis() - f.lastModified();
             if (delta < 0L) delta = 0L;
             long sec = delta / 1000L;
-            if (sec < 60L) return "just now";
+            if (sec < 60L) return Lang.translate("just now");
             long min = sec / 60L;
-            if (min < 60L) return min + (min == 1 ? " minute ago" : " minutes ago");
+            if (min < 60L) return formatRelativeAgo(min, "minute");
             long hr = min / 60L;
-            if (hr < 24L) return hr + (hr == 1 ? " hour ago" : " hours ago");
+            if (hr < 24L) return formatRelativeAgo(hr, "hour");
             long day = hr / 24L;
-            if (day < 30L) return day + (day == 1 ? " day ago" : " days ago");
+            if (day < 30L) return formatRelativeAgo(day, "day");
             long mon = day / 30L;
-            if (mon < 12L) return mon + (mon == 1 ? " month ago" : " months ago");
+            if (mon < 12L) return formatRelativeAgo(mon, "month");
             long yr = mon / 12L;
-            return yr + (yr == 1 ? " year ago" : " years ago");
+            return formatRelativeAgo(yr, "year");
         } catch (Throwable ignored) {
             return "—";
         }
+    }
+
+    private String formatRelativeAgo(long value, String unit) {
+        if (!Lang.RU.equals(Lang.getActive())) {
+            return value + " " + unit + (value == 1L ? " ago" : "s ago");
+        }
+        return switch (unit) {
+            case "minute" -> formatRelativeAgoRu(value, "минуту", "минуты", "минут");
+            case "hour" -> formatRelativeAgoRu(value, "час", "часа", "часов");
+            case "day" -> formatRelativeAgoRu(value, "день", "дня", "дней");
+            case "month" -> formatRelativeAgoRu(value, "месяц", "месяца", "месяцев");
+            case "year" -> formatRelativeAgoRu(value, "год", "года", "лет");
+            default -> value + " " + unit;
+        };
+    }
+
+    private String formatRelativeAgoRu(long value, String singular, String paucal, String plural) {
+        return value + " " + russianPlural(value, singular, paucal, plural) + " назад";
+    }
+
+    private String russianPlural(long value, String singular, String paucal, String plural) {
+        long mod100 = value % 100L;
+        long mod10 = value % 10L;
+        if (mod100 >= 11L && mod100 <= 14L) return plural;
+        if (mod10 == 1L) return singular;
+        if (mod10 >= 2L && mod10 <= 4L) return paucal;
+        return plural;
     }
 
     /** Visual order of the inline action buttons on every row.

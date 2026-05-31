@@ -14,6 +14,8 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.implement.menu.MenuScreen;
+import vorga.phazeclient.implement.menu.MenuPanoramaRenderer;
+import vorga.phazeclient.implement.menu.MenuPanoramaRegistry;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 import vorga.phazeclient.implement.features.modules.other.ColorCorrection;
 
@@ -35,6 +37,7 @@ public class ClientMain implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        MenuPanoramaRegistry.ensureDirectoryExists();
         ClientTickEvents.END_CLIENT_TICK.register(this::onClientTick);
         ClientLifecycleEvents.CLIENT_STOPPING.register(this::onClientStopping);
 
@@ -43,6 +46,8 @@ public class ClientMain implements ClientModInitializer {
             public void reload(ResourceManager manager) {
                 MotionBlur.getInstance().shader.reload();
                 ColorCorrection.getInstance().shader.reload();
+                MenuPanoramaRenderer.onResourcesReloaded();
+                MenuPanoramaRegistry.onResourcesReloaded();
             }
 
             @Override

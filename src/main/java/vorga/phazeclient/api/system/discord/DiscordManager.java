@@ -60,7 +60,7 @@ public class DiscordManager {
     }
 
     private void updatePresence() {
-        String imageUrl = "https://i.imgur.com/xbQBccj.jpg";
+        String imageUrl = "https://i.imgur.com/wJLeuBG.gif";
 
         // Pull the live config from the DiscordRpc module. If the
         // user disabled the module entirely we fall back to the

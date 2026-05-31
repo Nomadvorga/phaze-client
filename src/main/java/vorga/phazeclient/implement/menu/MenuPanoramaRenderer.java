@@ -12,11 +12,12 @@ import java.util.stream.IntStream;
 
 public final class MenuPanoramaRenderer {
     private static final Identifier OVERLAY_TEXTURE = Identifier.ofVanilla("textures/gui/title/background/panorama_overlay.png");
+    private static volatile int resourceGeneration = 0;
 
     private final CubeMapRenderer cubeMap;
     private final Identifier[] faceTextures;
     private long lastFrameTimeNs = -1L;
-    private boolean texturesPrepared = false;
+    private int preparedResourceGeneration = Integer.MIN_VALUE;
     private float pitch;
 
     public MenuPanoramaRenderer(Identifier cubeMapBase) {
@@ -66,18 +67,26 @@ public final class MenuPanoramaRenderer {
         return value > max ? value - max : value;
     }
 
+    public static void onResourcesReloaded() {
+        resourceGeneration++;
+    }
+
     public void prepareTextures(MinecraftClient client) {
-        if (client == null || this.texturesPrepared) {
+        if (client == null) {
             return;
         }
         TextureManager textureManager = client.getTextureManager();
         if (textureManager == null) {
             return;
         }
+        if (this.preparedResourceGeneration == resourceGeneration) {
+            return;
+        }
         textureManager.getTexture(OVERLAY_TEXTURE);
         for (Identifier faceTexture : this.faceTextures) {
             textureManager.getTexture(faceTexture);
         }
-        this.texturesPrepared = true;
+        this.preparedResourceGeneration = resourceGeneration;
+        this.lastFrameTimeNs = -1L;
     }
 }

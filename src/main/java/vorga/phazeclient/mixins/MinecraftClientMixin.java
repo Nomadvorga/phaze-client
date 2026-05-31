@@ -17,6 +17,7 @@ import net.minecraft.util.hit.HitResult;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Mutable;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -38,6 +39,8 @@ import vorga.phazeclient.implement.menu.MainMenuScreen;
  */
 @Mixin(MinecraftClient.class)
 public abstract class MinecraftClientMixin {
+    @Unique
+    private boolean phaze$redirectingMainMenuInRender;
 
     // ---------------------------------------------------------------
     // Shared shadows
@@ -97,13 +100,49 @@ public abstract class MinecraftClientMixin {
         config.setNearest(nearest);
     }
 
-    @Inject(method = "tick", at = @At("TAIL"))
-    private void phaze$swapTitleScreenAfterInitialReload(CallbackInfo ci) {
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void phaze$ensureCustomMainMenuBeforeFrame(CallbackInfo ci) {
         MinecraftClient client = (MinecraftClient) (Object) this;
-        if (this.currentScreen instanceof TitleScreen
-                && !(this.currentScreen instanceof MainMenuScreen)
-                && client.getOverlay() == null) {
+        if (client.getOverlay() != null) {
+            return;
+        }
+
+        if (this.currentScreen == null && client.world == null) {
             client.setScreen(new MainMenuScreen());
+            return;
+        }
+
+        if (this.currentScreen instanceof TitleScreen
+                && !(this.currentScreen instanceof MainMenuScreen)) {
+            client.setScreen(new MainMenuScreen());
+        }
+    }
+
+    @Inject(method = "render", at = @At("HEAD"))
+    private void phaze$ensureCustomMainMenuDuringRender(boolean tick, CallbackInfo ci) {
+        if (this.phaze$redirectingMainMenuInRender) {
+            return;
+        }
+
+        MinecraftClient client = (MinecraftClient) (Object) this;
+        if (client.getOverlay() != null) {
+            return;
+        }
+
+        boolean shouldOpenMainMenu =
+                (this.currentScreen == null && client.world == null)
+                        || (this.currentScreen instanceof TitleScreen
+                        && !(this.currentScreen instanceof MainMenuScreen));
+
+        if (!shouldOpenMainMenu) {
+            return;
+        }
+
+        this.phaze$redirectingMainMenuInRender = true;
+        try {
+            client.setScreen(new MainMenuScreen());
+        } finally {
+            this.phaze$redirectingMainMenuInRender = false;
         }
     }
 
