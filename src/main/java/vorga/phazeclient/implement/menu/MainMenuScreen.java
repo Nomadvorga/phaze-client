@@ -4,6 +4,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.screen.option.OptionsScreen;
 import net.minecraft.client.realms.gui.screen.RealmsMainScreen;
@@ -18,15 +19,20 @@ import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Rectangle;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.render.Render2DUtil;
+import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
 
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
+import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
-public class MainMenuScreen extends Screen {
+public class MainMenuScreen extends TitleScreen {
     private static final double PREFERRED_OVERLAY_SCALE = 2.0D;
     private static final double MIN_OVERLAY_SCALE = 1.0D;
     private static final int DEFAULT_OVERLAY_WIDTH = 462;
@@ -47,7 +53,12 @@ public class MainMenuScreen extends Screen {
     private static final Identifier ICON_RESET = Identifier.ofVanilla("textures/reset.png");
     private static final int TOOLTIP_TEXT_COLOR = 0xFF9EA7BB;
     private static final int ICON_TINT_COLOR = 0xFF9EA7BB;
+    private static final int THEME_MODAL_DIM_COLOR = 0x96000000;
+    private static final int THEME_SETTINGS_MODAL_DIM_COLOR = 0x42000000;
     private final Rectangle rectangle = new Rectangle();
+    private MainMenuButtonWidget singleplayerButton;
+    private MainMenuButtonWidget multiplayerButton;
+    private MainMenuButtonWidget quitButton;
     private MainMenuButtonWidget modMenuButton;
     private MainMenuButtonWidget settingsButton;
     private MainMenuButtonWidget realmsButton;
@@ -65,22 +76,38 @@ public class MainMenuScreen extends Screen {
     private float themeSelectorSettingsHoverAnim = 0.0F;
     private float themeSelectorCloseHoverAnim = 0.0F;
     private float themeSettingsCloseHoverAnim = 0.0F;
+    private float themeSelectorResetHoverAnim = 0.0F;
+    private float themeSelectorOpenAnim = 0.0F;
+    private float themeSelectorSettingsOpenAnim = 0.0F;
     private float panoramaSliderVisualProgress = (float) (MenuUiSettings.getInstance().getPanoramaSpeed() / 100.0D);
     private float guiFpsSliderVisualProgress = (MenuUiSettings.getInstance().getGuiFpsLimit() - MenuUiSettings.MIN_GUI_FPS_LIMIT)
             / (float) (MenuUiSettings.MAX_GUI_FPS_LIMIT - MenuUiSettings.MIN_GUI_FPS_LIMIT);
     private long themeUiLastFrameNs = -1L;
     private float themeUiSmoothing = 1.0F;
+    private float themeModalSmoothing = 1.0F;
     private ThemeSettingsSlider activeThemeSettingsSlider = ThemeSettingsSlider.NONE;
+    private float themeSelectorCardScrollOffset = 0.0F;
+    private float themeSelectorCardScrollTarget = 0.0F;
+    private float themeSelectorCardMaxScroll = 0.0F;
+    private String lastMenuLocale = Lang.getActive();
+    private final Map<String, Float> themeCardHoverAnims = new HashMap<>();
+    private final Map<String, Float> themeCardDeleteHoverAnims = new HashMap<>();
+    private final Map<String, Float> themeSettingsPresetHoverAnims = new HashMap<>();
 
     public MainMenuScreen() {
-        super(Text.literal("Phaze Main Menu"));
+        super(false);
     }
 
     @Override
     protected void init() {
+        Theme.getInstance().syncLanguage();
         updateOverlayMetrics();
         clearChildren();
         syncDisplayedPanoramaName();
+        lastMenuLocale = Lang.getActive();
+        if (this.client != null) {
+            MenuUiSettings.getInstance().getSelectedPanoramaPreset().getRenderer().prepareTextures(this.client);
+        }
         float scale = phaze$menuScale();
         float sizeMul = 1.3F / 1.2F;
         int overlayW = getOverlayViewportWidth();
@@ -91,53 +118,27 @@ public class MainMenuScreen extends Screen {
         int x = overlayW / 2 - width / 2;
         int y = overlayH / 2 - Math.round(72.0F * scale);
 
-        addDrawableChild(new MainMenuButtonWidget(x, y, width, height, Text.literal("Singleplayer"), ICON_SINGLE,
-                b -> this.client.setScreen(new SelectWorldScreen(this))));
+        singleplayerButton = new MainMenuButtonWidget(x, y, width, height, Text.literal(Lang.translate("Singleplayer")), ICON_SINGLE,
+                b -> this.client.setScreen(new SelectWorldScreen(this)));
+        addDrawableChild(singleplayerButton);
         y += height + gap;
-        addDrawableChild(new MainMenuButtonWidget(x, y, width, height, Text.literal("Multiplayer"), ICON_MULTI,
-                b -> this.client.setScreen(new MultiplayerScreen(this))));
+        multiplayerButton = new MainMenuButtonWidget(x, y, width, height, Text.literal(Lang.translate("Multiplayer")), ICON_MULTI,
+                b -> this.client.setScreen(new MultiplayerScreen(this)));
+        addDrawableChild(multiplayerButton);
         y += height + gap;
-        addDrawableChild(new MainMenuButtonWidget(x, y, width, height, Text.literal("Quit"), ICON_LOGOUT, true,
-                b -> this.client.scheduleStop()));
+        quitButton = new MainMenuButtonWidget(x, y, width, height, Text.literal(Lang.translate("Quit")), ICON_LOGOUT, true,
+                b -> this.client.scheduleStop());
+        addDrawableChild(quitButton);
 
         int size = Math.max(12, Math.round(30.0F * scale * sizeMul));
-        int dockRightX = overlayW / 2 + Math.round(42.0F * scale * sizeMul);
         int by = overlayH - Math.round(50.0F * scale);
         int dockGap = Math.max(6, Math.round(8.0F * scale));
         int dockStep = size + dockGap;
         boolean modMenuLoaded = FabricLoader.getInstance().isModLoaded("modmenu");
         boolean flashbackLoaded = FabricLoader.getInstance().isModLoaded("flashback");
-        int currentDockX = dockRightX;
-
-        modMenuButton = null;
-        if (modMenuLoaded) {
-            modMenuButton = new MainMenuButtonWidget(
-                    currentDockX, by, size, size, Text.literal(""), ICON_TAB, b -> openModMenu()
-            );
-            addDrawableChild(modMenuButton);
-            currentDockX -= dockStep;
-        }
-
-        flashbackButton = null;
-        if (flashbackLoaded) {
-            flashbackButton = new MainMenuButtonWidget(
-                    currentDockX, by, size, size, Text.literal(""), ICON_FLASHBACK, b -> openFlashbackReplays()
-            );
-            addDrawableChild(flashbackButton);
-            currentDockX -= dockStep;
-        }
-
-        realmsButton = new MainMenuButtonWidget(
-                currentDockX,
-                by,
-                size,
-                size,
-                Text.literal(""),
-                ICON_REALMS,
-                b -> openRealms()
-        );
-        addDrawableChild(realmsButton);
-        currentDockX -= dockStep;
+        int dockButtonCount = 2 + (flashbackLoaded ? 1 : 0) + (modMenuLoaded ? 1 : 0);
+        int dockTotalWidth = dockButtonCount * size + Math.max(0, dockButtonCount - 1) * dockGap;
+        int currentDockX = overlayW / 2 - dockTotalWidth / 2;
 
         settingsButton = new MainMenuButtonWidget(
                 currentDockX,
@@ -149,6 +150,36 @@ public class MainMenuScreen extends Screen {
                 b -> this.client.setScreen(new OptionsScreen(this, this.client.options))
         );
         addDrawableChild(settingsButton);
+        currentDockX += dockStep;
+
+        realmsButton = new MainMenuButtonWidget(
+                currentDockX,
+                by,
+                size,
+                size,
+                Text.literal(""),
+                ICON_REALMS,
+                b -> openRealms()
+        );
+        addDrawableChild(realmsButton);
+        currentDockX += dockStep;
+
+        flashbackButton = null;
+        if (flashbackLoaded) {
+            flashbackButton = new MainMenuButtonWidget(
+                    currentDockX, by, size, size, Text.literal(""), ICON_FLASHBACK, b -> openFlashbackReplays()
+            );
+            addDrawableChild(flashbackButton);
+            currentDockX += dockStep;
+        }
+
+        modMenuButton = null;
+        if (modMenuLoaded) {
+            modMenuButton = new MainMenuButtonWidget(
+                    currentDockX, by, size, size, Text.literal(""), ICON_TAB, b -> openModMenu()
+            );
+            addDrawableChild(modMenuButton);
+        }
 
         int topInset = Math.max(8, Math.round(10.0F * scale));
         themeSelectorButton = new MainMenuButtonWidget(
@@ -165,6 +196,8 @@ public class MainMenuScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        Theme.getInstance().syncLanguage();
+        refreshLocalizedMainMenuTexts();
         updateOverlayMetrics();
         syncDisplayedPanoramaName();
         updateThemeUiAnimationTiming();
@@ -176,9 +209,13 @@ public class MainMenuScreen extends Screen {
         float overlayW = getOverlayViewportWidth();
         float overlayH = getOverlayViewportHeight();
         if (themeSelectorOpen) {
-            context.fill(0, 0, Math.round(overlayW), Math.round(overlayH), 0x76070B12);
-            renderThemeSelectorModal(context, overlayMouseX, overlayMouseY, mouseX, mouseY, delta);
+            themeSelectorOpenAnim = animateThemeModalValue(themeSelectorOpenAnim, 1.0F);
+            float selectorModalProgress = easeOutThemeModal(themeSelectorOpenAnim);
+            renderThemeSelectorBackdrop(context, overlayW, overlayH, selectorModalProgress);
+            renderThemeSelectorModal(context, overlayMouseX, overlayMouseY, mouseX, mouseY, delta, selectorModalProgress);
         } else {
+            themeSelectorOpenAnim = 0.0F;
+            themeSelectorSettingsOpenAnim = 0.0F;
             renderMainMenuWidgets(context, overlayMouseX, overlayMouseY, delta);
             renderFooterTexts(context, overlayW, overlayH);
             renderSettingsTooltip(context);
@@ -190,12 +227,48 @@ public class MainMenuScreen extends Screen {
         context.getMatrices().pop();
     }
 
+    private void refreshLocalizedMainMenuTexts() {
+        String activeLocale = Lang.getActive();
+        if (activeLocale.equals(lastMenuLocale)) {
+            return;
+        }
+        lastMenuLocale = activeLocale;
+        if (singleplayerButton != null) {
+            singleplayerButton.setMessage(Text.literal(Lang.translate("Singleplayer")));
+        }
+        if (multiplayerButton != null) {
+            multiplayerButton.setMessage(Text.literal(Lang.translate("Multiplayer")));
+        }
+        if (quitButton != null) {
+            quitButton.setMessage(Text.literal(Lang.translate("Quit")));
+        }
+    }
+
     private void renderMainMenuBackground(DrawContext context, float delta) {
         if (this.client != null && this.client.world != null) {
             this.renderInGameBackground(context);
             return;
         }
         this.renderPanoramaBackground(context, delta);
+        // Restore the vanilla title-screen background pass: blur the
+        // freshly-rendered panorama, then composite Mojang's darkening
+        // texture over it so the menu regains the subdued backdrop.
+        if (this.client != null) {
+            this.applyBlur();
+            if (!themeSelectorOpen) {
+                this.renderDarkening(context);
+            }
+        }
+    }
+
+    private void renderThemeSelectorBackdrop(DrawContext context, float overlayW, float overlayH, float alpha) {
+        context.getMatrices().push();
+        context.getMatrices().translate(0.0F, 0.0F, 120.0F);
+        rectangle.render(ShapeProperties.create(context.getMatrices(), 0.0F, 0.0F, overlayW, overlayH)
+                .softness(1.0F)
+                .color(scaleColorAlpha(THEME_MODAL_DIM_COLOR, alpha))
+                .build());
+        context.getMatrices().pop();
     }
 
     private void renderMainMenuWidgets(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -213,9 +286,7 @@ public class MainMenuScreen extends Screen {
 
     @Override
     protected void renderPanoramaBackground(DrawContext context, float delta) {
-        if (this.client == null
-                || this.client.getOverlay() != null
-                || MenuUiSettings.getInstance().getSelectedPanoramaPreset() == MenuUiSettings.PanoramaPreset.VANILLA) {
+        if (this.client == null) {
             super.renderPanoramaBackground(context, delta);
             return;
         }
@@ -267,8 +338,8 @@ public class MainMenuScreen extends Screen {
                 .color(0xFF0A1020)
                 .build());
 
-        String line1 = "Fabric Mod Menu";
-        String line2 = "External";
+        String line1 = Lang.translate("Fabric Mod Menu");
+        String line2 = Lang.translate("External");
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), line1, 9.6F * scale, TOOLTIP_TEXT_COLOR,
                 context.getMatrices().peek().getPositionMatrix(),
@@ -296,11 +367,11 @@ public class MainMenuScreen extends Screen {
                 .build());
 
         MsdfRenderer.renderText(
-                MsdfFonts.bold(), "Minecraft Settings", 9.6F * scale, TOOLTIP_TEXT_COLOR,
+                MsdfFonts.bold(), Lang.translate("Minecraft Settings"), 9.6F * scale, TOOLTIP_TEXT_COLOR,
                 context.getMatrices().peek().getPositionMatrix(),
                 x + 8.0F * scale, y + 8.0F * scale, 0.0F
         );
-        renderTooltipLine(context, ICON_CUBE, "Minecraft", x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale);
+        renderTooltipLine(context, ICON_CUBE, Lang.translate("Minecraft"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale);
     }
 
     private void renderRealmsTooltip(DrawContext context) {
@@ -322,11 +393,11 @@ public class MainMenuScreen extends Screen {
                 .build());
 
         MsdfRenderer.renderText(
-                MsdfFonts.bold(), "Minecraft Realms", 9.6F * scale, TOOLTIP_TEXT_COLOR,
+                MsdfFonts.bold(), Lang.translate("Minecraft Realms"), 9.6F * scale, TOOLTIP_TEXT_COLOR,
                 context.getMatrices().peek().getPositionMatrix(),
                 x + 8.0F * scale, y + 8.0F * scale, 0.0F
         );
-        renderTooltipLine(context, ICON_CUBE, "Minecraft", x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale);
+        renderTooltipLine(context, ICON_CUBE, Lang.translate("Minecraft"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale);
     }
 
     private void renderFlashbackTooltip(DrawContext context) {
@@ -348,11 +419,11 @@ public class MainMenuScreen extends Screen {
                 .build());
 
         MsdfRenderer.renderText(
-                MsdfFonts.bold(), "Flashback Mod", 9.6F * scale, TOOLTIP_TEXT_COLOR,
+                MsdfFonts.bold(), Lang.translate("Flashback Mod"), 9.6F * scale, TOOLTIP_TEXT_COLOR,
                 context.getMatrices().peek().getPositionMatrix(),
                 x + 8.0F * scale, y + 8.0F * scale, 0.0F
         );
-        renderTooltipLine(context, ICON_EXTERNAL, "External", x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale, (12.5F / (1.3F * 1.15F)) * scale);
+        renderTooltipLine(context, ICON_EXTERNAL, Lang.translate("External"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale, (12.5F / (1.3F * 1.15F)) * scale);
     }
 
     private void renderThemeSelectorTooltip(DrawContext context) {
@@ -360,7 +431,7 @@ public class MainMenuScreen extends Screen {
             return;
         }
         float scale = phaze$menuScale();
-        String title = "Theme Selector";
+        String title = Lang.translate("Theme Selector");
         float textSize = 9.6F * scale;
         float h = 30.0F * scale;
         float w = Math.max(84.0F * scale, MsdfFonts.bold().getWidth(title, textSize) + 18.0F * scale);
@@ -387,109 +458,145 @@ public class MainMenuScreen extends Screen {
         );
     }
 
-    private void renderThemeSelectorModal(DrawContext context, int mouseX, int mouseY, int rawMouseX, int rawMouseY, float delta) {
+    private void renderThemeSelectorModal(DrawContext context, int mouseX, int mouseY, int rawMouseX, int rawMouseY, float delta, float modalProgress) {
         ThemeSelectorLayout layout = getThemeSelectorLayout();
-        List<MenuUiSettings.PanoramaPreset> visiblePresets = getVisibleThemeSelectorPresets();
+        List<MenuUiSettings.PanoramaDescriptor> visiblePresets = getVisibleThemeSelectorPresets();
+        boolean themeSelectorInteractive = !themeSelectorSettingsOpen;
+        float modalAlpha = modalProgress;
+        float modalYOffset = (1.0F - modalProgress) * 20.0F * layout.scale;
+        syncDisplayedPanoramaName();
+        if (themeSelectorSettingsOpen) {
+            themeSelectorSettingsOpenAnim = animateThemeModalValue(themeSelectorSettingsOpenAnim, 1.0F);
+        } else {
+            themeSelectorSettingsOpenAnim = 0.0F;
+        }
+        float settingsModalProgress = easeOutThemeModal(themeSelectorSettingsOpenAnim);
+        if (!themeSelectorInteractive) {
+            themeSelectorSettingsHoverAnim = 0.0F;
+            themeSelectorCloseHoverAnim = 0.0F;
+            themeSelectorResetHoverAnim = 0.0F;
+        }
         context.getMatrices().push();
-        context.getMatrices().translate(0.0F, 0.0F, 140.0F);
+        context.getMatrices().translate(0.0F, modalYOffset, 140.0F);
 
-        rectangle.render(ShapeProperties.create(context.getMatrices(), layout.panelX, layout.panelY, layout.panelW, layout.panelH)
-                .round(8.0F)
-                .softness(1.2F)
-                .thickness(1.5F)
-                .outlineColor(0xFF212838)
-                .color(0xFF11161F)
-                .build());
+        renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10.0F, 0xFF11161F, 0xFF212838, modalAlpha);
 
         float titleTextSize = 14.0F * layout.scale;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                "Select Theme",
+                Lang.translate("Select Theme"),
                 titleTextSize,
-                0xFFF6F8FE,
+                scaleColorAlpha(0xFFF6F8FE, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 layout.panelX + 12.0F * layout.scale,
-                layout.panelY + 11.0F * layout.scale,
+                layout.panelY + 12.0F * layout.scale,
                 0.0F
         );
 
-        boolean settingsHovered = isPointInside(mouseX, mouseY, layout.settingsX, layout.settingsY, layout.settingsSize, layout.settingsSize);
-        boolean closeHovered = isPointInside(mouseX, mouseY, layout.closeX, layout.closeY, layout.closeSize, layout.closeSize);
+        boolean settingsHovered = themeSelectorInteractive && isPointInside(mouseX, mouseY, layout.settingsX, layout.settingsY, layout.settingsSize, layout.settingsSize);
+        boolean closeHovered = themeSelectorInteractive && isPointInside(mouseX, mouseY, layout.closeX, layout.closeY, layout.closeSize, layout.closeSize);
         themeSelectorSettingsHoverAnim = animateThemeUiValue(themeSelectorSettingsHoverAnim, settingsHovered ? 1.0F : 0.0F);
         themeSelectorCloseHoverAnim = animateThemeUiValue(themeSelectorCloseHoverAnim, closeHovered ? 1.0F : 0.0F);
-        renderThemeSelectorIconAction(context, ICON_SETTINGS, layout.settingsX, layout.settingsY, layout.settingsSize, themeSelectorSettingsHoverAnim);
-        renderThemeSelectorCloseAction(context, layout.closeX, layout.closeY, layout.closeSize, themeSelectorCloseHoverAnim);
+        renderThemeSelectorIconAction(context, ICON_SETTINGS, layout.settingsX, layout.settingsY, layout.settingsSize, themeSelectorSettingsHoverAnim, modalAlpha);
+        renderThemeSelectorCloseAction(context, layout.closeX, layout.closeY, layout.closeSize, themeSelectorCloseHoverAnim, modalAlpha);
 
-        boolean searchHovered = isPointInside(mouseX, mouseY, layout.searchX, layout.searchY, layout.searchW, layout.searchH);
+        boolean searchHovered = themeSelectorInteractive && isPointInside(mouseX, mouseY, layout.searchX, layout.searchY, layout.searchW, layout.searchH);
         rectangle.render(ShapeProperties.create(context.getMatrices(), layout.searchX, layout.searchY, layout.searchW, layout.searchH)
                 .round(6.0F)
                 .softness(1.0F)
                 .thickness(1.0F)
-                .outlineColor(themeSelectorSearchFocused ? 0xFF4D617F : (searchHovered ? 0xFF364256 : 0xFF2B3343))
-                .color(0xFF232734)
+                .outlineColor(scaleColorAlpha(themeSelectorSearchFocused ? 0xFF4D617F : (searchHovered ? 0xFF364256 : 0xFF2B3343), modalAlpha))
+                .color(scaleColorAlpha(0xFF232734, modalAlpha))
                 .build());
 
-        renderThemeSelectorSearchText(context, layout);
+        renderThemeSelectorSearchText(context, layout, modalAlpha);
 
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                "Themes (" + visiblePresets.size() + ")",
+                Lang.translate("Themes") + " (" + visiblePresets.size() + ")",
                 9.4F * layout.scale,
-                0xFFE5EAF7,
+                scaleColorAlpha(0xFFE5EAF7, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 layout.panelX + 12.0F * layout.scale,
-                layout.sectionLabelY,
+                layout.sectionLabelY - 1.0F * layout.scale,
+                0.0F
+        );
+        float importHintSize = 7.0F * layout.scale;
+        String importHint = Lang.translate("Drop .zip or use Phaze/Panoramas");
+        MsdfRenderer.renderText(
+                MsdfFonts.medium(),
+                importHint,
+                importHintSize,
+                scaleColorAlpha(0xFF7E8799, modalAlpha),
+                context.getMatrices().peek().getPositionMatrix(),
+                layout.panelX + layout.panelW - 15.0F * layout.scale - MsdfFonts.medium().getWidth(importHint, importHintSize),
+                layout.sectionLabelY + 0.1F * layout.scale,
                 0.0F
         );
 
-        renderThemePreviewCards(context, layout, visiblePresets, mouseX, mouseY);
+        renderThemePreviewCards(context, layout, visiblePresets, mouseX, mouseY, themeSelectorInteractive, modalAlpha);
 
-        boolean resetHovered = isPointInside(mouseX, mouseY, layout.resetX, layout.resetY, layout.resetW, layout.resetH);
+        boolean resetHovered = themeSelectorInteractive && isPointInside(mouseX, mouseY, layout.resetX, layout.resetY, layout.resetW, layout.resetH);
+        themeSelectorResetHoverAnim = animateThemeUiValue(themeSelectorResetHoverAnim, resetHovered ? 1.0F : 0.0F);
         float footerTextSize = (13.8F / 1.2F) * layout.scale;
         float resetTextSize = (13.65F / 1.2F) * layout.scale;
         float footerRowY = layout.footerY - 9.0F * layout.scale;
         float footerTextY = MenuStyle.centerMsdfTextY(footerTextSize, footerRowY, 18.0F * layout.scale);
         float resetTextY = MenuStyle.centerMsdfTextY(resetTextSize, footerRowY, 18.0F * layout.scale);
         float resetIconSize = 11.0F * layout.scale;
-        float resetIconY = footerRowY + (18.0F * layout.scale - resetIconSize) / 2.0F;
+        float resetTextShiftX = 17.0F * layout.scale;
+        float resetIconShiftX = 17.0F * layout.scale;
+        float resetIconY = footerRowY + (18.0F * layout.scale - resetIconSize) / 2.0F - 0.5F * layout.scale;
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
-                "Active: " + activeThemeName,
+                Lang.translate("Active") + ": " + activeThemeName,
                 footerTextSize,
-                0xFFE5EAF7,
+                scaleColorAlpha(0xFFE5EAF7, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 layout.panelX + 12.0F * layout.scale,
                 footerTextY,
                 0.0F
         );
 
-        renderMenuIcon(context, ICON_RESET, layout.resetX, resetIconY, resetIconSize, resetIconSize, resetHovered ? 0xFFFFFFFF : ICON_TINT_COLOR);
+        renderMenuIcon(
+                context,
+                ICON_RESET,
+                layout.resetX + resetIconShiftX,
+                resetIconY,
+                resetIconSize,
+                resetIconSize,
+                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, themeSelectorResetHoverAnim), modalAlpha)
+        );
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
-                "Reset to default",
+                Lang.translate("Reset to default"),
                 resetTextSize,
-                resetHovered ? 0xFFFFFFFF : 0xFFCBD4E6,
+                scaleColorAlpha(lerpArgb(0xFFCBD4E6, 0xFFFFFFFF, themeSelectorResetHoverAnim), modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.resetX + resetIconSize + 4.0F * layout.scale,
+                layout.resetX + resetIconSize + 4.0F * layout.scale + resetTextShiftX,
                 resetTextY,
                 0.0F
         );
 
-        if (themeSelectorSettingsOpen) {
-            renderThemeSettingsModal(context, layout, mouseX, mouseY);
-        }
         context.getMatrices().pop();
+        if (themeSelectorSettingsOpen) {
+            renderThemeSettingsBackdrop(context, layout, settingsModalProgress);
+            renderThemeSettingsModal(context, layout, mouseX, mouseY, settingsModalProgress);
+        }
     }
 
-    private void renderThemePreviewCards(DrawContext context, ThemeSelectorLayout layout, List<MenuUiSettings.PanoramaPreset> presets, int mouseX, int mouseY) {
+    private void renderThemePreviewCards(DrawContext context, ThemeSelectorLayout layout, List<MenuUiSettings.PanoramaDescriptor> presets, int mouseX, int mouseY, boolean interactive, float alpha) {
         if (presets.isEmpty()) {
+            themeSelectorCardMaxScroll = 0.0F;
+            themeSelectorCardScrollTarget = 0.0F;
+            themeSelectorCardScrollOffset = 0.0F;
             float textSize = 9.2F * layout.scale;
-            String text = "No panoramas found";
+            String text = Lang.translate("No panoramas found");
             MsdfRenderer.renderText(
                     MsdfFonts.medium(),
                     text,
                     textSize,
-                    0xFF9099AD,
+                    scaleColorAlpha(0xFF9099AD, alpha),
                     context.getMatrices().peek().getPositionMatrix(),
                     layout.panelX + (layout.panelW - MsdfFonts.medium().getWidth(text, textSize)) / 2.0F,
                     layout.cardsY + layout.cardPreviewH / 2.0F - textSize / 2.0F,
@@ -498,15 +605,42 @@ public class MainMenuScreen extends Screen {
             return;
         }
 
-        int index = 0;
-        for (MenuUiSettings.PanoramaPreset preset : presets) {
-            renderThemePreviewCard(context, layout, preset, index++, presets.size(), mouseX, mouseY);
+        int rowCount = (presets.size() + 3) / 4;
+        float rowStep = layout.cardTotalHeight + layout.cardsGap;
+        float contentHeight = rowCount * layout.cardTotalHeight + Math.max(0, rowCount - 1) * layout.cardsGap;
+        themeSelectorCardMaxScroll = Math.max(0.0F, contentHeight - layout.cardsViewportH);
+        themeSelectorCardScrollTarget = Math.max(0.0F, Math.min(themeSelectorCardMaxScroll, themeSelectorCardScrollTarget));
+        themeSelectorCardScrollOffset = animateThemeUiValue(themeSelectorCardScrollOffset, themeSelectorCardScrollTarget);
+
+        enableOverlayScissor(
+                context,
+                layout.panelX + 8.0F * layout.scale,
+                layout.cardsViewportY,
+                layout.panelW - 16.0F * layout.scale,
+                layout.cardsViewportH
+        );
+
+        for (int row = 0; row < rowCount; row++) {
+            int rowStart = row * 4;
+            int rowEnd = Math.min(rowStart + 4, presets.size());
+            int itemsInRow = rowEnd - rowStart;
+            float rowY = layout.cardsY + row * rowStep - themeSelectorCardScrollOffset;
+            if (rowY + layout.cardTotalHeight < layout.cardsViewportY || rowY > layout.cardsViewportY + layout.cardsViewportH) {
+                continue;
+            }
+
+            float rowWidth = itemsInRow * layout.cardPreviewW + Math.max(0, itemsInRow - 1) * layout.cardsGap;
+            float rowX = layout.panelX + (layout.panelW - rowWidth) / 2.0F;
+            for (int column = 0; column < itemsInRow; column++) {
+                renderThemePreviewCard(context, layout, presets.get(rowStart + column), rowX + column * (layout.cardPreviewW + layout.cardsGap), rowY, mouseX, mouseY, interactive, alpha);
+            }
         }
+
+        context.disableScissor();
+        renderThemePreviewScrollbar(context, layout, contentHeight, alpha);
     }
 
-    private void renderThemePreviewCard(DrawContext context, ThemeSelectorLayout layout, MenuUiSettings.PanoramaPreset preset, int index, int visibleCount, int mouseX, int mouseY) {
-        float cardX = getThemeSelectorCardX(layout, index, visibleCount);
-        float cardY = layout.cardsY;
+    private void renderThemePreviewCard(DrawContext context, ThemeSelectorLayout layout, MenuUiSettings.PanoramaDescriptor preset, float cardX, float cardY, int mouseX, int mouseY, boolean interactive, float alpha) {
         float cardW = layout.cardPreviewW;
         float cardH = layout.cardTotalHeight;
         float previewX = cardX;
@@ -514,27 +648,76 @@ public class MainMenuScreen extends Screen {
         float previewW = cardW;
         float previewH = layout.cardPreviewH;
 
-        boolean selected = MenuUiSettings.getInstance().getSelectedPanoramaPreset() == preset;
-        boolean hovered = isPointInside(mouseX, mouseY, cardX, cardY, cardW, cardH);
+        boolean selected = MenuUiSettings.getInstance().getSelectedPanoramaPresetId().equalsIgnoreCase(preset.getId());
+        boolean hovered = interactive && isPointInside(mouseX, mouseY, cardX, cardY, cardW, cardH);
+        float hoverAnim = interactive
+                ? animateThemeUiValue(themeCardHoverAnims.getOrDefault(preset.getId(), 0.0F), hovered ? 1.0F : 0.0F)
+                : 0.0F;
+        themeCardHoverAnims.put(preset.getId(), hoverAnim);
 
         int previewOutline = selected
-                ? (hovered ? 0xFF1F7E5A : 0xFF165A41)
-                : (hovered ? 0xFF343C4F : 0xFF242A37);
+                ? lerpArgb(0xFF165A41, 0xFF1F7E5A, hoverAnim)
+                : lerpArgb(0xFF242A37, 0xFF343C4F, hoverAnim);
         rectangle.render(ShapeProperties.create(context.getMatrices(), previewX, previewY, previewW, previewH)
                 .round(7.0F)
                 .softness(1.0F)
                 .thickness(1.3F)
-                .outlineColor(previewOutline)
+                .outlineColor(scaleColorAlpha(previewOutline, alpha))
                 .color(0x00000000)
                 .build());
-        renderPanoramaPresetPreview(context, preset, previewX + 1.0F, previewY + 1.0F, previewW - 2.0F);
+        renderPanoramaPresetPreview(context, preset, previewX + 1.0F, previewY + 1.0F, previewW - 2.0F, alpha);
 
-        if (hovered) {
+        int previewHoverAlpha = Math.round(hoverAnim * 28.0F * alpha);
+        if (previewHoverAlpha > 0) {
             rectangle.render(ShapeProperties.create(context.getMatrices(), previewX + 1.0F, previewY + 1.0F, previewW - 2.0F, previewH - 2.0F)
                     .round(6.0F)
                     .softness(1.0F)
-                    .color(0x14FFFFFF)
+                    .color((previewHoverAlpha << 24) | 0xFFFFFF)
                     .build());
+        }
+
+        if (preset.isCustom()) {
+            ThemeCardDeleteBadgeLayout customBadgeLayout = getThemeCardDeleteBadgeLayout(layout, previewX, previewY, previewW);
+            boolean deleteHovered = interactive && isPointInside(mouseX, mouseY, customBadgeLayout.deleteX, customBadgeLayout.deleteY, customBadgeLayout.deleteSize, customBadgeLayout.deleteSize);
+            float deleteHoverAnim = interactive
+                    ? animateThemeUiValue(themeCardDeleteHoverAnims.getOrDefault(preset.getId(), 0.0F), deleteHovered ? 1.0F : 0.0F)
+                    : 0.0F;
+            themeCardDeleteHoverAnims.put(preset.getId(), deleteHoverAnim);
+            rectangle.render(ShapeProperties.create(context.getMatrices(), customBadgeLayout.badgeX, customBadgeLayout.badgeY, customBadgeLayout.badgeW, customBadgeLayout.badgeH)
+                    .round(customBadgeLayout.cornerRound)
+                    .softness(1.0F)
+                    .thickness(1.0F)
+                    .outlineColor(scaleColorAlpha(lerpArgb(0xFF2D5A49, 0xFF4B8D72, hoverAnim), alpha))
+                    .color(scaleColorAlpha(lerpArgb(0xB9132B22, 0xD61B3A2D, hoverAnim), alpha))
+                    .build());
+            MsdfRenderer.renderText(
+                    MsdfFonts.bold(),
+                    "ZIP",
+                    customBadgeLayout.badgeTextSize,
+                    scaleColorAlpha(0xFFF2FAF5, alpha),
+                    context.getMatrices().peek().getPositionMatrix(),
+                    customBadgeLayout.badgeX + customBadgeLayout.badgePaddingX + 0.5F,
+                    MenuStyle.centerMsdfTextY(customBadgeLayout.badgeTextSize, customBadgeLayout.badgeY, customBadgeLayout.badgeH),
+                    0.0F
+                );
+
+            rectangle.render(ShapeProperties.create(context.getMatrices(), customBadgeLayout.deleteX, customBadgeLayout.deleteY, customBadgeLayout.deleteSize, customBadgeLayout.deleteSize)
+                    .round(customBadgeLayout.cornerRound)
+                    .softness(1.0F)
+                    .thickness(1.0F)
+                    .outlineColor(scaleColorAlpha(lerpArgb(0xFF6C242B, 0xFFB1404D, deleteHoverAnim), alpha))
+                    .color(scaleColorAlpha(lerpArgb(0xB92A0D14, 0xE5411C28, deleteHoverAnim), alpha))
+                    .build());
+            float deleteIconSize = 5.7F * layout.scale;
+            renderMenuIconPrecise(
+                    context,
+                    ICON_CROSS,
+                    customBadgeLayout.deleteX + (customBadgeLayout.deleteSize - deleteIconSize) / 2.0F + 0.5F,
+                    customBadgeLayout.deleteY + (customBadgeLayout.deleteSize - deleteIconSize) / 2.0F,
+                    deleteIconSize,
+                    deleteIconSize,
+                    scaleColorAlpha(lerpArgb(0xFFE8B9C0, 0xFFFFFFFF, deleteHoverAnim), alpha)
+            );
         }
 
         float nameTextSize = 8.6F * layout.scale;
@@ -543,7 +726,7 @@ public class MainMenuScreen extends Screen {
                 MsdfFonts.bold(),
                 preset.displayName(),
                 nameTextSize,
-                0xFFF5F7FD,
+                scaleColorAlpha(0xFFF5F7FD, alpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 previewX,
                 nameY,
@@ -553,57 +736,102 @@ public class MainMenuScreen extends Screen {
         float badgeOuterSize = 11.0F * layout.scale;
         float badgeInnerSize = 7.0F * layout.scale;
         float badgeX = previewX + previewW - badgeOuterSize;
-        float badgeY = nameY + 0.5F * layout.scale;
+        float badgeY = nameY - 1.0F * layout.scale;
         rectangle.render(ShapeProperties.create(context.getMatrices(), badgeX, badgeY, badgeOuterSize, badgeOuterSize)
                 .round(badgeOuterSize / 2.0F)
                 .softness(1.0F)
-                .color(selected ? 0xFF133926 : 0xFF2A3140)
+                .color(scaleColorAlpha(selected ? 0xFF133926 : 0xFF2A3140, alpha))
                 .build());
         float badgeInnerOffset = (badgeOuterSize - badgeInnerSize) / 2.0F;
         rectangle.render(ShapeProperties.create(context.getMatrices(), badgeX + badgeInnerOffset, badgeY + badgeInnerOffset, badgeInnerSize, badgeInnerSize)
                 .round(badgeInnerSize / 2.0F)
                 .softness(1.0F)
-                .color(selected ? 0xFF25E163 : 0xFF7F8798)
+                .color(scaleColorAlpha(selected ? 0xFF25E163 : 0xFF7F8798, alpha))
                 .build());
     }
 
-    private void renderPanoramaPresetPreview(DrawContext context, MenuUiSettings.PanoramaPreset preset, float x, float y, float size) {
+    private ThemeCardDeleteBadgeLayout getThemeCardDeleteBadgeLayout(ThemeSelectorLayout layout, float previewX, float previewY, float previewW) {
+        float badgeTextSize = 6.5F * layout.scale;
+        float badgePaddingX = 5.0F * layout.scale;
+        float badgeW = MsdfFonts.bold().getWidth("ZIP", badgeTextSize) + badgePaddingX * 2.0F;
+        float badgeH = 11.0F * layout.scale;
+        float deleteSize = 11.0F * layout.scale;
+        float gap = 3.0F * layout.scale;
+        float rightInset = 6.0F * layout.scale;
+        float cornerRound = 3.3F * layout.scale;
+        float badgeY = previewY + 6.0F * layout.scale;
+        float deleteX = previewX + previewW - deleteSize - rightInset;
+        float badgeX = deleteX - gap - badgeW;
+        return new ThemeCardDeleteBadgeLayout(badgeTextSize, badgePaddingX, badgeW, badgeH, badgeX, badgeY, deleteSize, deleteX, badgeY, cornerRound);
+    }
+
+    private void renderPanoramaPresetPreview(DrawContext context, MenuUiSettings.PanoramaDescriptor preset, float x, float y, float size, float alpha) {
         if (this.client != null) {
             preset.getRenderer().prepareTextures(this.client);
         }
         int textureSize = preset.previewTextureSize();
         int cropInset = preset.previewCropInset();
         int cropSize = preset.previewCropSize();
-
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
         Render2DUtil.drawTexture(
-                context.getMatrices(),
+                context,
                 preset.previewTexture(),
                 x,
-                x + Math.max(1.0F, size),
                 y,
-                y + Math.max(1.0F, size),
-                0.0F,
-                cropSize,
-                cropSize,
+                Math.max(1.0F, size),
+                6.0F,
                 cropInset,
-                cropInset,
+                cropSize,
                 textureSize,
-                textureSize,
-                0xFFFFFFFF
+                scaleColorAlpha(0xFF000000, alpha),
+                scaleColorAlpha(0xFFFFFFFF, alpha)
         );
-        RenderSystem.disableBlend();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
-    private float getThemeSelectorCardX(ThemeSelectorLayout layout, int index, int visibleCount) {
-        float totalWidth = visibleCount * layout.cardPreviewW + Math.max(0, visibleCount - 1) * layout.cardsGap;
-        float startX = layout.panelX + (layout.panelW - totalWidth) / 2.0F;
-        return startX + index * (layout.cardPreviewW + layout.cardsGap);
+    private void renderThemeSettingsBackdrop(DrawContext context, ThemeSelectorLayout layout, float alpha) {
+        context.getMatrices().push();
+        context.getMatrices().translate(0.0F, 0.0F, 180.0F);
+        rectangle.render(ShapeProperties.create(context.getMatrices(), layout.panelX, layout.panelY, layout.panelW, layout.panelH)
+                .round(10.0F)
+                .softness(1.0F)
+                .color(scaleColorAlpha(THEME_SETTINGS_MODAL_DIM_COLOR, alpha))
+                .build());
+        context.getMatrices().pop();
     }
 
-    private void renderThemeSelectorIconAction(DrawContext context, Identifier icon, float x, float y, float size, float hoverAnim) {
+    private void renderThemePreviewScrollbar(DrawContext context, ThemeSelectorLayout layout, float contentHeight, float alpha) {
+        if (themeSelectorCardMaxScroll <= 0.0F || contentHeight <= 0.0F) {
+            return;
+        }
+
+        float trackW = 3.0F * layout.scale;
+        float trackX = layout.panelX + layout.panelW - 8.0F * layout.scale;
+        float trackY = layout.cardsViewportY;
+        float trackH = layout.cardsViewportH;
+        float thumbH = Math.max(18.0F * layout.scale, trackH * (trackH / contentHeight));
+        float thumbTravel = Math.max(0.0F, trackH - thumbH);
+        float thumbY = trackY + thumbTravel * (themeSelectorCardMaxScroll <= 0.0F ? 0.0F : (themeSelectorCardScrollOffset / themeSelectorCardMaxScroll));
+
+        rectangle.render(ShapeProperties.create(context.getMatrices(), trackX, trackY, trackW, trackH)
+                .round(trackW / 2.0F)
+                .softness(1.0F)
+                .color(scaleColorAlpha(0x1FFFFFFF, alpha))
+                .build());
+        rectangle.render(ShapeProperties.create(context.getMatrices(), trackX, thumbY, trackW, thumbH)
+                .round(trackW / 2.0F)
+                .softness(1.0F)
+                .color(scaleColorAlpha(0x66C8D3E8, alpha))
+                .build());
+    }
+
+    private void enableOverlayScissor(DrawContext context, float x, float y, float width, float height) {
+        int left = Math.round(x * overlayRenderScale);
+        int top = Math.round(y * overlayRenderScale);
+        int right = Math.round((x + width) * overlayRenderScale);
+        int bottom = Math.round((y + height) * overlayRenderScale);
+        context.enableScissor(left, top, right, bottom);
+    }
+
+    private void renderThemeSelectorIconAction(DrawContext context, Identifier icon, float x, float y, float size, float hoverAnim, float alpha) {
         float iconHeight = 13.0F * phaze$menuScale();
         float iconWidth = iconHeight * getIconAspectRatio(icon);
         renderMenuIcon(
@@ -613,11 +841,11 @@ public class MainMenuScreen extends Screen {
                 y + (size - iconHeight) / 2.0F,
                 iconWidth,
                 iconHeight,
-                lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim)
+                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim), alpha)
         );
     }
 
-    private void renderThemeSelectorCloseAction(DrawContext context, float x, float y, float size, float hoverAnim) {
+    private void renderThemeSelectorCloseAction(DrawContext context, float x, float y, float size, float hoverAnim, float alpha) {
         float iconSize = (13.0F / (1.2F * 1.1F)) * phaze$menuScale();
         renderMenuIcon(
                 context,
@@ -626,38 +854,34 @@ public class MainMenuScreen extends Screen {
                 y + (size - iconSize) / 2.0F,
                 iconSize,
                 iconSize,
-                lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim)
+                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim), alpha)
         );
     }
 
-    private void renderThemeSettingsModal(DrawContext context, ThemeSelectorLayout themeLayout, int mouseX, int mouseY) {
+    private void renderThemeSettingsModal(DrawContext context, ThemeSelectorLayout themeLayout, int mouseX, int mouseY, float modalProgress) {
         ThemeSettingsLayout layout = getThemeSettingsLayout(themeLayout);
+        float modalAlpha = modalProgress;
+        float modalYOffset = (1.0F - modalProgress) * 16.0F * layout.scale;
         context.getMatrices().push();
-        context.getMatrices().translate(0.0F, 0.0F, 200.0F);
+        context.getMatrices().translate(0.0F, modalYOffset, 200.0F);
 
-        rectangle.render(ShapeProperties.create(context.getMatrices(), layout.panelX, layout.panelY, layout.panelW, layout.panelH)
-                .round(8.0F)
-                .softness(1.2F)
-                .thickness(1.5F)
-                .outlineColor(0xFF222A39)
-                .color(0xFF121720)
-                .build());
+        renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10.0F, 0xFF121720, 0xFF222A39, modalAlpha);
 
         float titleSize = 14.0F * layout.scale;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                "Settings",
+                Lang.translate("Settings"),
                 titleSize,
-                0xFFF6F8FE,
+                scaleColorAlpha(0xFFF6F8FE, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 layout.panelX + 13.0F * layout.scale,
-                layout.panelY + 11.0F * layout.scale,
+                layout.panelY + 12.0F * layout.scale,
                 0.0F
         );
 
         boolean closeHovered = isPointInside(mouseX, mouseY, layout.closeX, layout.closeY, layout.closeSize, layout.closeSize);
         themeSettingsCloseHoverAnim = animateThemeUiValue(themeSettingsCloseHoverAnim, closeHovered ? 1.0F : 0.0F);
-        renderThemeSelectorCloseAction(context, layout.closeX, layout.closeY, layout.closeSize, themeSettingsCloseHoverAnim);
+        renderThemeSelectorCloseAction(context, layout.closeX, layout.closeY, layout.closeSize, themeSettingsCloseHoverAnim, modalAlpha);
 
         panoramaSliderVisualProgress = animateThemeUiValue(
                 panoramaSliderVisualProgress,
@@ -672,8 +896,8 @@ public class MainMenuScreen extends Screen {
         renderThemeSettingsSlider(
                 context,
                 layout,
-                "Rotating Panorama Speed",
-                "Default: 10%",
+                Lang.translate("Rotating Panorama Speed"),
+                Lang.translate("Default") + ": 10%",
                 Math.round(MenuUiSettings.getInstance().getPanoramaSpeed()) + "%",
                 layout.panoramaTrackX,
                 layout.panoramaTrackY,
@@ -684,14 +908,15 @@ public class MainMenuScreen extends Screen {
                 mouseY,
                 activeThemeSettingsSlider == ThemeSettingsSlider.PANORAMA_SPEED,
                 layout.panoramaValueX,
-                layout.panoramaLabelY
+                layout.panoramaLabelY,
+                modalAlpha
         );
 
         renderThemeSettingsSlider(
                 context,
                 layout,
-                "Menu FPS Limit",
-                "Applies to Main Menu, Mod Menu, Sodium and other screens",
+                Lang.translate("Menu FPS Limit"),
+                Lang.translate("Applies to Main Menu, Mod Menu, Sodium and other screens"),
                 MenuUiSettings.getInstance().getGuiFpsLimit() + " FPS",
                 layout.fpsTrackX,
                 layout.fpsTrackY,
@@ -702,26 +927,48 @@ public class MainMenuScreen extends Screen {
                 mouseY,
                 activeThemeSettingsSlider == ThemeSettingsSlider.GUI_FPS_LIMIT,
                 layout.fpsValueX,
-                layout.fpsLabelY
+                layout.fpsLabelY,
+                modalAlpha
         );
 
         float presetTitleSize = 9.8F * layout.scale;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                "Panorama Preset",
+                Lang.translate("Panorama Preset"),
                 presetTitleSize,
-                0xFFF0F4FE,
+                scaleColorAlpha(0xFFF0F4FE, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 layout.contentX,
-                layout.presetSectionY,
+                layout.presetSectionY - 1.0F * layout.scale,
                 0.0F
         );
 
-        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.VANILLA, 0, mouseX, mouseY);
-        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.CHATEAU, 1, mouseX, mouseY);
-        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.POST_SOVIET_NIGHT, 2, mouseX, mouseY);
-        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.CASTLE, 3, mouseX, mouseY);
+        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.VANILLA, 0, mouseX, mouseY, modalAlpha);
+        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.CHATEAU, 1, mouseX, mouseY, modalAlpha);
+        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.POST_SOVIET_NIGHT, 2, mouseX, mouseY, modalAlpha);
+        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.CASTLE, 3, mouseX, mouseY, modalAlpha);
         context.getMatrices().pop();
+    }
+
+    private void renderThemeModalPanel(DrawContext context, float x, float y, float width, float height, float round, int fillColor, int outlineColor, float alpha) {
+        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
+                .round(round)
+                .softness(1.0F)
+                .color(scaleColorAlpha(outlineColor, alpha))
+                .build());
+
+        float inset = 1.0F;
+        rectangle.render(ShapeProperties.create(
+                        context.getMatrices(),
+                        x + inset,
+                        y + inset,
+                        Math.max(1.0F, width - inset * 2.0F),
+                        Math.max(1.0F, height - inset * 2.0F)
+                )
+                .round(Math.max(0.0F, round - 1.0F))
+                .softness(1.0F)
+                .color(scaleColorAlpha(fillColor, alpha))
+                .build());
     }
 
     private void renderThemeSettingsSlider(
@@ -739,7 +986,8 @@ public class MainMenuScreen extends Screen {
             int mouseY,
             boolean dragging,
             float valueX,
-            float labelY
+            float labelY,
+            float alpha
     ) {
         float clampedProgress = Math.max(0.0F, Math.min(1.0F, progress));
         float titleSize = 9.8F * layout.scale;
@@ -750,7 +998,7 @@ public class MainMenuScreen extends Screen {
                 MsdfFonts.bold(),
                 title,
                 titleSize,
-                0xFFF0F4FE,
+                scaleColorAlpha(0xFFF0F4FE, alpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 layout.contentX,
                 labelY,
@@ -761,7 +1009,7 @@ public class MainMenuScreen extends Screen {
                 MsdfFonts.medium(),
                 valueLabel,
                 valueSize,
-                0xFFCAD5EC,
+                scaleColorAlpha(0xFFCAD5EC, alpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 valueX,
                 labelY + 1.0F * layout.scale,
@@ -773,15 +1021,15 @@ public class MainMenuScreen extends Screen {
                 .round(trackHeight / 2.0F)
                 .softness(1.0F)
                 .thickness(1.0F)
-                .outlineColor(hovered || dragging ? 0xFF32435E : 0xFF263142)
-                .color(0xFF1A212D)
+                .outlineColor(scaleColorAlpha(hovered || dragging ? 0xFF32435E : 0xFF263142, alpha))
+                .color(scaleColorAlpha(0xFF1A212D, alpha))
                 .build());
 
         float fillWidth = Math.max(trackHeight, trackWidth * clampedProgress);
         rectangle.render(ShapeProperties.create(context.getMatrices(), trackX, trackY, fillWidth, trackHeight)
                 .round(trackHeight / 2.0F)
                 .softness(1.0F)
-                .color(0xFF4F9CFF)
+                .color(scaleColorAlpha(0xFF4F9CFF, alpha))
                 .build());
 
         float knobSize = trackHeight + 5.0F * layout.scale;
@@ -791,15 +1039,15 @@ public class MainMenuScreen extends Screen {
                 .round(knobSize / 2.0F)
                 .softness(1.0F)
                 .thickness(1.0F)
-                .outlineColor(0xFF1F2A38)
-                .color(dragging ? 0xFFFFFFFF : 0xFFF3F7FF)
+                .outlineColor(scaleColorAlpha(0xFF1F2A38, alpha))
+                .color(scaleColorAlpha(dragging ? 0xFFFFFFFF : 0xFFF3F7FF, alpha))
                 .build());
 
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
                 subtitle,
                 subtitleSize,
-                0xFF8E99AF,
+                scaleColorAlpha(0xFF8E99AF, alpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 layout.contentX,
                 trackY + trackHeight + 8.0F * layout.scale,
@@ -813,18 +1061,25 @@ public class MainMenuScreen extends Screen {
             MenuUiSettings.PanoramaPreset preset,
             int index,
             int mouseX,
-            int mouseY
+            int mouseY,
+            float alpha
     ) {
         float rowY = getPanoramaPresetRowY(layout, index);
-        boolean selected = MenuUiSettings.getInstance().getSelectedPanoramaPreset() == preset;
+        boolean selected = MenuUiSettings.getInstance().getSelectedPanoramaPresetId().equalsIgnoreCase(preset.getId());
         boolean hovered = isPointInside(mouseX, mouseY, layout.contentX, rowY, layout.contentRight - layout.contentX, layout.presetRowHeight);
+        float hoverAnim = animateThemeUiValue(themeSettingsPresetHoverAnims.getOrDefault(preset.getId(), 0.0F), hovered ? 1.0F : 0.0F);
+        themeSettingsPresetHoverAnims.put(preset.getId(), hoverAnim);
 
         rectangle.render(ShapeProperties.create(context.getMatrices(), layout.contentX, rowY, layout.contentRight - layout.contentX, layout.presetRowHeight)
                 .round(6.0F)
                 .softness(1.0F)
                 .thickness(1.0F)
-                .outlineColor(selected ? 0xFF2D5B46 : hovered ? 0xFF313D50 : 0xFF242D3A)
-                .color(selected ? 0xFF15211B : hovered ? 0xFF18202A : 0xFF141A23)
+                .outlineColor(scaleColorAlpha(selected
+                        ? lerpArgb(0xFF2D5B46, 0xFF3A745A, hoverAnim)
+                        : lerpArgb(0xFF242D3A, 0xFF313D50, hoverAnim), alpha))
+                .color(scaleColorAlpha(selected
+                        ? lerpArgb(0xFF15211B, 0xFF1C2E24, hoverAnim)
+                        : lerpArgb(0xFF141A23, 0xFF18202A, hoverAnim), alpha))
                 .build());
 
         float dotOuter = 10.0F * layout.scale;
@@ -834,13 +1089,17 @@ public class MainMenuScreen extends Screen {
         rectangle.render(ShapeProperties.create(context.getMatrices(), dotX, dotY, dotOuter, dotOuter)
                 .round(dotOuter / 2.0F)
                 .softness(1.0F)
-                .color(selected ? 0xFF244734 : 0xFF262F3C)
+                .color(scaleColorAlpha(selected
+                        ? lerpArgb(0xFF244734, 0xFF2D5A42, hoverAnim)
+                        : lerpArgb(0xFF262F3C, 0xFF323D4E, hoverAnim), alpha))
                 .build());
         float dotInset = (dotOuter - dotInner) / 2.0F;
         rectangle.render(ShapeProperties.create(context.getMatrices(), dotX + dotInset, dotY + dotInset, dotInner, dotInner)
                 .round(dotInner / 2.0F)
                 .softness(1.0F)
-                .color(selected ? 0xFF25E163 : 0xFF7F8798)
+                .color(scaleColorAlpha(selected
+                        ? lerpArgb(0xFF25E163, 0xFF56EE88, hoverAnim)
+                        : lerpArgb(0xFF7F8798, 0xFFA6B0C4, hoverAnim), alpha))
                 .build());
 
         float nameSize = 8.9F * layout.scale;
@@ -848,7 +1107,9 @@ public class MainMenuScreen extends Screen {
                 MsdfFonts.medium(),
                 preset.displayName(),
                 nameSize,
-                selected ? 0xFFF4F8FF : 0xFFCCD5E6,
+                scaleColorAlpha(selected
+                        ? lerpArgb(0xFFF4F8FF, 0xFFFFFFFF, hoverAnim)
+                        : lerpArgb(0xFFCCD5E6, 0xFFF4F8FF, hoverAnim), alpha),
                 context.getMatrices().peek().getPositionMatrix(),
                 dotX + dotOuter + 6.0F * layout.scale,
                 MenuStyle.centerMsdfTextY(nameSize, rowY, layout.presetRowHeight),
@@ -895,11 +1156,12 @@ public class MainMenuScreen extends Screen {
                 0.0F
         );
 
-        float rightFooterWidth = MsdfFonts.medium().getWidth(FOOTER_RIGHT_TEXT, footerSize);
+        String rightFooterText = Lang.translate(FOOTER_RIGHT_TEXT);
+        float rightFooterWidth = MsdfFonts.medium().getWidth(rightFooterText, footerSize);
         float rightFooterX = Math.max(footerMarginX, overlayWidth - footerMarginX - rightFooterExtraOffset - rightFooterWidth);
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
-                FOOTER_RIGHT_TEXT,
+                rightFooterText,
                 footerSize,
                 footerColor,
                 context.getMatrices().peek().getPositionMatrix(),
@@ -929,6 +1191,28 @@ public class MainMenuScreen extends Screen {
                 getIconRegionY(icon),
                 getIconRegionWidth(icon),
                 getIconRegionHeight(icon),
+                getIconTextureWidth(icon),
+                getIconTextureHeight(icon),
+                color
+        );
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    private static void renderMenuIconPrecise(DrawContext context, Identifier icon, float x, float y, float width, float height, int color) {
+        float resolvedWidth = Math.max(1.0F, width);
+        float resolvedHeight = Math.max(1.0F, height);
+        Render2DUtil.drawTexture(
+                context.getMatrices(),
+                icon,
+                x,
+                x + resolvedWidth,
+                y,
+                y + resolvedHeight,
+                0.0F,
+                getIconRegionWidth(icon),
+                getIconRegionHeight(icon),
+                getIconRegionX(icon),
+                getIconRegionY(icon),
                 getIconTextureWidth(icon),
                 getIconTextureHeight(icon),
                 color
@@ -1083,6 +1367,19 @@ public class MainMenuScreen extends Screen {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
+    private static int scaleColorAlpha(int color, float alpha) {
+        float clamped = Math.max(0.0F, Math.min(1.0F, alpha));
+        int baseAlpha = (color >>> 24) & 0xFF;
+        int scaledAlpha = Math.round(baseAlpha * clamped);
+        return (color & 0x00FFFFFF) | (scaledAlpha << 24);
+    }
+
+    private static float easeOutThemeModal(float progress) {
+        float clamped = Math.max(0.0F, Math.min(1.0F, progress));
+        float inverted = 1.0F - clamped;
+        return 1.0F - inverted * inverted * inverted;
+    }
+
     private void updateThemeUiAnimationTiming() {
         long nowNs = System.nanoTime();
         float dt = themeUiLastFrameNs > 0L
@@ -1090,10 +1387,19 @@ public class MainMenuScreen extends Screen {
                 : (1.0F / 60.0F);
         themeUiLastFrameNs = nowNs;
         themeUiSmoothing = 1.0F - (float) Math.exp(-dt * 14.0F);
+        themeModalSmoothing = 1.0F - (float) Math.exp(-dt * 6.0F);
     }
 
     private float animateThemeUiValue(float current, float target) {
         float next = current + (target - current) * themeUiSmoothing;
+        if (Math.abs(target - next) < 0.001F) {
+            return target;
+        }
+        return next;
+    }
+
+    private float animateThemeModalValue(float current, float target) {
+        float next = current + (target - current) * themeModalSmoothing;
         if (Math.abs(target - next) < 0.001F) {
             return target;
         }
@@ -1141,6 +1447,8 @@ public class MainMenuScreen extends Screen {
             return;
         }
         this.themeSelectorOpen = open;
+        this.themeSelectorOpenAnim = open ? 0.0F : 0.0F;
+        this.themeSelectorSettingsOpenAnim = 0.0F;
         this.themeSelectorSettingsOpen = false;
         this.themeSelectorSearchFocused = open;
         if (open) {
@@ -1149,6 +1457,13 @@ public class MainMenuScreen extends Screen {
         this.themeSelectorSettingsHoverAnim = 0.0F;
         this.themeSelectorCloseHoverAnim = 0.0F;
         this.themeSettingsCloseHoverAnim = 0.0F;
+        this.themeSelectorResetHoverAnim = 0.0F;
+        this.themeSelectorCardScrollOffset = 0.0F;
+        this.themeSelectorCardScrollTarget = 0.0F;
+        this.themeSelectorCardMaxScroll = 0.0F;
+        this.themeCardHoverAnims.clear();
+        this.themeCardDeleteHoverAnims.clear();
+        this.themeSettingsPresetHoverAnims.clear();
         this.panoramaSliderVisualProgress = (float) (MenuUiSettings.getInstance().getPanoramaSpeed() / 100.0D);
         this.guiFpsSliderVisualProgress = (MenuUiSettings.getInstance().getGuiFpsLimit() - MenuUiSettings.MIN_GUI_FPS_LIMIT)
                 / (float) (MenuUiSettings.MAX_GUI_FPS_LIMIT - MenuUiSettings.MIN_GUI_FPS_LIMIT);
@@ -1160,13 +1475,18 @@ public class MainMenuScreen extends Screen {
     }
 
     private void setThemeSelectorSettingsOpen(boolean open) {
+        if (this.themeSelectorSettingsOpen == open) {
+            return;
+        }
         this.themeSelectorSettingsOpen = open;
+        this.themeSelectorSettingsOpenAnim = open ? 0.0F : 0.0F;
         this.themeSelectorSearchFocused = !open && this.themeSelectorOpen;
         if (open) {
             this.panoramaSliderVisualProgress = (float) (MenuUiSettings.getInstance().getPanoramaSpeed() / 100.0D);
             this.guiFpsSliderVisualProgress = (MenuUiSettings.getInstance().getGuiFpsLimit() - MenuUiSettings.MIN_GUI_FPS_LIMIT)
                     / (float) (MenuUiSettings.MAX_GUI_FPS_LIMIT - MenuUiSettings.MIN_GUI_FPS_LIMIT);
         }
+        this.themeSettingsPresetHoverAnims.clear();
         this.activeThemeSettingsSlider = ThemeSettingsSlider.NONE;
     }
 
@@ -1204,11 +1524,14 @@ public class MainMenuScreen extends Screen {
         float cardPreviewH = cardPreviewW;
         float cardTotalHeight = cardPreviewH + 18.0F * scale;
         float footerY = panelY + panelH - 16.0F * scale;
+        float cardsViewportH = Math.max(cardTotalHeight, footerY - cardsY - 12.0F * scale);
         float resetTextSize = 13.65F * scale;
         float resetIconSize = 11.0F * scale;
-        float resetW = resetIconSize + 4.0F * scale + MsdfFonts.medium().getWidth("Reset to default", resetTextSize);
+        float resetTextShiftX = 17.0F * scale;
+        float resetContentW = resetIconSize + 4.0F * scale + MsdfFonts.medium().getWidth(Lang.translate("Reset to default"), resetTextSize);
+        float resetW = resetContentW + resetTextShiftX;
         float resetH = 18.0F * scale;
-        float resetX = panelX + panelW - 12.0F * scale - resetW;
+        float resetX = panelX + panelW - 12.0F * scale - resetContentW;
         float resetY = footerY - 4.0F * scale;
 
         return new ThemeSelectorLayout(
@@ -1236,6 +1559,7 @@ public class MainMenuScreen extends Screen {
                 cardPreviewW,
                 cardPreviewH,
                 cardTotalHeight,
+                cardsViewportH,
                 footerY,
                 resetX,
                 resetY,
@@ -1326,16 +1650,93 @@ public class MainMenuScreen extends Screen {
         return null;
     }
 
-    private MenuUiSettings.PanoramaPreset getThemeSelectorPresetAt(ThemeSelectorLayout layout, float mouseX, float mouseY) {
-        List<MenuUiSettings.PanoramaPreset> visiblePresets = getVisibleThemeSelectorPresets();
-        int index = 0;
-        for (MenuUiSettings.PanoramaPreset preset : visiblePresets) {
-            float cardX = getThemeSelectorCardX(layout, index++, visiblePresets.size());
-            if (isPointInside(mouseX, mouseY, cardX, layout.cardsY, layout.cardPreviewW, layout.cardTotalHeight)) {
-                return preset;
+    private MenuUiSettings.PanoramaDescriptor getThemeSelectorPresetAt(ThemeSelectorLayout layout, float mouseX, float mouseY) {
+        if (!isPointInsideCardsViewport(layout, mouseX, mouseY)) {
+            return null;
+        }
+
+        List<MenuUiSettings.PanoramaDescriptor> visiblePresets = getVisibleThemeSelectorPresets();
+        int rowCount = (visiblePresets.size() + 3) / 4;
+        float rowStep = layout.cardTotalHeight + layout.cardsGap;
+        for (int row = 0; row < rowCount; row++) {
+            int rowStart = row * 4;
+            int rowEnd = Math.min(rowStart + 4, visiblePresets.size());
+            int itemsInRow = rowEnd - rowStart;
+            float rowY = layout.cardsY + row * rowStep - themeSelectorCardScrollOffset;
+            float rowWidth = itemsInRow * layout.cardPreviewW + Math.max(0, itemsInRow - 1) * layout.cardsGap;
+            float rowX = layout.panelX + (layout.panelW - rowWidth) / 2.0F;
+            for (int column = 0; column < itemsInRow; column++) {
+                float cardX = rowX + column * (layout.cardPreviewW + layout.cardsGap);
+                if (isPointInside(mouseX, mouseY, cardX, rowY, layout.cardPreviewW, layout.cardTotalHeight)) {
+                    return visiblePresets.get(rowStart + column);
+                }
             }
         }
         return null;
+    }
+
+    private MenuUiSettings.PanoramaDescriptor getThemeSelectorDeletePresetAt(ThemeSelectorLayout layout, float mouseX, float mouseY) {
+        if (!isPointInsideCardsViewport(layout, mouseX, mouseY)) {
+            return null;
+        }
+
+        List<MenuUiSettings.PanoramaDescriptor> visiblePresets = getVisibleThemeSelectorPresets();
+        int rowCount = (visiblePresets.size() + 3) / 4;
+        float rowStep = layout.cardTotalHeight + layout.cardsGap;
+        for (int row = 0; row < rowCount; row++) {
+            int rowStart = row * 4;
+            int rowEnd = Math.min(rowStart + 4, visiblePresets.size());
+            int itemsInRow = rowEnd - rowStart;
+            float rowY = layout.cardsY + row * rowStep - themeSelectorCardScrollOffset;
+            float rowWidth = itemsInRow * layout.cardPreviewW + Math.max(0, itemsInRow - 1) * layout.cardsGap;
+            float rowX = layout.panelX + (layout.panelW - rowWidth) / 2.0F;
+            for (int column = 0; column < itemsInRow; column++) {
+                MenuUiSettings.PanoramaDescriptor preset = visiblePresets.get(rowStart + column);
+                if (!preset.isCustom()) {
+                    continue;
+                }
+                float cardX = rowX + column * (layout.cardPreviewW + layout.cardsGap);
+                ThemeCardDeleteBadgeLayout deleteBadgeLayout = getThemeCardDeleteBadgeLayout(layout, cardX, rowY, layout.cardPreviewW);
+                if (isPointInside(mouseX, mouseY, deleteBadgeLayout.deleteX, deleteBadgeLayout.deleteY, deleteBadgeLayout.deleteSize, deleteBadgeLayout.deleteSize)) {
+                    return preset;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void deleteThemeSelectorCustomPreset(MenuUiSettings.PanoramaDescriptor preset) {
+        if (preset == null || !preset.isCustom()) {
+            return;
+        }
+        boolean wasSelected = MenuUiSettings.getInstance().getSelectedPanoramaPresetId().equalsIgnoreCase(preset.getId());
+        if (MenuPanoramaRegistry.deleteCustomPanorama(preset.getId())) {
+            themeCardHoverAnims.remove(preset.getId());
+            themeCardDeleteHoverAnims.remove(preset.getId());
+            if (wasSelected) {
+                MenuUiSettings.getInstance().setSelectedPanoramaPreset(MenuUiSettings.PanoramaPreset.VANILLA);
+            }
+            syncDisplayedPanoramaName();
+            themeSelectorCardScrollTarget = Math.max(0.0F, Math.min(themeSelectorCardMaxScroll, themeSelectorCardScrollTarget));
+        }
+    }
+
+    private boolean isPointInsideCardsViewport(ThemeSelectorLayout layout, float mouseX, float mouseY) {
+        return isPointInside(mouseX, mouseY, layout.panelX, layout.cardsViewportY, layout.panelW, layout.cardsViewportH);
+    }
+
+    private void scrollThemeSelectorCards(ThemeSelectorLayout layout, double verticalAmount) {
+        if (themeSelectorCardMaxScroll <= 0.0F || verticalAmount == 0.0D) {
+            return;
+        }
+        float step = layout.cardTotalHeight * 0.70F;
+        themeSelectorCardScrollTarget -= (float) verticalAmount * step;
+        if (themeSelectorCardScrollTarget < 0.0F) {
+            themeSelectorCardScrollTarget = 0.0F;
+        }
+        if (themeSelectorCardScrollTarget > themeSelectorCardMaxScroll) {
+            themeSelectorCardScrollTarget = themeSelectorCardMaxScroll;
+        }
     }
 
     private static boolean isPointInside(float mouseX, float mouseY, float x, float y, float width, float height) {
@@ -1425,7 +1826,13 @@ public class MainMenuScreen extends Screen {
                     return true;
                 }
 
-                MenuUiSettings.PanoramaPreset preset = getThemeSelectorPresetAt(layout, overlayMouseX, overlayMouseY);
+                MenuUiSettings.PanoramaDescriptor deletePreset = getThemeSelectorDeletePresetAt(layout, overlayMouseX, overlayMouseY);
+                if (deletePreset != null) {
+                    deleteThemeSelectorCustomPreset(deletePreset);
+                    return true;
+                }
+
+                MenuUiSettings.PanoramaDescriptor preset = getThemeSelectorPresetAt(layout, overlayMouseX, overlayMouseY);
                 if (preset != null) {
                     MenuUiSettings.getInstance().setSelectedPanoramaPreset(preset);
                     syncDisplayedPanoramaName();
@@ -1470,6 +1877,14 @@ public class MainMenuScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         updateOverlayMetrics();
         if (themeSelectorOpen) {
+            if (!themeSelectorSettingsOpen) {
+                ThemeSelectorLayout layout = getThemeSelectorLayout();
+                float overlayMouseX = toOverlayCoordinate(mouseX);
+                float overlayMouseY = toOverlayCoordinate(mouseY);
+                if (isPointInsideCardsViewport(layout, overlayMouseX, overlayMouseY)) {
+                    scrollThemeSelectorCards(layout, verticalAmount);
+                }
+            }
             return true;
         }
         return super.mouseScrolled(
@@ -1478,6 +1893,24 @@ public class MainMenuScreen extends Screen {
                 horizontalAmount,
                 verticalAmount
         );
+    }
+
+    @Override
+    public void onFilesDropped(List<Path> paths) {
+        if (!themeSelectorOpen || themeSelectorSettingsOpen) {
+            super.onFilesDropped(paths);
+            return;
+        }
+
+        List<MenuUiSettings.PanoramaDescriptor> imported = MenuPanoramaRegistry.importArchives(paths);
+        if (!imported.isEmpty()) {
+            MenuUiSettings.getInstance().setSelectedPanoramaPreset(imported.get(imported.size() - 1));
+            syncDisplayedPanoramaName();
+            themeSelectorSearchQuery = "";
+            themeCardHoverAnims.clear();
+            themeCardDeleteHoverAnims.clear();
+            themeSelectorCardScrollTarget = Float.MAX_VALUE;
+        }
     }
 
     @Override
@@ -1526,10 +1959,10 @@ public class MainMenuScreen extends Screen {
         return super.charTyped(chr, modifiers);
     }
 
-    private void renderThemeSelectorSearchText(DrawContext context, ThemeSelectorLayout layout) {
-        String displayText = themeSelectorSearchQuery.isEmpty() && !themeSelectorSearchFocused ? "Search..." : themeSelectorSearchQuery;
+    private void renderThemeSelectorSearchText(DrawContext context, ThemeSelectorLayout layout, float alpha) {
+        String displayText = themeSelectorSearchQuery.isEmpty() && !themeSelectorSearchFocused ? Lang.translate("Search...") : themeSelectorSearchQuery;
         float textSize = 8.7F * layout.scale;
-        int textColor = themeSelectorSearchQuery.isEmpty() && !themeSelectorSearchFocused ? 0xFF9099AD : 0xFFE6ECFA;
+        int textColor = scaleColorAlpha(themeSelectorSearchQuery.isEmpty() && !themeSelectorSearchFocused ? 0xFF9099AD : 0xFFE6ECFA, alpha);
         float textX = layout.searchX + 12.0F * layout.scale;
         float textY = MenuStyle.centerMsdfTextY(textSize, layout.searchY, layout.searchH);
 
@@ -1551,15 +1984,15 @@ public class MainMenuScreen extends Screen {
             rectangle.render(ShapeProperties.create(context.getMatrices(), caretX, caretY, Math.max(1.0F, 1.1F * layout.scale), Math.max(5.0F, caretH))
                     .round(1.0F)
                     .softness(1.0F)
-                    .color(0xFFD8E2F8)
+                    .color(scaleColorAlpha(0xFFD8E2F8, alpha))
                     .build());
         }
     }
 
-    private List<MenuUiSettings.PanoramaPreset> getVisibleThemeSelectorPresets() {
+    private List<MenuUiSettings.PanoramaDescriptor> getVisibleThemeSelectorPresets() {
         String query = themeSelectorSearchQuery.trim().toLowerCase(Locale.ROOT);
-        List<MenuUiSettings.PanoramaPreset> presets = new ArrayList<>();
-        for (MenuUiSettings.PanoramaPreset preset : MenuUiSettings.PanoramaPreset.values()) {
+        List<MenuUiSettings.PanoramaDescriptor> presets = new ArrayList<>();
+        for (MenuUiSettings.PanoramaDescriptor preset : MenuPanoramaRegistry.getAllPresets()) {
             if (query.isEmpty() || preset.displayName().toLowerCase(Locale.ROOT).contains(query)) {
                 presets.add(preset);
             }
@@ -1686,6 +2119,43 @@ public class MainMenuScreen extends Screen {
         }
     }
 
+    private static class ThemeCardDeleteBadgeLayout {
+        private final float badgeTextSize;
+        private final float badgePaddingX;
+        private final float badgeW;
+        private final float badgeH;
+        private final float badgeX;
+        private final float badgeY;
+        private final float deleteSize;
+        private final float deleteX;
+        private final float deleteY;
+        private final float cornerRound;
+
+        private ThemeCardDeleteBadgeLayout(
+                float badgeTextSize,
+                float badgePaddingX,
+                float badgeW,
+                float badgeH,
+                float badgeX,
+                float badgeY,
+                float deleteSize,
+                float deleteX,
+                float deleteY,
+                float cornerRound
+        ) {
+            this.badgeTextSize = badgeTextSize;
+            this.badgePaddingX = badgePaddingX;
+            this.badgeW = badgeW;
+            this.badgeH = badgeH;
+            this.badgeX = badgeX;
+            this.badgeY = badgeY;
+            this.deleteSize = deleteSize;
+            this.deleteX = deleteX;
+            this.deleteY = deleteY;
+            this.cornerRound = cornerRound;
+        }
+    }
+
     private static class ThemeSelectorLayout {
         private final float scale;
         private final float overlayWidth;
@@ -1711,6 +2181,8 @@ public class MainMenuScreen extends Screen {
         private final float cardPreviewW;
         private final float cardPreviewH;
         private final float cardTotalHeight;
+        private final float cardsViewportY;
+        private final float cardsViewportH;
         private final float footerY;
         private final float resetX;
         private final float resetY;
@@ -1742,6 +2214,7 @@ public class MainMenuScreen extends Screen {
                 float cardPreviewW,
                 float cardPreviewH,
                 float cardTotalHeight,
+                float cardsViewportH,
                 float footerY,
                 float resetX,
                 float resetY,
@@ -1772,6 +2245,8 @@ public class MainMenuScreen extends Screen {
             this.cardPreviewW = cardPreviewW;
             this.cardPreviewH = cardPreviewH;
             this.cardTotalHeight = cardTotalHeight;
+            this.cardsViewportY = cardsY;
+            this.cardsViewportH = cardsViewportH;
             this.footerY = footerY;
             this.resetX = resetX;
             this.resetY = resetY;

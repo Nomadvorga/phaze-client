@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import vorga.phazeclient.implement.menu.MainMenuScreen;
 import vorga.phazeclient.implement.menu.MenuUiSettings;
 
 @Mixin(InactivityFpsLimiter.class)
@@ -20,7 +21,7 @@ public class InactivityFpsLimiterMixin {
             return;
         }
 
-        if (this.client.currentScreen == null && this.client.getOverlay() == null) {
+        if (!(this.client.currentScreen instanceof MainMenuScreen)) {
             return;
         }
 

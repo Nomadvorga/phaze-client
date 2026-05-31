@@ -128,7 +128,7 @@ public final class Lang {
 
         // Sidebar / general
         en("sidebar.new_config", "NEW CONFIG");
-        en("sidebar.edit_hud", "EDIT HUD");
+        en("sidebar.edit_hud", "EDIT HUD LAYOUT");
 
         // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
@@ -174,7 +174,7 @@ public final class Lang {
         ru("kebab.delete", "Удалить");
 
         ru("sidebar.new_config", "НОВЫЙ КОНФИГ");
-        ru("sidebar.edit_hud", "РЕДАКТ. HUD");
+        ru("sidebar.edit_hud", "РЕДАКТОР HUD");
     }
 
     private static final Map<String, String> SETTING_TRANSLATIONS = new HashMap<>();
@@ -1037,6 +1037,34 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Zoom Out Duration", "Длительность отдаления");
         SETTING_TRANSLATIONS.put("Zoom Sensitivity", "Чувствительность зума");
         SETTING_TRANSLATIONS.put("Zoom Speed", "Скорость зума");
+
+        // Main-menu / configs UI strings that are not module or
+        // category names and should therefore localize to Russian.
+        SETTING_TRANSLATIONS.put("Active", "Активная");
+        SETTING_TRANSLATIONS.put("Applies to Main Menu, Mod Menu, Sodium and other screens", "Применяется к главному меню, Mod Menu, Sodium и другим экранам");
+        SETTING_TRANSLATIONS.put("Castle", "Замок");
+        SETTING_TRANSLATIONS.put("Chateau", "Шато");
+        SETTING_TRANSLATIONS.put("Drop .zip or use Phaze/Panoramas", "Перетащи .zip сюда или в Phaze/Panoramas");
+        SETTING_TRANSLATIONS.put("External", "Внешнее");
+        SETTING_TRANSLATIONS.put("Fabric Mod Menu", "Меню модов");
+        SETTING_TRANSLATIONS.put("Flashback Mod", "Flashback");
+        SETTING_TRANSLATIONS.put("Menu FPS Limit", "Лимит FPS меню");
+        SETTING_TRANSLATIONS.put("Minecraft Realms", "Realms");
+        SETTING_TRANSLATIONS.put("Minecraft Settings", "Настройки");
+        SETTING_TRANSLATIONS.put("Multiplayer", "Сетевая игра");
+        SETTING_TRANSLATIONS.put("No panoramas found", "Панорамы не найдены");
+        SETTING_TRANSLATIONS.put("Not affiliated with Mojang or Microsoft. Do not distribute!", "Не связано с Mojang или Microsoft. Не распространять!");
+        SETTING_TRANSLATIONS.put("Panorama Preset", "Пресет панорамы");
+        SETTING_TRANSLATIONS.put("Post-Soviet Night", "Постсоветская ночь");
+        SETTING_TRANSLATIONS.put("Quit", "Выход");
+        SETTING_TRANSLATIONS.put("Reset to default", "Сбросить на стандартную");
+        SETTING_TRANSLATIONS.put("Rotating Panorama Speed", "Скорость вращения панорамы");
+        SETTING_TRANSLATIONS.put("Search...", "Поиск...");
+        SETTING_TRANSLATIONS.put("Select Theme", "Выбор темы");
+        SETTING_TRANSLATIONS.put("Singleplayer", "Одиночная игра");
+        SETTING_TRANSLATIONS.put("Theme Selector", "Выбор темы");
+        SETTING_TRANSLATIONS.put("Themes", "Темы");
+        SETTING_TRANSLATIONS.put("just now", "только что");
     }
 
     private static void en(String key, String value) { EN_TABLE.put(key, value); }

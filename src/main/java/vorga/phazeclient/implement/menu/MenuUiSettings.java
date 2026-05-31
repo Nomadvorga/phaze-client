@@ -2,6 +2,7 @@ package vorga.phazeclient.implement.menu;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Identifier;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.implement.config.ConfigManager;
 
 public final class MenuUiSettings {
@@ -16,7 +17,7 @@ public final class MenuUiSettings {
 
     private double panoramaSpeed = DEFAULT_PANORAMA_SPEED;
     private int guiFpsLimit = DEFAULT_GUI_FPS_LIMIT;
-    private PanoramaPreset selectedPanoramaPreset = PanoramaPreset.VANILLA;
+    private String selectedPanoramaPresetId = DEFAULT_PANORAMA_PRESET_ID;
 
     private MenuUiSettings() {
     }
@@ -33,12 +34,13 @@ public final class MenuUiSettings {
         return guiFpsLimit;
     }
 
-    public PanoramaPreset getSelectedPanoramaPreset() {
-        return selectedPanoramaPreset;
+    public PanoramaDescriptor getSelectedPanoramaPreset() {
+        return MenuPanoramaRegistry.findById(selectedPanoramaPresetId);
     }
 
     public String getSelectedPanoramaPresetId() {
-        return selectedPanoramaPreset.id;
+        PanoramaDescriptor selected = getSelectedPanoramaPreset();
+        return selected == null ? DEFAULT_PANORAMA_PRESET_ID : selected.getId();
     }
 
     public void setPanoramaSpeed(double panoramaSpeed) {
@@ -49,28 +51,32 @@ public final class MenuUiSettings {
         setGuiFpsLimitInternal(guiFpsLimit, true);
     }
 
+    public void setSelectedPanoramaPreset(PanoramaDescriptor preset) {
+        setSelectedPanoramaPresetInternal(preset, true);
+    }
+
     public void setSelectedPanoramaPreset(PanoramaPreset preset) {
         setSelectedPanoramaPresetInternal(preset, true);
     }
 
     public void setSelectedPanoramaPreset(String presetId) {
-        setSelectedPanoramaPresetInternal(PanoramaPreset.byId(presetId), true);
+        setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), true);
     }
 
     public void applyConfig(double panoramaSpeed, int guiFpsLimit, String presetId) {
-        setSelectedPanoramaPresetInternal(PanoramaPreset.byId(presetId), false);
+        setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), false);
         setPanoramaSpeedInternal(panoramaSpeed, false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
     }
 
     public void applyLegacyScaleV2Config(double panoramaSpeed, int guiFpsLimit, String presetId) {
-        setSelectedPanoramaPresetInternal(PanoramaPreset.byId(presetId), false);
+        setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), false);
         setPanoramaSpeedInternal(Math.min(100.0D, panoramaSpeed * 2.0D), false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
     }
 
     public void applyLegacyScaleV1Config(double panoramaSpeed, int guiFpsLimit, String presetId) {
-        setSelectedPanoramaPresetInternal(PanoramaPreset.byId(presetId), false);
+        setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), false);
         setPanoramaSpeedInternal(Math.min(100.0D, panoramaSpeed * 10.0D), false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
     }
@@ -97,8 +103,9 @@ public final class MenuUiSettings {
         }
     }
 
-    private void setSelectedPanoramaPresetInternal(PanoramaPreset preset, boolean markDirty) {
-        this.selectedPanoramaPreset = preset == null ? PanoramaPreset.VANILLA : preset;
+    private void setSelectedPanoramaPresetInternal(PanoramaDescriptor preset, boolean markDirty) {
+        PanoramaDescriptor resolved = preset == null ? PanoramaPreset.VANILLA : preset;
+        this.selectedPanoramaPresetId = resolved.getId();
         if (markDirty) {
             ConfigManager.getInstance().markDirty();
         }
@@ -112,7 +119,27 @@ public final class MenuUiSettings {
         return Math.max(min, Math.min(max, value));
     }
 
-    public enum PanoramaPreset {
+    public interface PanoramaDescriptor {
+        String getId();
+
+        String displayName();
+
+        Identifier previewTexture();
+
+        int previewTextureSize();
+
+        int previewCropInset();
+
+        int previewCropSize();
+
+        MenuPanoramaRenderer getRenderer();
+
+        default boolean isCustom() {
+            return false;
+        }
+    }
+
+    public enum PanoramaPreset implements PanoramaDescriptor {
         VANILLA(
                 "vanilla",
                 "Vanilla",
@@ -145,26 +172,37 @@ public final class MenuUiSettings {
             this.cubeMapBase = cubeMapBase;
         }
 
-        public String displayName() {
-            return displayName;
+        @Override
+        public String getId() {
+            return id;
         }
 
+        @Override
+        public String displayName() {
+            return Lang.translate(displayName);
+        }
+
+        @Override
         public Identifier previewTexture() {
             return cubeMapBase.withPath(cubeMapBase.getPath() + "_0.png");
         }
 
+        @Override
         public int previewTextureSize() {
             return this == VANILLA ? 256 : 1080;
         }
 
+        @Override
         public int previewCropInset() {
             return 0;
         }
 
+        @Override
         public int previewCropSize() {
             return previewTextureSize();
         }
 
+        @Override
         public MenuPanoramaRenderer getRenderer() {
             if (renderer == null) {
                 renderer = new MenuPanoramaRenderer(cubeMapBase);

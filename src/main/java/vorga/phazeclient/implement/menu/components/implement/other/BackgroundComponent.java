@@ -370,7 +370,7 @@ public class BackgroundComponent extends AbstractComponent {
                 .round(2).thickness(2.0F)
                 .outlineColor(applyGlobalAlpha(MenuStyle.BORDER))
                 .color(applyGlobalAlpha(MenuStyle.mix(MenuStyle.CHIP_ACTIVE, MenuStyle.TEXT_PRIMARY, 0.08F * editHoverProgress))).build());
-        String editLabel = "EDIT HUD LAYOUT";
+        String editLabel = Lang.t("sidebar.edit_hud");
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
                 editLabel,

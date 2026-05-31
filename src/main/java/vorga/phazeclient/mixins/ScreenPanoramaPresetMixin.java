@@ -18,9 +18,7 @@ public abstract class ScreenPanoramaPresetMixin {
     @Inject(method = "renderPanoramaBackground", at = @At("HEAD"), cancellable = true)
     private void phaze$renderCustomPanorama(DrawContext context, float delta, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null
-                || client.getOverlay() != null
-                || MenuUiSettings.getInstance().getSelectedPanoramaPreset() == MenuUiSettings.PanoramaPreset.VANILLA) {
+        if (client == null) {
             return;
         }
         MenuUiSettings.getInstance().getSelectedPanoramaPreset().getRenderer().render(context, this.width, this.height, 1.0F);
