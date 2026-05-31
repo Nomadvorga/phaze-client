@@ -177,6 +177,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.AutoSwap.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.AutoSwap.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.FastSwap.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.FastSwap.getInstance());
+        }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ShiftTap.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ShiftTap.getInstance());
         }

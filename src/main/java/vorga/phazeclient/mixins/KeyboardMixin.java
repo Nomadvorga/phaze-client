@@ -14,6 +14,7 @@ import vorga.phazeclient.implement.features.modules.other.Binds;
 import vorga.phazeclient.implement.features.modules.other.ChangeHand;
 import vorga.phazeclient.implement.features.modules.other.ChunkAnimator;
 import vorga.phazeclient.implement.features.modules.other.ElytraUtility;
+import vorga.phazeclient.implement.features.modules.other.FastSwap;
 import vorga.phazeclient.implement.features.modules.other.FreeLook;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 
@@ -88,6 +89,13 @@ public abstract class KeyboardMixin {
     @Inject(method = "onKey", at = @At("HEAD"))
     private void phaze$onKeyBinds(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
         Binds.getInstance().onKey(key, action);
+    }
+
+    /** FastSwap: item-specific hotkeys that jump to the first
+     *  matching stack already present in the hotbar. */
+    @Inject(method = "onKey", at = @At("HEAD"))
+    private void phaze$onKeyFastSwap(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
+        FastSwap.getInstance().onKey(key, action);
     }
 
     /** ElytraUtility: forwards every key edge to the module's bind

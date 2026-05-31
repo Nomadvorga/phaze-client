@@ -1,6 +1,5 @@
 package vorga.phazeclient.implement.features.modules.hud;
 
-import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
@@ -35,7 +34,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 public final class PlayerModelHud extends RectHudModule {
     private static final PlayerModelHud INSTANCE = new PlayerModelHud();
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
+    public final SectionSetting otherSection = new SectionSetting("General");
     public final SelectSetting mode = new SelectSetting(
             "Mode",
             "How the model should orient itself"
@@ -49,20 +48,23 @@ public final class PlayerModelHud extends RectHudModule {
             "Degrees per second when Auto Rotate is selected"
     ).range(10, 360).step(5).setValue(60)
             .visible(() -> "Auto Rotate".equalsIgnoreCase(mode.getSelected()));
-    public final BooleanSetting showHand = new BooleanSetting(
-            "Show Held Item",
-            "Render whatever's in your main hand on the model"
-    ).setValue(true);
-
     private PlayerModelHud() {
         // Footprint roughly 60x100 px (model's drawEntity bounds at
         // size=30); start at the top-left so the user can drag.
         super("player_model_hud", "Player Model", 22.0F, 22.0F, 1.5F);
+        background.setVisible(() -> false);
+        backgroundPreset.setVisible(() -> false);
+        colorBrightness.setVisible(() -> false);
+        backgroundOpacity.setVisible(() -> false);
+        backgroundBlurRadius.setVisible(() -> false);
+        textShadow.setVisible(() -> false);
+        showBrackets.setVisible(() -> false);
+        mainSection.setVisible(() -> false);
+        colorSection.setVisible(() -> false);
         mode.setFullWidth(true);
         modelSize.setFullWidth(true);
         rotationSpeed.setFullWidth(true);
-        showHand.setFullWidth(true);
-        setup(otherSection, mode, modelSize, rotationSpeed, showHand);
+        setup(otherSection, mode, modelSize, rotationSpeed);
     }
 
     public static PlayerModelHud getInstance() {

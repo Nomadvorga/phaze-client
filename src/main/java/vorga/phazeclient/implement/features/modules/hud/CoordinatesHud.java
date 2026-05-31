@@ -1,20 +1,44 @@
 package vorga.phazeclient.implement.features.modules.hud;
 
-import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
 public final class CoordinatesHud extends RectHudModule {
     private static final CoordinatesHud INSTANCE = new CoordinatesHud();
 
+    @FunctionalInterface
+    public interface BooleanLike {
+        boolean isValue();
+    }
+
     public final SectionSetting otherSection = new SectionSetting("Other");
-    public final BooleanSetting showX = new BooleanSetting("Show X", "Display X coordinate").setValue(true);
-    public final BooleanSetting showY = new BooleanSetting("Show Y", "Display Y coordinate").setValue(true);
-    public final BooleanSetting showZ = new BooleanSetting("Show Z", "Display Z coordinate").setValue(true);
-    public final BooleanSetting showChunk = new BooleanSetting("Show Chunk", "Display local chunk coordinates").setValue(true);
-    public final BooleanSetting showBiome = new BooleanSetting("Show Biome", "Display current biome").setValue(true);
-    public final BooleanSetting showDirection = new BooleanSetting("Show Direction", "Display cardinal direction").setValue(true);
-    public final BooleanSetting showAxisSigns = new BooleanSetting("Show Axis Signs", "Display X/Z plus-minus signs").setValue(true)
-            .visible(() -> showDirection.isValue());
+    public final MultiSelectSetting displayItems = new MultiSelectSetting(
+            "Display Items",
+            "Pick which coordinate rows the HUD should show"
+    ).value(
+            "Show X",
+            "Show Y",
+            "Show Z",
+            "Show Chunk",
+            "Show Biome",
+            "Show Direction",
+            "Show Axis Signs"
+    ).selected(
+            "Show X",
+            "Show Y",
+            "Show Z",
+            "Show Chunk",
+            "Show Biome",
+            "Show Direction",
+            "Show Axis Signs"
+    );
+    public final BooleanLike showX = () -> displayItems.isSelected("Show X");
+    public final BooleanLike showY = () -> displayItems.isSelected("Show Y");
+    public final BooleanLike showZ = () -> displayItems.isSelected("Show Z");
+    public final BooleanLike showChunk = () -> displayItems.isSelected("Show Chunk");
+    public final BooleanLike showBiome = () -> displayItems.isSelected("Show Biome");
+    public final BooleanLike showDirection = () -> displayItems.isSelected("Show Direction");
+    public final BooleanLike showAxisSigns = () -> displayItems.isSelected("Show Axis Signs");
 
     public static CoordinatesHud getInstance() {
         return INSTANCE;
@@ -22,14 +46,8 @@ public final class CoordinatesHud extends RectHudModule {
 
     private CoordinatesHud() {
         super("coordinates_hud", "Coordinates", 22.0f, 124.0f, 1.0f);
-        showX.setFullWidth(true);
-        showY.setFullWidth(true);
-        showZ.setFullWidth(true);
-        showChunk.setFullWidth(true);
-        showBiome.setFullWidth(true);
-        showDirection.setFullWidth(true);
-        showAxisSigns.setFullWidth(true);
-        setup(otherSection, showX, showY, showZ, showChunk, showBiome, showDirection, showAxisSigns);
+        displayItems.setFullWidth(true);
+        setup(otherSection, displayItems);
         // Coordinates lines are emitted as multi-line text and have
         // never round-tripped through the [] wrap path, so the parent-
         // registered Show Brackets toggle is meaningless here. Hide it

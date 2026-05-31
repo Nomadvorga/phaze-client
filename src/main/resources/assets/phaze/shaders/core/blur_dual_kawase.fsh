@@ -34,8 +34,10 @@ vec3 sampleUp(vec2 uv, vec2 o) {
 }
 
 void main() {
-    vec2 o = TexelSize * max(0.5, Offset);
+    // Keep HUD blur responsive to small slider changes: a hard 0.5 floor
+    // made the first non-zero values look almost identical because they all
+    // snapped to the same sampling radius.
+    vec2 o = TexelSize * max(0.0, Offset);
     vec3 color = (Downsample == 1) ? sampleDown(texCoord, o) : sampleUp(texCoord, o);
     fragColor = vec4(color, 1.0);
 }
-

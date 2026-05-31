@@ -26,6 +26,10 @@ public final class WeatherChanger extends Module {
         rainDensity.range(0, 100).setValue(100).visible(() -> weatherType.isSelected("Rain"));
         thunderStrength.range(0, 100).setValue(100).visible(() -> weatherType.isSelected("Thunder"));
         snowDensity.range(0, 100).setValue(100).visible(() -> weatherType.isSelected("Snow"));
+        weatherType.setFullWidth(true);
+        rainDensity.setFullWidth(true);
+        thunderStrength.setFullWidth(true);
+        snowDensity.setFullWidth(true);
         setup(weatherType, rainDensity, thunderStrength, snowDensity);
     }
 

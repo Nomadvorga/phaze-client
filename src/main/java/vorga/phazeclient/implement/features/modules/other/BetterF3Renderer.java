@@ -11,6 +11,7 @@ import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.LightType;
+import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -81,28 +82,33 @@ public final class BetterF3Renderer {
                     colorize ? colorForFps(fps) : VALUE_DEFAULT));
         }
         if (module.showCoords.isValue()) {
-            // X / Y / Z each with the standard axis tint when color
-            // coding is on. Layout: "Pos: " then the three numbers
-            // separated by spaces, each in its own color via
-            // additional segments.
-            List<Segment> row = new ArrayList<>();
-            row.add(seg("Pos: ", LABEL_COLOR));
-            row.add(seg(String.format("%.2f", player.getX()),
-                    colorize ? 0xFFFF6B6B : VALUE_DEFAULT));
-            row.add(seg(" / ", LABEL_COLOR));
-            row.add(seg(String.format("%.2f", player.getY()),
-                    colorize ? 0xFF6BFF6B : VALUE_DEFAULT));
-            row.add(seg(" / ", LABEL_COLOR));
-            row.add(seg(String.format("%.2f", player.getZ()),
-                    colorize ? 0xFF6B9DFF : VALUE_DEFAULT));
-            rows.add(row);
+            if (StreamerMode.getInstance().isHideCoordinatesEnabled()) {
+                rows.add(line("Pos", "hidden", VALUE_DEFAULT));
+                rows.add(line("Chunk", "hidden", VALUE_DEFAULT));
+            } else {
+                // X / Y / Z each with the standard axis tint when color
+                // coding is on. Layout: "Pos: " then the three numbers
+                // separated by spaces, each in its own color via
+                // additional segments.
+                List<Segment> row = new ArrayList<>();
+                row.add(seg("Pos: ", LABEL_COLOR));
+                row.add(seg(String.format("%.2f", player.getX()),
+                        colorize ? 0xFFFF6B6B : VALUE_DEFAULT));
+                row.add(seg(" / ", LABEL_COLOR));
+                row.add(seg(String.format("%.2f", player.getY()),
+                        colorize ? 0xFF6BFF6B : VALUE_DEFAULT));
+                row.add(seg(" / ", LABEL_COLOR));
+                row.add(seg(String.format("%.2f", player.getZ()),
+                        colorize ? 0xFF6B9DFF : VALUE_DEFAULT));
+                rows.add(row);
 
-            // Chunk coords on a second line so the main XYZ line
-            // stays compact.
-            rows.add(line("Chunk",
-                    (pos.getX() & 15) + " " + (pos.getY() & 15) + " " + (pos.getZ() & 15)
-                            + " in [" + (pos.getX() >> 4) + ", " + (pos.getZ() >> 4) + "]",
-                    VALUE_DEFAULT));
+                // Chunk coords on a second line so the main XYZ line
+                // stays compact.
+                rows.add(line("Chunk",
+                        (pos.getX() & 15) + " " + (pos.getY() & 15) + " " + (pos.getZ() & 15)
+                                + " in [" + (pos.getX() >> 4) + ", " + (pos.getZ() >> 4) + "]",
+                        VALUE_DEFAULT));
+            }
         }
         if (module.showFacing.isValue()) {
             rows.add(line("Facing",

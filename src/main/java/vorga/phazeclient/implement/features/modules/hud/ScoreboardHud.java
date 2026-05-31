@@ -7,23 +7,25 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 public final class ScoreboardHud extends RectHudModule {
     private static final ScoreboardHud INSTANCE = new ScoreboardHud();
 
+    @FunctionalInterface
+    public interface BooleanLike {
+        boolean isValue();
+    }
+
     public static ScoreboardHud getInstance() {
         return INSTANCE;
     }
 
     public final SectionSetting otherSection = new SectionSetting("Other");
-    public final BooleanSetting showNumbers = new BooleanSetting("Show Numbers", "Show score numbers on the right").setValue(true);
-    public final BooleanSetting showZeros = new BooleanSetting("Show Zeros", "Show zero values in score numbers").setValue(true)
-            .visible(() -> showNumbers.isValue());
+    public final BooleanLike showNumbers = () -> true;
+    public final BooleanLike showZeros = () -> true;
     public final BooleanSetting showTitle = new BooleanSetting("Show Title", "Show scoreboard title").setValue(true);
 
     private ScoreboardHud() {
         // Default position: right side, vertically centered
         super("scoreboard_hud", "Scoreboard", 0.0f, 0.0f, 1.0f);
-        showNumbers.setFullWidth(true);
-        showZeros.setFullWidth(true);
         showTitle.setFullWidth(true);
-        setup(otherSection, showNumbers, showZeros, showTitle);
+        setup(otherSection, showTitle);
     }
 
     @Override

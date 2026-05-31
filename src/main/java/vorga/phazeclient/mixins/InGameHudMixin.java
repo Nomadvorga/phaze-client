@@ -12,6 +12,7 @@ import net.minecraft.client.texture.Sprite;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffectCategory;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.EntityType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -216,6 +217,9 @@ public class InGameHudMixin {
     private static float armorHoverProgress = 0.0f;
     private static int armorAnimatedBackgroundColor = 0;
     private static boolean armorBackgroundColorInitialized = false;
+    private static int scoreboardAnimatedTitleColor = 0;
+    private static int scoreboardAnimatedRowColor = 0;
+    private static boolean scoreboardBackgroundColorsInitialized = false;
 
     private static final Deque<Long> LEFT_CLICKS = new ArrayDeque<>();
     private static final Deque<Long> RIGHT_CLICKS = new ArrayDeque<>();
@@ -1972,6 +1976,9 @@ public class InGameHudMixin {
             return;
         }
 
+        NickHider nickHider = NickHider.getInstance();
+        boolean shouldHideNick = nickHider != null && nickHider.isEnabled();
+
         // Create sidebar entries
         interface SidebarEntry {
             net.minecraft.text.Text name();
@@ -1984,7 +1991,10 @@ public class InGameHudMixin {
         for (var entry : filteredEntries) {
             var team = scoreboard.getScoreHolderTeam(entry.owner());
             var name = entry.name();
-            var decoratedName = net.minecraft.scoreboard.Team.decorateName(team, name);
+            net.minecraft.text.Text decoratedName = net.minecraft.scoreboard.Team.decorateName(team, name);
+            if (shouldHideNick) {
+                decoratedName = nickHider.rewrite(decoratedName);
+            }
             // Respect server-provided number rendering. If the server omits
             // right-side numbers, do not force-draw them.
             net.minecraft.text.Text formattedScore = net.minecraft.text.Text.empty();
@@ -2016,7 +2026,10 @@ public class InGameHudMixin {
         }
 
         // Calculate dimensions
-        var title = objective.getDisplayName();
+        net.minecraft.text.Text title = objective.getDisplayName();
+        if (shouldHideNick) {
+            title = nickHider.rewrite(title);
+        }
         int titleWidth = (int)getHudTextWidth(client, title.getString(), HUD_TEXT_SIZE);
         int maxContentWidth = titleWidth;
         int entryCount = sidebarEntries.size();
@@ -2076,15 +2089,28 @@ public class InGameHudMixin {
         int verticalPosLocal = entryCount * 9;
 
         // Get colors
+        int targetTitleBgColor;
+        int targetRowBgColor;
+        if (module.shouldUseVanillaColors()) {
+            targetTitleBgColor = client.options.getTextBackgroundColor(0.4F);
+            targetRowBgColor = client.options.getTextBackgroundColor(0.3F);
+        } else {
+            targetTitleBgColor = module.getResolvedBackgroundColor(client);
+            targetRowBgColor = targetTitleBgColor;
+        }
+
         int titleBgColor;
         int rowBgColor;
-        if (module.shouldUseVanillaColors()) {
-            titleBgColor = client.options.getTextBackgroundColor(0.4F);
-            rowBgColor = client.options.getTextBackgroundColor(0.3F);
+        if (!scoreboardBackgroundColorsInitialized) {
+            scoreboardAnimatedTitleColor = targetTitleBgColor;
+            scoreboardAnimatedRowColor = targetRowBgColor;
+            scoreboardBackgroundColorsInitialized = true;
         } else {
-            titleBgColor = module.getResolvedBackgroundColor(client);
-            rowBgColor = module.getResolvedBackgroundColor(client);
+            scoreboardAnimatedTitleColor = approachColorExp(scoreboardAnimatedTitleColor, targetTitleBgColor, 12.0f, deltaSeconds);
+            scoreboardAnimatedRowColor = approachColorExp(scoreboardAnimatedRowColor, targetRowBgColor, 12.0f, deltaSeconds);
         }
+        titleBgColor = scoreboardAnimatedTitleColor;
+        rowBgColor = scoreboardAnimatedRowColor;
 
         // Push matrices and use local coordinates like renderRectHud
         context.getMatrices().push();
@@ -2375,7 +2401,9 @@ public class InGameHudMixin {
         float x = module.getHudX();
         float y = module.getHudY();
         float scale = module.getHudScale();
-        int idleColor = module.background.isValue() ? module.getResolvedBackgroundColor(client) : 0x00000000;
+        int idleColor = module.background.isValue()
+                ? RECT_BG_ANIMATED_COLOR[HUD_KEYSTROKES]
+                : 0x00000000;
 
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
@@ -4398,8 +4426,14 @@ public class InGameHudMixin {
             headRotation = new Quaternionf();
         }
 
-        InventoryScreen.drawEntity(context, centerX, centerY, size * scale,
-                translation, bodyRotation, headRotation, player);
+        EntityPose previousPose = player.getPose();
+        try {
+            player.setPose(EntityPose.STANDING);
+            InventoryScreen.drawEntity(context, centerX, centerY, size * scale,
+                    translation, bodyRotation, headRotation, player);
+        } finally {
+            player.setPose(previousPose);
+        }
     }
 
     // ====================================================================
