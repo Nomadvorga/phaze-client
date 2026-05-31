@@ -5,12 +5,14 @@
  */
 package vorga.phazeclient.mixins;
 
-import com.llamalad7.mixinextras.sugar.Local;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.feature.FeatureRenderer;
+import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
@@ -51,20 +53,33 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     // that implement OverlayRendered.
     // ---------------------------------------------------------------
 
-    @Inject(
+    @WrapOperation(
             method = {"render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V"},
             at = {@At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/entity/feature/FeatureRenderer;render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;ILnet/minecraft/client/render/entity/state/EntityRenderState;FF)V",
-                    ordinal = 0
-            )}
+                    target = "Lnet/minecraft/client/render/entity/feature/FeatureRenderer;render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;ILnet/minecraft/client/render/entity/state/EntityRenderState;FF)V"
+            )},
+            require = 1
     )
-    private void phaze$captureHitColorOverlay(S livingEntityRenderState, MatrixStack matrixStack, VertexConsumerProvider vertexConsumerProvider, int light, CallbackInfo ci, @Local FeatureRenderer<?, ?> featureRenderer) {
+    private void phaze$renderFeatureWithHitColorOverlay(
+            FeatureRenderer<?, ?> featureRenderer,
+            MatrixStack matrices,
+            VertexConsumerProvider vertexConsumers,
+            int light,
+            EntityRenderState entityRenderState,
+            float limbAngle,
+            float limbDistance,
+            Operation<Void> original
+    ) {
         if (HitColor.getInstance().isEnabled() && featureRenderer instanceof OverlayRendered rendered) {
+            @SuppressWarnings("unchecked")
+            S livingEntityRenderState = (S) entityRenderState;
             int overlay = LivingEntityRenderer.getOverlay(livingEntityRenderState, this.getAnimationCounter(livingEntityRenderState));
             rendered.setOverlay(overlay);
             OverlayReloadListener.event();
         }
+
+        original.call(featureRenderer, matrices, vertexConsumers, light, entityRenderState, limbAngle, limbDistance);
     }
 
     // ---------------------------------------------------------------

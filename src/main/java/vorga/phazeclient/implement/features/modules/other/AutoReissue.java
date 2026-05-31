@@ -2,6 +2,8 @@ package vorga.phazeclient.implement.features.modules.other;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.SlotActionType;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
@@ -9,25 +11,29 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.base.util.ServerUtil;
 
-import java.util.Locale;
-
 public final class AutoReissue extends Module {
     private static final AutoReissue INSTANCE = new AutoReissue();
 
-    private static final int STORAGE_BUTTON_SLOT = 46;
-    private static final int RESELL_BUTTON_SLOT = 52;
+    private static final int AUCTION_TARGET_ROW = 6;
+    private static final int FIRST_AUCTION_COLUMN = 2;
+    private static final int SECOND_AUCTION_COLUMN = 8;
+    private static final int FIRST_AUCTION_SLOT_FALLBACK = 47;
+    private static final int SECOND_AUCTION_SLOT_FALLBACK = 53;
+    private static final long SCREEN_CLOSE_SETTLE_MS = 150L;
+    private static final long INTER_CLICK_DELAY_MS = 1_000L;
+    private static final long MIN_STATE_TIMEOUT_MS = 15_000L;
 
     private enum State {
         IDLE,
-        OPENING_AUCTION,
-        CLICK_STORAGE,
-        CLICK_RESELL,
-        CLOSING
+        CLOSING_SCREENS,
+        WAIT_FIRST_CLICK,
+        WAIT_SECOND_CLICK,
+        WAIT_THIRD_CLICK
     }
 
     public final SectionSetting generalSection = new SectionSetting("General");
-    public final ValueSetting intervalSeconds = new ValueSetting("Interval", "Interval between reissue cycles in seconds")
-            .range(30, 600)
+    public final ValueSetting intervalSeconds = new ValueSetting("Interval", "Delay before the first /ah click and between reissue cycles in seconds")
+            .range(1, 600)
             .setValue(60);
 
     private State state = State.IDLE;
@@ -93,77 +99,132 @@ public final class AutoReissue extends Module {
             return;
         }
 
-        boolean auctionOpen = isHandledScreenWithTitle("auction", "аукцион");
-        boolean storageOpen = isHandledScreenWithTitle("storage", "хранилище");
         long now = System.currentTimeMillis();
-
-        if (!auctionOpen && !storageOpen && state != State.IDLE && state != State.OPENING_AUCTION) {
+        long delayMs = Math.max(1L, intervalSeconds.getInt()) * 1_000L;
+        long timeoutMs = Math.max(MIN_STATE_TIMEOUT_MS, delayMs + 10_000L);
+        if (state != State.IDLE && now - stateSinceMs >= timeoutMs) {
+            closeAllScreens(mc);
             state = State.IDLE;
+            stateSinceMs = 0L;
+            lastCycleMs = now;
+            return;
         }
 
         switch (state) {
             case IDLE -> {
-                long intervalMs = Math.max(30L, intervalSeconds.getInt()) * 1000L;
-                if (now - lastCycleMs >= intervalMs && mc.currentScreen == null) {
+                if (now - lastCycleMs >= delayMs) {
+                    closeAllScreens(mc);
+                    state = State.CLOSING_SCREENS;
+                    stateSinceMs = now;
+                }
+            }
+            case CLOSING_SCREENS -> {
+                closeAllScreens(mc);
+                if (mc.currentScreen == null && now - stateSinceMs >= SCREEN_CLOSE_SETTLE_MS) {
                     mc.getNetworkHandler().sendChatCommand("ah");
-                    state = State.OPENING_AUCTION;
+                    state = State.WAIT_FIRST_CLICK;
                     stateSinceMs = now;
+                }
+            }
+            case WAIT_FIRST_CLICK -> {
+                if (now - stateSinceMs >= delayMs && clickCurrentHandledScreenSlot(
+                        mc,
+                        AUCTION_TARGET_ROW,
+                        FIRST_AUCTION_COLUMN,
+                        FIRST_AUCTION_SLOT_FALLBACK
+                )) {
+                    state = State.WAIT_SECOND_CLICK;
+                    stateSinceMs = now;
+                }
+            }
+            case WAIT_SECOND_CLICK -> {
+                if (now - stateSinceMs >= INTER_CLICK_DELAY_MS && clickCurrentHandledScreenSlot(
+                        mc,
+                        AUCTION_TARGET_ROW,
+                        SECOND_AUCTION_COLUMN,
+                        SECOND_AUCTION_SLOT_FALLBACK
+                )) {
+                    state = State.WAIT_THIRD_CLICK;
+                    stateSinceMs = now;
+                }
+            }
+            case WAIT_THIRD_CLICK -> {
+                if (now - stateSinceMs >= INTER_CLICK_DELAY_MS && clickCurrentHandledScreenSlot(
+                        mc,
+                        AUCTION_TARGET_ROW,
+                        FIRST_AUCTION_COLUMN,
+                        FIRST_AUCTION_SLOT_FALLBACK
+                )) {
+                    closeAllScreens(mc);
                     lastCycleMs = now;
-                }
-            }
-            case OPENING_AUCTION -> {
-                if (auctionOpen && now - stateSinceMs >= 500L) {
-                    state = State.CLICK_STORAGE;
-                    stateSinceMs = now;
-                }
-            }
-            case CLICK_STORAGE -> {
-                if (auctionOpen && now - stateSinceMs >= 300L) {
-                    mc.interactionManager.clickSlot(
-                            mc.player.playerScreenHandler.syncId,
-                            STORAGE_BUTTON_SLOT,
-                            0,
-                            SlotActionType.PICKUP,
-                            mc.player
-                    );
-                    state = State.CLICK_RESELL;
-                    stateSinceMs = now;
-                }
-            }
-            case CLICK_RESELL -> {
-                if (storageOpen && now - stateSinceMs >= 500L) {
-                    mc.interactionManager.clickSlot(
-                            mc.player.playerScreenHandler.syncId,
-                            RESELL_BUTTON_SLOT,
-                            0,
-                            SlotActionType.PICKUP,
-                            mc.player
-                    );
-                    state = State.CLOSING;
-                    stateSinceMs = now;
-                }
-            }
-            case CLOSING -> {
-                if (now - stateSinceMs >= 500L) {
-                    mc.player.closeHandledScreen();
                     state = State.IDLE;
+                    stateSinceMs = 0L;
                 }
             }
         }
     }
 
-    private boolean isHandledScreenWithTitle(String... needles) {
-        MinecraftClient mc = MinecraftClient.getInstance();
+    private static void closeAllScreens(MinecraftClient mc) {
+        if (mc.player == null) {
+            return;
+        }
+        if (mc.currentScreen instanceof HandledScreen<?>) {
+            mc.player.closeHandledScreen();
+        }
+        if (mc.currentScreen != null) {
+            mc.setScreen(null);
+        }
+    }
+
+    private static boolean clickCurrentHandledScreenSlot(
+            MinecraftClient mc,
+            int rowOneBased,
+            int columnOneBased,
+            int fallbackSlotId
+    ) {
+        if (mc.player == null || mc.interactionManager == null) {
+            return false;
+        }
         if (!(mc.currentScreen instanceof HandledScreen<?> screen)) {
             return false;
         }
 
-        String title = screen.getTitle().getString().toLowerCase(Locale.ROOT);
-        for (String needle : needles) {
-            if (title.contains(needle.toLowerCase(Locale.ROOT))) {
-                return true;
+        var handler = screen.getScreenHandler();
+        int slotId = resolveAuctionSlotId(handler, rowOneBased, columnOneBased, fallbackSlotId);
+        if (slotId < 0 || slotId >= handler.slots.size()) {
+            return false;
+        }
+
+        mc.interactionManager.clickSlot(
+                handler.syncId,
+                slotId,
+                0,
+                SlotActionType.PICKUP,
+                mc.player
+        );
+        return true;
+    }
+
+    private static int resolveAuctionSlotId(
+            ScreenHandler handler,
+            int rowOneBased,
+            int columnOneBased,
+            int fallbackSlotId
+    ) {
+        int containerSlotCount = resolveContainerSlotCount(handler);
+        if (containerSlotCount >= rowOneBased * 9 && columnOneBased >= 1 && columnOneBased <= 9) {
+            int resolvedSlotId = (rowOneBased - 1) * 9 + (columnOneBased - 1);
+            if (resolvedSlotId >= 0 && resolvedSlotId < containerSlotCount) {
+                return resolvedSlotId;
             }
         }
-        return false;
+        return fallbackSlotId;
+    }
+
+    private static int resolveContainerSlotCount(ScreenHandler handler) {
+        if (handler instanceof GenericContainerScreenHandler genericContainer) {
+            return genericContainer.getRows() * 9;
+        }
+        return Math.min(handler.slots.size(), 54);
     }
 }

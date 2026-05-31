@@ -326,6 +326,14 @@ public class InGameHudMixin {
             } else if (!HudOptimizer.getInstance().isEnabled()) {
                 BatchedHudBuffer.INSTANCE.invalidate();
                 renderHudInternal(context);
+            } else if (phaze$shouldBypassHudBatchingForCurrentScreen(client)) {
+                // Vanilla pause/inventory/options screens with background blur
+                // run additional framebuffer passes after InGameHud. Rendering
+                // our HUDs directly on those screens avoids the cached-HUD FBO
+                // colliding with vanilla's blur pipeline while keeping every
+                // HUD feature visible and functional.
+                BatchedHudBuffer.INSTANCE.invalidate();
+                renderHudInternal(context);
             } else {
                 BatchedHudBuffer.INSTANCE.setTargetFps(HudOptimizer.getInstance().refreshRate.getInt());
                 boolean chatEditing = client.currentScreen instanceof ChatScreen;
@@ -2149,6 +2157,14 @@ public class InGameHudMixin {
     }
 
     @Unique
+    private static boolean phaze$shouldBypassHudBatchingForCurrentScreen(MinecraftClient client) {
+        return client != null
+                && client.world != null
+                && client.currentScreen != null
+                && !(client.currentScreen instanceof ChatScreen);
+    }
+
+    @Unique
     private static boolean phaze$isZeroScoreText(Text scoreText) {
         if (scoreText == null) {
             return false;
@@ -2945,11 +2961,10 @@ public class InGameHudMixin {
             return 0.0f;
         }
 
-        // Soft compressed curve: the 0-32 slider changes blur gently, and max blur stays controlled.
+        // Keep the HUD blur tied to the user slider value so every
+        // integer step remains visually meaningful and predictable.
         float t = MathHelper.clamp(radius / 32.0f, 0.0f, 1.0f);
         float strength = 0.42f + 0.33f * t;
-        // User request: at slider 32 HUD blur must be exactly 3x weaker
-        // than before, while preserving the same smooth response curve.
         return radius * strength * Theme.getInstance().getHudBlurQualityMultiplier() * (1.0f / 3.0f);
     }
 

@@ -220,6 +220,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Automatically eats food (or runs /feed) when hunger drops below the threshold", "Автоматически ест еду (или /feed) при падении голода ниже порога");
         SETTING_TRANSLATIONS.put("Automatically executes /near max command", "Автоматически выполняет команду /near max");
         SETTING_TRANSLATIONS.put("Automatically reissues your auction items on FunTime", "Автоматически перевыставляет ваши лоты на FunTime");
+        SETTING_TRANSLATIONS.put("Delay before the first /ah click and between reissue cycles in seconds", "Задержка до первого клика в /ah и между циклами перевыставления в секундах");
         SETTING_TRANSLATIONS.put("Automatically respawns and optionally runs a command after death", "Автовозрождение и опциональная команда после смерти");
         SETTING_TRANSLATIONS.put("Automatically sprints while holding forward", "Автоматический спринт при движении вперёд");
         SETTING_TRANSLATIONS.put("Automatically taps shift for short duration", "Автоматически нажимает Shift на короткое время");
@@ -284,6 +285,8 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Cloud Height", "Высота облаков");
         SETTING_TRANSLATIONS.put("Clouds", "Облака");
         SETTING_TRANSLATIONS.put("Collapse Repeats", "Сворачивать повторы");
+        SETTING_TRANSLATIONS.put("Comfortable Text Selection", "Комфортное выделение текста");
+        SETTING_TRANSLATIONS.put("Drag-select text in any input field with the mouse - chat, search bars, Sodium options, etc.", "Выделение текста мышью в любых полях ввода: чат, поиск, настройки Sodium и т.д.");
         SETTING_TRANSLATIONS.put("Color", "Цвет");
         SETTING_TRANSLATIONS.put("Color By Shulker", "Цвет по шалкеру");
         SETTING_TRANSLATIONS.put("Color Based On Usage", "Цвет от использований");

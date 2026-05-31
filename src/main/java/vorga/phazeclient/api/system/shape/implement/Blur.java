@@ -616,9 +616,11 @@ public class Blur implements Shape {
             return false;
         }
 
-        // Downsample x2, then x4.
-        float downOffset1 = 0.35f + quantizedRadius * 0.10f;
-        float downOffset2 = 0.55f + quantizedRadius * 0.14f;
+        // Keep the HUD slider visually progressive: very low radii should
+        // start almost clean instead of jumping straight into a strong blur.
+        float normalized = MathHelper.clamp(quantizedRadius / 8.0f, 0.0f, 1.0f);
+        float downOffset1 = 0.02f + quantizedRadius * 0.08f;
+        float downOffset2 = 0.04f + quantizedRadius * 0.10f;
         runDualKawasePass(shader, input, halfA, downOffset1, true);
         runDualKawasePass(shader, halfA, quarterA, downOffset2, true);
 
@@ -628,7 +630,7 @@ public class Blur implements Shape {
         Framebuffer src = quarterA;
         Framebuffer dst = quarterB;
         for (int i = 0; i < passes; i++) {
-            float offset = 0.45f + quantizedRadius * 0.22f + i * 0.35f;
+            float offset = 0.08f + quantizedRadius * 0.18f + i * (0.10f + normalized * 0.12f);
             runDualKawasePass(shader, src, dst, offset, true);
             Framebuffer tmp = src;
             src = dst;
@@ -636,8 +638,8 @@ public class Blur implements Shape {
         }
 
         // Upsample x4 -> x2 -> x1.
-        float upOffset1 = 0.40f + quantizedRadius * 0.10f;
-        float upOffset2 = 0.30f + quantizedRadius * 0.06f;
+        float upOffset1 = 0.05f + quantizedRadius * 0.09f;
+        float upOffset2 = 0.03f + quantizedRadius * 0.05f;
         runDualKawasePass(shader, src, halfB, upOffset1, false);
         runDualKawasePass(shader, halfB, pong, upOffset2, false);
 

@@ -3,6 +3,7 @@ package vorga.phazeclient.implement.menu.components.implement.other;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
@@ -14,6 +15,7 @@ import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 
 import java.io.File;
@@ -261,12 +263,11 @@ public class ConfigsViewComponent extends AbstractComponent {
         // {@link ConfigManager#isImportedConfig}.
         boolean imported = ConfigManager.getInstance().isImportedConfig(name);
         String iconTexture = imported ? "textures/file_import.png" : "textures/file.png";
-        float iconX = listX + (ICON_AREA_W - ICON_SIZE) * 0.5F + 3.0F;
+        float iconWidth = resolveUiIconWidth(iconTexture, ICON_SIZE);
+        float iconX = listX + 9.0F + (ICON_AREA_W - 6.0F - iconWidth) * 0.5F;
         float iconY = rowY + (ROW_HEIGHT - ICON_SIZE) * 0.5F;
-        image.setTexture(iconTexture)
-                .render(ShapeProperties.create(matrix, iconX, iconY, ICON_SIZE, ICON_SIZE)
-                        .color(MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F))
-                        .build());
+        renderUiIcon(matrix, iconTexture, iconX, iconY, iconWidth, ICON_SIZE,
+                MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F));
 
         // Top: timestamp
         // Middle: name • author (with dot.png separator)
@@ -386,12 +387,10 @@ public class ConfigsViewComponent extends AbstractComponent {
                                  String iconTexture, String label,
                                  int color, float fadeAlpha,
                                  float labelDeltaY, float iconSize) {
+        float iconWidth = resolveUiIconWidth(iconTexture, iconSize);
         float iconY = baselineY + (META_SIZE - iconSize) * 0.5F + 0.4F;
-        image.setTexture(iconTexture)
-                .render(ShapeProperties.create(matrix, startX, iconY, iconSize, iconSize)
-                        .color(color)
-                        .build());
-        float labelX = startX + iconSize + META_ICON_GAP;
+        renderUiIcon(matrix, iconTexture, startX, iconY, iconWidth, iconSize, color);
+        float labelX = startX + iconWidth + META_ICON_GAP;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), label, META_SIZE,
                 color,
@@ -399,6 +398,21 @@ public class ConfigsViewComponent extends AbstractComponent {
                 labelX, baselineY + labelDeltaY, 0.0F
         );
         return labelX + MsdfFonts.bold().getWidth(label, META_SIZE);
+    }
+
+    private float resolveUiIconWidth(String iconTexture, float iconHeight) {
+        float aspectRatio = UiMsdfIconAtlas.resolveAspectRatio(Identifier.ofVanilla(iconTexture));
+        return iconHeight * Math.max(0.0001F, aspectRatio);
+    }
+
+    private void renderUiIcon(MatrixStack matrix, String iconTexture, float x, float y, float width, float height, int color) {
+        // Image.render still uses the legacy swapped width/height convention,
+        // so pass the box dimensions in that order to keep non-square icons
+        // aligned without stretching in Configs rows.
+        image.setTexture(iconTexture)
+                .render(ShapeProperties.create(matrix, x, y, height, width)
+                        .color(color)
+                        .build());
     }
 
     private String humanReadableSize(String configName) {

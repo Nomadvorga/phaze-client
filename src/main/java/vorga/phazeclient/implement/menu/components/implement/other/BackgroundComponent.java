@@ -2,7 +2,9 @@ package vorga.phazeclient.implement.menu.components.implement.other;
 
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.util.math.MatrixStack;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
@@ -417,7 +419,10 @@ public class BackgroundComponent extends AbstractComponent {
         float editHudY = footerStartY() - 5.0F;
         if (MathUtil.isHovered(mouseX, mouseY, footerX, editHudY, footerWidth, FOOTER_BUTTON_HEIGHT)) {
             playButtonClickSound();
-            // TODO: Open HUD layout editor
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client != null && client.player != null && client.world != null) {
+                client.setScreen(new ChatScreen(""));
+            }
             return true;
         }
 

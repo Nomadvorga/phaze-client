@@ -150,9 +150,6 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.BetterF3.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.BetterF3.getInstance());
         }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.BetterDeathScreen.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.BetterDeathScreen.getInstance());
-        }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.InventoryHud.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.InventoryHud.getInstance());
         }

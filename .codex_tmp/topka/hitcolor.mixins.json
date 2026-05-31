@@ -1,0 +1,24 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "me.zyouime.hitcolor.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [],
+  "client": [
+    "ArmorFeatureRendererMixin",
+    "EquipmentRendererMixin",
+    "HorseArmorFeatureRendererMixin",
+    "LivingEntityRendererMixin",
+    "MinecraftMixin",
+    "OverlayTextureMixin",
+    "ScreenMixin",
+    "accessor.INativeImageMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  },
+  "refmap": "TopkaHitColor-refmap.json"
+}
