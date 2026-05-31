@@ -7,6 +7,7 @@ import vorga.phazeclient.api.system.shape.Shape;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.RotationAxis;
@@ -31,7 +32,8 @@ public class Image implements Shape, QuickImports {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
 
-        RenderSystem.setShaderTexture(0, Identifier.of(texture));
+        Identifier textureId = Identifier.of(texture);
+        RenderSystem.setShaderTexture(0, textureId);
 
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
@@ -45,7 +47,21 @@ public class Image implements Shape, QuickImports {
         matrix.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(shape.getRotation()));
         matrix.translate(-x, -y, 0.0F);
 
-        drawEngine.quad(matrix.peek().getPositionMatrix(), x, y, shape.getHeight(), width, shape.getColor().x);
+        float rawWidth = shape.getHeight();
+        float rawHeight = width;
+        float aspectRatio = UiMsdfIconAtlas.resolveAspectRatio(textureId);
+        float drawWidth = rawWidth;
+        float drawHeight = drawWidth / Math.max(0.0001F, aspectRatio);
+        if (drawHeight > rawHeight) {
+            drawHeight = rawHeight;
+            drawWidth = drawHeight * Math.max(0.0001F, aspectRatio);
+        }
+        float drawX = x + (rawWidth - drawWidth) * 0.5F;
+        float drawY = y + (rawHeight - drawHeight) * 0.5F;
+
+        if (!UiMsdfIconAtlas.renderIcon(matrix, textureId, drawX, drawY, drawWidth, drawHeight, shape.getColor().x)) {
+            drawEngine.quad(matrix.peek().getPositionMatrix(), drawX, drawY, drawWidth, drawHeight, shape.getColor().x);
+        }
 
         matrix.pop();
 

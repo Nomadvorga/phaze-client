@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Getter;
 import lombok.Setter;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
+import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
@@ -13,6 +14,7 @@ import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.color.ColorUtil;
+import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.other.BackgroundComponent;
@@ -90,6 +92,7 @@ public class MenuScreen extends Screen implements QuickImports {
     public static void preload() {
         INSTANCE.updateOverlayMetrics();
         INSTANCE.categoryContainerComponent.initializeCategoryComponents();
+        INSTANCE.prewarmUiIconAtlas();
     }
 
     public void initialize() {
@@ -266,6 +269,7 @@ public class MenuScreen extends Screen implements QuickImports {
         updateOverlayMetrics();
         animation.setDirection(Direction.FORWARDS);
         categoryContainerComponent.initializeCategoryComponents();
+        prewarmUiIconAtlas();
         closeModuleDetail();
         // Reset to MODS / ALL on every open. Without this, closing the
         // GUI while in CONFIGS or SETTINGS would re-open the menu on
@@ -279,6 +283,34 @@ public class MenuScreen extends Screen implements QuickImports {
         if (client != null) {
             client.setScreen(this);
         }
+    }
+
+    private void prewarmUiIconAtlas() {
+        UiMsdfIconAtlas.registerTexture("textures/settings.png");
+        UiMsdfIconAtlas.registerTexture("textures/cross.png");
+        UiMsdfIconAtlas.registerTexture("textures/trash.png");
+        UiMsdfIconAtlas.registerTexture("textures/back_arrow.png");
+        UiMsdfIconAtlas.registerTexture("textures/search_lunar.png");
+        UiMsdfIconAtlas.registerTexture("textures/edit.png");
+        UiMsdfIconAtlas.registerTexture("textures/share.png");
+        UiMsdfIconAtlas.registerTexture("textures/file.png");
+        UiMsdfIconAtlas.registerTexture("textures/file_import.png");
+        UiMsdfIconAtlas.registerTexture("textures/size.png");
+        UiMsdfIconAtlas.registerTexture("textures/cloud.png");
+        UiMsdfIconAtlas.registerTexture("textures/clock.png");
+        UiMsdfIconAtlas.registerTexture("textures/reset.png");
+
+        Main main = Main.getInstance();
+        if (main != null && main.getModuleProvider() != null) {
+            for (Module module : main.getModuleProvider().getModules()) {
+                String texture = module.getIcon() != null
+                        ? "phaze:textures/modules/" + module.getIcon()
+                        : "textures/modules/" + module.getCategory().getIdentifier() + ".png";
+                UiMsdfIconAtlas.registerTexture(texture);
+            }
+        }
+
+        UiMsdfIconAtlas.warmup();
     }
 
     public void openModuleDetail(vorga.phazeclient.api.feature.module.Module module) {

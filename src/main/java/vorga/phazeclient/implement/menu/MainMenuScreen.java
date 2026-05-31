@@ -107,6 +107,7 @@ public class MainMenuScreen extends TitleScreen {
         lastMenuLocale = Lang.getActive();
         if (this.client != null) {
             MenuUiSettings.getInstance().getSelectedPanoramaPreset().getRenderer().prepareTextures(this.client);
+            UiMsdfIconAtlas.warmup();
         }
         float scale = phaze$menuScale();
         float sizeMul = 1.3F / 1.2F;
@@ -147,6 +148,7 @@ public class MainMenuScreen extends TitleScreen {
                 size,
                 Text.literal(""),
                 ICON_SETTINGS,
+                1.7F,
                 b -> this.client.setScreen(new OptionsScreen(this, this.client.options))
         );
         addDrawableChild(settingsButton);
@@ -159,6 +161,7 @@ public class MainMenuScreen extends TitleScreen {
                 size,
                 Text.literal(""),
                 ICON_REALMS,
+                1.7F,
                 b -> openRealms()
         );
         addDrawableChild(realmsButton);
@@ -167,7 +170,7 @@ public class MainMenuScreen extends TitleScreen {
         flashbackButton = null;
         if (flashbackLoaded) {
             flashbackButton = new MainMenuButtonWidget(
-                    currentDockX, by, size, size, Text.literal(""), ICON_FLASHBACK, b -> openFlashbackReplays()
+                    currentDockX, by, size, size, Text.literal(""), ICON_FLASHBACK, 1.7F, b -> openFlashbackReplays()
             );
             addDrawableChild(flashbackButton);
             currentDockX += dockStep;
@@ -176,7 +179,7 @@ public class MainMenuScreen extends TitleScreen {
         modMenuButton = null;
         if (modMenuLoaded) {
             modMenuButton = new MainMenuButtonWidget(
-                    currentDockX, by, size, size, Text.literal(""), ICON_TAB, b -> openModMenu()
+                    currentDockX, by, size, size, Text.literal(""), ICON_TAB, 1.7F, b -> openModMenu()
             );
             addDrawableChild(modMenuButton);
         }
@@ -189,6 +192,7 @@ public class MainMenuScreen extends TitleScreen {
                 size,
                 Text.literal(""),
                 ICON_PAINTBRUSH,
+                1.7F,
                 b -> setThemeSelectorOpen(!themeSelectorOpen)
         );
         addDrawableChild(themeSelectorButton);
@@ -1252,13 +1256,17 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private static void renderMenuIcon(DrawContext context, Identifier icon, float x, float y, float width, float height, int color) {
+        if (UiMsdfIconAtlas.renderIcon(context, icon, x, y, width, height, color, false)) {
+            return;
+        }
+        FittedIconRect fittedRect = fitIconRect(x, y, width, height, getIconAspectRatio(icon), false);
         Render2DUtil.drawTexture(
                 context.getMatrices(),
                 icon,
-                Math.round(x),
-                Math.round(y),
-                Math.max(1, Math.round(width)),
-                Math.max(1, Math.round(height)),
+                Math.round(fittedRect.x()),
+                Math.round(fittedRect.y()),
+                Math.max(1, Math.round(fittedRect.width())),
+                Math.max(1, Math.round(fittedRect.height())),
                 getIconRegionX(icon),
                 getIconRegionY(icon),
                 getIconRegionWidth(icon),
@@ -1271,15 +1279,17 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private static void renderMenuIconPrecise(DrawContext context, Identifier icon, float x, float y, float width, float height, int color) {
-        float resolvedWidth = Math.max(1.0F, width);
-        float resolvedHeight = Math.max(1.0F, height);
+        if (UiMsdfIconAtlas.renderIcon(context, icon, x, y, width, height, color, true)) {
+            return;
+        }
+        FittedIconRect fittedRect = fitIconRect(x, y, width, height, getIconAspectRatio(icon), true);
         Render2DUtil.drawTexture(
                 context.getMatrices(),
                 icon,
-                x,
-                x + resolvedWidth,
-                y,
-                y + resolvedHeight,
+                fittedRect.x(),
+                fittedRect.x() + fittedRect.width(),
+                fittedRect.y(),
+                fittedRect.y() + fittedRect.height(),
                 0.0F,
                 getIconRegionWidth(icon),
                 getIconRegionHeight(icon),
@@ -1331,95 +1341,47 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private static int getIconRegionX(Identifier icon) {
-        if (ICON_PAINTBRUSH.equals(icon)) {
-            return 16;
-        }
-        if (ICON_EXTERNAL.equals(icon)) {
-            return 41;
-        }
-        if (ICON_REALMS.equals(icon)) {
-            return 42;
-        }
-        if (ICON_FLASHBACK.equals(icon)) {
-            return 7;
-        }
-        if (ICON_CROSS.equals(icon)) {
-            return 34;
-        }
-        if (ICON_RESET.equals(icon)) {
-            return 2;
-        }
-        return ICON_LOGOUT.equals(icon) ? 48 : 0;
+        return 0;
     }
 
     private static int getIconRegionY(Identifier icon) {
-        if (ICON_PAINTBRUSH.equals(icon)) {
-            return 0;
-        }
-        if (ICON_EXTERNAL.equals(icon)) {
-            return 27;
-        }
-        if (ICON_REALMS.equals(icon)) {
-            return 25;
-        }
-        if (ICON_FLASHBACK.equals(icon)) {
-            return 17;
-        }
-        if (ICON_CROSS.equals(icon)) {
-            return 34;
-        }
-        if (ICON_RESET.equals(icon)) {
-            return 2;
-        }
-        return ICON_LOGOUT.equals(icon) ? 34 : 0;
+        return 0;
     }
 
     private static int getIconRegionWidth(Identifier icon) {
-        if (ICON_PAINTBRUSH.equals(icon)) {
-            return 272;
-        }
-        if (ICON_EXTERNAL.equals(icon)) {
-            return 188;
-        }
-        if (ICON_REALMS.equals(icon)) {
-            return 172;
-        }
-        if (ICON_FLASHBACK.equals(icon)) {
-            return 82;
-        }
-        if (ICON_CROSS.equals(icon)) {
-            return 188;
-        }
-        if (ICON_RESET.equals(icon)) {
-            return 28;
-        }
-        return ICON_LOGOUT.equals(icon) ? 422 : getIconTextureWidth(icon);
+        return getIconTextureWidth(icon);
     }
 
     private static int getIconRegionHeight(Identifier icon) {
-        if (ICON_PAINTBRUSH.equals(icon)) {
-            return 256;
-        }
-        if (ICON_EXTERNAL.equals(icon)) {
-            return 188;
-        }
-        if (ICON_REALMS.equals(icon)) {
-            return 206;
-        }
-        if (ICON_FLASHBACK.equals(icon)) {
-            return 62;
-        }
-        if (ICON_CROSS.equals(icon)) {
-            return 188;
-        }
-        if (ICON_RESET.equals(icon)) {
-            return 28;
-        }
-        return ICON_LOGOUT.equals(icon) ? 443 : getIconTextureHeight(icon);
+        return getIconTextureHeight(icon);
     }
 
     private static float getIconAspectRatio(Identifier icon) {
-        return getIconRegionWidth(icon) / (float) getIconRegionHeight(icon);
+        return UiMsdfIconAtlas.resolveAspectRatio(icon);
+    }
+
+    private static FittedIconRect fitIconRect(float x, float y, float width, float height, float aspectRatio, boolean precise) {
+        float safeWidth = precise ? Math.max(1.0F, width) : Math.max(1.0F, Math.round(width));
+        float safeHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
+        float safeAspect = aspectRatio > 0.0F ? aspectRatio : 1.0F;
+
+        float drawWidth = safeWidth;
+        float drawHeight = drawWidth / safeAspect;
+        if (drawHeight > safeHeight) {
+            drawHeight = safeHeight;
+            drawWidth = drawHeight * safeAspect;
+        }
+
+        float drawX = x + (safeWidth - drawWidth) * 0.5F;
+        float drawY = y + (safeHeight - drawHeight) * 0.5F;
+        if (!precise) {
+            drawX = Math.round(drawX);
+            drawY = Math.round(drawY);
+            drawWidth = Math.max(1.0F, Math.round(drawWidth));
+            drawHeight = Math.max(1.0F, Math.round(drawHeight));
+        }
+
+        return new FittedIconRect(drawX, drawY, drawWidth, drawHeight);
     }
 
     private static int lerpArgb(int from, int to, float progress) {
@@ -2087,17 +2049,27 @@ public class MainMenuScreen extends TitleScreen {
     private static class MainMenuButtonWidget extends ButtonWidget {
         private final Identifier leftIcon;
         private final boolean dangerStyle;
+        private final float iconScaleMultiplier;
         private float hoverAnim = 0.0F;
         private long lastFrameTimeNs = -1L;
 
         MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, PressAction onPress) {
-            this(x, y, width, height, message, leftIcon, false, onPress);
+            this(x, y, width, height, message, leftIcon, false, 1.0F, onPress);
+        }
+
+        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, float iconScaleMultiplier, PressAction onPress) {
+            this(x, y, width, height, message, leftIcon, false, iconScaleMultiplier, onPress);
         }
 
         MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, boolean dangerStyle, PressAction onPress) {
+            this(x, y, width, height, message, leftIcon, dangerStyle, 1.0F, onPress);
+        }
+
+        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, boolean dangerStyle, float iconScaleMultiplier, PressAction onPress) {
             super(x, y, width, height, message, onPress, DEFAULT_NARRATION_SUPPLIER);
             this.leftIcon = leftIcon;
             this.dangerStyle = dangerStyle;
+            this.iconScaleMultiplier = iconScaleMultiplier;
         }
 
         @Override
@@ -2164,15 +2136,16 @@ public class MainMenuScreen extends TitleScreen {
             int textColor = hovered ? 0xFFFFFFFF : 0xFFF4F7FF;
             float textX = MenuStyle.centerMsdfTextX(MsdfFonts.bold(), label, size, this.getX(), this.width);
             if (leftIcon != null) {
-                float iconSize = this.width <= 32 ? 8.0F : 10.0F;
+                float iconSize = (this.width <= 32 ? 8.0F : 10.0F) * this.iconScaleMultiplier;
                 float iconW = iconSize * getIconAspectRatio(leftIcon);
                 float iconH = iconSize;
                 boolean hasLabel = !label.isEmpty();
                 float gap = hasLabel ? 6.0F : 0.0F;
                 float totalW = iconW + gap + (hasLabel ? MsdfFonts.bold().getWidth(label, size) : 0.0F);
                 float left = this.getX() + (this.width - totalW) / 2.0F;
-                float iconX = hasLabel ? left : this.getX() + (this.width - iconW) / 2.0F;
-                float iconY = this.getY() + (this.height - iconH) / 2.0F;
+                float iconOffset = hasLabel ? 0.0F : -0.2F;
+                float iconX = hasLabel ? left : this.getX() + (this.width - iconW) / 2.0F + iconOffset;
+                float iconY = this.getY() + (this.height - iconH) / 2.0F + iconOffset;
                 renderMenuIcon(context, leftIcon, iconX, iconY, iconW, iconH);
                 textX = left + iconW + gap;
             }
@@ -2226,6 +2199,9 @@ public class MainMenuScreen extends TitleScreen {
             this.deleteY = deleteY;
             this.cornerRound = cornerRound;
         }
+    }
+
+    private record FittedIconRect(float x, float y, float width, float height) {
     }
 
     private static class ThemeSelectorLayout {

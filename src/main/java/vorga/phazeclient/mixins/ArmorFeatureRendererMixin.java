@@ -16,6 +16,7 @@ public class ArmorFeatureRendererMixin implements OverlayRendered {
     @Final
     private EquipmentRenderer equipmentRenderer;
 
+    @Override
     public void setOverlay(int coords) {
         if (this.equipmentRenderer instanceof OverlayRendered rendered) {
             rendered.setOverlay(coords);
