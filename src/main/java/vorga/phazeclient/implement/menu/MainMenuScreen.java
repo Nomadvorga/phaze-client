@@ -199,6 +199,7 @@ public class MainMenuScreen extends TitleScreen {
         Theme.getInstance().syncLanguage();
         refreshLocalizedMainMenuTexts();
         updateOverlayMetrics();
+        stabilizeMainMenuButtonLayout();
         syncDisplayedPanoramaName();
         updateThemeUiAnimationTiming();
         renderMainMenuBackground(context, delta);
@@ -242,6 +243,77 @@ public class MainMenuScreen extends TitleScreen {
         if (quitButton != null) {
             quitButton.setMessage(Text.literal(Lang.translate("Quit")));
         }
+    }
+
+    private void stabilizeMainMenuButtonLayout() {
+        float scale = phaze$menuScale();
+        int overlayW = getOverlayViewportWidth();
+        int overlayH = getOverlayViewportHeight();
+        int gap = Math.max(3, Math.round(8.0F * scale));
+        int mainY = overlayH / 2 - Math.round(72.0F * scale);
+        int mainX = singleplayerButton != null ? overlayW / 2 - singleplayerButton.getWidth() / 2 : 0;
+
+        setButtonPosition(singleplayerButton, mainX, mainY);
+        if (singleplayerButton != null) {
+            mainY += singleplayerButton.getHeight() + gap;
+        }
+        setButtonPosition(multiplayerButton, mainX, mainY);
+        if (multiplayerButton != null) {
+            mainY += multiplayerButton.getHeight() + gap;
+        }
+        setButtonPosition(quitButton, mainX, mainY);
+
+        int dockY = overlayH - Math.round(50.0F * scale);
+        int dockGap = Math.max(6, Math.round(8.0F * scale));
+        int dockSize = resolveDockButtonSize();
+        int dockButtonCount = 2 + (flashbackButton != null ? 1 : 0) + (modMenuButton != null ? 1 : 0);
+        int dockTotalWidth = dockButtonCount * dockSize + Math.max(0, dockButtonCount - 1) * dockGap;
+        int dockX = overlayW / 2 - dockTotalWidth / 2;
+
+        setButtonPosition(settingsButton, dockX, dockY);
+        dockX += dockSize + dockGap;
+        setButtonPosition(realmsButton, dockX, dockY);
+        dockX += dockSize + dockGap;
+        if (flashbackButton != null) {
+            setButtonPosition(flashbackButton, dockX, dockY);
+            dockX += dockSize + dockGap;
+        }
+        setButtonPosition(modMenuButton, dockX, dockY);
+
+        if (themeSelectorButton != null) {
+            int topInset = Math.max(8, Math.round(10.0F * scale));
+            setButtonPosition(
+                    themeSelectorButton,
+                    overlayW - topInset - themeSelectorButton.getWidth(),
+                    topInset
+            );
+        }
+    }
+
+    private int resolveDockButtonSize() {
+        if (settingsButton != null) {
+            return settingsButton.getWidth();
+        }
+        if (realmsButton != null) {
+            return realmsButton.getWidth();
+        }
+        if (flashbackButton != null) {
+            return flashbackButton.getWidth();
+        }
+        if (modMenuButton != null) {
+            return modMenuButton.getWidth();
+        }
+        if (themeSelectorButton != null) {
+            return themeSelectorButton.getWidth();
+        }
+        return Math.max(12, Math.round(30.0F * phaze$menuScale() * (1.3F / 1.2F)));
+    }
+
+    private void setButtonPosition(MainMenuButtonWidget button, int x, int y) {
+        if (button == null || (button.getX() == x && button.getY() == y)) {
+            return;
+        }
+        button.setPosition(x, y);
     }
 
     private void renderMainMenuBackground(DrawContext context, float delta) {
