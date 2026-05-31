@@ -2,7 +2,7 @@ package vorga.phazeclient.implement.features.modules.other;
 
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
-import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
 /**
@@ -13,22 +13,26 @@ public final class LockSlot extends Module {
     private static final LockSlot INSTANCE = new LockSlot();
 
     public final SectionSetting generalSection = new SectionSetting("General");
-    public final BooleanSetting slot1 = new BooleanSetting("Slot 1", "Lock hotbar slot 1").setValue(false);
-    public final BooleanSetting slot2 = new BooleanSetting("Slot 2", "Lock hotbar slot 2").setValue(false);
-    public final BooleanSetting slot3 = new BooleanSetting("Slot 3", "Lock hotbar slot 3").setValue(false);
-    public final BooleanSetting slot4 = new BooleanSetting("Slot 4", "Lock hotbar slot 4").setValue(false);
-    public final BooleanSetting slot5 = new BooleanSetting("Slot 5", "Lock hotbar slot 5").setValue(false);
-    public final BooleanSetting slot6 = new BooleanSetting("Slot 6", "Lock hotbar slot 6").setValue(false);
-    public final BooleanSetting slot7 = new BooleanSetting("Slot 7", "Lock hotbar slot 7").setValue(false);
-    public final BooleanSetting slot8 = new BooleanSetting("Slot 8", "Lock hotbar slot 8").setValue(false);
-    public final BooleanSetting slot9 = new BooleanSetting("Slot 9", "Lock hotbar slot 9").setValue(false);
-    public final BooleanSetting offhand = new BooleanSetting("Offhand", "Lock the offhand slot").setValue(false);
-
-    private final BooleanSetting[] hotbarSlots = {slot1, slot2, slot3, slot4, slot5, slot6, slot7, slot8, slot9};
+    public final MultiSelectSetting lockedSlots = new MultiSelectSetting(
+            "Locked Slots",
+            "Pick which hotbar or offhand slots should be protected from dropping"
+    ).value(
+            "Slot 1",
+            "Slot 2",
+            "Slot 3",
+            "Slot 4",
+            "Slot 5",
+            "Slot 6",
+            "Slot 7",
+            "Slot 8",
+            "Slot 9",
+            "Offhand"
+    ).selected();
 
     private LockSlot() {
         super("lockslot", "Lock Slot", ModuleCategory.UTILITIES);
-        setup(generalSection, slot1, slot2, slot3, slot4, slot5, slot6, slot7, slot8, slot9, offhand);
+        lockedSlots.setFullWidth(true);
+        setup(generalSection, lockedSlots);
     }
 
     public static LockSlot getInstance() {
@@ -59,12 +63,12 @@ public final class LockSlot extends Module {
             return false;
         }
         if (hotbarIndex == 40) {
-            return offhand.isValue();
+            return lockedSlots.isSelected("Offhand");
         }
         if (hotbarIndex < 0 || hotbarIndex > 8) {
             return false;
         }
-        return hotbarSlots[hotbarIndex].isValue();
+        return lockedSlots.isSelected("Slot " + (hotbarIndex + 1));
     }
 
     /**

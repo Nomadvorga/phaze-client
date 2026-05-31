@@ -61,6 +61,7 @@ public final class InventoryHud extends RectHudModule {
         // false, so it auto-hides; mainSection has no predicate
         // upstream so we set one explicitly here.
         mainSection.setVisible(() -> false);
+        colorSection.setVisible(() -> false);
 
         drawCounts.setFullWidth(true);
         setup(otherSection, drawCounts);

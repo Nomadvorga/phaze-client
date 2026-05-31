@@ -82,35 +82,35 @@ public final class FTHelper extends Module {
     public final SectionSetting abilitiesSection = new SectionSetting("Abilities");
 
     public final BooleanSetting trapkaEnabled = new BooleanSetting(
-            "Трапка",
+            "Trapka",
             "Highlight the trapka target box when holding a netherite-scrap-typed trapka item"
     ).setValue(true);
     public final BooleanSetting drakonTrapkaEnabled = new BooleanSetting(
-            "Драконья трапка",
+            "Dragon Trap",
             "Highlight the dragon-trapka variant target box (7x7x3 instead of 3x3x3)"
     ).setValue(true).visible(() -> trapkaEnabled.isValue());
     public final BooleanSetting dezorientationEnabled = new BooleanSetting(
-            "Дезориентация",
+            "Disorientation",
             "Draw the 10-block AOE circle when holding a dezorientation ender eye"
     ).setValue(true);
     public final BooleanSetting yavnayaPylEnabled = new BooleanSetting(
-            "Явная пыль",
+            "Revealing Dust",
             "Draw the 10-block AOE circle when holding явная пыль (sugar)"
     ).setValue(true);
     public final BooleanSetting ognennyiSmerchEnabled = new BooleanSetting(
-            "Огненный смерч",
+            "Fire Vortex",
             "Draw the 10-block AOE circle when holding the огненный смерч fire charge"
     ).setValue(true);
     public final BooleanSetting plastEnabled = new BooleanSetting(
-            "Пласт",
+            "Plate",
             "Draw the plast placement plane when holding the пласт dried-kelp"
     ).setValue(true);
     public final BooleanSetting bozhestvennayaAuraEnabled = new BooleanSetting(
-            "Божья аура",
+            "Divine Aura",
             "Draw the божья аура indicator when holding the phantom membrane variant"
     ).setValue(true);
     public final BooleanSetting snezhokZamorozkaEnabled = new BooleanSetting(
-            "Снежок заморозки",
+            "Freeze Snowball",
             "Predict the impact point of a thrown снежок заморозки and highlight tracked ones in flight (7x7 AOE ring)"
     ).setValue(true);
 
@@ -175,32 +175,32 @@ public final class FTHelper extends Module {
     ).setText("трапка").setMax(48)
             .visible(() -> trapkaEnabled.isValue());
     public final TextSetting drakonTrapkaName = new TextSetting(
-            "Drakon Trapka Name",
+            "Dragon Trap Name",
             "Substring to match for the драконья трапка variant"
     ).setText("драконья трапка").setMax(48)
             .visible(() -> trapkaEnabled.isValue() && drakonTrapkaEnabled.isValue());
     public final TextSetting dezorientationName = new TextSetting(
-            "Dezorientation Name",
+            "Disorientation Name",
             "Substring to match for дезориентация"
     ).setText("дезориентация").setMax(48);
     public final TextSetting yavnayaPylName = new TextSetting(
-            "Yavnaya Pyl Name",
+            "Revealing Dust Name",
             "Substring to match for явная пыль"
     ).setText("явная пыль").setMax(48);
     public final TextSetting ognennyiSmerchName = new TextSetting(
-            "Ognennyi Smerch Name",
+            "Fire Vortex Name",
             "Substring to match for огненный смерч"
     ).setText("огненный смерч").setMax(48);
     public final TextSetting plastName = new TextSetting(
-            "Plast Name",
+            "Plate Name",
             "Substring to match for пласт"
     ).setText("пласт").setMax(48);
     public final TextSetting bozhestvennayaAuraName = new TextSetting(
-            "Bozhestvennaya Aura Name",
+            "Divine Aura Name",
             "Substring to match for божья аура"
     ).setText("божья аура").setMax(48);
     public final TextSetting snezhokZamorozkaName = new TextSetting(
-            "Snezhok Zamorozka Name",
+            "Freeze Snowball Name",
             "Substring to match for снежок заморозки (used both for in-flight tracking and held-hand prediction)"
     ).setText("снежок заморозки").setMax(48);
 

@@ -33,7 +33,7 @@ public final class AutoReissue extends Module {
 
     public final SectionSetting generalSection = new SectionSetting("General");
     public final ValueSetting intervalSeconds = new ValueSetting("Interval", "Delay before the first /ah click and between reissue cycles in seconds")
-            .range(1, 600)
+            .range(60, 600)
             .setValue(60);
 
     private State state = State.IDLE;

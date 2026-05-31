@@ -35,6 +35,8 @@ public final class HitboxCustomizer extends Module {
         hitboxColor.setFullWidth(true);
         reachColor.setFullWidth(true);
         outlineThickness.setFullWidth(true);
+        showLookLine.setFullWidth(true);
+        redInReach.setFullWidth(true);
         reachColor.setVisible(redInReach::isValue);
 
         setup(generalSection, hitboxColor, showLookLine, redInReach, outlineThickness, reachColor);

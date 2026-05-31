@@ -31,6 +31,7 @@ public final class FreeLook extends Module {
         super("freelook", "Free Look", ModuleCategory.UTILITIES);
         
         keybind.setFullWidth(true);
+        hold.setFullWidth(true);
         setup(generalSection, keybind, hold);
     }
 

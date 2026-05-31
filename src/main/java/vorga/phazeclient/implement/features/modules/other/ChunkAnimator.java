@@ -282,7 +282,7 @@ public final class ChunkAnimator extends Module {
             .visible(() -> animationType.isSelected("Fade"));
 
     private ChunkAnimator() {
-        super("chunk_animator", "Chunk Animator", ModuleCategory.OTHER);
+        super("chunk_animator", "World Animator", ModuleCategory.OTHER);
         duration.setFullWidth(true);
         distance.setFullWidth(true);
         animationType.setFullWidth(true);

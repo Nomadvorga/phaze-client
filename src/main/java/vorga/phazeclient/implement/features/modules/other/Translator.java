@@ -20,7 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
-import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
@@ -89,6 +89,11 @@ import java.util.regex.Pattern;
  * identical lines (login messages, kits, etc.).
  */
 public final class Translator extends Module {
+    @FunctionalInterface
+    public interface BooleanLike {
+        boolean isValue();
+    }
+
     private static final Logger LOG = LoggerFactory.getLogger("PhazeTranslator");
 
     /**
@@ -411,10 +416,27 @@ public final class Translator extends Module {
      * ("чтобы в конце писалось (en2ru) типо с английского на русский").
      * Keeping it as a toggle for users who want a cleaner look.
      */
-    public final BooleanSetting showSuffix = new BooleanSetting(
+    public final MultiSelectSetting translationOptions = new MultiSelectSetting(
+            "Translation Options",
+            "Choose which translator behaviors stay enabled"
+    ).value(
+            "Auto-Detect Source",
             "Show Direction",
-            "Append a (srcLang2dstLang) marker to translated rows so you can see the source language at a glance"
-    ).setValue(true);
+            "Show Original On Hover",
+            "Skip Nicknames",
+            "Skip Same Language",
+            "Replace Message",
+            "Only Players",
+            "Expand Slang"
+    ).selected(
+            "Auto-Detect Source",
+            "Show Direction",
+            "Show Original On Hover",
+            "Skip Nicknames",
+            "Skip Same Language",
+            "Expand Slang"
+    );
+    public final BooleanLike showSuffix = () -> translationOptions.isSelected("Show Direction");
 
     /**
      * When ON, the translation row carries a vanilla {@link HoverEvent}
@@ -432,10 +454,7 @@ public final class Translator extends Module {
      * is the desired behaviour - hover on the body shows the original,
      * hover on the rank/nick shows whatever vanilla / server attached).
      */
-    public final BooleanSetting showOriginalOnHover = new BooleanSetting(
-            "Show Original On Hover",
-            "Hover over the translated message in chat to see the original text in a tooltip"
-    ).setValue(true);
+    public final BooleanLike showOriginalOnHover = () -> translationOptions.isSelected("Show Original On Hover");
 
     /**
      * When ON, only the part of the message AFTER the rank/nickname
@@ -446,20 +465,14 @@ public final class Translator extends Module {
      * for servers whose chat format isn't covered by
      * {@link #HEADER_PATTERN}.
      */
-    public final BooleanSetting skipNicknames = new BooleanSetting(
-            "Skip Nicknames",
-            "Don't translate the rank/nickname prefix - only translate the message body after the first ':'/'>'/'\u00BB'"
-    ).setValue(true);
+    public final BooleanLike skipNicknames = () -> translationOptions.isSelected("Skip Nicknames");
 
     /**
      * When ON, suppresses the translation row when Google returns a
      * detected source language equal to the configured target. Avoids
      * a useless duplicate row when somebody types in your language.
      */
-    public final BooleanSetting skipSameLanguage = new BooleanSetting(
-            "Skip Same Language",
-            "Don't add a translation row when the detected source language already equals the target"
-    ).setValue(true);
+    public final BooleanLike skipSameLanguage = () -> translationOptions.isSelected("Skip Same Language");
 
     /**
      * When ON, the translated message <em>replaces</em> the original
@@ -497,10 +510,7 @@ public final class Translator extends Module {
      * dropped translations would leave the message invisible. The
      * flicker is the lesser evil.
      */
-    public final BooleanSetting replaceOriginal = new BooleanSetting(
-            "Replace Message",
-            "Replace the original chat row with the translated one instead of adding the translation as a separate row below"
-    ).setValue(false);
+    public final BooleanLike replaceOriginal = () -> translationOptions.isSelected("Replace Message");
 
     /**
      * When ON, only translate cryptographically-signed player chat
@@ -517,10 +527,7 @@ public final class Translator extends Module {
      * of this toggle, because the user explicitly asked for screenshot
      * / F3+B confirmations to be left alone.
      */
-    public final BooleanSetting onlyPlayers = new BooleanSetting(
-            "Only Players",
-            "Only translate signed player messages - skip server broadcasts, death messages, join/leave notices, etc."
-    ).setValue(false);
+    public final BooleanLike onlyPlayers = () -> translationOptions.isSelected("Only Players");
 
     /**
      * When ON (default), the source language is auto-detected by the
@@ -533,10 +540,7 @@ public final class Translator extends Module {
      * (the classic Polish/Czech, Norwegian/Danish, Indonesian/Malay
      * mix-ups Google has been known to make on short strings).
      */
-    public final BooleanSetting autoDetectSource = new BooleanSetting(
-            "Auto-Detect Source",
-            "Auto-detect the source language. Turn OFF to explicitly pick the source from the Source Language dropdown."
-    ).setValue(true);
+    public final BooleanLike autoDetectSource = () -> translationOptions.isSelected("Auto-Detect Source");
 
     /**
      * Explicit source language used when {@link #autoDetectSource} is
@@ -579,10 +583,7 @@ public final class Translator extends Module {
      * Chinese / Spanish / Arabic / etc. text that might happen to
      * share short ASCII fragments with our slang keys.
      */
-    public final BooleanSetting expandSlang = new BooleanSetting(
-            "Expand Slang",
-            "Rewrite English abbreviations (brb, wtf, gonna, gg, ...) into full phrases before translating so the result sounds more natural in the target language"
-    ).setValue(true);
+    public final BooleanLike expandSlang = () -> translationOptions.isSelected("Expand Slang");
 
     public final SectionSetting providerSection = new SectionSetting("Provider");
 
@@ -703,21 +704,13 @@ public final class Translator extends Module {
     private Translator() {
         super("translator", "Translator", ModuleCategory.OTHER);
         targetLanguage.setFullWidth(true);
-        autoDetectSource.setFullWidth(true);
+        translationOptions.setFullWidth(true);
         sourceLanguage.setFullWidth(true);
-        showSuffix.setFullWidth(true);
-        showOriginalOnHover.setFullWidth(true);
-        skipNicknames.setFullWidth(true);
-        skipSameLanguage.setFullWidth(true);
-        replaceOriginal.setFullWidth(true);
-        onlyPlayers.setFullWidth(true);
-        expandSlang.setFullWidth(true);
         minLength.setFullWidth(true);
         provider.setFullWidth(true);
         apifyToken.setFullWidth(true);
         apifyActor.setFullWidth(true);
-        setup(generalSection, targetLanguage, autoDetectSource, sourceLanguage, showSuffix, showOriginalOnHover,
-                skipNicknames, skipSameLanguage, replaceOriginal, onlyPlayers, expandSlang, minLength,
+        setup(generalSection, targetLanguage, translationOptions, sourceLanguage, minLength,
                 providerSection, provider, apifyToken, apifyActor);
     }
 

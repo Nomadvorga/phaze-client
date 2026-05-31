@@ -62,18 +62,18 @@ public final class ItemHighlighter extends Module {
      * needles.
      */
     public enum Highlight {
-        DEZORIENTACIYA("Дезориентация",  Items.ENDER_EYE,            "дезориентация",   0x00FF00),
-        OGNENNY_SMERCH("Огненный смерч", Items.FIRE_CHARGE,          "огненный смерч",  0xFF8C00),
-        YAVNAYA_PYL("Явная пыль",        Items.SUGAR,                "явная пыль",      0xFFFFFF),
-        TOTEM("Тотем бессмертия",        Items.TOTEM_OF_UNDYING,     null,              0xFFCC00),
-        EXPERIENCE_BOTTLE("Бутылка опыта", Items.EXPERIENCE_BOTTLE,  null,              0x66FFCC),
-        TRAPKA("Трапка",                 Items.NETHERITE_SCRAP,      "трапка",          0xC2B28C),
-        PLAST("Пласт",                   Items.DRIED_KELP,           "пласт",           0x808080),
-        GOLDEN_APPLE("Золотое яблоко",   Items.GOLDEN_APPLE,         null,              0xFFD700),
-        ENCHANTED_GOLDEN_APPLE("Чар. гепл", Items.ENCHANTED_GOLDEN_APPLE, null,         0xFF66CC),
-        CHORUS_FRUIT("Хорус",            Items.CHORUS_FRUIT,         null,              0x9400D3),
-        ENDER_PEARL("Эндер перл",        Items.ENDER_PEARL,          null,              0x66CC99),
-        SNOWBALL("Снежок",               Items.SNOWBALL,             null,              0xADD8E5);
+        DISORIENTATION("Disorientation", Items.ENDER_EYE,            "дезориентация",   0x00FF00),
+        FIRE_VORTEX("Fire Vortex",       Items.FIRE_CHARGE,          "огненный смерч",  0xFF8C00),
+        REVEALING_DUST("Revealing Dust", Items.SUGAR,                "явная пыль",      0xFFFFFF),
+        TOTEM("Totem of Undying",        Items.TOTEM_OF_UNDYING,     null,              0xFFCC00),
+        EXPERIENCE_BOTTLE("Experience Bottle", Items.EXPERIENCE_BOTTLE, null,           0x66FFCC),
+        TRAPKA("Trapka",                 Items.NETHERITE_SCRAP,      "трапка",          0xC2B28C),
+        PLATE("Plate",                   Items.DRIED_KELP,           "пласт",           0x808080),
+        GOLDEN_APPLE("Golden Apple",     Items.GOLDEN_APPLE,         null,              0xFFD700),
+        ENCHANTED_GOLDEN_APPLE("Enchanted Golden Apple", Items.ENCHANTED_GOLDEN_APPLE, null, 0xFF66CC),
+        CHORUS_FRUIT("Chorus Fruit",     Items.CHORUS_FRUIT,         null,              0x9400D3),
+        ENDER_PEARL("Ender Pearl",       Items.ENDER_PEARL,          null,              0x66CC99),
+        SNOWBALL("Snowball",             Items.SNOWBALL,             null,              0xADD8E5);
 
         private final String label;
         private final Item vanillaItem;

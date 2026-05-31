@@ -1,9 +1,11 @@
 package vorga.phazeclient.implement.features.modules.other;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.PickaxeItem;
 import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -66,6 +68,10 @@ public final class PickaxeNotifier extends Module {
             "Auto Switch",
             "Automatically switch to the configured hotbar slot when the pickaxe falls under the threshold"
     ).setValue(false);
+    public final BooleanSetting playSound = new BooleanSetting(
+            "Play Sound",
+            "Play a warning sound together with the low durability message"
+    ).setValue(true);
 
     public final ValueSetting swapSlot = new ValueSetting(
             "Swap Slot",
@@ -79,8 +85,9 @@ public final class PickaxeNotifier extends Module {
         super("pickaxe_notifier", "Pickaxe Notifier", ModuleCategory.UTILITIES);
         durabilityThreshold.setFullWidth(true);
         autoSwitch.setFullWidth(true);
+        playSound.setFullWidth(true);
         swapSlot.setFullWidth(true);
-        setup(generalSection, durabilityThreshold, autoSwitch, swapSlot);
+        setup(generalSection, durabilityThreshold, autoSwitch, playSound, swapSlot);
     }
 
     public static PickaxeNotifier getInstance() {
@@ -163,6 +170,11 @@ public final class PickaxeNotifier extends Module {
             line.append(Text.literal(" -> slot " + clampHotbarSlot(swapSlot.getInt())).formatted(Formatting.GRAY));
         }
         mc.inGameHud.getChatHud().addMessage(line);
+        if (playSound.isValue() && mc.getSoundManager() != null) {
+            mc.getSoundManager().play(PositionedSoundInstance.master(
+                    SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.25F, 1.0F
+            ));
+        }
     }
 
     private static int clampHotbarSlot(int slot) {
