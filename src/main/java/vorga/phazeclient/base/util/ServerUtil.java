@@ -101,6 +101,13 @@ public class ServerUtil {
     }
 
     /**
+     * Check if current server is FillCube
+     */
+    public static boolean isFillCubeServer() {
+        return hasServerSegment("fillcube");
+    }
+
+    /**
      * Check if ShiftTap is supported on current server
      */
     public static boolean isShiftTapSupported() {
