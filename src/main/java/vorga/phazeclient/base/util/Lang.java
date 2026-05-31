@@ -220,6 +220,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Automatically eats food (or runs /feed) when hunger drops below the threshold", "Автоматически ест еду (или /feed) при падении голода ниже порога");
         SETTING_TRANSLATIONS.put("Automatically executes /near max command", "Автоматически выполняет команду /near max");
         SETTING_TRANSLATIONS.put("Automatically reissues your auction items on FunTime", "Автоматически перевыставляет ваши лоты на FunTime");
+        SETTING_TRANSLATIONS.put("Basic", "Основные");
         SETTING_TRANSLATIONS.put("Delay before the first /ah click and between reissue cycles in seconds", "Задержка до первого клика в /ah и между циклами перевыставления в секундах");
         SETTING_TRANSLATIONS.put("Automatically respawns and optionally runs a command after death", "Автовозрождение и опциональная команда после смерти");
         SETTING_TRANSLATIONS.put("Automatically sprints while holding forward", "Автоматический спринт при движении вперёд");
@@ -371,7 +372,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Display Ping Number", "Показывать число пинга");
         SETTING_TRANSLATIONS.put("Display Server Icon", "Показывать иконку сервера");
         SETTING_TRANSLATIONS.put("Distance", "Расстояние");
-        SETTING_TRANSLATIONS.put("Drakon Trapka Name", "Имя «Драконья трапка»");
+        SETTING_TRANSLATIONS.put("Drakon Trap Name", "Имя «Драконья трапка»");
         SETTING_TRANSLATIONS.put("Draws a configurable PvP-reach circle around entities (port of uku3lig/hitrange, MIT)", "Рисует настраиваемый круг pvp-реча вокруг сущностей (порт uku3lig/hitrange, MIT)");
         SETTING_TRANSLATIONS.put("Durability Mode", "Режим прочности");
         SETTING_TRANSLATIONS.put("Durability Threshold", "Порог прочности");
@@ -623,7 +624,6 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Black", "Чёрный");
         SETTING_TRANSLATIONS.put("Quickly selects matching hotbar items on hotkey press", "Быстрый выбор предметов по нажатию клавиш");
         SETTING_TRANSLATIONS.put("Select the first matching item in your hotbar", "Выбирает первый подходящий предмет в хотбаре");
-        SETTING_TRANSLATIONS.put("Substring matched against the hotbar item's display name before selecting it", "Подстрока, которая ищется в названии предмета в хотбаре перед выбором");
         // Consumable.itemTypes (vanilla item names; localised for the
         // Russian audience - storage stays English so each entry maps
         // back to the canonical ItemRegistry id without ambiguity).
@@ -1019,7 +1019,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Translator", "Переводчик");
         SETTING_TRANSLATIONS.put("Trap Name", "Имя ловушки");
         SETTING_TRANSLATIONS.put("Trap Type", "Тип ловушки");
-        SETTING_TRANSLATIONS.put("Trapka Name", "Имя «Трапка»");
+        SETTING_TRANSLATIONS.put("Trap Name", "Имя «Трапка»");
         SETTING_TRANSLATIONS.put("Trigger", "Триггер");
         SETTING_TRANSLATIONS.put("Tuning", "Настройка");
         SETTING_TRANSLATIONS.put("Tweaks for chat and screenshots: collapse repeated messages, copy F2 screenshots to clipboard", "Твики чата и скриншотов: сворачивание повторов, копирование F2 в буфер");
@@ -1072,30 +1072,30 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Enchanted Golden Apple", "Зачарованное золотое яблоко");
         SETTING_TRANSLATIONS.put("Ender Pearl", "Эндер перл");
         SETTING_TRANSLATIONS.put("Chorus Fruit", "Хорус");
-        SETTING_TRANSLATIONS.put("Chorus Key", "Кнопка хоруса");
-        SETTING_TRANSLATIONS.put("Enderpearl Key", "Кнопка эндерпёрла");
-        SETTING_TRANSLATIONS.put("Healing Potion Key", "Кнопка зелья исцеления");
-        SETTING_TRANSLATIONS.put("Trapka Key", "Кнопка трапки");
-        SETTING_TRANSLATIONS.put("Plate Key", "Кнопка пласта");
-        SETTING_TRANSLATIONS.put("Disorientation Key", "Кнопка дезориентации");
-        SETTING_TRANSLATIONS.put("Revealing Dust Key", "Кнопка явной пыли");
-        SETTING_TRANSLATIONS.put("Ball Lightning Key", "Кнопка шаровой молнии");
-        SETTING_TRANSLATIONS.put("Slime Lump Key", "Кнопка кома слизи");
-        SETTING_TRANSLATIONS.put("Turtle Grip Key", "Кнопка черепашьего захвата");
-        SETTING_TRANSLATIONS.put("Spider Fate Key", "Кнопка паучьей судьбы");
-        SETTING_TRANSLATIONS.put("Stun Key", "Кнопка стана");
-        SETTING_TRANSLATIONS.put("Magnetic Sphere Key", "Кнопка магнитного шара");
-        SETTING_TRANSLATIONS.put("Explosive Trapka Key", "Кнопка взрывной трапки");
-        SETTING_TRANSLATIONS.put("Explosive Thing Key", "Кнопка взрывной штучки");
-        SETTING_TRANSLATIONS.put("Star Stun Key", "Кнопка стана звезды");
-        SETTING_TRANSLATIONS.put("Snow Lump Key", "Кнопка кома снега");
+        SETTING_TRANSLATIONS.put("Chorus Bind", "Бинд хоруса");
+        SETTING_TRANSLATIONS.put("Enderpearl Bind", "Бинд эндерпёрла");
+        SETTING_TRANSLATIONS.put("Healing Potion Bind", "Бинд зелья исцеления");
+        SETTING_TRANSLATIONS.put("Trap Bind", "Бинд трапки");
+        SETTING_TRANSLATIONS.put("Plate Bind", "Бинд пласта");
+        SETTING_TRANSLATIONS.put("Disorientation Bind", "Бинд дезориентации");
+        SETTING_TRANSLATIONS.put("Revealing Dust Bind", "Бинд явной пыли");
+        SETTING_TRANSLATIONS.put("Ball Lightning Bind", "Бинд шаровой молнии");
+        SETTING_TRANSLATIONS.put("Slime Lump Bind", "Бинд кома слизи");
+        SETTING_TRANSLATIONS.put("Turtle Grip Bind", "Бинд черепашьего захвата");
+        SETTING_TRANSLATIONS.put("Spider Fate Bind", "Бинд паучьей судьбы");
+        SETTING_TRANSLATIONS.put("Stun Bind", "Бинд стана");
+        SETTING_TRANSLATIONS.put("Magnetic Sphere Bind", "Бинд магнитного шара");
+        SETTING_TRANSLATIONS.put("Explosive Trap Bind", "Бинд взрывной трапки");
+        SETTING_TRANSLATIONS.put("Explosive Thing Bind", "Бинд взрывной штучки");
+        SETTING_TRANSLATIONS.put("Star Stun Bind", "Бинд стана звезды");
+        SETTING_TRANSLATIONS.put("Snow Lump Bind", "Бинд кома снега");
         SETTING_TRANSLATIONS.put("Ball Lightning Name", "Имя «Шаровая молния»");
         SETTING_TRANSLATIONS.put("Slime Lump Name", "Имя «Ком слизи»");
         SETTING_TRANSLATIONS.put("Turtle Grip Name", "Имя «Черепаший захват»");
         SETTING_TRANSLATIONS.put("Spider Fate Name", "Имя «Паучья судьба»");
         SETTING_TRANSLATIONS.put("Stun Name", "Имя «Стан»");
         SETTING_TRANSLATIONS.put("Magnetic Sphere Name", "Имя «Магнитный шар»");
-        SETTING_TRANSLATIONS.put("Explosive Trapka Name", "Имя «Взрывная трапка»");
+        SETTING_TRANSLATIONS.put("Explosive Trap Name", "Имя «Взрывная трапка»");
         SETTING_TRANSLATIONS.put("Explosive Thing Name", "Имя «Взрывная штучка»");
         SETTING_TRANSLATIONS.put("Star Stun Name", "Имя «Стан звезды»");
         SETTING_TRANSLATIONS.put("Snow Lump Name", "Имя «Ком снега»");
@@ -1107,7 +1107,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Revealing Dust Name", "Имя «Явная пыль»");
         SETTING_TRANSLATIONS.put("Snowball", "Снежок");
         SETTING_TRANSLATIONS.put("Totem of Undying", "Тотем бессмертия");
-        SETTING_TRANSLATIONS.put("Trapka", "Трапка");
+        SETTING_TRANSLATIONS.put("Trap", "Трапка");
         SETTING_TRANSLATIONS.put("Translation Options", "Параметры перевода");
 
         // Main-menu / configs UI strings that are not module or
