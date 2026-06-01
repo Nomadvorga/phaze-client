@@ -1,7 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.window;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
@@ -65,10 +67,20 @@ public abstract class AbstractWindow extends AbstractComponent {
 
         float scale = scaleAnimation.getOutputFloat();
         float alpha = scale * scale;
+        context.draw();
+        context.getMatrices().push();
+        context.getMatrices().translate(0.0F, 0.0F, 280.0F);
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
         MathUtil.scale(context.getMatrices(), x + width / 2, y + height / 2, scale, () -> {
             this.globalAlpha = alpha;
             drawWindow(context, mouseX, mouseY, delta);
         });
+        BatchedRectangle.flushIfBatching();
+        context.draw();
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        context.getMatrices().pop();
     }
 
     protected abstract void drawWindow(DrawContext context, int mouseX, int mouseY, float delta);

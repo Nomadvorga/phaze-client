@@ -1,10 +1,12 @@
 package vorga.phazeclient.mixins;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.component.type.ContainerComponent;
+import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
@@ -223,7 +225,8 @@ public abstract class HandledScreenMixin {
         if (module == null || !module.isEnabled()) {
             return;
         }
-        phaze$paintInventoryFills(context, module::colorForStack);
+        module.beginRenderPass();
+        phaze$paintInventoryFills(context, module::colorForPreparedStack);
     }
 
     @Inject(method = "render", at = @At("RETURN"))
@@ -238,9 +241,10 @@ public abstract class HandledScreenMixin {
     }
 
     /**
-     * Walks the trailing 36 slots of the current handler (player
-     * inventory + hotbar) and fills every slot whose colour function
-     * returns a non-zero alpha.
+     * Walks the local player's storage + hotbar slots and fills every
+     * slot whose colour function returns a non-zero alpha. Falls back
+     * to the legacy trailing-36 heuristic on handlers that don't
+     * expose the expected player inventory wiring.
      */
     @Unique
     private void phaze$paintInventoryFills(DrawContext context,
@@ -251,31 +255,58 @@ public abstract class HandledScreenMixin {
             return;
         }
 
-        int totalSlots = handler.slots.size();
-        int playerInvStart = totalSlots - 36;
-        if (playerInvStart < 0) {
-            return;
-        }
-
         context.draw();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        RenderSystem.depthMask(true);
 
-        for (int i = playerInvStart; i < totalSlots; i++) {
-            Slot slot = handler.slots.get(i);
-            ItemStack stack = slot.getStack();
-            int color = colorFn.applyAsInt(stack);
-            if ((color & 0xFF000000) == 0) {
-                continue;
+        MinecraftClient client = MinecraftClient.getInstance();
+        PlayerInventory playerInventory = client != null && client.player != null ? client.player.getInventory() : null;
+        boolean paintedPlayerSlots = false;
+        if (playerInventory != null) {
+            for (Slot slot : handler.slots) {
+                if (!phaze$isMainPlayerSlot(slot, playerInventory)) {
+                    continue;
+                }
+                phaze$paintSlotFill(context, slot, colorFn);
+                paintedPlayerSlots = true;
             }
-            int sx = x + slot.x;
-            int sy = y + slot.y;
-            context.fill(sx, sy, sx + 16, sy + 16, color);
+        }
+
+        if (!paintedPlayerSlots) {
+            int totalSlots = handler.slots.size();
+            int playerInvStart = totalSlots - 36;
+            if (playerInvStart >= 0) {
+                for (int i = playerInvStart; i < totalSlots; i++) {
+                    phaze$paintSlotFill(context, handler.slots.get(i), colorFn);
+                }
+            }
         }
 
         context.draw();
+        RenderSystem.depthMask(true);
         phaze$resetGuiRenderState();
+    }
+
+    @Unique
+    private boolean phaze$isMainPlayerSlot(Slot slot, PlayerInventory playerInventory) {
+        return slot != null
+                && slot.inventory == playerInventory
+                && slot.getIndex() >= 0
+                && slot.getIndex() < 36;
+    }
+
+    @Unique
+    private void phaze$paintSlotFill(DrawContext context, Slot slot, java.util.function.ToIntFunction<ItemStack> colorFn) {
+        ItemStack stack = slot.getStack();
+        int color = colorFn.applyAsInt(stack);
+        if ((color & 0xFF000000) == 0) {
+            return;
+        }
+        int sx = x + slot.x;
+        int sy = y + slot.y;
+        context.fill(sx, sy, sx + 16, sy + 16, color);
     }
 }

@@ -4289,7 +4289,8 @@ public class InGameHudMixin {
     private void phaze$drawHotbarItemHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         ItemHighlighter module = ItemHighlighter.getInstance();
         if (module == null || !module.isEnabled()) return;
-        phaze$paintHotbarFills(context, module::colorForStack);
+        module.beginRenderPass();
+        phaze$paintHotbarFills(context, module::colorForPreparedStack);
     }
 
     // ====================================================================
@@ -4323,6 +4324,8 @@ public class InGameHudMixin {
         context.draw();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
 
         for (int n = 0; n < 9; n++) {
             ItemStack stack = player.getInventory().main.get(n);
@@ -4332,6 +4335,7 @@ public class InGameHudMixin {
             context.fill(itemX, itemY, itemX + 16, itemY + 16, color);
         }
         context.draw();
+        RenderSystem.depthMask(true);
         phaze$resetGuiRenderState();
     }
 
