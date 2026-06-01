@@ -382,6 +382,20 @@ public final class MenuProfileManager implements QuickImports {
             case ColorSetting colorSetting -> moduleData.addProperty(key, colorSetting.getColor());
             case SelectSetting selectSetting -> moduleData.addProperty(key, selectSetting.getSelected());
             case MultiSelectSetting multiSelectSetting -> moduleData.addProperty(key, String.join(",", multiSelectSetting.getSelected()));
+            case ItemPickerSetting itemPickerSetting -> {
+                if (itemPickerSetting.isCustomPicker() && !itemPickerSetting.isActive()) {
+                    moduleData.addProperty(key, false);
+                    return;
+                }
+                JsonObject itemObject = new JsonObject();
+                itemObject.addProperty("active", itemPickerSetting.isActive());
+                itemObject.addProperty("enabled", itemPickerSetting.isEnabled());
+                itemObject.addProperty("highlightColor", itemPickerSetting.getHighlightColor());
+                itemObject.addProperty("itemId", itemPickerSetting.getItemId());
+                itemObject.addProperty("displayName", itemPickerSetting.getDisplayName());
+                itemObject.addProperty("matchName", itemPickerSetting.getMatchName());
+                moduleData.add(key, itemObject);
+            }
             case MultiColorSetting multiColor -> {
                 JsonObject colorObject = new JsonObject();
                 colorObject.addProperty("selectedColorIndex", multiColor.getSelectedColorIndex());
@@ -435,6 +449,29 @@ public final class MenuProfileManager implements QuickImports {
                 List<String> selected = new ArrayList<>(List.of(value.split(",")));
                 selected.removeIf(s -> !multiSelectSetting.getList().contains(s));
                 multiSelectSetting.setSelected(selected);
+            }
+            case ItemPickerSetting itemPickerSetting -> {
+                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isBoolean()) {
+                    itemPickerSetting.setEnabled(element.getAsBoolean());
+                    return;
+                }
+                if (!element.isJsonObject()) {
+                    return;
+                }
+                JsonObject itemObject = element.getAsJsonObject();
+                String itemId = itemObject.has("itemId") ? itemObject.get("itemId").getAsString() : "";
+                String displayName = itemObject.has("displayName") ? itemObject.get("displayName").getAsString() : "";
+                String matchName = itemObject.has("matchName") ? itemObject.get("matchName").getAsString() : "";
+                boolean enabled = itemObject.has("enabled")
+                        ? itemObject.get("enabled").getAsBoolean()
+                        : itemPickerSetting.isEnabled();
+                int highlightColor = itemObject.has("highlightColor")
+                        ? itemObject.get("highlightColor").getAsInt()
+                        : itemPickerSetting.getHighlightColor();
+                boolean active = itemObject.has("active")
+                        ? itemObject.get("active").getAsBoolean()
+                        : !itemId.isBlank();
+                itemPickerSetting.setSerializedState(active, itemId, displayName, matchName, enabled, highlightColor);
             }
             case MultiColorSetting multiColor -> {
                 if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {

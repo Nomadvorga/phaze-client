@@ -4,6 +4,7 @@ import vorga.phazeclient.api.system.localization.LocalizationManager;
 import net.minecraft.client.gui.DrawContext;
 import vorga.phazeclient.api.feature.module.setting.implement.ButtonSetting;
 import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.components.implement.other.ButtonComponent;
 import vorga.phazeclient.base.util.math.MathUtil;
@@ -39,7 +40,14 @@ public class SButtonComponent extends AbstractSettingComponent {
         float textX = x + 10 + textOffset;
         labelFont.drawString(context.getMatrices(), wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
 
-        ButtonComponent lunarButton = (ButtonComponent) buttonComponent.setText(LocalizationManager.getInstance().get("module.setting.button_click"))
+        String buttonText = setting.getButtonName();
+        if (buttonText == null || buttonText.isBlank()) {
+            buttonText = LocalizationManager.getInstance().get("module.setting.button_click");
+        } else {
+            buttonText = Lang.translate(buttonText);
+        }
+
+        ButtonComponent lunarButton = (ButtonComponent) buttonComponent.setText(buttonText)
                 .setRunnable(setting.getRunnable());
         float buttonWidth = lunarButton.measureWidth();
 

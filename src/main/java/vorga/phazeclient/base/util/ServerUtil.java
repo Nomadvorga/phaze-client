@@ -108,6 +108,13 @@ public class ServerUtil {
     }
 
     /**
+     * Check if current server is HolyWorld
+     */
+    public static boolean isHolyWorldServer() {
+        return hasServerSegment("holyworld");
+    }
+
+    /**
      * Check if ShiftTap is supported on current server
      */
     public static boolean isShiftTapSupported() {
