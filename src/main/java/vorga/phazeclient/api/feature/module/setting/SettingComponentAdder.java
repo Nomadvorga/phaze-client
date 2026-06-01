@@ -38,6 +38,10 @@ public class SettingComponentAdder {
                 components.add(new SButtonComponent(buttonSetting));
             }
 
+            if (setting instanceof ItemPickerSetting itemPickerSetting) {
+                components.add(new ItemPickerComponent(itemPickerSetting));
+            }
+
             if (setting instanceof SelectSetting selectSetting) {
                 components.add(new SelectComponent(selectSetting));
             }

@@ -318,6 +318,7 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     public void closeModuleDetail() {
+        windowManager.closeAll();
         moduleDetailComponent.closeDetail();
     }
 
@@ -416,9 +417,17 @@ public class MenuScreen extends Screen implements QuickImports {
         }
 
         if (moduleDetailComponent.isOpen()) {
-            boolean detailHandled = moduleDetailComponent.mouseClicked(overlayMouseX, overlayMouseY, button);
-            boolean backgroundHandled = backgroundComponent.mouseClicked(overlayMouseX, overlayMouseY, button);
             boolean windowHandled = windowManager.mouseClicked(overlayMouseX, overlayMouseY, button);
+            boolean detailHandled = false;
+            boolean backgroundHandled = false;
+
+            if (!windowHandled) {
+                detailHandled = moduleDetailComponent.mouseClicked(overlayMouseX, overlayMouseY, button);
+                if (!detailHandled) {
+                    backgroundHandled = backgroundComponent.mouseClicked(overlayMouseX, overlayMouseY, button);
+                }
+            }
+
             SelectComponent.handleGlobalClick(overlayMouseX, overlayMouseY);
             MultiSelectComponent.handleGlobalClick(overlayMouseX, overlayMouseY);
 
@@ -453,6 +462,7 @@ public class MenuScreen extends Screen implements QuickImports {
         }
 
         if (moduleDetailComponent.isOpen()) {
+            windowManager.mouseReleased(overlayMouseX, overlayMouseY, button);
             moduleDetailComponent.mouseReleased(overlayMouseX, overlayMouseY, button);
             return true;
         }
@@ -491,6 +501,9 @@ public class MenuScreen extends Screen implements QuickImports {
         }
 
         if (moduleDetailComponent.isOpen()) {
+            if (windowManager.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY)) {
+                return true;
+            }
             moduleDetailComponent.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY);
             return true;
         }
@@ -517,6 +530,9 @@ public class MenuScreen extends Screen implements QuickImports {
         double overlayMouseX = toOverlayCoordinate(mouseX);
         double overlayMouseY = toOverlayCoordinate(mouseY);
         if (moduleDetailComponent.isOpen()) {
+            if (windowManager.mouseScrolled(overlayMouseX, overlayMouseY, vertical)) {
+                return true;
+            }
             moduleDetailComponent.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
             return true;
         }
@@ -555,6 +571,7 @@ public class MenuScreen extends Screen implements QuickImports {
 
         if (keyCode == 256 && shouldCloseOnEsc()) {
             if (animation.isDirection(FORWARDS)) {
+                windowManager.closeAll();
                 animation.setDirection(BACKWARDS);
             }
             return true;
@@ -638,6 +655,7 @@ public class MenuScreen extends Screen implements QuickImports {
             if (category == ModuleCategory.SEARCH) {
                 category = searchComponent.getPreviousCategory();
             }
+            windowManager.clear();
             super.close();
         }
     }
@@ -708,6 +726,10 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     private boolean isPointerOverInteractiveElement(double overlayMouseX, double overlayMouseY) {
+        if (windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY)) {
+            return true;
+        }
+
         if (backgroundComponent.isInteractiveHover(overlayMouseX, overlayMouseY)) {
             return true;
         }

@@ -25,6 +25,16 @@ public class WindowManager extends AbstractComponent {
         window.startCloseAnimation();
     }
 
+    public void closeAll() {
+        for (AbstractWindow window : windows) {
+            window.startCloseAnimation();
+        }
+    }
+
+    public void clear() {
+        windows.clear();
+    }
+
     public boolean isMouseOverAnyWindow(double mouseX, double mouseY) {
         for (AbstractWindow window : windows) {
             if (window.isHovered(mouseX, mouseY)) {
@@ -202,4 +212,3 @@ public class WindowManager extends AbstractComponent {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 }
-
