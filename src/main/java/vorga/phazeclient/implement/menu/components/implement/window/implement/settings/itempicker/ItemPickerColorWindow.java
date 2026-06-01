@@ -28,6 +28,8 @@ import static net.minecraft.util.math.MathHelper.clamp;
 
 @Getter
 public final class ItemPickerColorWindow extends AbstractWindow {
+    private static final Identifier HUE_TEXTURE = Identifier.of("textures/color_picker/hue.png");
+
     public static final float WINDOW_WIDTH = 126.0F;
     public static final float WINDOW_HEIGHT = 123.0F;
 
@@ -43,7 +45,6 @@ public final class ItemPickerColorWindow extends AbstractWindow {
     private static final float PICKER_INDICATOR_SIZE = 9.0F;
     private static final float HUE_INDICATOR_WIDTH = 4.0F;
     private static final float HUE_INDICATOR_EXTRA_HEIGHT = 4.0F;
-
     private final ItemPickerSetting setting;
 
     private float hue;
@@ -66,12 +67,13 @@ public final class ItemPickerColorWindow extends AbstractWindow {
 
         int outline = applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.BORDER, 0xFFFFFFFF, 0.08F)));
         int panelFill = applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.PANEL_BG, 0xFF000000, 0.18F)));
-        int panelTop = applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.CARD_BG, MenuStyle.PANEL_ROW, 0.42F)));
+        int panelTop = panelFill;
         int pickerOutline = applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.BORDER_LIGHT, 0xFFFFFFFF, 0.10F)));
         int hueColor = applyGlobalAlpha(0xFF000000 | (Color.HSBtoRGB(hue, 1.0F, 1.0F) & 0x00FFFFFF));
+        int selectedColor = applyGlobalAlpha(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF));
 
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
-                .round(9.0F)
+                .round(6.0F)
                 .softness(1.1F)
                 .thickness(1.15F)
                 .outlineColor(outline)
@@ -117,7 +119,7 @@ public final class ItemPickerColorWindow extends AbstractWindow {
                 .color(pickerColors)
                 .build());
 
-        renderHueStrip(matrices, hueBarX, hueBarY, hueBarWidth, HUE_BAR_HEIGHT, applyGlobalAlpha(0xFFFFFFFF));
+        renderHueStrip(matrices, hueBarX, hueBarY, hueBarWidth, HUE_BAR_HEIGHT, pickerOutline);
 
         float pickerRadius = PICKER_INDICATOR_SIZE / 2.0F;
         float indicatorX = clamp(pickerX + PICKER_WIDTH * saturation, pickerX + pickerRadius, pickerX + PICKER_WIDTH - pickerRadius);
@@ -126,8 +128,8 @@ public final class ItemPickerColorWindow extends AbstractWindow {
                 .round(pickerRadius)
                 .softness(1.0F)
                 .thickness(2.0F)
-                .outlineColor(applyGlobalAlpha(0xFFE8F3FF))
-                .color(applyGlobalAlpha(0xFFFFFFFF))
+                .outlineColor(applyGlobalAlpha(0xFFFFFFFF))
+                .color(selectedColor)
                 .build());
 
         float hueHalfWidth = HUE_INDICATOR_WIDTH / 2.0F;
@@ -216,12 +218,46 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         brightness = hsb[2];
     }
 
-    private static void renderHueStrip(MatrixStack matrices, float x, float y, float width, float height, int color) {
+    private void renderHueStrip(MatrixStack matrices, float x, float y, float width, float height, int outlineColor) {
+        float radius = height / 2.0F;
+        rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
+                .round(radius)
+                .softness(1.0F)
+                .thickness(1.0F)
+                .outlineColor(outlineColor)
+                .color(applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.PANEL_BG, 0xFF000000, 0.24F))))
+                .build());
+
+        float innerInset = 0.6F;
+        float innerX = x + innerInset;
+        float innerY = y + innerInset;
+        float innerWidth = Math.max(1.0F, width - innerInset * 2.0F);
+        float innerHeight = Math.max(1.0F, height - innerInset * 2.0F);
+        float capSize = innerHeight;
+        float gradientX = innerX + capSize / 2.0F;
+        float gradientWidth = Math.max(1.0F, innerWidth - capSize);
+
+        renderHorizontalHueTexture(matrices, gradientX, innerY, gradientWidth, innerHeight, applyGlobalAlpha(0xFFFFFFFF));
+
+        int edgeColor = applyGlobalAlpha(0xFFFF0000);
+        rectangle.render(ShapeProperties.create(matrices, innerX, innerY, capSize, innerHeight)
+                .round(innerHeight / 2.0F)
+                .thickness(0.0F)
+                .color(edgeColor)
+                .build());
+        rectangle.render(ShapeProperties.create(matrices, innerX + innerWidth - capSize, innerY, capSize, innerHeight)
+                .round(innerHeight / 2.0F)
+                .thickness(0.0F)
+                .color(edgeColor)
+                .build());
+    }
+
+    private static void renderHorizontalHueTexture(MatrixStack matrices, float x, float y, float width, float height, int color) {
         BatchedRectangle.flushIfBatching();
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, Identifier.of("textures/color_picker/hue.png"));
+        RenderSystem.setShaderTexture(0, HUE_TEXTURE);
         RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
 
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);

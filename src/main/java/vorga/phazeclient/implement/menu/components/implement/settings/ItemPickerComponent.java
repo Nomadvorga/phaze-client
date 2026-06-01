@@ -1,9 +1,14 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import vorga.phazeclient.api.feature.module.setting.implement.ItemPickerSetting;
+import vorga.phazeclient.api.system.animation.Animation;
+import vorga.phazeclient.api.system.animation.Direction;
+import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.system.font.FontRenderer;
 import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
@@ -30,6 +35,7 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
     private static final float TOGGLE_GAP = 9.0F;
 
     private final CheckComponent checkComponent = new CheckComponent();
+    private final Animation enabledAnimation = new DecelerateAnimation().setMs(190).setValue(1);
     private final ItemPickerSetting setting;
 
     public ItemPickerComponent(ItemPickerSetting setting) {
@@ -46,7 +52,9 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         float textOffset = animatedTextOffset(isModified);
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, ROW_HEIGHT);
         float hoverProgress = animatedCardHover(hovered);
-        float activeProgress = setting.isEnabled() ? 0.84F : 0.08F;
+        enabledAnimation.setDirection(setting.isEnabled() ? Direction.FORWARDS : Direction.BACKWARDS);
+        float enabledProgress = enabledAnimation.getOutputFloat();
+        float activeProgress = 0.08F + enabledProgress * 0.76F;
 
         height = (int) ROW_HEIGHT;
         renderSettingCard(context, activeProgress, hoverProgress);
@@ -65,8 +73,7 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
 
         ItemStack previewStack = setting.createPreviewStack();
         if (!previewStack.isEmpty()) {
-            context.drawItem(previewStack, Math.round(iconX), Math.round(iconY));
-            context.draw();
+            renderPreviewItem(context, previewStack, iconX, iconY);
         } else {
             String plus = "+";
             MsdfRenderer.renderText(
@@ -82,9 +89,12 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         }
 
         String title = trimToWidth(titleFont, setting.getRowTitle(), textWidth);
-        int titleColor = setting.isEnabled()
-                ? MenuStyle.mix(primaryText(), MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha), hoverProgress * 0.10F)
-                : MenuStyle.mix(mutedText(), primaryText(), 0.18F);
+        int baseTitleColor = MenuStyle.mix(mutedText(), primaryText(), 0.24F + enabledProgress * 0.52F);
+        int titleColor = MenuStyle.mix(
+                baseTitleColor,
+                MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha),
+                enabledProgress * 0.44F + hoverProgress * 0.08F
+        );
         titleFont.drawString(context.getMatrices(), title, textX, centeredTextY(titleFont, title, y, ROW_HEIGHT), titleColor);
 
         ((CheckComponent) checkComponent.position(toggleX, toggleY))
@@ -198,5 +208,23 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
                 .position(windowX, windowY)
                 .size(ItemPickerColorWindow.WINDOW_WIDTH, ItemPickerColorWindow.WINDOW_HEIGHT)
                 .draggable(false));
+    }
+
+    private void renderPreviewItem(DrawContext context, ItemStack stack, float iconX, float iconY) {
+        MatrixStack matrices = context.getMatrices();
+        float iconScale = 0.86F + currentAlpha * 0.14F;
+        float center = ICON_SIZE / 2.0F;
+
+        matrices.push();
+        matrices.translate(iconX + center, iconY + center, 0.0F);
+        matrices.scale(iconScale, iconScale, 1.0F);
+        matrices.translate(-center, -center, 0.0F);
+
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, currentAlpha);
+        context.drawItem(stack, 0, 0);
+        context.draw();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+
+        matrices.pop();
     }
 }

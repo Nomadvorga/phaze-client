@@ -18,11 +18,11 @@ public abstract class DrawContextItemRenderStateMixin {
 
     @Inject(method = "drawItem(Lnet/minecraft/item/ItemStack;II)V", at = @At("HEAD"))
     private void phaze$resetStateBeforeDrawItem(ItemStack stack, int x, int y, CallbackInfo ci) {
+        float alpha = RenderSystem.getShaderColor()[3];
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableBlend();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
     }
 }
-

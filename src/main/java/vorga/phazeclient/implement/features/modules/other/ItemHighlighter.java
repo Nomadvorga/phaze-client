@@ -4,6 +4,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.Setting;
@@ -14,8 +16,11 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.base.util.ServerUtil;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -54,6 +59,12 @@ public final class ItemHighlighter extends Module {
 
     private final List<ItemPickerSetting> entries = new ArrayList<>();
     private final List<ItemPickerSetting> customItems = new ArrayList<>();
+    private final Map<Item, List<CompiledEntry>> compiledEntriesByItem = new IdentityHashMap<>();
+    private final Map<ItemStack, Integer> preparedColorCache = new IdentityHashMap<>();
+    private long compiledEntriesTick = Long.MIN_VALUE;
+    private int compiledStateMask = Integer.MIN_VALUE;
+    private int compiledEntriesFingerprint = Integer.MIN_VALUE;
+    private int compiledAlpha = 0;
 
     private ItemHighlighter() {
         super("item_highlighter", "Item Highlighter", ModuleCategory.UTILITIES);
@@ -129,20 +140,50 @@ public final class ItemHighlighter extends Module {
         if (!isEnabled() || stack == null || stack.isEmpty()) {
             return 0;
         }
-        int op = opacity.getInt();
-        if (op <= 0) {
+        refreshCompiledEntries();
+        return resolveCompiledColor(stack);
+    }
+
+    public void beginRenderPass() {
+        refreshCompiledEntries();
+        preparedColorCache.clear();
+    }
+
+    public int colorForPreparedStack(ItemStack stack) {
+        if (!isEnabled() || stack == null || stack.isEmpty()) {
             return 0;
         }
-        int alpha = Math.max(0, Math.min(255, Math.round(op / 100.0F * 255.0F)));
+        Integer cached = preparedColorCache.get(stack);
+        if (cached != null) {
+            return cached;
+        }
 
-        for (ItemPickerSetting entry : entries) {
-            if (!entry.isVisible()) {
-                continue;
+        int color = resolveCompiledColor(stack);
+        preparedColorCache.put(stack, color);
+        return color;
+    }
+
+    private int resolveCompiledColor(ItemStack stack) {
+        if (compiledAlpha <= 0) {
+            return 0;
+        }
+
+        List<CompiledEntry> candidates = compiledEntriesByItem.get(stack.getItem());
+        if (candidates == null || candidates.isEmpty()) {
+            return 0;
+        }
+
+        String normalizedDisplay = null;
+        for (CompiledEntry entry : candidates) {
+            if (!entry.requiresDisplayName()) {
+                return (compiledAlpha << 24) | entry.rgb();
             }
-            if (!entry.matches(stack)) {
-                continue;
+            if (normalizedDisplay == null) {
+                normalizedDisplay = normalize(stack.getName().getString());
             }
-            return (alpha << 24) | (entry.getHighlightColor() & 0x00FFFFFF);
+            if (entry.matches(normalizedDisplay)) {
+                return (compiledAlpha << 24) | entry.rgb();
+            }
         }
 
         return 0;
@@ -190,8 +231,131 @@ public final class ItemHighlighter extends Module {
         for (ItemPickerSetting customItem : customItems) {
             if (!customItem.isActive()) {
                 customItem.setActive(true);
+                compiledEntriesTick = Long.MIN_VALUE;
                 break;
             }
+        }
+    }
+
+    private void refreshCompiledEntries() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        long tickKey = client != null && client.world != null
+                ? client.world.getTime()
+                : System.nanoTime() / 50_000_000L;
+        int contextMask = (isSingleplayerContext() ? 1 : 0)
+                | (ServerUtil.isFunTimeServer() ? 1 << 1 : 0)
+                | (ServerUtil.isHolyWorldServer() ? 1 << 2 : 0)
+                | (Math.max(0, opacity.getInt()) << 8)
+                | (isEnabled() ? 1 << 30 : 0);
+        int entriesFingerprint = computeEntriesFingerprint();
+
+        if (tickKey == compiledEntriesTick
+                && contextMask == compiledStateMask
+                && entriesFingerprint == compiledEntriesFingerprint) {
+            return;
+        }
+
+        compiledEntriesTick = tickKey;
+        compiledStateMask = contextMask;
+        compiledEntriesFingerprint = entriesFingerprint;
+        compiledEntriesByItem.clear();
+        compiledAlpha = 0;
+
+        int op = opacity.getInt();
+        if (!isEnabled() || op <= 0) {
+            return;
+        }
+
+        compiledAlpha = Math.max(0, Math.min(255, Math.round(op / 100.0F * 255.0F)));
+        for (ItemPickerSetting entry : entries) {
+            if (!entry.isVisible() || !entry.isActive() || !entry.isEnabled() || !entry.hasSelection()) {
+                continue;
+            }
+
+            Item item = resolveItem(entry.getItemId());
+            if (item == null || item == Items.AIR) {
+                continue;
+            }
+
+            compiledEntriesByItem
+                    .computeIfAbsent(item, ignored -> new ArrayList<>(2))
+                    .add(CompiledEntry.of(entry));
+        }
+    }
+
+    private int computeEntriesFingerprint() {
+        int hash = 1;
+        for (ItemPickerSetting entry : entries) {
+            hash = 31 * hash + (entry.isVisible() ? 1 : 0);
+            hash = 31 * hash + (entry.isActive() ? 1 : 0);
+            hash = 31 * hash + (entry.isEnabled() ? 1 : 0);
+            hash = 31 * hash + entry.getHighlightColor();
+            hash = 31 * hash + Objects.hashCode(entry.getItemId());
+            hash = 31 * hash + Objects.hashCode(entry.getMatchName());
+        }
+        return hash;
+    }
+
+    private static Item resolveItem(String itemId) {
+        if (itemId == null || itemId.isBlank()) {
+            return Items.AIR;
+        }
+        try {
+            return Registries.ITEM.get(Identifier.of(itemId));
+        } catch (Exception ignored) {
+            return Items.AIR;
+        }
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private record CompiledEntry(int rgb, String exactName, String[] partialTokens) {
+        private static CompiledEntry of(ItemPickerSetting setting) {
+            String matchName = setting.getMatchName();
+            if (matchName == null || matchName.isBlank()) {
+                return new CompiledEntry(setting.getHighlightColor() & 0x00FFFFFF, null, new String[0]);
+            }
+
+            if (!setting.isPartialMatch()) {
+                return new CompiledEntry(
+                        setting.getHighlightColor() & 0x00FFFFFF,
+                        normalize(matchName),
+                        new String[0]
+                );
+            }
+
+            List<String> tokens = new ArrayList<>();
+            for (String token : matchName.split("\\|")) {
+                String normalized = normalize(token);
+                if (!normalized.isBlank()) {
+                    tokens.add(normalized);
+                }
+            }
+
+            return new CompiledEntry(
+                    setting.getHighlightColor() & 0x00FFFFFF,
+                    null,
+                    tokens.toArray(new String[0])
+            );
+        }
+
+        private boolean requiresDisplayName() {
+            return exactName != null || partialTokens.length > 0;
+        }
+
+        private boolean matches(String normalizedDisplay) {
+            if (exactName != null) {
+                return exactName.equals(normalizedDisplay);
+            }
+
+            for (String token : partialTokens) {
+                if (normalizedDisplay.contains(token)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }
