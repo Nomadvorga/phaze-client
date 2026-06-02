@@ -255,7 +255,8 @@ public class PlayerListHudMixin {
 
         Text current = cir.getReturnValue();
         if (current != null) {
-            cir.setReturnValue(PhazeBadgeUtil.withBadgePadding(current));
+            int paddingSpaces = phaze$needsExtraNickHiderPadding(entry) ? 3 : 2;
+            cir.setReturnValue(PhazeBadgeUtil.withBadgePadding(current, paddingSpaces));
         }
     }
 
@@ -279,9 +280,21 @@ public class PlayerListHudMixin {
     ) {
         if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
             float size = PhazeBadgeUtil.guiBadgeSize(renderer);
-            PhazeBadgeUtil.drawGuiBadge(context, x - 1.0F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(color));
+            PhazeBadgeUtil.drawGuiBadge(context, x - 2.5F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(color));
         }
         return operation.call(context, renderer, text, x, y, color);
+    }
+
+    private static boolean phaze$needsExtraNickHiderPadding(PlayerListEntry entry) {
+        NickHider hider = NickHider.getInstance();
+        if (hider == null || !hider.isEnabled()) {
+            return false;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        return client != null
+                && client.player != null
+                && entry.getProfile().getId().equals(client.player.getUuid());
     }
 
 }
