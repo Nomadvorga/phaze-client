@@ -2,6 +2,7 @@ package vorga.phazeclient.implement.features.modules.client;
 
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
+import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.base.util.Lang;
@@ -51,6 +52,14 @@ public final class Theme extends Module {
             .range(0, 32)
             .setValue(16);
 
+    public final ColorSetting hudTextColor = new ColorSetting(
+            "Hud Text Color",
+            "Default color for HUD text that does not use its own dynamic tint"
+    )
+            .value(0xFFFFFFFF)
+            .noAlpha()
+            .popupRow();
+
     /**
      * UI language for the menu's user-facing strings (modals, kebab
      * popups, etc). English is the default; selecting Russian flips
@@ -65,7 +74,9 @@ public final class Theme extends Module {
 
     private Theme() {
         super("themes", "Themes", ModuleCategory.OTHER, false, false);
-        setup(menuTheme, blurRadius, language);
+        hudTextColor.setFullWidth(true);
+        language.setFullWidth(true);
+        setup(menuTheme, blurRadius, language, hudTextColor);
 
         // Push the initial selection through to the Lang table so
         // any code reading {@link Lang#t} during boot sees the
@@ -128,6 +139,10 @@ public final class Theme extends Module {
 
     public float getHudBlurRadiusMultiplier() {
         return 2.5f;
+    }
+
+    public int getHudTextColor() {
+        return 0xFF000000 | (hudTextColor.getColor() & 0x00FFFFFF);
     }
 
     @Override

@@ -5,7 +5,7 @@
   "id": "phaze",
   "version": "${version}",
   "name": "PhazeClient",
-  "description": "Minecraft Modification",
+  "description": "A custom Minecraft Fabric client with polished HUDs, utility modules, visual tools, and quality-of-life features.",
   "icon": "assets/phaze/phaze.png",
   "authors": [
     "Nomadvorga"

@@ -201,7 +201,12 @@ public final class ChatHelper extends Module {
 
     @Override
     public float getIconSize() {
-        return 21.0F;
+        return 28.35F;
+    }
+
+    @Override
+    public float getIconOffsetY() {
+        return -2.0F;
     }
 
     /**

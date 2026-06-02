@@ -17,6 +17,7 @@ import java.util.List;
 
 @Getter
 public class ColorWindow extends AbstractWindow {
+    private final ColorSetting setting;
     private final List<AbstractComponent> components = new ArrayList<>();
 
     private final HueComponent hueComponent;
@@ -26,6 +27,7 @@ public class ColorWindow extends AbstractWindow {
     private final ColorPresetComponent colorPresetComponent;
 
     public ColorWindow(ColorSetting setting) {
+        this.setting = setting;
 
         components.addAll(
                 Arrays.asList(
@@ -52,6 +54,9 @@ public class ColorWindow extends AbstractWindow {
                 .getWindowHeight() - 20;
 
         components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) {
+                return;
+            }
             component.globalAlpha = this.globalAlpha;
             component.render(context, mouseX, mouseY, delta);
         });
@@ -60,37 +65,67 @@ public class ColorWindow extends AbstractWindow {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         draggable(MathUtil.isHovered(mouseX, mouseY, x, y, width, 17));
-        components.forEach(component -> component.mouseClicked(mouseX, mouseY, button));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) {
+                return;
+            }
+            component.mouseClicked(mouseX, mouseY, button);
+        });
         return super.mouseClicked(mouseX, mouseY, button);
     }
     
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-        components.forEach(component -> component.mouseScrolled(mouseX, mouseY, amount));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) {
+                return;
+            }
+            component.mouseScrolled(mouseX, mouseY, amount);
+        });
         return super.mouseScrolled(mouseX, mouseY, amount);
     }
     
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        components.forEach(component -> component.mouseDragged(mouseX, mouseY, button, deltaX, deltaY));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) {
+                return;
+            }
+            component.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        });
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        components.forEach(component -> component.mouseReleased(mouseX, mouseY, button));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) {
+                return;
+            }
+            component.mouseReleased(mouseX, mouseY, button);
+        });
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
-        components.forEach(component -> component.charTyped(chr, modifiers));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) {
+                return;
+            }
+            component.charTyped(chr, modifiers);
+        });
         return super.charTyped(chr, modifiers);
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        components.forEach(component -> component.keyPressed(keyCode, scanCode, modifiers));
+        components.forEach(component -> {
+            if (setting.isNoAlpha() && component == alphaComponent) {
+                return;
+            }
+            component.keyPressed(keyCode, scanCode, modifiers);
+        });
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 }

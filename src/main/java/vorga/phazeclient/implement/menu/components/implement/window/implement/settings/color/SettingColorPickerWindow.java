@@ -1,4 +1,4 @@
-package vorga.phazeclient.implement.menu.components.implement.window.implement.settings.itempicker;
+package vorga.phazeclient.implement.menu.components.implement.window.implement.settings.color;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Getter;
@@ -13,12 +13,14 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
-import vorga.phazeclient.api.feature.module.setting.implement.ItemPickerSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
+import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.base.util.math.MathUtil;
+import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.window.AbstractWindow;
 
@@ -27,7 +29,7 @@ import java.awt.*;
 import static net.minecraft.util.math.MathHelper.clamp;
 
 @Getter
-public final class ItemPickerColorWindow extends AbstractWindow {
+public final class SettingColorPickerWindow extends AbstractWindow {
     private static final Identifier HUE_TEXTURE = Identifier.of("textures/color_picker/hue.png");
 
     public static final float WINDOW_WIDTH = 126.0F;
@@ -45,7 +47,8 @@ public final class ItemPickerColorWindow extends AbstractWindow {
     private static final float PICKER_INDICATOR_SIZE = 9.0F;
     private static final float HUE_INDICATOR_WIDTH = 4.0F;
     private static final float HUE_INDICATOR_EXTRA_HEIGHT = 4.0F;
-    private final ItemPickerSetting setting;
+
+    private final ColorSetting setting;
 
     private float hue;
     private float saturation;
@@ -54,9 +57,9 @@ public final class ItemPickerColorWindow extends AbstractWindow {
     private boolean pickerDragging;
     private boolean hueDragging;
 
-    public ItemPickerColorWindow(ItemPickerSetting setting) {
+    public SettingColorPickerWindow(ColorSetting setting) {
         this.setting = setting;
-        syncFromColor(setting.getHighlightColor());
+        syncFromColor(setting.getColor());
         getScaleAnimation().setMs(200);
     }
 
@@ -65,12 +68,13 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         MatrixStack matrices = context.getMatrices();
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
-        int outline = applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.BORDER, 0xFFFFFFFF, 0.08F)));
-        int panelFill = applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.PANEL_BG, 0xFF000000, 0.18F)));
-        int panelTop = panelFill;
-        int pickerOutline = applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.BORDER_LIGHT, 0xFFFFFFFF, 0.10F)));
-        int hueColor = applyGlobalAlpha(0xFF000000 | (Color.HSBtoRGB(hue, 1.0F, 1.0F) & 0x00FFFFFF));
-        int selectedColor = applyGlobalAlpha(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF));
+        renderWindowBlur(matrices);
+
+        int outline = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.BORDER, 0xFFFFFFFF, 0.08F), globalAlpha * 0.92F);
+        int panelFill = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, MenuStyle.PANEL_BG_SOFT, 0.16F), globalAlpha * 0.82F);
+        int pickerOutline = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.BORDER_LIGHT, 0xFFFFFFFF, 0.10F), globalAlpha * 0.96F);
+        int hueColor = MenuStyle.withAlpha(0xFF000000 | (Color.HSBtoRGB(hue, 1.0F, 1.0F) & 0x00FFFFFF), globalAlpha);
+        int selectedColor = MenuStyle.withAlpha(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF), globalAlpha);
 
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
                 .round(9.0F)
@@ -80,18 +84,12 @@ public final class ItemPickerColorWindow extends AbstractWindow {
                 .color(panelFill)
                 .build());
 
-        rectangle.render(ShapeProperties.create(matrices, x, y, width, HEADER_HEIGHT)
-                .round(9.0F)
-                .thickness(0.0F)
-                .color(panelTop)
-                .build());
-
-        String title = setting.getRowTitle();
+        String title = setting.getName();
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
                 title,
                 TITLE_SIZE,
-                applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
+                MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, globalAlpha),
                 positionMatrix,
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), title, TITLE_SIZE, x, width),
                 MenuStyle.centerMsdfTextY(TITLE_SIZE, y, HEADER_HEIGHT),
@@ -105,9 +103,9 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         float hueBarWidth = width - HUE_BAR_PADDING * 2.0F;
 
         int[] pickerColors = {
-                applyGlobalAlpha(0xFF000000),
-                applyGlobalAlpha(0xFFFFFFFF),
-                applyGlobalAlpha(0xFF000000),
+                MenuStyle.withAlpha(0xFF000000, globalAlpha),
+                MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha),
+                MenuStyle.withAlpha(0xFF000000, globalAlpha),
                 hueColor
         };
 
@@ -128,18 +126,18 @@ public final class ItemPickerColorWindow extends AbstractWindow {
                 .round(pickerRadius)
                 .softness(1.0F)
                 .thickness(2.0F)
-                .outlineColor(applyGlobalAlpha(0xFFFFFFFF))
+                .outlineColor(MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha))
                 .color(selectedColor)
                 .build());
 
         float hueHalfWidth = HUE_INDICATOR_WIDTH / 2.0F;
         float hueIndicatorX = clamp(hueBarX + hueBarWidth * hue, hueBarX + hueHalfWidth, hueBarX + hueBarWidth - hueHalfWidth);
         rectangle.render(ShapeProperties.create(matrices, hueIndicatorX - hueHalfWidth, hueBarY - HUE_INDICATOR_EXTRA_HEIGHT / 2.0F, HUE_INDICATOR_WIDTH, HUE_BAR_HEIGHT + HUE_INDICATOR_EXTRA_HEIGHT)
-                .round(2.0F)
+                .round(2.2F)
                 .softness(1.0F)
                 .thickness(1.4F)
-                .outlineColor(applyGlobalAlpha(0xFFFFFFFF))
-                .color(applyGlobalAlpha(0xFFCFE7FF))
+                .outlineColor(MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha))
+                .color(MenuStyle.withAlpha(0xFFCFE7FF, globalAlpha))
                 .build());
 
         if (pickerDragging) {
@@ -194,6 +192,20 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
+    private void renderWindowBlur(MatrixStack matrices) {
+        float blurRadius = Theme.getInstance().getMenuBlurRadius();
+        if (blurRadius <= 0.0F) {
+            return;
+        }
+
+        Blur.INSTANCE.renderGaussian(ShapeProperties.create(matrices, x, y, width, height)
+                .round(9.0F)
+                .softness(1.1F)
+                .quality(blurRadius * 2.0F)
+                .color(MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha))
+                .build());
+    }
+
     private void updatePicker(double mouseX, double mouseY) {
         saturation = clamp((float) ((mouseX - (x + PICKER_X)) / PICKER_WIDTH), 0.0F, 1.0F);
         brightness = clamp(1.0F - (float) ((mouseY - (y + PICKER_Y)) / PICKER_HEIGHT), 0.0F, 1.0F);
@@ -208,7 +220,7 @@ public final class ItemPickerColorWindow extends AbstractWindow {
     }
 
     private void commitColor() {
-        setting.setHighlightColor(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF));
+        setting.setColor(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF));
     }
 
     private void syncFromColor(int color) {
@@ -225,7 +237,7 @@ public final class ItemPickerColorWindow extends AbstractWindow {
                 .softness(1.0F)
                 .thickness(1.0F)
                 .outlineColor(outlineColor)
-                .color(applyGlobalAlpha(opaque(MenuStyle.mix(MenuStyle.PANEL_BG, 0xFF000000, 0.24F))))
+                .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, 0xFF000000, 0.24F), globalAlpha * 0.9F))
                 .build());
 
         float innerInset = 0.6F;
@@ -237,9 +249,9 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         float gradientX = innerX + capSize / 2.0F;
         float gradientWidth = Math.max(1.0F, innerWidth - capSize);
 
-        renderHorizontalHueTexture(matrices, gradientX, innerY, gradientWidth, innerHeight, applyGlobalAlpha(0xFFFFFFFF));
+        renderHorizontalHueTexture(matrices, gradientX, innerY, gradientWidth, innerHeight, MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha));
 
-        int edgeColor = applyGlobalAlpha(0xFFFF0000);
+        int edgeColor = MenuStyle.withAlpha(0xFFFF0000, globalAlpha);
         rectangle.render(ShapeProperties.create(matrices, innerX, innerY, capSize, innerHeight)
                 .round(2.1F)
                 .thickness(0.0F)
@@ -271,9 +283,5 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         buffer.vertex(matrix, x + width, y, 0.0F).texture(1.0F, 0.0F).color(color);
         BufferRenderer.drawWithGlobalProgram(buffer.end());
         RenderSystem.disableBlend();
-    }
-
-    private static int opaque(int color) {
-        return 0xFF000000 | (color & 0x00FFFFFF);
     }
 }

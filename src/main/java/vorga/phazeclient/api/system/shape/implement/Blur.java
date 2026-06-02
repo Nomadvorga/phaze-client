@@ -32,6 +32,7 @@ import java.util.List;
 
 public class Blur implements Shape {
     public static final Blur INSTANCE = new Blur();
+    private static final float HUD_GAUSSIAN_STRENGTH_MULTIPLIER = 2.5F;
     private static final ShaderProgramKey MASK_SHADER_KEY = new ShaderProgramKey(
             Identifier.of("phaze", "core/blur"),
             VertexFormats.POSITION_COLOR,
@@ -47,10 +48,7 @@ public class Blur implements Shape {
             VertexFormats.POSITION,
             Defines.EMPTY
     );
-
-    // Cached blur kernel weights for common blur radii (optimization)
-    private static final java.util.Map<Integer, float[]> BLUR_KERNEL_CACHE = new java.util.HashMap<>();
-    private static final int MAX_CACHED_KERNELS = 32;
+    private static final int MAX_PREPARED_HUD_GAUSSIAN_REGIONS = 32;
 
     private final DrawEngineImpl drawEngine = new DrawEngineImpl();
     private Framebuffer input;
@@ -90,6 +88,8 @@ public class Blur implements Shape {
     private int lastDualKawaseWidth = -1;
     private int lastDualKawaseHeight = -1;
     private boolean dualKawasePrepared = false;
+    private final long[] preparedHudGaussianRegionKeys = new long[MAX_PREPARED_HUD_GAUSSIAN_REGIONS];
+    private int preparedHudGaussianRegionCount = 0;
 
     public void beginCachedFrame() {
         cachedFramePrepared = false;
@@ -97,6 +97,7 @@ public class Blur implements Shape {
         hudBatchStateApplied = false;
         hudBatchMaskShader = null;
         dualKawasePrepared = false;
+        preparedHudGaussianRegionCount = 0;
     }
 
     /**
@@ -440,18 +441,24 @@ public class Blur implements Shape {
         Theme theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
+        float hudGaussianRadius = blurRadius * HUD_GAUSSIAN_STRENGTH_MULTIPLIER;
         int effectiveBlurMode = blurMode;
         float effectiveBlurRadius = blurRadius;
         int sourceTexture = input.getColorAttachment();
 
-        // Dual Kawase pipeline for HUD blur mode: x2/x4 downsample + upsample.
-        if (blurMode == 2 && blurRadius > 0.10f) {
-            if (applyDualKawaseBlur(client, blurRadius)) {
+        // Optimized HUD Gaussian: blur the captured frame once, then mask
+        // the already-blurred texture into the widget. This keeps the
+        // visual response close to a real Gaussian blur while avoiding the
+        // harsh step changes the old mixed pipeline produced.
+        if (blurMode == 2 && blurRadius > 0.0f) {
+            BlurRegion blurRegion = computeHudGaussianRegion(client, shape, hudGaussianRadius);
+            if (applyOptimizedHudGaussianBlur(client, hudGaussianRadius, blurRegion)) {
                 sourceTexture = pong.getColorAttachment();
-                // Dual Kawase already produced the blurred source texture.
-                // Disable secondary in-mask blur to avoid double cost.
                 effectiveBlurMode = 0;
                 effectiveBlurRadius = 0.0f;
+            } else {
+                effectiveBlurMode = 0;
+                effectiveBlurRadius = hudGaussianRadius;
             }
         }
 
@@ -594,6 +601,7 @@ public class Blur implements Shape {
             GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, HudBuffer.activeCaptureTarget);
         }
         dualKawasePrepared = false;
+        preparedHudGaussianRegionCount = 0;
     }
 
     private boolean applyDualKawaseBlur(MinecraftClient client, float blurRadius) {
@@ -619,8 +627,8 @@ public class Blur implements Shape {
         // Keep the HUD slider visually progressive: very low radii should
         // start almost clean instead of jumping straight into a strong blur.
         float normalized = MathHelper.clamp(quantizedRadius / 8.0f, 0.0f, 1.0f);
-        float downOffset1 = 0.02f + quantizedRadius * 0.08f;
-        float downOffset2 = 0.04f + quantizedRadius * 0.10f;
+        float downOffset1 = quantizedRadius * 0.08f;
+        float downOffset2 = quantizedRadius * 0.10f;
         runDualKawasePass(shader, input, halfA, downOffset1, true);
         runDualKawasePass(shader, halfA, quarterA, downOffset2, true);
 
@@ -630,7 +638,7 @@ public class Blur implements Shape {
         Framebuffer src = quarterA;
         Framebuffer dst = quarterB;
         for (int i = 0; i < passes; i++) {
-            float offset = 0.08f + quantizedRadius * 0.18f + i * (0.10f + normalized * 0.12f);
+            float offset = quantizedRadius * (0.18f + i * (0.02f + normalized * 0.015f));
             runDualKawasePass(shader, src, dst, offset, true);
             Framebuffer tmp = src;
             src = dst;
@@ -638,8 +646,8 @@ public class Blur implements Shape {
         }
 
         // Upsample x4 -> x2 -> x1.
-        float upOffset1 = 0.05f + quantizedRadius * 0.09f;
-        float upOffset2 = 0.03f + quantizedRadius * 0.05f;
+        float upOffset1 = quantizedRadius * 0.09f;
+        float upOffset2 = quantizedRadius * 0.05f;
         runDualKawasePass(shader, src, halfB, upOffset1, false);
         runDualKawasePass(shader, halfB, pong, upOffset2, false);
 
@@ -648,6 +656,35 @@ public class Blur implements Shape {
         lastDualKawaseRadius = quantizedRadius;
         lastDualKawaseWidth = w;
         lastDualKawaseHeight = h;
+        return true;
+    }
+
+    private boolean applyOptimizedHudGaussianBlur(MinecraftClient client, float blurRadius, BlurRegion region) {
+        if (input == null || ping == null || pong == null || region == null) {
+            return false;
+        }
+
+        float cachedRadius = MathHelper.clamp(blurRadius, 0.0f, 32.0f);
+        long regionKey = computeHudGaussianRegionKey(region, cachedRadius);
+        if (hasPreparedHudGaussianRegion(regionKey)) {
+            return true;
+        }
+
+        ShaderProgram shader = RenderSystem.setShader(GAUSSIAN_SHADER_KEY);
+        if (shader == null) {
+            return false;
+        }
+
+        // Full-resolution separable Gaussian cached once per blur-state.
+        // The previous half-resolution prepass softened the cost, but it
+        // also visibly reduced backdrop quality on HUDs. We keep the same
+        // cached once-per-state flow, just blur directly from the captured
+        // full-resolution frame.
+        runGaussianPass(shader, input, ping, 1.0F, 0.0F, cachedRadius, region);
+        runGaussianPass(shader, ping, pong, 0.0F, 1.0F, cachedRadius, region);
+
+        bindMainDrawTarget(client);
+        rememberPreparedHudGaussianRegion(regionKey);
         return true;
     }
 
@@ -802,13 +839,13 @@ public class Blur implements Shape {
             return false;
         }
 
-        runGaussianPass(shader, input, ping, 1.0F, 0.0F, blurRadius);
-        runGaussianPass(shader, ping, pong, 0.0F, 1.0F, blurRadius);
+        runGaussianPass(shader, input, ping, 1.0F, 0.0F, blurRadius, null);
+        runGaussianPass(shader, ping, pong, 0.0F, 1.0F, blurRadius, null);
         bindMainDrawTarget(client);
         return true;
     }
 
-    private void runGaussianPass(ShaderProgram shader, Framebuffer source, Framebuffer target, float directionX, float directionY, float blurRadius) {
+    private void runGaussianPass(ShaderProgram shader, Framebuffer source, Framebuffer target, float directionX, float directionY, float blurRadius, BlurRegion region) {
         target.beginWrite(false);
         RenderSystem.viewport(0, 0, target.textureWidth, target.textureHeight);
         RenderSystem.disableBlend();
@@ -824,46 +861,77 @@ public class Blur implements Shape {
         int support = MathHelper.clamp(Math.round(blurRadius), 1, 64);
         float sigma = Math.max(1.0F, blurRadius * 0.55F);
 
-        // Use cached kernel weights if available (optimization)
-        int cacheKey = (int)(blurRadius * 100);
-        float[] cachedWeights = getCachedBlurKernel(cacheKey, support, sigma);
-
         shader.getUniformOrDefault("Direction").set(directionX, directionY);
         shader.getUniformOrDefault("TexelSize").set(1.0F / source.textureWidth, 1.0F / source.textureHeight);
         shader.getUniformOrDefault("Support").set(support);
         shader.getUniformOrDefault("Sigma").set(sigma);
         shader.getUniformOrDefault("Brightness").set(1.0F);
 
+        if (region != null) {
+            RenderSystem.enableScissor(region.x, region.y, region.width, region.height);
+        }
         ShaderHelper.drawFullScreenQuad();
+        if (region != null) {
+            RenderSystem.disableScissor();
+        }
         // Ensure we finish writing to the target FBO for this pass
         target.endWrite();
     }
 
-    private static float[] getCachedBlurKernel(int cacheKey, int support, float sigma) {
-        // Check cache first
-        if (BLUR_KERNEL_CACHE.containsKey(cacheKey)) {
-            return BLUR_KERNEL_CACHE.get(cacheKey);
+    private BlurRegion computeHudGaussianRegion(MinecraftClient client, ShapeProperties shape, float blurRadius) {
+        if (client == null || client.getWindow() == null || shape == null || shape.getMatrix() == null) {
+            return null;
         }
 
-        // Compute Gaussian weights
-        float[] weights = new float[support];
-        float sum = 0.0f;
-        for (int i = 0; i < support; i++) {
-            float x = i / sigma;
-            weights[i] = (float) Math.exp(-0.5 * x * x);
-            sum += weights[i] * (i == 0 ? 1 : 2);
-        }
-        // Normalize
-        for (int i = 0; i < support; i++) {
-            weights[i] /= sum;
+        float scale = (float) client.getWindow().getScaleFactor();
+        Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
+        float softness = Math.max(0.001F, shape.getSoftness());
+        Vector3f pos = matrix4f.transformPosition(shape.getX() - softness / 2.0F, shape.getY() - softness / 2.0F, 0.0F, new Vector3f()).mul(scale);
+        Vector3f size = matrix4f.getScale(new Vector3f()).mul(scale);
+        float width = (shape.getWidth() + softness) * size.x;
+        float height = (shape.getHeight() + softness) * size.y;
+        int margin = Math.max(2, MathHelper.ceil(blurRadius) + 2);
+
+        int framebufferWidth = Math.max(1, client.getWindow().getFramebufferWidth());
+        int framebufferHeight = Math.max(1, client.getWindow().getFramebufferHeight());
+        int left = MathHelper.clamp(MathHelper.floor(pos.x) - margin, 0, framebufferWidth);
+        int top = MathHelper.clamp(MathHelper.floor(pos.y) - margin, 0, framebufferHeight);
+        int right = MathHelper.clamp(MathHelper.ceil(pos.x + width) + margin, 0, framebufferWidth);
+        int bottom = MathHelper.clamp(MathHelper.ceil(pos.y + height) + margin, 0, framebufferHeight);
+
+        if (right <= left || bottom <= top) {
+            return null;
         }
 
-        // Cache it (with size limit)
-        if (BLUR_KERNEL_CACHE.size() < MAX_CACHED_KERNELS) {
-            BLUR_KERNEL_CACHE.put(cacheKey, weights);
-        }
+        return new BlurRegion(left, framebufferHeight - bottom, right - left, bottom - top);
+    }
 
-        return weights;
+    private boolean hasPreparedHudGaussianRegion(long key) {
+        for (int i = 0; i < preparedHudGaussianRegionCount; i++) {
+            if (preparedHudGaussianRegionKeys[i] == key) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void rememberPreparedHudGaussianRegion(long key) {
+        if (preparedHudGaussianRegionCount >= preparedHudGaussianRegionKeys.length) {
+            return;
+        }
+        preparedHudGaussianRegionKeys[preparedHudGaussianRegionCount++] = key;
+    }
+
+    private long computeHudGaussianRegionKey(BlurRegion region, float blurRadius) {
+        long key = Float.floatToRawIntBits(blurRadius);
+        key = key * 31L + region.x;
+        key = key * 31L + region.y;
+        key = key * 31L + region.width;
+        key = key * 31L + region.height;
+        return key;
+    }
+
+    private record BlurRegion(int x, int y, int width, int height) {
     }
 
     private void bindMainDrawTarget(MinecraftClient client) {

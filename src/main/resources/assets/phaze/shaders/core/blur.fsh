@@ -19,7 +19,7 @@ vec3 sampleBlurCurrent() {
     vec2 texCoord = gl_FragCoord.xy / texSize;
     vec2 texel = 1.0 / texSize;
 
-    if (BlurRadius <= 0.10) {
+    if (BlurRadius <= 0.001) {
         return texture(Sampler0, texCoord).rgb;
     }
 
@@ -31,8 +31,9 @@ vec3 sampleBlurCurrent() {
         vec2(0.000000, 1.000000)
     );
 
-    float sigma = max(1.0, BlurRadius * 0.55);
-    int pairCount = int(clamp(floor(BlurRadius), 1.0, 16.0));
+    float sigma = max(0.35, 0.35 + BlurRadius * 0.55);
+    float pairSupport = clamp(BlurRadius, 0.0, 16.0);
+    int pairCount = int(clamp(ceil(pairSupport), 1.0, 16.0));
     vec3 acc = texture(Sampler0, texCoord).rgb;
     float weightSum = 1.0;
 
@@ -44,7 +45,12 @@ vec3 sampleBlurCurrent() {
             }
 
             float fi = float(i);
+            float tapFactor = clamp(pairSupport - float(i - 1), 0.0, 1.0);
+            if (tapFactor <= 0.0) {
+                continue;
+            }
             float weight = exp(-0.5 * (fi * fi) / (sigma * sigma));
+            weight *= tapFactor;
             vec2 offset = dir * fi;
             vec3 samplePair = texture(Sampler0, texCoord + offset).rgb
                             + texture(Sampler0, texCoord - offset).rgb;
@@ -224,5 +230,4 @@ void main() {
 
     fragColor = color;
 }
-
 

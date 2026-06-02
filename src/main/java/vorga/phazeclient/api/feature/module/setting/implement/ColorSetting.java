@@ -36,6 +36,8 @@ public class ColorSetting extends Setting {
      *  irrelevant (e.g. fog colour, where the engine takes a flat
      *  RGB and writes alpha itself). Set via {@link #noAlpha()}. */
     private boolean noAlpha = false;
+    /** Render this setting as a compact row that opens a popup picker. */
+    private boolean popupRow = false;
 
     public ColorSetting(String name, String description) {
         super(name, description);
@@ -69,6 +71,11 @@ public class ColorSetting extends Setting {
     public ColorSetting noAlpha() {
         this.noAlpha = true;
         this.alpha = 1.0F;
+        return this;
+    }
+
+    public ColorSetting popupRow() {
+        this.popupRow = true;
         return this;
     }
 

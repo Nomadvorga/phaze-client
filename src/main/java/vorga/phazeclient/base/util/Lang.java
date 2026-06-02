@@ -125,6 +125,10 @@ public final class Lang {
         en("kebab.share", "Share");
         en("kebab.rename", "Rename");
         en("kebab.delete", "Delete");
+        en("trap_timer.preview_item", "trapka");
+        en("trap_timer.prefix", "Time until ");
+        en("trap_timer.middle", " ends ");
+        en("trap_timer.suffix", " seconds");
 
         // Sidebar / general
         en("sidebar.new_config", "NEW CONFIG");
@@ -172,6 +176,10 @@ public final class Lang {
         ru("kebab.share", "Поделиться");
         ru("kebab.rename", "Переименовать");
         ru("kebab.delete", "Удалить");
+        ru("trap_timer.preview_item", "трапки");
+        ru("trap_timer.prefix", "Время до окончания ");
+        ru("trap_timer.middle", " ");
+        ru("trap_timer.suffix", " секунд");
 
         ru("sidebar.new_config", "НОВЫЙ КОНФИГ");
         ru("sidebar.edit_hud", "РЕДАКТОР HUD");
@@ -1021,9 +1029,13 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Trajectory", "Траектория");
         SETTING_TRANSLATIONS.put("Translate", "Перевести");
         SETTING_TRANSLATIONS.put("Translator", "Переводчик");
+        SETTING_TRANSLATIONS.put("Trap", "Трапка");
         SETTING_TRANSLATIONS.put("Trap Name", "Имя ловушки");
         SETTING_TRANSLATIONS.put("Trap Type", "Тип ловушки");
         SETTING_TRANSLATIONS.put("Trap Name", "Имя «Трапка»");
+        SETTING_TRANSLATIONS.put("Shows a draggable text timer for the FunTime trapka / dragon trapka cooldown", "Показывает перетаскиваемый текстовый таймер кулдауна FunTime трапки / драконьей трапки");
+        SETTING_TRANSLATIONS.put("Which trapka variant the timer measures (regular = 15s, dragon = 20s)", "Какой вариант трапки измерять: обычная 15с или драконья 20с");
+        SETTING_TRANSLATIONS.put("Substring matched against the held item's display name when deciding to start the timer", "Подстрока, которая ищется в названии предмета в руке для запуска таймера");
         SETTING_TRANSLATIONS.put("Trigger", "Триггер");
         SETTING_TRANSLATIONS.put("Tuning", "Настройка");
         SETTING_TRANSLATIONS.put("Tweaks for chat and screenshots: collapse repeated messages, copy F2 screenshots to clipboard", "Твики чата и скриншотов: сворачивание повторов, копирование F2 в буфер");
@@ -1133,6 +1145,8 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Totem of Undying", "Тотем бессмертия");
         SETTING_TRANSLATIONS.put("Trap", "Трапка");
         SETTING_TRANSLATIONS.put("Translation Options", "Параметры перевода");
+        SETTING_TRANSLATIONS.put("Hud Text Color", "Цвет текста HUD");
+        SETTING_TRANSLATIONS.put("Default color for HUD text that does not use its own dynamic tint", "Цвет текста HUD по умолчанию для элементов без собственной динамической окраски");
 
         // Main-menu / configs UI strings that are not module or
         // category names and should therefore localize to Russian.

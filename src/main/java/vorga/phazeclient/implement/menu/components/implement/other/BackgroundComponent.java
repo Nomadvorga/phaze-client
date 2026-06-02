@@ -1,12 +1,22 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ChatScreen;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
+import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -42,6 +52,7 @@ public class BackgroundComponent extends AbstractComponent {
     private static final float CONFIG_ROW_HEIGHT = 17.5F;
     private static final float CONFIG_ROW_GAP = 1.0F;
     private static final float CONFIG_DELETE_WIDTH = 19.5F;
+    private static final float CONFIG_DELETE_ICON_SIZE = 5.4F;
     private static final float CONFIG_TEXT_PADDING = 6.0F;
     private static final float CONFIG_LIST_PADDING = 1.5F;
     private static final float FOOTER_BUTTON_HEIGHT = 15.0F;
@@ -302,15 +313,12 @@ public class BackgroundComponent extends AbstractComponent {
             // by the next save, and deleting the active config
             // auto-switches to the next available config.
             {
-                float iconSize = 6.5F;
+                float iconSize = CONFIG_DELETE_ICON_SIZE;
                 float deleteX = deleteSectionX(rowX, rowWidth) + (CONFIG_DELETE_WIDTH - iconSize) / 2.0F;
                 float iconY = rowY + (CONFIG_ROW_HEIGHT - iconSize) / 2.0F;
                 int deleteColor = MenuStyle.mix(MenuStyle.TEXT_MUTED, 0xFFFFFFFF, deleteHoverProgress);
 
-                image.setTexture("textures/cross.png")
-                        .render(ShapeProperties.create(matrix, deleteX, iconY, iconSize, iconSize)
-                                .color(applyGlobalAlpha(deleteColor))
-                                .build());
+                renderConfigCross(matrix, deleteX, iconY, iconSize, applyGlobalAlpha(deleteColor));
             }
 
             // Render editing field if this config is being edited
@@ -584,7 +592,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private boolean isDeleteHovered(double mouseX, double mouseY, float rowY) {
-        float iconSize = 6.5F;
+        float iconSize = CONFIG_DELETE_ICON_SIZE;
         float deleteX = deleteSectionX(configRowX(), configRowWidth()) + (CONFIG_DELETE_WIDTH - iconSize) / 2.0F;
         float deleteY = rowY + (CONFIG_ROW_HEIGHT - iconSize) / 2.0F;
         return MathUtil.isHovered(mouseX, mouseY, deleteX, deleteY, iconSize, iconSize);
@@ -738,13 +746,32 @@ public class BackgroundComponent extends AbstractComponent {
         matrix.translate(chipCx, chipCy, 0.0F);
         matrix.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(45.0F));
         matrix.translate(-chipCx, -chipCy, 0.0F);
-        image.setTexture("textures/cross.png")
+        image.setTexture("phaze:textures/menu/cross.png")
                 .render(ShapeProperties.create(matrix,
                         chipCx - iconSize * 0.5F, chipCy - iconSize * 0.5F,
                         iconSize, iconSize)
                         .color(applyGlobalAlpha(iconColor))
                         .build());
         matrix.pop();
+    }
+
+    private void renderConfigCross(MatrixStack matrix, float x, float y, float size, int color) {
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShaderTexture(0, Identifier.of("phaze", "textures/menu/cross.png"));
+        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+
+        Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+        buffer.vertex(positionMatrix, x, y, 0.0F).texture(0.0F, 0.0F).color(color);
+        buffer.vertex(positionMatrix, x, y + size, 0.0F).texture(0.0F, 1.0F).color(color);
+        buffer.vertex(positionMatrix, x + size, y + size, 0.0F).texture(1.0F, 1.0F).color(color);
+        buffer.vertex(positionMatrix, x + size, y, 0.0F).texture(1.0F, 0.0F).color(color);
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        RenderSystem.disableBlend();
     }
 
     private boolean isSettingsTabActive() {

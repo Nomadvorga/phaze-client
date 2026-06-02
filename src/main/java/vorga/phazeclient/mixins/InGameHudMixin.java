@@ -97,6 +97,7 @@ import vorga.phazeclient.implement.features.modules.other.MaceIndicator;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
 import vorga.phazeclient.implement.features.modules.other.NoRender;
 import vorga.phazeclient.implement.features.modules.other.Saturation;
+import vorga.phazeclient.implement.features.modules.other.TrapTimer;
 import vorga.phazeclient.implement.features.modules.hud.InventoryHud;
 import vorga.phazeclient.implement.features.modules.hud.PlayerModelHud;
 import vorga.phazeclient.implement.features.modules.other.StreamerMode;
@@ -163,7 +164,9 @@ public class InGameHudMixin {
     private static final int HUD_BATTLE_INFO = 21;
     private static final int HUD_CONSUMABLE = 22;
     private static final int HUD_TPS = 23;
-    private static final int RECT_HUD_COUNT = 24;
+    private static final int HUD_PLAYER_MODEL = 24;
+    private static final int HUD_TRAP_TIMER = 25;
+    private static final int RECT_HUD_COUNT = 26;
     private static final int HUD_ARMOR_BLUR_SLOT = 15;
     private static final int KEYSTROKE_W = 0;
     private static final int KEYSTROKE_A = 1;
@@ -603,6 +606,17 @@ public class InGameHudMixin {
         renderBufferedHud(context, ServerAddressHud.getInstance(), chatEditing, () ->
                 renderServerAddressHud(context, client, ServerAddressHud.getInstance(), serverAddressTextWrapped, HUD_SERVER_ADDRESS, chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(ServerAddressHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        final TrapTimer trapTimer = TrapTimer.getInstance();
+        renderBufferedHud(context, trapTimer, chatEditing, () -> {
+            Text trapText = trapTimer.getDisplayText(chatEditing);
+            if (trapText == null || trapText.getString().isEmpty()) {
+                return;
+            }
+            renderTrapTimerHud(context, client, trapTimer, trapText, HUD_TRAP_TIMER,
+                    chatEditing, mouseX, mouseY, mouseDown, getHudDelta(trapTimer, chatEditing, deltaSeconds),
+                    inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY);
+        });
 
         String speedText = getCachedHudText(MovementSpeedHud.getInstance(), HUD_MOVEMENT_SPEED, chatEditing, () -> {
             if (client.player == null) return "0.00 m/s";
@@ -1047,10 +1061,13 @@ public class InGameHudMixin {
         context.getMatrices().pop();
 
         // Use custom color for MemoryHud if Color Based On Usage is enabled
-        int textColor = HUD_TEXT_COLOR;
+        int textColor = resolveHudTextColor();
         if (module instanceof MemoryHud) {
             MemoryHud memoryHud = (MemoryHud) module;
-            textColor = memoryHud.getMemoryColor();
+            int memoryColor = memoryHud.getMemoryColor();
+            if (memoryColor != HUD_TEXT_COLOR) {
+                textColor = memoryColor;
+            }
         } else if (module instanceof HealthIndicator) {
             // HealthIndicator picks its colour from the victim's current
             // HP (matching the original mod's red/gold/yellow/green/dark-
@@ -1058,11 +1075,17 @@ public class InGameHudMixin {
             // sentinel HUD_TEXT_COLOR when Color By HP is off OR when no
             // target is tracked, so this branch transparently degrades
             // to the inherited default in those cases.
-            textColor = ((HealthIndicator) module).getCurrentHpColor();
+            int healthColor = ((HealthIndicator) module).getCurrentHpColor();
+            if (healthColor != HUD_TEXT_COLOR) {
+                textColor = healthColor;
+            }
         } else if (module instanceof TpsHud) {
             // TPS HUD: green / yellow / red tier color when the user
             // has Color By TPS on. Off = white sentinel.
-            textColor = ((TpsHud) module).getColor();
+            int tpsColor = ((TpsHud) module).getColor();
+            if (tpsColor != HUD_TEXT_COLOR) {
+                textColor = tpsColor;
+            }
         }
 
         renderScaledHudTextColored(context, client, text, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
@@ -1365,6 +1388,9 @@ public class InGameHudMixin {
                     ? Math.max(0, stackMax - stackForColor.getDamage())
                     : stackMax;
             int textColor = module.colorForDurability(stackRemaining, stackMax);
+            if (textColor == HUD_TEXT_COLOR) {
+                textColor = resolveHudTextColor();
+            }
 
             renderScaledHudTextColored(context, client, durabilityText, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
         }
@@ -1736,7 +1762,7 @@ public class InGameHudMixin {
             float textY = textOffsetY + i * lineHeight;
             if (module.showBiome.isValue() && line.startsWith("Biome: ")) {
                 String label = "Biome: ";
-                renderScaledHudTextColored(context, client, label, x, y, paddingX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), 0xFFFFFF);
+                renderScaledHudTextColored(context, client, label, x, y, paddingX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), resolveHudTextColor());
                 float labelWidth = getHudTextWidth(client, label, HUD_TEXT_SIZE);
                 renderScaledHudTextColored(context, client, biomeName, x, y, paddingX + labelWidth, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), coordinatesBiomeColorCache);
             } else {
@@ -1862,7 +1888,7 @@ public class InGameHudMixin {
                 else if (ping < 300) pingColor = 0xFFFFAA00;
                 else pingColor = 0xFFFF5555;
             } else {
-                pingColor = 0xFFFFFF;
+                pingColor = resolveHudTextColor();
             }
         }
         // In reversed layout the value segment leads the line, so it
@@ -1894,6 +1920,45 @@ public class InGameHudMixin {
         float baseWidth = Math.max(48.0f, getHudTextWidth(client, text, HUD_TEXT_SIZE) + 14.0f);
         renderRectHud(context, client, module, text, hudIndex, chatEditing, mouseX, mouseY, mouseDown,
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, BASE_HEIGHT);
+    }
+
+    private void renderTrapTimerHud(
+            DrawContext context,
+            MinecraftClient client,
+            TrapTimer module,
+            Text text,
+            int hudIndex,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        float baseWidth = Math.max(48.0F, client.textRenderer.getWidth(text) + 14.0F);
+        module.ensureDefaultHudPosition(screenWidth, screenHeight, baseWidth, BASE_HEIGHT);
+        float x = module.getHudX();
+        float y = module.getHudY();
+        float scale = module.getHudScale();
+
+        renderRectHud(context, client, module, "", hudIndex, chatEditing, mouseX, mouseY, mouseDown,
+                deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, BASE_HEIGHT);
+
+        context.getMatrices().push();
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0F);
+        context.getMatrices().push();
+        context.getMatrices().translate(x, y, HUD_RENDER_Z + 25.0F);
+        context.getMatrices().scale(scale, scale, 1.0F);
+        float textX = 7.0F;
+        float textY = (BASE_HEIGHT - 9.0F) * 0.5F;
+        context.drawText(client.textRenderer, text, Math.round(textX), Math.round(textY), resolveHudTextColor(), module.textShadow.isValue());
+        context.draw();
+        context.getMatrices().pop();
+        context.getMatrices().pop();
     }
 
     private void renderSessionTimeHud(
@@ -1930,7 +1995,7 @@ public class InGameHudMixin {
         context.getMatrices().scale(scale, scale, 1.0f);
         float textX = (baseWidth - textWidth) * 0.5f;
         float textY = (baseHeight - 9.0f) * 0.5f;
-        context.drawText(client.textRenderer, text, Math.round(textX), Math.round(textY), 0xFFFFFF, module.textShadow.isValue());
+        context.drawText(client.textRenderer, text, Math.round(textX), Math.round(textY), resolveHudTextColor(), module.textShadow.isValue());
         context.draw();
         context.getMatrices().pop();
         context.getMatrices().pop();
@@ -2545,7 +2610,7 @@ public class InGameHudMixin {
             // checkbox. When sampling the empty list (chat-edit
             // preview) we have no live effect to query, so fall
             // back to plain white.
-            int nameColor = 0xFFFFFFFF;
+            int nameColor = resolveHudTextColor();
             if (module.colorByType.isValue() && !sample && i < potionEffectsCache.size()) {
                 StatusEffectInstance effect = potionEffectsCache.get(i);
                 StatusEffectCategory cat = effect.getEffectType().value().getCategory();
@@ -2896,12 +2961,12 @@ public class InGameHudMixin {
             boolean shadow
     ) {
         float textWidth = getHudTextWidth(client, label, HUD_TEXT_SIZE);
-        int color = progress > 0.45f ? 0x111111 : 0xFFFFFF;
+        int color = progress > 0.45f ? 0x111111 : resolveHudTextColor();
         renderScaledHudTextColored(context, client, label, hudX, hudY, keyX + (keyWidth - textWidth) * 0.5f, keyY, HUD_TEXT_SIZE, scale, shadow, color);
     }
 
     private static void renderSpacebarLabel(DrawContext context, float hudX, float hudY, float keyX, float keyY, float keyWidth, float keyHeight, float progress, float scale) {
-        int color = progress > 0.45f ? 0x111111 : 0xFFFFFF;
+        int color = progress > 0.45f ? 0x111111 : resolveHudTextColor();
         int lineColor = withAlpha(color, 200);
         float lineWidth = 14.0f;
         float lineThickness = 1.0f;
@@ -2975,7 +3040,15 @@ public class InGameHudMixin {
     }
 
     private static void renderHudTextWithAlpha(DrawContext context, MinecraftClient client, String text, float x, float y, float textSize, boolean shadow, int alpha) {
-        renderHudTextColoredWithAlpha(context, client, text, x, y, textSize, shadow, 0x00FFFFFF, alpha);
+        renderHudTextColoredWithAlpha(context, client, text, x, y, textSize, shadow, resolveHudTextColor() & 0x00FFFFFF, alpha);
+    }
+
+    private static int resolveHudTextColor() {
+        Theme theme = Theme.getInstance();
+        if (theme == null) {
+            return HUD_TEXT_COLOR;
+        }
+        return theme.getHudTextColor();
     }
 
     private static void renderHudTextColoredWithAlpha(DrawContext context, MinecraftClient client, String text, float x, float y, float textSize, boolean shadow, int rgbColor, int alpha) {
@@ -2985,15 +3058,17 @@ public class InGameHudMixin {
 
     private static float getOptimizedHudBlurQuality(float normalizedBlurRadius) {
         float radius = Math.max(0.0f, normalizedBlurRadius);
-        if (radius < 0.10f) {
+        if (radius <= 0.001f) {
             return 0.0f;
         }
 
-        // Keep the HUD blur tied to the user slider value so every
-        // integer step remains visually meaningful and predictable.
+        // Direct, continuous mapping for HUD blur. The old curve
+        // compressed almost the entire slider into a tiny effective
+        // blur radius, so the first non-zero values looked like the
+        // blur instantly "turned on" and then barely changed.
         float t = MathHelper.clamp(radius / 32.0f, 0.0f, 1.0f);
-        float strength = 0.42f + 0.33f * t;
-        return radius * strength * Theme.getInstance().getHudBlurQualityMultiplier() * (1.0f / 3.0f);
+        float strength = MathHelper.lerp(t, 0.14f, 0.34f);
+        return radius * strength;
     }
 
     private static long makeHudBlurStateKey(float normalizedRadius, float safeScale, float x, float y, float width, float height) {
@@ -3135,7 +3210,9 @@ public class InGameHudMixin {
                 || MovementSpeedHud.getInstance().isEnabled()
                 || WailaHud.getInstance().isEnabled()
                 || HealthIndicator.getInstance().isEnabled()
-                || vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance().isEnabled();
+                || TrapTimer.getInstance().isEnabled()
+                || vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance().isEnabled()
+                || PlayerModelHud.getInstance().isEnabled();
     }
 
     private static boolean isAnyHudInteractionActive() {
@@ -3159,6 +3236,8 @@ public class InGameHudMixin {
                 || RECT_DRAGGING[HUD_SCOREBOARD] || RECT_RESIZING[HUD_SCOREBOARD]
                 || RECT_DRAGGING[HUD_HEALTH_INDICATOR] || RECT_RESIZING[HUD_HEALTH_INDICATOR]
                 || RECT_DRAGGING[HUD_CONSUMABLE] || RECT_RESIZING[HUD_CONSUMABLE]
+                || RECT_DRAGGING[HUD_PLAYER_MODEL] || RECT_RESIZING[HUD_PLAYER_MODEL]
+                || RECT_DRAGGING[HUD_TRAP_TIMER] || RECT_RESIZING[HUD_TRAP_TIMER]
                 || armorDragging || armorResizing;
     }
 
@@ -3837,10 +3916,7 @@ public class InGameHudMixin {
     // ---------- TabSlide state ----------
     @Unique private boolean phaze$tabWasOpenedThisCycle = false;
 
-    // ---------- PlayerModel drag state ----------
-    @Unique private static boolean phaze$pmDragging = false;
-    @Unique private static float phaze$pmDragOffsetX = 0.0F;
-    @Unique private static float phaze$pmDragOffsetY = 0.0F;
+    // ---------- PlayerModel editor state ----------
     @Unique private static boolean phaze$pmWasMouseDown = false;
 
     // ---------- InventoryHud drag state ----------
@@ -4361,11 +4437,13 @@ public class InGameHudMixin {
         if (mc == null || mc.player == null || mc.options == null) return;
         if (mc.options.hudHidden) return;
 
+        final int hudIndex = HUD_PLAYER_MODEL;
         ClientPlayerEntity player = mc.player;
-        float scale = module.getHudScale();
-        int size = Math.round(module.modelSize.getValue());
-        float panelW = 2.0F * size * scale;
-        float panelH = 2.5F * size * scale;
+        float baseSize = module.getBaseModelSize();
+        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
+        module.setHudScale(scale);
+        float panelW = 2.0F * baseSize * scale;
+        float panelH = 2.0F * baseSize * scale;
 
         boolean chatEditing = mc.currentScreen instanceof ChatScreen;
         boolean mouseDown = chatEditing && GLFW.glfwGetMouseButton(
@@ -4385,28 +4463,110 @@ public class InGameHudMixin {
         module.setHudX(panelX);
         module.setHudY(panelY);
 
+        final float hoverInsetX = 7.0F;
+        float hoverX = panelX + hoverInsetX;
+        float hoverW = Math.max(12.0F, panelW - hoverInsetX * 2.0F);
+        int handleSize = Math.max(4, Math.min(8, Math.round(4.0F * scale)));
+        float handleX = hoverX + hoverW - handleSize / 2.0F;
+        float handleY = panelY + panelH - handleSize / 2.0F;
+        boolean hoveredHud = false;
+        boolean hoveredHandle = false;
+        boolean nearHud = false;
+
         if (chatEditing) {
-            boolean inside = mouseX >= panelX && mouseX <= panelX + panelW
-                    && mouseY >= panelY && mouseY <= panelY + panelH;
-            if (mouseDown && !phaze$pmWasMouseDown && inside) {
-                phaze$pmDragging = true;
-                phaze$pmDragOffsetX = mouseX - panelX;
-                phaze$pmDragOffsetY = mouseY - panelY;
+            hoveredHud = isHovered(mouseX, mouseY, hoverX, panelY, hoverW, panelH);
+            hoveredHandle = isHovered(mouseX, mouseY, handleX, handleY, handleSize, handleSize);
+            nearHud = isNearRect(mouseX, mouseY, hoverX, panelY, hoverW, panelH, Math.max(12.0F, 10.0F * scale));
+
+            if (!mouseDown) {
+                RECT_DRAGGING[hudIndex] = false;
+                RECT_RESIZING[hudIndex] = false;
+            } else if (!phaze$pmWasMouseDown && !isAnyHudInteractionActive()) {
+                if (hoveredHandle) {
+                    RECT_RESIZING[hudIndex] = true;
+                    RECT_RESIZE_START_WIDTH[hudIndex] = scale;
+                    RECT_RESIZE_START_MOUSE_X[hudIndex] = mouseX;
+                    RECT_RESIZE_START_MOUSE_Y[hudIndex] = mouseY;
+                } else if (hoveredHud) {
+                    RECT_DRAGGING[hudIndex] = true;
+                    RECT_DRAG_OFFSET_X[hudIndex] = mouseX - panelX;
+                    RECT_DRAG_OFFSET_Y[hudIndex] = mouseY - panelY;
+                }
             }
-            if (!mouseDown) phaze$pmDragging = false;
-            if (phaze$pmDragging) {
-                panelX = MathHelper.clamp(mouseX - phaze$pmDragOffsetX, 0.0F, maxX);
-                panelY = MathHelper.clamp(mouseY - phaze$pmDragOffsetY, 0.0F, maxY);
-                module.setHudX(panelX);
-                module.setHudY(panelY);
+
+            if (mouseDown) {
+                if (RECT_DRAGGING[hudIndex]) {
+                    float newX = MathHelper.clamp(mouseX - RECT_DRAG_OFFSET_X[hudIndex], 0.0F, maxX);
+                    float newY = MathHelper.clamp(mouseY - RECT_DRAG_OFFSET_Y[hudIndex], 0.0F, maxY);
+                    float dragCenterX = newX + panelW * 0.5F;
+                    float dragCenterY = newY + panelH * 0.5F;
+
+                    if (Math.abs(dragCenterX - scaledScreenW * 0.5F) <= GUIDE_SNAP_RADIUS) {
+                        newX = MathHelper.clamp(scaledScreenW * 0.5F - panelW * 0.5F, 0.0F, maxX);
+                        showVerticalGuideThisFrame = true;
+                    }
+                    if (Math.abs(dragCenterY - scaledScreenH * 0.5F) <= GUIDE_SNAP_RADIUS) {
+                        newY = MathHelper.clamp(scaledScreenH * 0.5F - panelH * 0.5F, 0.0F, maxY);
+                        showHorizontalGuideThisFrame = true;
+                    }
+
+                    panelX = newX;
+                    panelY = newY;
+                    module.setHudX(panelX);
+                    module.setHudY(panelY);
+                    hoverX = panelX + hoverInsetX;
+                    handleX = hoverX + hoverW - handleSize / 2.0F;
+                    handleY = panelY + panelH - handleSize / 2.0F;
+                } else if (RECT_RESIZING[hudIndex]) {
+                    float deltaX = mouseX - RECT_RESIZE_START_MOUSE_X[hudIndex];
+                    float deltaY = mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
+                    float delta = (deltaX + deltaY) * 0.5F;
+                    float newScale = RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9F) / (baseSize * 2.0F);
+                    newScale = MathHelper.clamp(newScale, module.getMinHudScale(), module.getMaxHudScale());
+                    module.setHudScale(newScale);
+                    scale = newScale;
+                    panelW = 2.0F * baseSize * scale;
+                    panelH = 2.0F * baseSize * scale;
+                    maxX = Math.max(0.0F, scaledScreenW - panelW);
+                    maxY = Math.max(0.0F, scaledScreenH - panelH);
+                    panelX = MathHelper.clamp(module.getHudX(), 0.0F, maxX);
+                    panelY = MathHelper.clamp(module.getHudY(), 0.0F, maxY);
+                    module.setHudX(panelX);
+                    module.setHudY(panelY);
+                    hoverX = panelX + hoverInsetX;
+                    hoverW = Math.max(12.0F, panelW - hoverInsetX * 2.0F);
+                    handleSize = Math.max(4, Math.min(8, Math.round(4.0F * scale)));
+                    handleX = hoverX + hoverW - handleSize / 2.0F;
+                    handleY = panelY + panelH - handleSize / 2.0F;
+                }
             }
         } else {
-            phaze$pmDragging = false;
+            RECT_DRAGGING[hudIndex] = false;
+            RECT_RESIZING[hudIndex] = false;
         }
+
+        if (RECT_DRAGGING[hudIndex]) {
+            float dragCenterX = panelX + panelW * 0.5F;
+            float dragCenterY = panelY + panelH * 0.5F;
+            if (Math.abs(dragCenterX - scaledScreenW * 0.5F) <= GUIDE_SNAP_RADIUS) {
+                showVerticalGuideThisFrame = true;
+            }
+            if (Math.abs(dragCenterY - scaledScreenH * 0.5F) <= GUIDE_SNAP_RADIUS) {
+                showHorizontalGuideThisFrame = true;
+            }
+        }
+
+        float hoverTarget = chatEditing && hoveredHud ? 1.0F : 0.0F;
+        RECT_HOVER_PROGRESS[hudIndex] = approachExp(
+                RECT_HOVER_PROGRESS[hudIndex],
+                hoverTarget,
+                10.0F,
+                getHudDelta(module, chatEditing, tickCounter.getTickDelta(false))
+        );
         phaze$pmWasMouseDown = mouseDown;
 
-        float centerX = panelX + size;
-        float centerY = panelY + size * 2.0F;
+        float centerX = panelX + panelW * 0.5F;
+        float centerY = panelY + panelH;
 
         Vector3f translation = new Vector3f();
         Quaternionf bodyRotation;
@@ -4416,8 +4576,8 @@ public class InGameHudMixin {
         if ("Follow Mouse".equalsIgnoreCase(mode) && !chatEditing) {
             float mx = (float) (mc.mouse.getX() * mc.getWindow().getScaledWidth() / mc.getWindow().getWidth());
             float my = (float) (mc.mouse.getY() * mc.getWindow().getScaledHeight() / mc.getWindow().getHeight());
-            float dx = (centerX - mx) / 50.0F;
-            float dy = (centerY - my * 0.5F - size) / 50.0F;
+            float dx = (centerX - mx) / 45.0F;
+            float dy = ((panelY + panelH * 0.58F) - my) / 45.0F;
             bodyRotation = new Quaternionf().rotateZ((float) Math.PI);
             headRotation = new Quaternionf().rotateX(dy * 20.0F * (float) (Math.PI / 180.0));
             bodyRotation.mul(new Quaternionf().rotateY(dx * 20.0F * (float) (Math.PI / 180.0)));
@@ -4425,6 +4585,7 @@ public class InGameHudMixin {
             float speed = module.rotationSpeed.getValue();
             float angleDeg = (System.nanoTime() / 1_000_000_000.0F) * speed;
             bodyRotation = new Quaternionf().rotateZ((float) Math.PI).rotateY(angleDeg * (float) (Math.PI / 180.0));
+            headRotation = new Quaternionf();
         } else {
             bodyRotation = new Quaternionf().rotateZ((float) Math.PI);
             headRotation = new Quaternionf();
@@ -4433,10 +4594,29 @@ public class InGameHudMixin {
         EntityPose previousPose = player.getPose();
         try {
             player.setPose(EntityPose.STANDING);
-            InventoryScreen.drawEntity(context, centerX, centerY, size * scale,
+            InventoryScreen.drawEntity(context, centerX, centerY, baseSize * scale,
                     translation, bodyRotation, headRotation, player);
         } finally {
             player.setPose(previousPose);
+        }
+
+        if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05F) {
+            int outlineColor = withAlpha(0xFFFFFF, (int) (165.0F * RECT_HOVER_PROGRESS[hudIndex]));
+            drawOuterOutline(context, hoverX, panelY, hoverW, panelH, 1, outlineColor);
+        }
+
+        boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
+        if (showResizeHandle) {
+            context.getMatrices().push();
+            context.getMatrices().translate(0.0F, 0.0F, HANDLE_RENDER_Z);
+            int hX = Math.round(handleX);
+            int hY = Math.round(handleY);
+            int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
+            context.fill(hX, hY, hX + handleSize, hY + handleSize, handleColor);
+            if (hoveredHandle || RECT_RESIZING[hudIndex]) {
+                drawOutlineNoOverlap(context, hX - 1, hY - 1, handleSize + 2, handleSize + 2, withAlpha(0xFFFFFF, 220));
+            }
+            context.getMatrices().pop();
         }
     }
 
