@@ -33,6 +33,9 @@ import java.util.List;
 public class Blur implements Shape {
     public static final Blur INSTANCE = new Blur();
     private static final float HUD_GAUSSIAN_STRENGTH_MULTIPLIER = 2.5F;
+    private static final int HUD_FAST_BLUR_REGION_AREA_THRESHOLD = 110_000;
+    private static final float HUD_FAST_BLUR_RADIUS_MULTIPLIER = 1.9F;
+    private static final float HUD_FAST_BLUR_RADIUS_CAP = 16.0F;
     private static final ShaderProgramKey MASK_SHADER_KEY = new ShaderProgramKey(
             Identifier.of("phaze", "core/blur"),
             VertexFormats.POSITION_COLOR,
@@ -452,10 +455,13 @@ public class Blur implements Shape {
         // harsh step changes the old mixed pipeline produced.
         if (blurMode == 2 && blurRadius > 0.0f) {
             BlurRegion blurRegion = computeHudGaussianRegion(client, shape, hudGaussianRadius);
-            if (applyOptimizedHudGaussianBlur(client, hudGaussianRadius, blurRegion)) {
-                sourceTexture = pong.getColorAttachment();
-                effectiveBlurMode = 0;
-                effectiveBlurRadius = 0.0f;
+            if (shouldUseFastHudBlur(blurRegion, hudGaussianRadius)) {
+                effectiveBlurMode = 2;
+                effectiveBlurRadius = Math.min(HUD_FAST_BLUR_RADIUS_CAP, Math.max(blurRadius, blurRadius * HUD_FAST_BLUR_RADIUS_MULTIPLIER));
+            } else if (applyOptimizedHudGaussianBlur(client, hudGaussianRadius, blurRegion)) {
+                    sourceTexture = pong.getColorAttachment();
+                    effectiveBlurMode = 0;
+                    effectiveBlurRadius = 0.0f;
             } else {
                 effectiveBlurMode = 0;
                 effectiveBlurRadius = hudGaussianRadius;
@@ -929,6 +935,15 @@ public class Blur implements Shape {
         key = key * 31L + region.width;
         key = key * 31L + region.height;
         return key;
+    }
+
+    private boolean shouldUseFastHudBlur(BlurRegion region, float blurRadius) {
+        if (region == null) {
+            return true;
+        }
+
+        long area = (long) region.width * (long) region.height;
+        return area <= HUD_FAST_BLUR_REGION_AREA_THRESHOLD && blurRadius <= 18.0f;
     }
 
     private record BlurRegion(int x, int y, int width, int height) {
