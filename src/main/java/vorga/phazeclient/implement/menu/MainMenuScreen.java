@@ -20,6 +20,7 @@ import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Rectangle;
 import vorga.phazeclient.base.util.Lang;
+import vorga.phazeclient.base.util.RemoteRulesService;
 import vorga.phazeclient.base.util.render.Render2DUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
@@ -213,6 +214,7 @@ public class MainMenuScreen extends TitleScreen {
         int overlayMouseY = Math.round(toOverlayCoordinate(mouseY));
         float overlayW = getOverlayViewportWidth();
         float overlayH = getOverlayViewportHeight();
+        renderPhazeOnlineCounter(context);
         if (themeSelectorOpen) {
             themeSelectorOpenAnim = animateThemeModalValue(themeSelectorOpenAnim, 1.0F);
             float selectorModalProgress = easeOutThemeModal(themeSelectorOpenAnim);
@@ -353,6 +355,29 @@ public class MainMenuScreen extends TitleScreen {
                 drawable.render(context, mouseX, mouseY, delta);
             }
         }
+    }
+
+    private void renderPhazeOnlineCounter(DrawContext context) {
+        int count = RemoteRulesService.getInstance().getOnlineCount();
+        String text = count < 0
+                ? "Phaze: connecting..."
+                : "Phaze: " + count + " online";
+
+        float scale = phaze$menuScale();
+        float textSize = 10.2F * scale;
+        float x = 10.0F;
+        float y = 8.0F;
+
+        MsdfRenderer.renderText(
+                MsdfFonts.medium(),
+                text,
+                textSize,
+                0xFFFFFFFF,
+                context.getMatrices().peek().getPositionMatrix(),
+                x,
+                y,
+                0.0F
+        );
     }
 
     @Override
@@ -1360,6 +1385,29 @@ public class MainMenuScreen extends TitleScreen {
         return UiMsdfIconAtlas.resolveAspectRatio(icon);
     }
 
+    private static void renderCenteredIconOnlyButtonIcon(
+            DrawContext context,
+            Identifier icon,
+            float buttonX,
+            float buttonY,
+            float buttonWidth,
+            float buttonHeight,
+            float iconWidth,
+            float iconHeight
+    ) {
+        float centerX = buttonX + buttonWidth * 0.5F;
+        float centerY = buttonY + buttonHeight * 0.5F;
+        renderMenuIconPrecise(
+                context,
+                icon,
+                centerX - iconWidth * 0.5F,
+                centerY - iconHeight * 0.5F,
+                iconWidth,
+                iconHeight,
+                ICON_TINT_COLOR
+        );
+    }
+
     private static FittedIconRect fitIconRect(float x, float y, float width, float height, float aspectRatio, boolean precise) {
         float safeWidth = precise ? Math.max(1.0F, width) : Math.max(1.0F, Math.round(width));
         float safeHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
@@ -2143,10 +2191,11 @@ public class MainMenuScreen extends TitleScreen {
                 float gap = hasLabel ? 6.0F : 0.0F;
                 float totalW = iconW + gap + (hasLabel ? MsdfFonts.bold().getWidth(label, size) : 0.0F);
                 float left = this.getX() + (this.width - totalW) / 2.0F;
-                float iconOffset = hasLabel ? 0.0F : -0.2F;
-                float iconX = hasLabel ? left : this.getX() + (this.width - iconW) / 2.0F + iconOffset;
-                float iconY = this.getY() + (this.height - iconH) / 2.0F + iconOffset;
-                renderMenuIcon(context, leftIcon, iconX, iconY, iconW, iconH);
+                if (hasLabel) {
+                    renderMenuIcon(context, leftIcon, left, this.getY() + (this.height - iconH) / 2.0F, iconW, iconH);
+                } else {
+                    renderCenteredIconOnlyButtonIcon(context, leftIcon, this.getX(), this.getY(), this.width, this.height, iconW, iconH);
+                }
                 textX = left + iconW + gap;
             }
             if (!label.isEmpty()) {

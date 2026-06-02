@@ -324,12 +324,13 @@ public final class SettingColorPickerWindow extends AbstractWindow {
 
     private void renderAlphaStrip(MatrixStack matrices, float x, float y, float width, float height, int outlineColor, int opaqueColor) {
         float radius = 2.35F;
+        int whiteBase = MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha);
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
                 .round(radius)
                 .softness(1.0F)
                 .thickness(1.0F)
                 .outlineColor(outlineColor)
-                .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, 0xFF000000, 0.24F), globalAlpha * 0.9F))
+                .color(whiteBase)
                 .build());
 
         float innerInset = 0.6F;
@@ -337,7 +338,6 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         float innerY = y + innerInset;
         float innerWidth = Math.max(1.0F, width - innerInset * 2.0F);
         float innerHeight = Math.max(1.0F, height - innerInset * 2.0F);
-        int whiteBase = MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha);
         int transparentColor = opaqueColor & 0x00FFFFFF;
         rectangle.render(ShapeProperties.create(matrices, innerX, innerY, innerWidth, innerHeight)
                 .round(1.9F)

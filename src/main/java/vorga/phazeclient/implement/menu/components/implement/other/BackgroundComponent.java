@@ -29,6 +29,7 @@ import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.core.Main;
@@ -40,7 +41,10 @@ import java.util.Map;
 @Setter
 @Accessors(chain = true)
 public class BackgroundComponent extends AbstractComponent {
+    private static final Identifier BRAND_ICON = Identifier.of("phaze", "textures/menu/phaze_brand.png");
     private static final float BRAND_TEXT_SIZE = 9.4F;
+    private static final float BRAND_ICON_HEIGHT = 25.2F;
+    private static final float BRAND_ICON_GAP = 6.0F;
     private static final float TAB_TEXT_SIZE = 6.9F;
     private static final float FOOTER_TEXT_SIZE = 5.5F;
     private static final float CONFIG_TEXT_SIZE = 6.0F;
@@ -122,7 +126,21 @@ public class BackgroundComponent extends AbstractComponent {
 
     private void renderHeader(DrawContext context, int mouseX, int mouseY) {
         MatrixStack matrix = context.getMatrices();
-        float brandX = x + 8.0F;
+        float brandIconWidth = BRAND_ICON_HEIGHT * UiMsdfIconAtlas.resolveAspectRatio(BRAND_ICON);
+        float brandIconX = x + 8.0F;
+        float brandIconY = y + (HEADER_HEIGHT - BRAND_ICON_HEIGHT) / 2.0F + 2.5F;
+        UiMsdfIconAtlas.renderIcon(
+                context,
+                BRAND_ICON,
+                brandIconX,
+                brandIconY,
+                brandIconWidth,
+                BRAND_ICON_HEIGHT,
+                applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
+                true
+        );
+
+        float brandX = brandIconX + brandIconWidth + BRAND_ICON_GAP;
         float brandY = MenuStyle.centerMsdfTextY(BRAND_TEXT_SIZE, y + 1.5F, HEADER_HEIGHT);
         MsdfRenderer.renderText(MsdfFonts.bold(), "PHAZE", BRAND_TEXT_SIZE, applyGlobalAlpha(MenuStyle.TEXT_PRIMARY), matrix.peek().getPositionMatrix(), brandX, brandY, 0.0F);
         MsdfRenderer.renderText(

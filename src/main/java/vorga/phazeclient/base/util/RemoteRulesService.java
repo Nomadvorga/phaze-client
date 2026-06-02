@@ -210,6 +210,10 @@ public final class RemoteRulesService {
         return onlineCount;
     }
 
+    public boolean isKnownClientUser(String username) {
+        return PhazePlayerPresence.getInstance().isKnownUser(username);
+    }
+
     /** Stable random identity for this install. See {@link #loadOrCreateClientId()}. */
     public String getClientId() {
         return clientId;
@@ -383,12 +387,12 @@ public final class RemoteRulesService {
                 // behaviour the UI relies on - previously we'd skip
                 // the call on an empty host and the title-screen
                 // counter stayed stuck on "connecting..." forever.
-                fetchAsync(host);
+                fetchAsync(host, true);
             } else if (stale) {
                 // Same reasoning as above: keep refreshing the online
                 // count even when the host is empty, so the counter
                 // stays alive while the player sits on the menu.
-                fetchAsync(host);
+                fetchAsync(host, false);
             }
         } catch (Throwable t) {
             LOG.warn("heartbeat failed", t);
@@ -397,13 +401,13 @@ public final class RemoteRulesService {
         }
     }
 
-    private void fetchAsync(String host) {
+    private void fetchAsync(String host, boolean bypassCache) {
         if (!refreshInFlight.compareAndSet(false, true)) {
             return; // Another fetch is in flight; the heartbeat will try again later.
         }
         scheduler.execute(() -> {
             try {
-                fetch(host);
+                fetch(host, bypassCache);
             } catch (Throwable t) {
                 LOG.warn("fetch failed for host='{}': {}", host, t.toString());
                 // Force the next heartbeat (in HEARTBEAT_SECONDS) to
@@ -417,12 +421,13 @@ public final class RemoteRulesService {
         });
     }
 
-    private void fetch(String host) throws Exception {
+    private void fetch(String host, boolean bypassCache) throws Exception {
         String encodedHost = URLEncoder.encode(host == null ? "" : host, StandardCharsets.UTF_8);
         String encodedClient = URLEncoder.encode(clientId, StandardCharsets.UTF_8);
         String encodedUsername = URLEncoder.encode(
                 getCurrentUsername() == null ? "" : getCurrentUsername(),
                 StandardCharsets.UTF_8);
+        String encodedFresh = bypassCache ? "&fresh=1" : "";
 
         // Poll the rules endpoint with a stable client identity so
         // the server can count this install as online right away.
@@ -433,7 +438,8 @@ public final class RemoteRulesService {
                         + "&clientId="
                         + encodedClient
                         + "&username="
-                        + encodedUsername);
+                        + encodedUsername
+                        + encodedFresh);
 
         URL url = uri.toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -444,6 +450,10 @@ public final class RemoteRulesService {
             conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
             conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setRequestProperty("Accept", "application/json");
+            if (bypassCache) {
+                conn.setRequestProperty("Cache-Control", "no-cache, no-store, max-age=0");
+                conn.setRequestProperty("Pragma", "no-cache");
+            }
             // Common Chrome UA - some Cloudflare deployments reset
             // "Java/..." or "Apache-HttpClient/..." UAs at the bot-
             // detection layer. Browser-shaped UA passes through.
@@ -493,6 +503,13 @@ public final class RemoteRulesService {
                 // Keep the previous value if the payload is malformed.
             }
         }
+
+        PhazePlayerPresence.getInstance().refreshFromRulesPayload(
+                obj,
+                apiBase,
+                CONNECT_TIMEOUT_MS,
+                READ_TIMEOUT_MS
+        );
 
         // This request doubles as the heartbeat, so the online count
         // tracks real client activity rather than a shared snapshot.

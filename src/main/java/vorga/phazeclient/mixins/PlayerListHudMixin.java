@@ -1,7 +1,11 @@
 package vorga.phazeclient.mixins;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.client.network.PlayerListEntry;
@@ -16,6 +20,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.implement.features.modules.hud.TabHud;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
@@ -242,7 +247,42 @@ public class PlayerListHudMixin {
         }
     }
 
+    @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
+    private void phaze$badgeTabName(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
+        if (entry == null || !PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
+            return;
+        }
 
+        Text current = cir.getReturnValue();
+        if (current != null) {
+            cir.setReturnValue(PhazeBadgeUtil.withBadgePadding(current));
+        }
+    }
+
+    @WrapOperation(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)I"
+            ),
+            require = 0
+    )
+    private int phaze$drawTabBadge(
+            DrawContext context,
+            TextRenderer renderer,
+            Text text,
+            int x,
+            int y,
+            int color,
+            Operation<Integer> operation,
+            @Local PlayerListEntry entry
+    ) {
+        if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
+            float size = PhazeBadgeUtil.guiBadgeSize(renderer);
+            PhazeBadgeUtil.drawGuiBadge(context, x - 1.0F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(color));
+        }
+        return operation.call(context, renderer, text, x, y, color);
+    }
 
 }
 
