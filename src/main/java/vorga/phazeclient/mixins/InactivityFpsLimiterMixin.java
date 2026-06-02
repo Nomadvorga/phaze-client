@@ -8,7 +8,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import vorga.phazeclient.implement.menu.MainMenuScreen;
 import vorga.phazeclient.implement.menu.MenuUiSettings;
 
 @Mixin(InactivityFpsLimiter.class)
@@ -21,7 +20,10 @@ public class InactivityFpsLimiterMixin {
             return;
         }
 
-        if (!(this.client.currentScreen instanceof MainMenuScreen)) {
+        // Apply the menu FPS cap to every out-of-world GUI (main menu,
+        // singleplayer, multiplayer, mod menu, etc.) but never while a
+        // world is loaded, even if the player opens pause / inventory.
+        if (this.client.world != null || this.client.currentScreen == null) {
             return;
         }
 

@@ -11,6 +11,7 @@
     { "name": "Brightness", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "Contrast", "type": "float", "count": 1, "values": [ 1.0 ] },
     { "name": "Saturation", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "Hue", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "Gamma", "type": "float", "count": 1, "values": [ 1.0 ] },
     { "name": "Temperature", "type": "float", "count": 1, "values": [ 0.0 ] },
     { "name": "Vibrance", "type": "float", "count": 1, "values": [ 0.0 ] }

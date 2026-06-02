@@ -20,6 +20,7 @@ public final class HitColor extends vorga.phazeclient.api.feature.module.Module 
             .onChange(value -> OverlayReloadListener.event());
     public final ColorSetting hitcolor = new ColorSetting("Hit Color", "Color when entity is hit")
             .value(0xFFFF0000)
+            .popupRow()
             .onChange(value -> OverlayReloadListener.event());
 
     private HitColor() {

@@ -46,7 +46,7 @@ public final class CustomFog extends Module {
     public final ColorSetting color = new ColorSetting(
             "Fog Color",
             "Custom fog colour. Ignored when Color Mode is set to Theme"
-    ).setColor(0xFF6E83C7).noAlpha();
+    ).setColor(0xFF6E83C7).noAlpha().popupRow();
 
     public final SectionSetting scopeSection = new SectionSetting("Scope");
     public final BooleanSetting affectSky = new BooleanSetting(

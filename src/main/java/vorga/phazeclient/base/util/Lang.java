@@ -463,6 +463,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Hit Sound", "Звук удара");
         SETTING_TRANSLATIONS.put("Hitbox Color", "Цвет хитбокса");
         SETTING_TRANSLATIONS.put("Hold", "Удерживать");
+        SETTING_TRANSLATIONS.put("Hue", "Оттенок");
         SETTING_TRANSLATIONS.put("Hold Shift + drag the mouse over slots to shift-click them all without extra clicks", "Зажмите Shift и протащите мышь по слотам — все будут shift-кликнуты без лишних кликов");
         SETTING_TRANSLATIONS.put("Hotbar", "Хотбар");
         SETTING_TRANSLATIONS.put("Hotbar Flush", "Очистка хотбара");
@@ -1089,6 +1090,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Divine Aura Name", "Имя «Божья аура»");
         SETTING_TRANSLATIONS.put("Dragon Trap", "Драконья трапка");
         SETTING_TRANSLATIONS.put("Dragon Trap Name", "Имя «Драконья трапка»");
+        SETTING_TRANSLATIONS.put("Enabled Abilities", "Включённые способности");
         SETTING_TRANSLATIONS.put("Entity Hit Color", "Цвет попадания по сущности");
         SETTING_TRANSLATIONS.put("Entity Theme Color", "Тематический цвет сущности");
         SETTING_TRANSLATIONS.put("Entity Color Preset", "Пресет цвета сущности");
