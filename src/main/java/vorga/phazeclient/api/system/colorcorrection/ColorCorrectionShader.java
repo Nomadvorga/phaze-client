@@ -25,6 +25,7 @@ public class ColorCorrectionShader {
         shader.setUniformValue("Brightness", config.getBrightness());
         shader.setUniformValue("Contrast", config.getContrast());
         shader.setUniformValue("Saturation", config.getSaturation());
+        shader.setUniformValue("Hue", config.getHue());
         shader.setUniformValue("Gamma", config.getGamma());
         shader.setUniformValue("Temperature", config.getTemperature());
         shader.setUniformValue("Vibrance", config.getVibrance());

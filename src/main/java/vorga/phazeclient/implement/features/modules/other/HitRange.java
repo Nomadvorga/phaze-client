@@ -98,11 +98,13 @@ public final class HitRange extends Module {
     public final ColorSetting color = new ColorSetting(
             "Color",
             "Base color of the circle when no other modifier applies."
-    ).value(0x80FF0000);
+    ).value(0x80FF0000)
+            .popupRow();
     public final ColorSetting inRangeColor = new ColorSetting(
             "In Range Color",
             "Color when the target entity is inside the configured radius."
-    ).value(0x8000FF00);
+    ).value(0x8000FF00)
+            .popupRow();
     public final BooleanSetting colorWhenInRange = new BooleanSetting(
             "Color When In Range",
             "Switch to In Range Color when the target is inside the radius."

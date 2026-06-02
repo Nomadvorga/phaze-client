@@ -34,6 +34,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
 
     public static final float WINDOW_WIDTH = 126.0F;
     public static final float WINDOW_HEIGHT = 123.0F;
+    public static final float WINDOW_HEIGHT_WITH_ALPHA = 138.0F;
 
     private static final float TITLE_SIZE = 7.0F;
     private static final float HEADER_HEIGHT = 24.0F;
@@ -43,6 +44,8 @@ public final class SettingColorPickerWindow extends AbstractWindow {
     private static final float PICKER_HEIGHT = 66.0F;
     private static final float HUE_BAR_Y = 100.0F;
     private static final float HUE_BAR_HEIGHT = 7.0F;
+    private static final float ALPHA_BAR_Y = 112.0F;
+    private static final float ALPHA_BAR_HEIGHT = 7.0F;
     private static final float HUE_BAR_PADDING = 8.0F;
     private static final float PICKER_INDICATOR_SIZE = 9.0F;
     private static final float HUE_INDICATOR_WIDTH = 4.0F;
@@ -53,14 +56,20 @@ public final class SettingColorPickerWindow extends AbstractWindow {
     private float hue;
     private float saturation;
     private float brightness;
+    private float alpha;
 
     private boolean pickerDragging;
     private boolean hueDragging;
+    private boolean alphaDragging;
 
     public SettingColorPickerWindow(ColorSetting setting) {
         this.setting = setting;
         syncFromColor(setting.getColor());
         getScaleAnimation().setMs(200);
+    }
+
+    public static float getWindowHeight(ColorSetting setting) {
+        return setting != null && !setting.isNoAlpha() ? WINDOW_HEIGHT_WITH_ALPHA : WINDOW_HEIGHT;
     }
 
     @Override
@@ -70,11 +79,13 @@ public final class SettingColorPickerWindow extends AbstractWindow {
 
         renderWindowBlur(matrices);
 
-        int outline = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.BORDER, 0xFFFFFFFF, 0.08F), globalAlpha * 0.92F);
-        int panelFill = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, MenuStyle.PANEL_BG_SOFT, 0.16F), globalAlpha * 0.82F);
+        int outline = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.BORDER_LIGHT, 0xFFFFFFFF, 0.06F), globalAlpha * 0.96F);
+        int panelFill = MenuStyle.withAlpha(MenuStyle.PANEL_BG, globalAlpha * 0.94F);
+        int panelInner = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG_SOFT, MenuStyle.PANEL_CONTENT, 0.42F), globalAlpha * 0.98F);
         int pickerOutline = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.BORDER_LIGHT, 0xFFFFFFFF, 0.10F), globalAlpha * 0.96F);
         int hueColor = MenuStyle.withAlpha(0xFF000000 | (Color.HSBtoRGB(hue, 1.0F, 1.0F) & 0x00FFFFFF), globalAlpha);
-        int selectedColor = MenuStyle.withAlpha(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF), globalAlpha);
+        int selectedOpaqueColor = MenuStyle.withAlpha(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF), globalAlpha);
+        int selectedAlphaColor = MenuStyle.withAlpha((Math.round(alpha * 255.0F) << 24) | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF), globalAlpha);
 
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
                 .round(9.0F)
@@ -82,6 +93,12 @@ public final class SettingColorPickerWindow extends AbstractWindow {
                 .thickness(1.15F)
                 .outlineColor(outline)
                 .color(panelFill)
+                .build());
+
+        rectangle.render(ShapeProperties.create(matrices, x + 1.0F, y + 1.0F, width - 2.0F, height - 2.0F)
+                .round(8.0F)
+                .thickness(0.0F)
+                .color(panelInner)
                 .build());
 
         String title = setting.getName();
@@ -127,7 +144,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
                 .softness(1.0F)
                 .thickness(2.0F)
                 .outlineColor(MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha))
-                .color(selectedColor)
+                .color(selectedOpaqueColor)
                 .build());
 
         float hueHalfWidth = HUE_INDICATOR_WIDTH / 2.0F;
@@ -140,11 +157,31 @@ public final class SettingColorPickerWindow extends AbstractWindow {
                 .color(MenuStyle.withAlpha(0xFFCFE7FF, globalAlpha))
                 .build());
 
+        if (!setting.isNoAlpha()) {
+            float alphaBarX = x + HUE_BAR_PADDING;
+            float alphaBarY = y + ALPHA_BAR_Y;
+            float alphaBarWidth = width - HUE_BAR_PADDING * 2.0F;
+            renderAlphaStrip(matrices, alphaBarX, alphaBarY, alphaBarWidth, ALPHA_BAR_HEIGHT, pickerOutline, selectedOpaqueColor);
+
+            float alphaHalfWidth = HUE_INDICATOR_WIDTH / 2.0F;
+            float alphaIndicatorX = clamp(alphaBarX + alphaBarWidth * alpha, alphaBarX + alphaHalfWidth, alphaBarX + alphaBarWidth - alphaHalfWidth);
+            rectangle.render(ShapeProperties.create(matrices, alphaIndicatorX - alphaHalfWidth, alphaBarY - HUE_INDICATOR_EXTRA_HEIGHT / 2.0F, HUE_INDICATOR_WIDTH, ALPHA_BAR_HEIGHT + HUE_INDICATOR_EXTRA_HEIGHT)
+                    .round(2.2F)
+                    .softness(1.0F)
+                    .thickness(1.4F)
+                    .outlineColor(MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha))
+                    .color(selectedAlphaColor)
+                    .build());
+        }
+
         if (pickerDragging) {
             updatePicker(mouseX, mouseY);
         }
         if (hueDragging) {
             updateHue(mouseX);
+        }
+        if (alphaDragging) {
+            updateAlpha(mouseX);
         }
     }
 
@@ -168,6 +205,12 @@ public final class SettingColorPickerWindow extends AbstractWindow {
                 updateHue(mouseX);
                 return true;
             }
+
+            if (!setting.isNoAlpha() && MathUtil.isHovered(mouseX, mouseY, hueBarX, y + ALPHA_BAR_Y, width - HUE_BAR_PADDING * 2.0F, ALPHA_BAR_HEIGHT)) {
+                alphaDragging = true;
+                updateAlpha(mouseX);
+                return true;
+            }
         }
         return true;
     }
@@ -182,6 +225,10 @@ public final class SettingColorPickerWindow extends AbstractWindow {
             updateHue(mouseX);
             return true;
         }
+        if (alphaDragging) {
+            updateAlpha(mouseX);
+            return true;
+        }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
@@ -189,6 +236,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         pickerDragging = false;
         hueDragging = false;
+        alphaDragging = false;
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
@@ -219,8 +267,17 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         commitColor();
     }
 
+    private void updateAlpha(double mouseX) {
+        float alphaBarX = x + HUE_BAR_PADDING;
+        float alphaBarWidth = width - HUE_BAR_PADDING * 2.0F;
+        alpha = clamp((float) ((mouseX - alphaBarX) / alphaBarWidth), 0.0F, 1.0F);
+        commitColor();
+    }
+
     private void commitColor() {
-        setting.setColor(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF));
+        int rgb = Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF;
+        int packedAlpha = setting.isNoAlpha() ? 0xFF000000 : (Math.round(alpha * 255.0F) << 24);
+        setting.setColor(packedAlpha | rgb);
     }
 
     private void syncFromColor(int color) {
@@ -228,6 +285,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         hue = hsb[0];
         saturation = hsb[1];
         brightness = hsb[2];
+        alpha = ((color >> 24) & 0xFF) / 255.0F;
     }
 
     private void renderHueStrip(MatrixStack matrices, float x, float y, float width, float height, int outlineColor) {
@@ -261,6 +319,35 @@ public final class SettingColorPickerWindow extends AbstractWindow {
                 .round(2.1F)
                 .thickness(0.0F)
                 .color(edgeColor)
+                .build());
+    }
+
+    private void renderAlphaStrip(MatrixStack matrices, float x, float y, float width, float height, int outlineColor, int opaqueColor) {
+        float radius = 2.35F;
+        rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
+                .round(radius)
+                .softness(1.0F)
+                .thickness(1.0F)
+                .outlineColor(outlineColor)
+                .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, 0xFF000000, 0.24F), globalAlpha * 0.9F))
+                .build());
+
+        float innerInset = 0.6F;
+        float innerX = x + innerInset;
+        float innerY = y + innerInset;
+        float innerWidth = Math.max(1.0F, width - innerInset * 2.0F);
+        float innerHeight = Math.max(1.0F, height - innerInset * 2.0F);
+        int whiteBase = MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha);
+        int transparentColor = opaqueColor & 0x00FFFFFF;
+        rectangle.render(ShapeProperties.create(matrices, innerX, innerY, innerWidth, innerHeight)
+                .round(1.9F)
+                .thickness(0.0F)
+                .color(whiteBase)
+                .build());
+        rectangle.render(ShapeProperties.create(matrices, innerX, innerY, innerWidth, innerHeight)
+                .round(1.9F)
+                .thickness(0.0F)
+                .color(transparentColor, transparentColor, opaqueColor, opaqueColor)
                 .build());
     }
 

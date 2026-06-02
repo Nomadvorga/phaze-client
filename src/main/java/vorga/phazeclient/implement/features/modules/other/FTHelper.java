@@ -11,6 +11,7 @@ import net.minecraft.util.math.Vec3d;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
@@ -81,38 +82,37 @@ public final class FTHelper extends Module {
 
     public final SectionSetting abilitiesSection = new SectionSetting("Abilities");
 
-    public final BooleanSetting trapkaEnabled = new BooleanSetting(
+    public final MultiSelectSetting enabledAbilities = new MultiSelectSetting(
+            "Enabled Abilities",
+            "Pick which FunTime abilities should stay active in the helper."
+    ).value(
             "Trapka",
-            "Highlight the trapka target box when holding a netherite-scrap-typed trapka item"
-    ).setValue(true);
-    public final BooleanSetting drakonTrapkaEnabled = new BooleanSetting(
             "Dragon Trap",
-            "Highlight the dragon-trapka variant target box (7x7x3 instead of 3x3x3)"
-    ).setValue(true).visible(() -> trapkaEnabled.isValue());
-    public final BooleanSetting dezorientationEnabled = new BooleanSetting(
             "Disorientation",
-            "Draw the 10-block AOE circle when holding a dezorientation ender eye"
-    ).setValue(true);
-    public final BooleanSetting yavnayaPylEnabled = new BooleanSetting(
             "Revealing Dust",
-            "Draw the 10-block AOE circle when holding явная пыль (sugar)"
-    ).setValue(true);
-    public final BooleanSetting ognennyiSmerchEnabled = new BooleanSetting(
             "Fire Vortex",
-            "Draw the 10-block AOE circle when holding the огненный смерч fire charge"
-    ).setValue(true);
-    public final BooleanSetting plastEnabled = new BooleanSetting(
             "Plate",
-            "Draw the plast placement plane when holding the пласт dried-kelp"
-    ).setValue(true);
-    public final BooleanSetting bozhestvennayaAuraEnabled = new BooleanSetting(
             "Divine Aura",
-            "Draw the божья аура indicator when holding the phantom membrane variant"
-    ).setValue(true);
-    public final BooleanSetting snezhokZamorozkaEnabled = new BooleanSetting(
-            "Freeze Snowball",
-            "Predict the impact point of a thrown снежок заморозки and highlight tracked ones in flight (7x7 AOE ring)"
-    ).setValue(true);
+            "Freeze Snowball"
+    ).selected(
+            "Trapka",
+            "Dragon Trap",
+            "Disorientation",
+            "Revealing Dust",
+            "Fire Vortex",
+            "Plate",
+            "Divine Aura",
+            "Freeze Snowball"
+    );
+
+    public final BooleanLike trapkaEnabled = () -> enabledAbilities.getSelected().contains("Trapka");
+    public final BooleanLike drakonTrapkaEnabled = () -> enabledAbilities.getSelected().contains("Dragon Trap");
+    public final BooleanLike dezorientationEnabled = () -> enabledAbilities.getSelected().contains("Disorientation");
+    public final BooleanLike yavnayaPylEnabled = () -> enabledAbilities.getSelected().contains("Revealing Dust");
+    public final BooleanLike ognennyiSmerchEnabled = () -> enabledAbilities.getSelected().contains("Fire Vortex");
+    public final BooleanLike plastEnabled = () -> enabledAbilities.getSelected().contains("Plate");
+    public final BooleanLike bozhestvennayaAuraEnabled = () -> enabledAbilities.getSelected().contains("Divine Aura");
+    public final BooleanLike snezhokZamorozkaEnabled = () -> enabledAbilities.getSelected().contains("Freeze Snowball");
 
     public final SectionSetting visualSection = new SectionSetting("Visual");
     public final ValueSetting circleThickness = new ValueSetting(
@@ -204,16 +204,14 @@ public final class FTHelper extends Module {
             "Substring to match for снежок заморозки (used both for in-flight tracking and held-hand prediction)"
     ).setText("снежок заморозки").setMax(48);
 
+    @FunctionalInterface
+    public interface BooleanLike {
+        boolean isValue();
+    }
+
     private FTHelper() {
         super("ft_helper", "FT Helper", ModuleCategory.UTILITIES);
-        trapkaEnabled.setFullWidth(true);
-        drakonTrapkaEnabled.setFullWidth(true);
-        dezorientationEnabled.setFullWidth(true);
-        yavnayaPylEnabled.setFullWidth(true);
-        ognennyiSmerchEnabled.setFullWidth(true);
-        plastEnabled.setFullWidth(true);
-        bozhestvennayaAuraEnabled.setFullWidth(true);
-        snezhokZamorozkaEnabled.setFullWidth(true);
+        enabledAbilities.setFullWidth(true);
         circleThickness.setFullWidth(true);
         circleGlow.setFullWidth(true);
         circleGlowStrength.setFullWidth(true);
@@ -231,9 +229,7 @@ public final class FTHelper extends Module {
         snezhokZamorozkaName.setFullWidth(true);
         setup(
                 abilitiesSection,
-                trapkaEnabled, drakonTrapkaEnabled, dezorientationEnabled,
-                yavnayaPylEnabled, ognennyiSmerchEnabled, plastEnabled,
-                bozhestvennayaAuraEnabled, snezhokZamorozkaEnabled,
+                enabledAbilities,
                 visualSection, circleThickness, circleGlow, circleGlowStrength,
                 circleColorSection, circleUseThemeColor, circleColorPreset,
                 boxColorSection, boxUseThemeColor, boxColorPreset,

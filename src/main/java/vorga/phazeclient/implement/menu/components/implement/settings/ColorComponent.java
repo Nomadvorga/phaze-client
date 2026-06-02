@@ -318,7 +318,7 @@ public class ColorComponent extends AbstractSettingComponent {
         }
 
         int windowWidth = Math.round(SettingColorPickerWindow.WINDOW_WIDTH);
-        int windowHeight = Math.round(SettingColorPickerWindow.WINDOW_HEIGHT);
+        int windowHeight = Math.round(SettingColorPickerWindow.getWindowHeight(setting));
         float colorX = x + width - COLOR_RIGHT - COLOR_SIZE;
         int windowX = MenuScreen.INSTANCE.clampOverlayX(colorX + COLOR_SIZE + 8.0F, windowWidth);
         int windowY = MenuScreen.INSTANCE.clampOverlayY(y + ROW_HEIGHT / 2.0F - windowHeight / 2.0F, windowHeight);

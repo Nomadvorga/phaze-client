@@ -35,7 +35,8 @@ public final class BlockOverlay extends Module {
     public final ColorSetting outlineColor = new ColorSetting(
             "Outline Color",
             "Color of the outline (alpha controls opacity)"
-    ).value(0xFF000000);
+    ).value(0xFF000000)
+            .popupRow();
     public final SelectSetting style = new SelectSetting(
             "Style",
             "Outline only or with a translucent face fill"
@@ -44,6 +45,7 @@ public final class BlockOverlay extends Module {
             "Fill Color",
             "Color of the translucent face fill (Filled style only)"
     ).value(0x40FFFFFF)
+            .popupRow()
             .visible(() -> "Filled".equalsIgnoreCase(style.getSelected()));
 
     private BlockOverlay() {

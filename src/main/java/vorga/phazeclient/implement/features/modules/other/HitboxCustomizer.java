@@ -17,9 +17,11 @@ public final class HitboxCustomizer extends Module {
 
     public final SectionSetting generalSection = new SectionSetting("General");
     public final ColorSetting hitboxColor = new ColorSetting("Hitbox Color", "Color of all entity hitboxes")
-            .setColor(0xFFFFFFFF);
+            .setColor(0xFFFFFFFF)
+            .popupRow();
     public final ColorSetting reachColor = new ColorSetting("Reach Color", "Color used when looking at an entity in attack range")
-            .setColor(0xFFFF3030);
+            .setColor(0xFFFF3030)
+            .popupRow();
     public final ValueSetting outlineThickness = new ValueSetting("Outline Thickness", "Thickness of the hitbox outline")
             .range(1.0f, 6.0f)
             .step(0.5f)

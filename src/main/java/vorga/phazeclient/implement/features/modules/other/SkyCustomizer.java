@@ -68,11 +68,11 @@ public final class SkyCustomizer extends Module {
     public final ColorSetting baseColor = new ColorSetting(
             "Base Color",
             "Used by Tint and Replace modes; also the day color in Gradient mode"
-    ).setColor(0xFF7AB6FF).noAlpha();
+    ).setColor(0xFF7AB6FF).noAlpha().popupRow();
     public final ColorSetting nightColor = new ColorSetting(
             "Night Color",
             "Gradient mode only - the colour the sky leans toward at night"
-    ).setColor(0xFF1A1233).noAlpha();
+    ).setColor(0xFF1A1233).noAlpha().popupRow();
     public final ValueSetting intensity = new ValueSetting(
             "Intensity",
             "Tint strength. 0 = vanilla, 1 = fully tinted"
