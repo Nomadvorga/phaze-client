@@ -30,4 +30,9 @@ public final class SessionTimeHud extends RectHudModule {
     public String getDescription() {
         return "Shows current session duration";
     }
+
+    @Override
+    public float getIconSize() {
+        return 24.0F;
+    }
 }

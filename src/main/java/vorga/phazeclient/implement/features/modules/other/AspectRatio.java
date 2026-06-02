@@ -98,6 +98,11 @@ public final class AspectRatio extends Module {
 
     @Override
     public float getIconSize() {
-        return 21.0F;
+        return 27.4F;
+    }
+
+    @Override
+    public float getIconOffsetY() {
+        return -2.0F;
     }
 }

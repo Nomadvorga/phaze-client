@@ -349,9 +349,10 @@ public class ModuleComponent extends AbstractComponent {
 
         float iconSize = module.getIconSize();
         float iconX = x + (width - iconSize) / 2.0F;
+        float iconY = y + 12.0F + module.getIconOffsetY();
         String iconTexture = module.getIcon() != null ? "phaze:textures/modules/" + module.getIcon() : "textures/modules/" + module.getCategory().getIdentifier() + ".png";
         image.setTexture(iconTexture)
-                .render(ShapeProperties.create(context.getMatrices(), iconX, y + 12.0F, iconSize, iconSize)
+                .render(ShapeProperties.create(context.getMatrices(), iconX, iconY, iconSize, iconSize)
                         .color(applyGlobalAlpha(MenuStyle.TEXT_PRIMARY)).build());
 
         String moduleName = module.getLocalizedName();

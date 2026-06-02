@@ -17,6 +17,7 @@ import vorga.phazeclient.base.util.ServerUtil;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +30,7 @@ import java.util.function.Supplier;
  * at a glance.
  */
 public final class ItemHighlighter extends Module {
+    private static final int RESULT_CACHE_MAX = 512;
     private static final int[] CUSTOM_ITEM_COLORS = {
             0x63D2FF,
             0xFFB347,
@@ -61,6 +63,7 @@ public final class ItemHighlighter extends Module {
     private final List<ItemPickerSetting> customItems = new ArrayList<>();
     private final Map<Item, List<CompiledEntry>> compiledEntriesByItem = new IdentityHashMap<>();
     private final Map<ItemStack, Integer> preparedColorCache = new IdentityHashMap<>();
+    private final Map<ResultCacheKey, Integer> resolvedColorCache = new LinkedHashMap<>(128, 0.75F, true);
     private long compiledEntriesTick = Long.MIN_VALUE;
     private int compiledStateMask = Integer.MIN_VALUE;
     private int compiledEntriesFingerprint = Integer.MIN_VALUE;
@@ -173,20 +176,35 @@ public final class ItemHighlighter extends Module {
             return 0;
         }
 
-        String normalizedDisplay = null;
+        boolean needsDisplayName = false;
         for (CompiledEntry entry : candidates) {
-            if (!entry.requiresDisplayName()) {
-                return (compiledAlpha << 24) | entry.rgb();
-            }
-            if (normalizedDisplay == null) {
-                normalizedDisplay = normalize(stack.getName().getString());
-            }
-            if (entry.matches(normalizedDisplay)) {
-                return (compiledAlpha << 24) | entry.rgb();
+            if (entry.requiresDisplayName()) {
+                needsDisplayName = true;
+                break;
             }
         }
 
-        return 0;
+        String normalizedDisplay = needsDisplayName ? normalize(stack.getName().getString()) : "";
+        ResultCacheKey cacheKey = new ResultCacheKey(stack.getItem(), normalizedDisplay);
+        Integer cached = resolvedColorCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        int resolvedColor = 0;
+        for (CompiledEntry entry : candidates) {
+            if (!entry.requiresDisplayName()) {
+                resolvedColor = (compiledAlpha << 24) | entry.rgb();
+                break;
+            }
+            if (entry.matches(normalizedDisplay)) {
+                resolvedColor = (compiledAlpha << 24) | entry.rgb();
+                break;
+            }
+        }
+
+        cacheResolvedColor(cacheKey, resolvedColor);
+        return resolvedColor;
     }
 
     private void addBuiltIn(List<Setting> all, String label, Item item, String matchName, int color, Supplier<Boolean> visible) {
@@ -248,16 +266,20 @@ public final class ItemHighlighter extends Module {
                 | (Math.max(0, opacity.getInt()) << 8)
                 | (isEnabled() ? 1 << 30 : 0);
         int entriesFingerprint = computeEntriesFingerprint();
+        boolean cacheStateChanged = contextMask != compiledStateMask
+                || entriesFingerprint != compiledEntriesFingerprint;
 
         if (tickKey == compiledEntriesTick
-                && contextMask == compiledStateMask
-                && entriesFingerprint == compiledEntriesFingerprint) {
+                && !cacheStateChanged) {
             return;
         }
 
         compiledEntriesTick = tickKey;
         compiledStateMask = contextMask;
         compiledEntriesFingerprint = entriesFingerprint;
+        if (cacheStateChanged) {
+            resolvedColorCache.clear();
+        }
         compiledEntriesByItem.clear();
         compiledAlpha = 0;
 
@@ -281,6 +303,17 @@ public final class ItemHighlighter extends Module {
                     .computeIfAbsent(item, ignored -> new ArrayList<>(2))
                     .add(CompiledEntry.of(entry));
         }
+    }
+
+    private void cacheResolvedColor(ResultCacheKey key, int color) {
+        if (resolvedColorCache.size() >= RESULT_CACHE_MAX && !resolvedColorCache.containsKey(key)) {
+            var iterator = resolvedColorCache.entrySet().iterator();
+            if (iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
+        resolvedColorCache.put(key, color);
     }
 
     private int computeEntriesFingerprint() {
@@ -357,5 +390,8 @@ public final class ItemHighlighter extends Module {
             }
             return false;
         }
+    }
+
+    private record ResultCacheKey(Item item, String normalizedDisplay) {
     }
 }

@@ -227,6 +227,10 @@ public class Module extends SettingRepository implements QuickImports {
         return 16.0F;
     }
 
+    public float getIconOffsetY() {
+        return 0.0F;
+    }
+
     public boolean showIconInSettings() {
         return true;
     }

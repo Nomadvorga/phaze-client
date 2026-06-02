@@ -52,6 +52,7 @@ public class SButtonComponent extends AbstractSettingComponent {
         float buttonWidth = lunarButton.measureWidth();
 
         lunarButton.position(x + width - 9 - buttonWidth, y + height / 2 - 6);
+        lunarButton.globalAlpha = currentAlpha;
         lunarButton.render(context, mouseX, mouseY, delta);
     }
 

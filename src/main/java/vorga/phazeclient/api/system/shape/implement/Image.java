@@ -1,6 +1,12 @@
 package vorga.phazeclient.api.system.shape.implement;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gl.ShaderProgramKeys;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import vorga.phazeclient.api.system.shape.Shape;
@@ -11,6 +17,7 @@ import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.RotationAxis;
+import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 
 @Setter
@@ -60,11 +67,24 @@ public class Image implements Shape, QuickImports {
         float drawY = y + (rawHeight - drawHeight) * 0.5F;
 
         if (!UiMsdfIconAtlas.renderIcon(matrix, textureId, drawX, drawY, drawWidth, drawHeight, shape.getColor().x)) {
-            drawEngine.quad(matrix.peek().getPositionMatrix(), drawX, drawY, drawWidth, drawHeight, shape.getColor().x);
+            renderRawTexture(matrix, textureId, drawX, drawY, drawWidth, drawHeight, shape.getColor().x);
         }
 
         matrix.pop();
 
         RenderSystem.disableBlend();
+    }
+
+    private static void renderRawTexture(MatrixStack matrix, Identifier textureId, float x, float y, float width, float height, int color) {
+        RenderSystem.setShaderTexture(0, textureId);
+        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+
+        Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+        buffer.vertex(positionMatrix, x, y, 0.0F).texture(0.0F, 0.0F).color(color);
+        buffer.vertex(positionMatrix, x, y + height, 0.0F).texture(0.0F, 1.0F).color(color);
+        buffer.vertex(positionMatrix, x + width, y + height, 0.0F).texture(1.0F, 1.0F).color(color);
+        buffer.vertex(positionMatrix, x + width, y, 0.0F).texture(1.0F, 0.0F).color(color);
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
     }
 }

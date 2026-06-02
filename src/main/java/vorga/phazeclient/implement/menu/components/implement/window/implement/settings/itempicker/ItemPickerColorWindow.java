@@ -73,7 +73,7 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         int selectedColor = applyGlobalAlpha(0xFF000000 | (Color.HSBtoRGB(hue, saturation, brightness) & 0x00FFFFFF));
 
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
-                .round(6.0F)
+                .round(9.0F)
                 .softness(1.1F)
                 .thickness(1.15F)
                 .outlineColor(outline)
@@ -219,7 +219,7 @@ public final class ItemPickerColorWindow extends AbstractWindow {
     }
 
     private void renderHueStrip(MatrixStack matrices, float x, float y, float width, float height, int outlineColor) {
-        float radius = height / 2.0F;
+        float radius = 2.35F;
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
                 .round(radius)
                 .softness(1.0F)
@@ -241,12 +241,12 @@ public final class ItemPickerColorWindow extends AbstractWindow {
 
         int edgeColor = applyGlobalAlpha(0xFFFF0000);
         rectangle.render(ShapeProperties.create(matrices, innerX, innerY, capSize, innerHeight)
-                .round(innerHeight / 2.0F)
+                .round(2.1F)
                 .thickness(0.0F)
                 .color(edgeColor)
                 .build());
         rectangle.render(ShapeProperties.create(matrices, innerX + innerWidth - capSize, innerY, capSize, innerHeight)
-                .round(innerHeight / 2.0F)
+                .round(2.1F)
                 .thickness(0.0F)
                 .color(edgeColor)
                 .build());

@@ -33,6 +33,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
  */
 public final class PlayerModelHud extends RectHudModule {
     private static final PlayerModelHud INSTANCE = new PlayerModelHud();
+    private static final float BASE_MODEL_SIZE = 30.0F;
 
     public final SectionSetting otherSection = new SectionSetting("General");
     public final SelectSetting mode = new SelectSetting(
@@ -41,8 +42,8 @@ public final class PlayerModelHud extends RectHudModule {
     ).value("Follow Mouse", "Auto Rotate", "Static").selected("Follow Mouse");
     public final ValueSetting modelSize = new ValueSetting(
             "Model Size",
-            "Visual size of the player model in pixels (vanilla uses 30)"
-    ).range(20, 80).step(1).setValue(30);
+            "Legacy slider kept hidden; size is now changed via HUD edit / chat like every other HUD"
+    ).range(20, 80).step(1).setValue(BASE_MODEL_SIZE).visible(() -> false);
     public final ValueSetting rotationSpeed = new ValueSetting(
             "Rotation Speed",
             "Degrees per second when Auto Rotate is selected"
@@ -62,7 +63,6 @@ public final class PlayerModelHud extends RectHudModule {
         mainSection.setVisible(() -> false);
         colorSection.setVisible(() -> false);
         mode.setFullWidth(true);
-        modelSize.setFullWidth(true);
         rotationSpeed.setFullWidth(true);
         setup(otherSection, mode, modelSize, rotationSpeed);
     }
@@ -84,5 +84,9 @@ public final class PlayerModelHud extends RectHudModule {
     @Override
     public float getIconSize() {
         return 21.0F;
+    }
+
+    public float getBaseModelSize() {
+        return BASE_MODEL_SIZE;
     }
 }

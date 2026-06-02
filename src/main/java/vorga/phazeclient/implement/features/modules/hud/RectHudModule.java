@@ -62,7 +62,8 @@ public abstract class RectHudModule extends Module {
             .setValue(50)
             .visible(() -> background.isValue() && !isVanillaPreset());
     public final ValueSetting backgroundBlurRadius = new ValueSetting("Background Blur Radius", "Blur radius for HUD background")
-            .range(0, 32)
+            .range(0.0f, 32.0f)
+            .step(0.25f)
             .setValue(0)
             .visible(() -> background.isValue());
     // The Color Settings divider is meaningful only when at least one

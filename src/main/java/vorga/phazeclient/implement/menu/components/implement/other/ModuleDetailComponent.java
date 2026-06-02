@@ -3,8 +3,8 @@ package vorga.phazeclient.implement.menu.components.implement.other;
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
-import org.lwjgl.glfw.GLFW;
 import org.joml.Matrix4f;
+import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.api.feature.module.setting.SettingComponentAdder;
@@ -41,6 +41,7 @@ public class ModuleDetailComponent extends AbstractComponent {
 
     private final List<AbstractSettingComponent> settingComponents = new ArrayList<>();
     private final Animation openAnimation = new DecelerateAnimation().setMs(1).setValue(1);
+    private final Animation backHoverAnimation = new DecelerateAnimation().setMs(180).setValue(1);
     // fadeAnimation was previously used to cross-fade the settings
     // panel when the user switched modules / opened SETTINGS. Removed
     // because the user explicitly asked for no fade on tab/category
@@ -139,6 +140,8 @@ public class ModuleDetailComponent extends AbstractComponent {
         MatrixStack matrices = context.getMatrices();
 
         boolean backHovered = MathUtil.isHovered(mouseX, mouseY, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE);
+        backHoverAnimation.setDirection(backHovered ? Direction.FORWARDS : Direction.BACKWARDS);
+        float backHover = backHoverAnimation.getOutputFloat();
         int backBg = backHovered ? MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.CARD_OPTIONS, 0.45F) : MenuStyle.PANEL_CHIP;
         int backBorder = backHovered ? MenuStyle.BORDER_LIGHT : MenuStyle.BORDER;
 
@@ -149,13 +152,16 @@ public class ModuleDetailComponent extends AbstractComponent {
                 .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, backBg, anim), 0.92F * anim))
                 .build());
         float backIconSize = 7.5F;
+        float backIconX = backButtonX() + (BACK_BUTTON_SIZE - backIconSize) / 2.0F;
+        float backIconY = backButtonY() + (BACK_BUTTON_SIZE - backIconSize) / 2.0F;
         image.setTexture("textures/back_arrow.png")
                 .render(ShapeProperties.create(matrices,
-                                backButtonX() + (BACK_BUTTON_SIZE - backIconSize) / 2.0F,
-                                backButtonY() + (BACK_BUTTON_SIZE - backIconSize) / 2.0F,
+                                backIconX - backIconSize,
+                                backIconY,
                                 backIconSize,
                                 backIconSize)
-                        .color(MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, anim))
+                        .rotation(0)
+                        .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, backHover * 0.18F), anim))
                         .build());
 
         String title = module.getLocalizedName().toUpperCase(Locale.ROOT);

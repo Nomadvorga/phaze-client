@@ -225,7 +225,7 @@ public class ConfigsViewComponent extends AbstractComponent {
     private static final float ICON_AREA_W = 28.0F;
     /** Visual size of the file / file_import icon. Smaller than the
      *  area itself so the icon has comfortable breathing room. */
-    private static final float ICON_SIZE = 15.75F;
+    private static final float ICON_SIZE = 19.6875F;
 
     private void renderRow(MatrixStack matrix, int mouseX, int mouseY,
                            float listX, float rowY, float listW,
@@ -540,7 +540,9 @@ public class ConfigsViewComponent extends AbstractComponent {
         a.setDirection(hover ? Direction.FORWARDS : Direction.BACKWARDS);
         float h = a.getOutputFloat();
 
-        int color = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.30F + h * 0.55F);
+        int color = kind == ActionKind.DELETE
+                ? MenuStyle.mix(0xFFB55F73, 0xFFFF9BAA, 0.30F + h * 0.55F)
+                : MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.30F + h * 0.55F);
         float iconX = btnX + (ACTION_BUTTON_W - ACTION_ICON_SIZE) * 0.5F;
         float iconY = rowY + (ROW_HEIGHT - ACTION_ICON_SIZE) * 0.5F;
         image.setTexture(kind.texture)
