@@ -2924,13 +2924,15 @@ public class InGameHudMixin {
         }
         long blurStateKey = makeHudBlurStateKey(normalizedBlurRadius, safeScale, 0.0f, 0.0f, 54.0f, 63.0f);
         Blur.INSTANCE.registerHudBlurState(HUD_KEYSTROKES, blurStateKey);
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 18.0f, 0.0f, 16.0f, 18.0f, blurQuality));  // W
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 0.0f, 19.0f, 16.0f, 18.0f, blurQuality));  // A
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 18.0f, 19.0f, 16.0f, 18.0f, blurQuality)); // S
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 36.0f, 19.0f, 18.0f, 18.0f, blurQuality)); // D
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 0.0f, 38.0f, 54.0f, 8.0f, blurQuality));   // Space
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 0.0f, 47.0f, 27.0f, 16.0f, blurQuality));  // LMB
-        Blur.INSTANCE.renderCached(createKeystrokeBlurRect(context, 27.0f, 47.0f, 27.0f, 16.0f, blurQuality)); // RMB
+        List<ShapeProperties> blurRects = new ArrayList<>(7);
+        blurRects.add(createKeystrokeBlurRect(context, 18.0f, 0.0f, 16.0f, 18.0f, blurQuality));  // W
+        blurRects.add(createKeystrokeBlurRect(context, 0.0f, 19.0f, 16.0f, 18.0f, blurQuality));  // A
+        blurRects.add(createKeystrokeBlurRect(context, 18.0f, 19.0f, 16.0f, 18.0f, blurQuality)); // S
+        blurRects.add(createKeystrokeBlurRect(context, 36.0f, 19.0f, 18.0f, 18.0f, blurQuality)); // D
+        blurRects.add(createKeystrokeBlurRect(context, 0.0f, 38.0f, 54.0f, 8.0f, blurQuality));   // Space
+        blurRects.add(createKeystrokeBlurRect(context, 0.0f, 47.0f, 27.0f, 16.0f, blurQuality));  // LMB
+        blurRects.add(createKeystrokeBlurRect(context, 27.0f, 47.0f, 27.0f, 16.0f, blurQuality)); // RMB
+        Blur.INSTANCE.renderCachedBatch(blurRects);
     }
 
     private static ShapeProperties createKeystrokeBlurRect(DrawContext context, float x, float y, float width, float height, float blurQuality) {

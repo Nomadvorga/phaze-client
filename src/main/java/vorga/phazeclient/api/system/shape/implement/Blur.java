@@ -310,44 +310,65 @@ public class Blur implements Shape {
         if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
             return;
         }
+        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
         if (!prepareFramebuffers(client, true, true)) {
             return;
         }
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
-
-        RenderSystem.setShaderTexture(0, input.getColorAttachment());
-        ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
-        hudBatchMaskShader = shader;
-        if (shader == null) {
-            restoreRenderState(true);
-            return;
+        boolean useHudBatch = hudBatchMode;
+        if (useHudBatch) {
+            if (!hudBatchStateApplied) {
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+                RenderSystem.disableCull();
+                RenderSystem.disableDepthTest();
+                hudBatchStateApplied = true;
+            }
+        } else {
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableCull();
+            RenderSystem.disableDepthTest();
         }
 
+        ShaderProgram shader = null;
+        PreparedBlurState activeState = null;
         for (ShapeProperties shape : shapes) {
             if (shape == null) {
                 continue;
             }
-            renderPreparedShapeWithBoundShader(shape, shader);
+            PreparedBlurState preparedState = resolvePreparedBlurState(client, shape);
+            if (preparedState == null) {
+                continue;
+            }
+            if (!preparedState.matches(activeState)) {
+                RenderSystem.setShaderTexture(0, preparedState.sourceTexture());
+                shader = RenderSystem.setShader(MASK_SHADER_KEY);
+                hudBatchMaskShader = shader;
+                if (shader == null) {
+                    if (!useHudBatch) {
+                        restoreRenderState(true);
+                    }
+                    return;
+                }
+                activeState = preparedState;
+            }
+            renderPreparedShapeWithBoundShader(shape, shader, preparedState);
         }
 
-        int target = HudBuffer.activeCaptureTarget >= 0 ? HudBuffer.activeCaptureTarget : client.getFramebuffer().fbo;
-        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target);
-        restoreRenderState(true);
+        if (useHudBatch) {
+            int target = HudBuffer.activeCaptureTarget >= 0 ? HudBuffer.activeCaptureTarget : client.getFramebuffer().fbo;
+            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target);
+        } else {
+            restoreRenderState(true);
+        }
     }
 
-    private void renderPreparedShapeWithBoundShader(ShapeProperties shape, ShaderProgram shader) {
+    private void renderPreparedShapeWithBoundShader(ShapeProperties shape, ShaderProgram shader, PreparedBlurState preparedState) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || input == null || shader == null) {
+        if (client == null || input == null || shader == null || preparedState == null) {
             return;
         }
-
-        Theme theme = Theme.getInstance();
-        int blurMode = theme.getHudBlurMode();
-        float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
 
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
@@ -373,8 +394,8 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("Size").set(width, height);
         shader.getUniformOrDefault("Radius").set(round);
         shader.getUniformOrDefault("Smoothness").set(softness);
-        shader.getUniformOrDefault("BlurRadius").set(blurRadius);
-        shader.getUniformOrDefault("BlurMode").set(blurMode);
+        shader.getUniformOrDefault("BlurRadius").set(preparedState.blurRadius());
+        shader.getUniformOrDefault("BlurMode").set(preparedState.blurMode());
         BufferRenderer.drawWithGlobalProgram(buffer.end());
     }
 
@@ -441,31 +462,9 @@ public class Blur implements Shape {
             return false;
         }
 
-        Theme theme = Theme.getInstance();
-        int blurMode = theme.getHudBlurMode();
-        float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
-        float hudGaussianRadius = blurRadius * HUD_GAUSSIAN_STRENGTH_MULTIPLIER;
-        int effectiveBlurMode = blurMode;
-        float effectiveBlurRadius = blurRadius;
-        int sourceTexture = input.getColorAttachment();
-
-        // Optimized HUD Gaussian: blur the captured frame once, then mask
-        // the already-blurred texture into the widget. This keeps the
-        // visual response close to a real Gaussian blur while avoiding the
-        // harsh step changes the old mixed pipeline produced.
-        if (blurMode == 2 && blurRadius > 0.0f) {
-            BlurRegion blurRegion = computeHudGaussianRegion(client, shape, hudGaussianRadius);
-            if (shouldUseFastHudBlur(blurRegion, hudGaussianRadius)) {
-                effectiveBlurMode = 2;
-                effectiveBlurRadius = Math.min(HUD_FAST_BLUR_RADIUS_CAP, Math.max(blurRadius, blurRadius * HUD_FAST_BLUR_RADIUS_MULTIPLIER));
-            } else if (applyOptimizedHudGaussianBlur(client, hudGaussianRadius, blurRegion)) {
-                    sourceTexture = pong.getColorAttachment();
-                    effectiveBlurMode = 0;
-                    effectiveBlurRadius = 0.0f;
-            } else {
-                effectiveBlurMode = 0;
-                effectiveBlurRadius = hudGaussianRadius;
-            }
+        PreparedBlurState preparedState = resolvePreparedBlurState(client, shape);
+        if (preparedState == null) {
+            return false;
         }
 
         float scale = (float) client.getWindow().getScaleFactor();
@@ -489,7 +488,7 @@ public class Blur implements Shape {
                 color
         );
 
-        RenderSystem.setShaderTexture(0, sourceTexture);
+        RenderSystem.setShaderTexture(0, preparedState.sourceTexture());
         ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
         hudBatchMaskShader = shader;
         if (shader == null) {
@@ -498,10 +497,41 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("Size").set(width, height);
         shader.getUniformOrDefault("Radius").set(round);
         shader.getUniformOrDefault("Smoothness").set(softness);
-        shader.getUniformOrDefault("BlurRadius").set(effectiveBlurRadius);
-        shader.getUniformOrDefault("BlurMode").set(effectiveBlurMode);
+        shader.getUniformOrDefault("BlurRadius").set(preparedState.blurRadius());
+        shader.getUniformOrDefault("BlurMode").set(preparedState.blurMode());
         BufferRenderer.drawWithGlobalProgram(buffer.end());
         return true;
+    }
+
+    private PreparedBlurState resolvePreparedBlurState(MinecraftClient client, ShapeProperties shape) {
+        if (client == null || shape == null || input == null) {
+            return null;
+        }
+
+        Theme theme = Theme.getInstance();
+        int blurMode = theme.getHudBlurMode();
+        float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
+        float hudGaussianRadius = blurRadius * HUD_GAUSSIAN_STRENGTH_MULTIPLIER;
+        int effectiveBlurMode = blurMode;
+        float effectiveBlurRadius = blurRadius;
+        int sourceTexture = input.getColorAttachment();
+
+        if (blurMode == 2 && blurRadius > 0.0f) {
+            BlurRegion blurRegion = computeHudGaussianRegion(client, shape, hudGaussianRadius);
+            if (shouldUseFastHudBlur(blurRegion, hudGaussianRadius)) {
+                effectiveBlurMode = 2;
+                effectiveBlurRadius = Math.min(HUD_FAST_BLUR_RADIUS_CAP, Math.max(blurRadius, blurRadius * HUD_FAST_BLUR_RADIUS_MULTIPLIER));
+            } else if (applyOptimizedHudGaussianBlur(client, hudGaussianRadius, blurRegion)) {
+                sourceTexture = pong.getColorAttachment();
+                effectiveBlurMode = 0;
+                effectiveBlurRadius = 0.0f;
+            } else {
+                effectiveBlurMode = 0;
+                effectiveBlurRadius = hudGaussianRadius;
+            }
+        }
+
+        return new PreparedBlurState(sourceTexture, effectiveBlurMode, effectiveBlurRadius);
     }
 
     private boolean prepareFramebuffers(MinecraftClient client, boolean cacheFrame, boolean refreshNonCachedInput) {
@@ -947,6 +977,15 @@ public class Blur implements Shape {
     }
 
     private record BlurRegion(int x, int y, int width, int height) {
+    }
+
+    private record PreparedBlurState(int sourceTexture, int blurMode, float blurRadius) {
+        private boolean matches(PreparedBlurState other) {
+            return other != null
+                    && sourceTexture == other.sourceTexture
+                    && blurMode == other.blurMode
+                    && Float.floatToRawIntBits(blurRadius) == Float.floatToRawIntBits(other.blurRadius);
+        }
     }
 
     private void bindMainDrawTarget(MinecraftClient client) {
