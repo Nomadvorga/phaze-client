@@ -22,13 +22,10 @@ import java.util.regex.Pattern;
  */
 public final class PhazeBadgeUtil {
     public static final Identifier BADGE_ICON = Identifier.of("phaze", "textures/menu/phaze_brand.png");
-    public static final Identifier BADGE_FONT = Identifier.of("phaze", "badge");
     public static final String BADGE_GLYPH = "\uE000";
     private static final String BADGE_PADDING = "  ";
     private static final Pattern LEADING_TAGS = Pattern.compile("^(?:\\[[^\\]]*]\\s*)+");
-    private static final OrderedText CHAT_BADGE_TEXT = Text.literal(BADGE_GLYPH)
-            .styled(style -> style.withFont(BADGE_FONT))
-            .asOrderedText();
+    private static final OrderedText CHAT_BADGE_TEXT = Text.literal(BADGE_GLYPH).asOrderedText();
 
     private PhazeBadgeUtil() {
     }
@@ -134,7 +131,12 @@ public final class PhazeBadgeUtil {
     }
 
     public static void drawChatBadgeAsText(DrawContext context, TextRenderer renderer, float x, float y, int color) {
-        context.drawTextWithShadow(renderer, CHAT_BADGE_TEXT, Math.round(x), Math.round(y), color);
+        float scale = 1.0F / 1.1F;
+        context.getMatrices().push();
+        context.getMatrices().translate(Math.round(x), Math.round(y + 1.0F), 0.0F);
+        context.getMatrices().scale(scale, scale, 1.0F);
+        context.drawText(renderer, CHAT_BADGE_TEXT, 0, 0, color, false);
+        context.getMatrices().pop();
     }
 
     public static void drawWorldBadge(
