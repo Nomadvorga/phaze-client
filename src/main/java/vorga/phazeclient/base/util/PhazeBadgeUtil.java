@@ -5,6 +5,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.text.OrderedText;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
@@ -21,8 +22,13 @@ import java.util.regex.Pattern;
  */
 public final class PhazeBadgeUtil {
     public static final Identifier BADGE_ICON = Identifier.of("phaze", "textures/menu/phaze_brand.png");
+    public static final Identifier BADGE_FONT = Identifier.of("phaze", "badge");
+    public static final String BADGE_GLYPH = "\uE000";
     private static final String BADGE_PADDING = "  ";
     private static final Pattern LEADING_TAGS = Pattern.compile("^(?:\\[[^\\]]*]\\s*)+");
+    private static final OrderedText CHAT_BADGE_TEXT = Text.literal(BADGE_GLYPH)
+            .styled(style -> style.withFont(BADGE_FONT))
+            .asOrderedText();
 
     private PhazeBadgeUtil() {
     }
@@ -40,10 +46,14 @@ public final class PhazeBadgeUtil {
     }
 
     public static Text withBadgePadding(Text text) {
+        return withBadgePadding(text, BADGE_PADDING.length());
+    }
+
+    public static Text withBadgePadding(Text text, int spaces) {
         if (text == null || hasBadgePadding(text)) {
             return text;
         }
-        MutableText prefixed = Text.literal(BADGE_PADDING);
+        MutableText prefixed = Text.literal(" ".repeat(Math.max(1, spaces)));
         prefixed.append(text.copy());
         return prefixed;
     }
@@ -121,6 +131,10 @@ public final class PhazeBadgeUtil {
 
     public static void drawGuiBadge(DrawContext context, float x, float y, float size, int color) {
         UiMsdfIconAtlas.renderIcon(context, BADGE_ICON, x, y, size, size, color, true);
+    }
+
+    public static void drawChatBadgeAsText(DrawContext context, TextRenderer renderer, float x, float y, int color) {
+        context.drawTextWithShadow(renderer, CHAT_BADGE_TEXT, Math.round(x), Math.round(y), color);
     }
 
     public static void drawWorldBadge(

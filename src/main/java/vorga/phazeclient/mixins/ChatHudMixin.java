@@ -320,8 +320,7 @@ public abstract class ChatHudMixin {
         }
 
         if (phaze$shouldDrawChatBadge(visible)) {
-            float size = PhazeBadgeUtil.guiBadgeSize(renderer);
-            PhazeBadgeUtil.drawGuiBadge(ctx, drawX - 1.0F, drawY - 2.5F, size, PhazeBadgeUtil.alphaWhite(color));
+            PhazeBadgeUtil.drawChatBadgeAsText(ctx, renderer, drawX - 1.0F, drawY - 1.0F, PhazeBadgeUtil.alphaWhite(color));
         }
 
         return op.call(ctx, renderer, text, drawX, drawY, color);

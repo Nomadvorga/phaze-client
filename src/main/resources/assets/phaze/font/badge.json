@@ -1,0 +1,13 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "phaze:font/badge.png",
+      "ascent": 9,
+      "height": 11,
+      "chars": [
+        "\ue000"
+      ]
+    }
+  ]
+}
