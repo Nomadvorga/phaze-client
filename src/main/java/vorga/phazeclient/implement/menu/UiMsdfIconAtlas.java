@@ -123,6 +123,29 @@ public final class UiMsdfIconAtlas {
         return renderQuad(matrix.peek().getPositionMatrix(), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, true);
     }
 
+    public static boolean renderIcon(
+            Matrix4f matrix,
+            Identifier icon,
+            float x,
+            float y,
+            float width,
+            float height,
+            int color,
+            boolean precise
+    ) {
+        AtlasIcon atlasIcon = ensureIconReady(icon);
+        if (atlasIcon == null) {
+            return false;
+        }
+
+        float x1 = precise ? x : Math.round(x);
+        float y1 = precise ? y : Math.round(y);
+        float drawWidth = precise ? Math.max(1.0F, width) : Math.max(1.0F, Math.round(width));
+        float drawHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
+        FittedRect fittedRect = fitRect(x1, y1, drawWidth, drawHeight, atlasIcon.aspectRatio);
+        return renderQuad(matrix, atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false);
+    }
+
     private static synchronized boolean ensureAtlasLoaded() {
         if (atlasLoaded) {
             return true;

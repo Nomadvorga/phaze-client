@@ -75,6 +75,7 @@ MAIN_MENU_ICON_IDS = (
     "phaze:textures/menu/users.png",
     "phaze:textures/menu/tab.png",
     "phaze:textures/menu/settings.png",
+    "phaze:textures/menu/phaze_brand.png",
     "phaze:textures/menu/cube.png",
     "phaze:textures/menu/arrow_external_bold.png",
     "phaze:textures/menu/logout.png",

@@ -299,6 +299,7 @@ public class MenuScreen extends Screen implements QuickImports {
         UiMsdfIconAtlas.registerTexture("textures/cloud.png");
         UiMsdfIconAtlas.registerTexture("textures/clock.png");
         UiMsdfIconAtlas.registerTexture("textures/reset.png");
+        UiMsdfIconAtlas.registerTexture("phaze:textures/menu/phaze_brand.png");
 
         Main main = Main.getInstance();
         if (main != null && main.getModuleProvider() != null) {

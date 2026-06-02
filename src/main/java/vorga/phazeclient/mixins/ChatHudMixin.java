@@ -21,6 +21,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.base.util.animation.Interpolation;
 import vorga.phazeclient.helpers.ChatScrollState;
 import vorga.phazeclient.implement.features.modules.other.Animations;
@@ -29,7 +30,10 @@ import vorga.phazeclient.implement.features.modules.other.MentionHighlight;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
 import vorga.phazeclient.implement.features.modules.other.Translator;
 
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Consolidated mixin for {@link ChatHud}. Combines the previous seven
@@ -66,6 +70,9 @@ public abstract class ChatHudMixin {
     @Unique private float phaze$frameDx = 0.0F;
     @Unique private float phaze$frameDy = 0.0F;
     @Unique private boolean phaze$frameActive = false;
+    @Unique private boolean phaze$pendingBadgeForNextLine = false;
+    @Unique private final Set<Integer> phaze$badgedChatTicks = new LinkedHashSet<>();
+    @Unique private final Set<Integer> phaze$drawnBadgeTicksThisFrame = new HashSet<>();
 
     // ---------------------------------------------------------------
     // ChatHudNickHiderMixin + MentionHighlight (combined HEAD)
@@ -89,16 +96,26 @@ public abstract class ChatHudMixin {
             argsOnly = true
     )
     private Text phaze$mentionThenHide(Text original) {
+        phaze$pendingBadgeForNextLine = false;
+        if (PhazeBadgeUtil.hasBadgePadding(original)) {
+            phaze$pendingBadgeForNextLine = true;
+            return original;
+        }
+
         Text afterMention = original;
         MentionHighlight mention = MentionHighlight.getInstance();
         if (mention != null && mention.isEnabled()) {
             afterMention = mention.processIncoming(original);
         }
+        String sender = PhazeBadgeUtil.extractChatSender(afterMention != null ? afterMention.getString() : null);
         NickHider hider = NickHider.getInstance();
-        if (hider == null) {
-            return afterMention;
+        Text result = hider == null ? afterMention : hider.rewrite(afterMention);
+
+        if (sender != null && PhazeBadgeUtil.isPhazeUser(sender)) {
+            phaze$pendingBadgeForNextLine = true;
+            return PhazeBadgeUtil.withBadgePadding(result);
         }
-        return hider.rewrite(afterMention);
+        return result;
     }
 
     // ---------------------------------------------------------------
@@ -196,6 +213,10 @@ public abstract class ChatHudMixin {
         if (!visibleMessages.isEmpty()) {
             phaze$latestAddedTick = visibleMessages.get(0).addedTime();
         }
+        if (phaze$pendingBadgeForNextLine && line != null) {
+            phaze$rememberBadgedChatTick(line.creationTick());
+        }
+        phaze$pendingBadgeForNextLine = false;
     }
 
     @Inject(method = "render", at = @At("HEAD"))
@@ -204,6 +225,7 @@ public abstract class ChatHudMixin {
         phaze$frameActive = false;
         phaze$frameDx = 0.0F;
         phaze$frameDy = 0.0F;
+        phaze$drawnBadgeTicksThisFrame.clear();
 
         Animations module = Animations.getInstance();
         if (module == null || !module.isChatSmoothScrollEnabled()) {
@@ -290,12 +312,34 @@ public abstract class ChatHudMixin {
                                 int x, int y, int color,
                                 Operation<Integer> op,
                                 @Local ChatHudLine.Visible visible) {
+        int drawX = x;
+        int drawY = y;
         if (phaze$shouldShift(visible)) {
-            return op.call(ctx, renderer, text,
-                    x + Math.round(phaze$frameDx),
-                    y + Math.round(phaze$frameDy),
-                    color);
+            drawX += Math.round(phaze$frameDx);
+            drawY += Math.round(phaze$frameDy);
         }
-        return op.call(ctx, renderer, text, x, y, color);
+
+        if (phaze$shouldDrawChatBadge(visible)) {
+            float size = PhazeBadgeUtil.guiBadgeSize(renderer);
+            PhazeBadgeUtil.drawGuiBadge(ctx, drawX - 1.0F, drawY - 2.5F, size, PhazeBadgeUtil.alphaWhite(color));
+        }
+
+        return op.call(ctx, renderer, text, drawX, drawY, color);
+    }
+
+    @Unique
+    private void phaze$rememberBadgedChatTick(int tick) {
+        phaze$badgedChatTicks.add(tick);
+        while (phaze$badgedChatTicks.size() > 512) {
+            Integer oldest = phaze$badgedChatTicks.iterator().next();
+            phaze$badgedChatTicks.remove(oldest);
+        }
+    }
+
+    @Unique
+    private boolean phaze$shouldDrawChatBadge(ChatHudLine.Visible visible) {
+        return visible != null
+                && phaze$badgedChatTicks.contains(visible.addedTime())
+                && phaze$drawnBadgeTicksThisFrame.add(visible.addedTime());
     }
 }

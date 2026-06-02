@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.base.util.RemoteRulesService;
+import vorga.phazeclient.implement.menu.MainMenuScreen;
 
 /**
  * Draws the live "Phaze: N online" counter in the top-left corner of
@@ -47,6 +48,9 @@ public abstract class TitleScreenOnlineCounterMixin {
             DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.textRenderer == null) {
+            return;
+        }
+        if (client.currentScreen instanceof MainMenuScreen) {
             return;
         }
 

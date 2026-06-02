@@ -20,6 +20,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.other.TotemTracker;
@@ -50,6 +51,7 @@ import java.util.Map;
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin {
     private static boolean phaze$backgroundDrawnThisLabel = false;
+    private static boolean phaze$drawBadgeThisLabel = false;
     private static final int NAMETAG_CACHE_MAX = 256;
     private static final Map<String, Integer> TEXT_WIDTH_CACHE = new LinkedHashMap<>(NAMETAG_CACHE_MAX, 0.75f, true) {
         @Override
@@ -116,6 +118,7 @@ public abstract class EntityRendererMixin {
             }
         }
         phaze$backgroundDrawnThisLabel = false;
+        phaze$drawBadgeThisLabel = false;
     }
 
     @Redirect(
@@ -125,6 +128,7 @@ public abstract class EntityRendererMixin {
     private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
         int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
+        phaze$drawNametagBadgeIfNeeded(matrix, vertexConsumers, x, y, layerType, light);
         return textRenderer.draw(
                 text,
                 x,
@@ -146,6 +150,7 @@ public abstract class EntityRendererMixin {
     private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
         int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
+        phaze$drawNametagBadgeIfNeeded(matrix, vertexConsumers, x, y, layerType, light);
         return textRenderer.draw(
                 text,
                 x,
@@ -217,6 +222,24 @@ public abstract class EntityRendererMixin {
         return decorated;
     }
 
+    @ModifyVariable(
+            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At("HEAD"),
+            argsOnly = true,
+            ordinal = 0
+    )
+    private Text phaze$prependBadgePadding(Text original) {
+        if (original == null) {
+            return null;
+        }
+        String identity = PhazeBadgeUtil.extractNametagIdentity(original.getString());
+        if (identity == null || !PhazeBadgeUtil.isPhazeUser(identity)) {
+            return original;
+        }
+        phaze$drawBadgeThisLabel = true;
+        return PhazeBadgeUtil.withBadgePadding(original);
+    }
+
     private static int phaze$resolvedTextColor(int originalColor) {
         Integer cached = TEXT_COLOR_CACHE.get(originalColor);
         if (cached != null) {
@@ -248,6 +271,20 @@ public abstract class EntityRendererMixin {
         lastBackgroundInputColor = vanillaBackgroundColor;
         lastBackgroundResolvedColor = out;
         return out;
+    }
+
+    private static void phaze$drawNametagBadgeIfNeeded(
+            Matrix4f matrix,
+            VertexConsumerProvider vertexConsumers,
+            float x,
+            float y,
+            TextRenderer.TextLayerType layerType,
+            int light
+    ) {
+        if (!phaze$drawBadgeThisLabel) {
+            return;
+        }
+        PhazeBadgeUtil.drawWorldBadge(matrix, vertexConsumers, layerType, x - 2.0F, y - 1.0F, 10.0F, light, 0xFFFFFFFF);
     }
 
     private static int phaze$drawBlurBackgroundIfNeeded(float textWidth, Matrix4f matrix, float x, float y, TextRenderer.TextLayerType layerType, int vanillaBackgroundColor) {
