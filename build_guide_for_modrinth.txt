@@ -13,42 +13,10 @@ Build steps
 3. Run the build command:
 
 Windows:
-gradlew clean build
+gradlew.bat clean build
 
 Linux/macOS:
-./gradlew clean buildBuild instructions
-
-This project uses a standard Gradle/Fabric setup and can be built directly from source.
-
-Requirements
-- JDK 21
-- Internet access for Gradle dependency resolution
-
-Build steps
-
-1. Clone or download the repository source code.
-2. Open the project root directory.
-3. Run the build command:
-
-Windows:
-gradlew.bat build
-
-Linux/macOS:
-./gradlew build
-
-If Gradle is installed globally, `gradle build` also works.
-
-Notes
-- No additional manual setup is required.
-- Dependencies are resolved automatically by Gradle during the build process.
-- The project targets Minecraft 1.21.4 and Java 21.
-
-Build output
-- The compiled mod JAR is generated in:
-  build/libs/
-
-Additional artifacts
-- A sources JAR is also generated in the same `build/libs/` directory.
+./gradlew clean build
 
 Notes
 - No additional manual setup is required.
