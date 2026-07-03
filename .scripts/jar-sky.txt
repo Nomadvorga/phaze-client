@@ -1,2 +1,0 @@
-vorga/phazeclient/implement/features/modules/other/SkyCustomizer.class
-vorga/phazeclient/mixins/ClientWorldSkyCustomizerMixin.class

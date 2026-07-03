@@ -1,9 +1,0 @@
-{
-  "parent": "shulkerboxtooltip-common.mixins.json",
-  "package": "com.misterpemodder.shulkerboxtooltip.mixin",
-  "client": [
-    "client.fabric.AbstractContainerScreenMixin",
-    "client.fabric.ItemStackMixin"
-  ],
-  "refmap": "shulkerboxtooltip-fabric-fabric-refmap.json"
-}
