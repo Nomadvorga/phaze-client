@@ -13,6 +13,8 @@ jdk-*/
 *.class
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
+!libs/arboard-1.1.2.jar
+!libs/native-utils-1.0.0.jar
 
 .idea/
 *.iml
@@ -22,6 +24,9 @@ claude_launcher.exe
 
 # Iris (and other) compile-only jars - large, version-specific, not committed
 libs-compileonly/
+!libs-compileonly/
+!libs-compileonly/iris-fabric-1.8.8+mc1.21.4.jar
+!libs-compileonly/reeses-sodium-options-fabric-1.8.3+mc1.21.4.jar
 
 # Workspace-local staging directories used by build scripts that
 # can't write directly into sibling project paths. Never committed -
