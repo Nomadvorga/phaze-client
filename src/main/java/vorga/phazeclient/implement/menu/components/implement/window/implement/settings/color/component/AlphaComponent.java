@@ -128,8 +128,6 @@ public class AlphaComponent extends AbstractComponent {
     private static void renderVerticalGradientStrip(MatrixStack matrix, String texture, float x, float y, float w, float h, int color) {
         BatchedRectangle.flushIfBatching();
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
         net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);
 
         Matrix4f mat = GuiMatrix.mat4(matrix);
@@ -141,7 +139,6 @@ public class AlphaComponent extends AbstractComponent {
         buf.vertex(mat, x + w, y,     0).texture(0, 1).color(color);
 
         vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -154,8 +151,6 @@ public class AlphaComponent extends AbstractComponent {
     private static void renderLeftPointingTriangle(MatrixStack matrix, String texture, float x, float y, float w, float h, int color) {
         BatchedRectangle.flushIfBatching();
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
         net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);
 
         Matrix4f mat = GuiMatrix.mat4(matrix);
@@ -167,6 +162,5 @@ public class AlphaComponent extends AbstractComponent {
         buf.vertex(mat, x + w, y,     0).texture(0, 0).color(color);
 
         vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
-        RenderSystem.disableBlend();
     }
 }

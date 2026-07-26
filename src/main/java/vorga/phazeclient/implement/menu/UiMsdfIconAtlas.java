@@ -302,10 +302,6 @@ public final class UiMsdfIconAtlas {
             filterApplied = true;
         }
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         RenderSystem.setShaderTexture(0, ATLAS_TEXTURE_ID);
 
         ShaderProgram shader = RenderSystem.setShader(MsdfRenderer.MSDF_FONT_SHADER_KEY);
@@ -343,9 +339,6 @@ public final class UiMsdfIconAtlas {
         }
 
         RenderSystem.setShaderTexture(0, 0);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
         return true;
     }
 

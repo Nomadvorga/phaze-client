@@ -109,11 +109,7 @@ public class Shader {
             return;
         }
         client.getFramebuffer().beginWrite(true);
-        RenderSystem.enableDepthTest();
         RenderSystem.depthFunc(515); // GL_LEQUAL
-        RenderSystem.depthMask(true);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
     }
 
     private void applyMotionBlur() {
@@ -164,11 +160,7 @@ public class Shader {
 
         motionBlurShader.render(0.0f);
 
-        RenderSystem.enableDepthTest();
         RenderSystem.depthFunc(515); // GL_LEQUAL
-        RenderSystem.depthMask(true);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
     }
 
     private int getSampleAmountForFPS(float fps) {

@@ -78,7 +78,6 @@ public class MathUtil {
     public void setColor(float red, float green, float blue, float alpha, Runnable data) {
         RenderSystem.setShaderColor(MathHelper.clamp(red, 0, 1), MathHelper.clamp(green, 0, 1), MathHelper.clamp(blue, 0, 1), MathHelper.clamp(alpha, 0, 1));
         data.run();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     public double round(double num, double increment) {

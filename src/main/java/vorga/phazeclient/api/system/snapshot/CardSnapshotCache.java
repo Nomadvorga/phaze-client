@@ -194,7 +194,6 @@ public final class CardSnapshotCache {
             // don't need a depth attachment because GUI components
             // are flat 2D draws ordered by call sequence, not by Z.
             snap.fbo = new SimpleFramebuffer(fbWidth, fbHeight, false);
-            snap.fbo.setTexFilter(GL11C.GL_LINEAR);
             snap.fbWidth = fbWidth;
             snap.fbHeight = fbHeight;
             snap.populated = false;
@@ -308,7 +307,6 @@ public final class CardSnapshotCache {
         // caller already excludes the cache while globalAlpha < 1.0
         // (menu fade), so any setShaderColor alpha less than 1 here
         // would be the caller's mistake. Reset for safety.
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
         // Bind FBO + clear to transparent. Vanilla SimpleFramebuffer
         // defaults clearColor to (1, 1, 1, 0) (white with alpha 0)

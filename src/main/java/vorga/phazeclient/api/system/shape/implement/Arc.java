@@ -97,7 +97,7 @@ public class Arc implements Shape, QuickImports {
 
         if (window() == null) return;
         float scale = (float) window().getScaleFactor();
-        float alpha = RenderSystem.getShaderColor()[3];
+        float alpha = vorga.phazeclient.api.system.draw.PhazeAlpha.get();
 
         Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f pos = matrix4f.transformPosition(shape.getX(), shape.getY(), 0, scratchPosition).mul(scale);

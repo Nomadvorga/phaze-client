@@ -77,11 +77,6 @@ public final class Render3DUtil {
         float b = (color & 0xFF) / 255.0F;
         float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(false);
         // Polygon offset pushes the fill slightly closer to the camera
         // in the depth buffer, eliminating z-fighting flicker against
         // world geometry that shares the same plane. Belt-and-braces
@@ -124,9 +119,6 @@ public final class Render3DUtil {
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.disablePolygonOffset();
-        RenderSystem.depthMask(true);
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -148,11 +140,6 @@ public final class Render3DUtil {
         float b = (color & 0xFF) / 255.0F;
         float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(false);
 
         // Filled faces.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -208,9 +195,6 @@ public final class Render3DUtil {
         line(matrix, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     public static void vertexBoxFill(MatrixStack matrices,
@@ -280,15 +264,9 @@ public final class Render3DUtil {
         float b = (color & 0xFF) / 255.0F;
         float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         // bottom
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
@@ -322,10 +300,6 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -379,20 +353,14 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
         // Back-face cull keeps only the camera-facing hemisphere
         // visible. Without this both halves rasterise and the
         // overlap on transparent fills produces the two-tone seam
         // artefact reported by users. The UV-sphere mesh below
         // emits CCW from outside, matching GL's default GL_BACK.
-        RenderSystem.enableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
 
         CircleLut circle = circleLut(segments);
         SphereLatitudeLut latitudes = sphereLatitudeLut(stacks);
@@ -431,10 +399,6 @@ public final class Render3DUtil {
             vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
         }
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -566,15 +530,9 @@ public final class Render3DUtil {
         float inner = Math.max(0.0F, radius - thickness * 0.5F);
         float outer = radius + thickness * 0.5F;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -595,10 +553,6 @@ public final class Render3DUtil {
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -629,20 +583,11 @@ public final class Render3DUtil {
         float rg = ((rimColor >>> 8) & 0xFF) / 255.0F;
         float rb = (rimColor & 0xFF) / 255.0F;
 
-        RenderSystem.enableBlend();
         // Additive blending so the disc reads as a soft glow on top
         // of the world rather than a flat tinted overlay.
-        RenderSystem.blendFunc(
-                com.mojang.blaze3d.opengl.GlStateManager.SrcFactor.SRC_ALPHA,
-                com.mojang.blaze3d.opengl.GlStateManager.DstFactor.ONE
-        );
-        RenderSystem.disableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
@@ -658,11 +603,6 @@ public final class Render3DUtil {
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -696,15 +636,9 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         CircleLut circle = circleLut(segments);
@@ -722,10 +656,6 @@ public final class Render3DUtil {
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -775,15 +705,9 @@ public final class Render3DUtil {
         float vy = nz * ux - nx * uz;
         float vz = nx * uy - ny * ux;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         CircleLut circle = circleLut(segments);
@@ -803,10 +727,6 @@ public final class Render3DUtil {
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -855,15 +775,9 @@ public final class Render3DUtil {
         float vy = nz * ux - nx * uz;
         float vz = nx * uy - ny * ux;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -891,10 +805,6 @@ public final class Render3DUtil {
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -953,11 +863,6 @@ public final class Render3DUtil {
         float gC = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(false);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
@@ -971,9 +876,6 @@ public final class Render3DUtil {
                 (float) (end.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     /**
@@ -1013,15 +915,9 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
@@ -1040,10 +936,6 @@ public final class Render3DUtil {
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableCull();
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
         matrices.pop();
     }
 
@@ -1101,15 +993,9 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
         if (depthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.depthMask(false);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
@@ -1165,10 +1051,6 @@ public final class Render3DUtil {
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableCull();
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
         matrices.pop();
     }
 

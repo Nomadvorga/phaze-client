@@ -70,19 +70,13 @@ public abstract class AbstractWindow extends AbstractComponent {
 
         float scale = scaleAnimation.getOutputFloat();
         float alpha = alphaAnimation.getOutputFloat();
-        context.draw();
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, 0.0F, 280.0F);
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
         MathUtil.scale(context.getMatrices(), x + width / 2, y + height / 2, scale, () -> {
             this.globalAlpha = alpha;
             drawWindow(context, mouseX, mouseY, delta);
         });
         BatchedRectangle.flushIfBatching();
-        context.draw();
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
         context.getMatrices().popMatrix();
     }
 

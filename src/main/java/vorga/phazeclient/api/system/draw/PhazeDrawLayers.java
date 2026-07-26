@@ -1,5 +1,7 @@
 package vorga.phazeclient.api.system.draw;
 
+import net.minecraft.client.gl.RenderPipelines;
+
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;

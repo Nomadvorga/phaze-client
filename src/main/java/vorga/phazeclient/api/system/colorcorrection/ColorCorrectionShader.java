@@ -99,11 +99,6 @@ public class ColorCorrectionShader {
 
         shader.render(0.0f);
 
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthFunc(515);
-        RenderSystem.depthMask(true);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
     }
 
     public void reload() {

@@ -62,8 +62,6 @@ public class Image implements Shape, QuickImports {
 
         MatrixStack matrix = shape.getMatrix();
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
 
         Identifier textureId = Identifier.of(texture);
         // No imperative texture bind or glTexParameteri here any more: in
@@ -98,7 +96,6 @@ public class Image implements Shape, QuickImports {
 
         matrix.pop();
 
-        RenderSystem.disableBlend();
     }
 
     private static void renderRawTexture(MatrixStack matrix, Identifier textureId, float x, float y, float width, float height, int color) {

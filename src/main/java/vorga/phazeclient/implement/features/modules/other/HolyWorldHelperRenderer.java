@@ -240,11 +240,6 @@ public final class HolyWorldHelperRenderer {
         float blue = (color & 255) / 255.0F;
         float fillAlpha = alpha * fillOpacity;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(false);
 
         if (fillAlpha > 0.0F) {
             RenderSystem.polygonOffset(-1.0F, -1.0F);
@@ -263,9 +258,6 @@ public final class HolyWorldHelperRenderer {
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(outline.end());
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
     }
 
     private static boolean isOutsideTrap(int x, int y, int z) {

@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu;
 
+import net.minecraft.client.gl.RenderPipelines;
+
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.CubeMapRenderer;
 import net.minecraft.client.gui.DrawContext;
@@ -43,9 +45,7 @@ public final class MenuPanoramaRenderer {
         float speedMultiplier = (float) (MenuUiSettings.getInstance().getPanoramaSpeed() / 1000.0D);
         this.pitch = wrapOnce(this.pitch + dtSeconds * 72.0F * speedMultiplier, 360.0F);
 
-        context.draw();
         this.cubeMap.draw(client, 10.0F, -this.pitch, alpha);
-        context.draw();
         context.drawTexture(
                 RenderPipelines.GUI_TEXTURED,
                 OVERLAY_TEXTURE,

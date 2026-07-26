@@ -326,15 +326,6 @@ public final class ExordiumAnimationBridge {
             return;
         }
 
-        context.draw();
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(
-                GlStateManager.SrcFactor.ONE,
-                GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
-        );
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
         try {
             for (Map.Entry<Object, String> entry : DEFERRED.entrySet()) {
@@ -355,11 +346,9 @@ public final class ExordiumAnimationBridge {
                     }
                 }
             }
-            context.draw();
         } finally {
             DEFERRED.clear();
             RenderSystem.setShaderTexture(0, 0);
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
             // This hook runs immediately before Exordium's own
             // MultiStateHolder#apply. Let that captured state restore
             // blend/depth exactly as they were before the delayed HUD pass.
@@ -477,7 +466,6 @@ public final class ExordiumAnimationBridge {
                     selector.height
             );
         }
-        context.draw();
         context.disableScissor();
     }
 
@@ -561,29 +549,14 @@ public final class ExordiumAnimationBridge {
             return false;
         }
 
-        context.draw();
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(
-                GlStateManager.SrcFactor.ONE,
-                GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
-        );
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         try {
             renderPlayerList(context, texture);
-            context.draw();
             return true;
         } finally {
             RenderSystem.setShaderTexture(0, 0);
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-            RenderSystem.depthMask(true);
-            RenderSystem.enableDepthTest();
-            RenderSystem.defaultBlendFunc();
             // Player-list close can run outside Exordium's delayed pass.
             // Leave GUI blending enabled for subsequent HUD captures instead
             // of leaking a disabled blend state into the next frame.
-            RenderSystem.enableBlend();
         }
     }
 
@@ -670,16 +643,10 @@ public final class ExordiumAnimationBridge {
             textureCount.set(1);
             RenderSystem.setShaderTexture(0, texture);
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, clamp01(alpha));
-            RenderSystem.enableBlend();
-            RenderSystem.blendFunc(
-                    GlStateManager.SrcFactor.ONE,
-                    GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
-            );
             exordiumModelDrawMethod.invoke(model, matrix);
         } catch (Throwable ignored) {
             reflectionFailed = true;
         } finally {
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         }
     }
 

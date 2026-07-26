@@ -92,7 +92,6 @@ public abstract class ChatScreenInputFieldMixin {
         if (phaze$displacement == 0.0F) {
             return;
         }
-        context.draw();
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, phaze$displacement, 0.0F);
     }
@@ -110,7 +109,6 @@ public abstract class ChatScreenInputFieldMixin {
         if (phaze$displacement == 0.0F) {
             return;
         }
-        context.draw();
         context.getMatrices().popMatrix();
     }
 

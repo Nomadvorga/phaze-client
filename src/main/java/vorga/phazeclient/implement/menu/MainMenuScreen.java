@@ -1585,7 +1585,6 @@ public class MainMenuScreen extends TitleScreen {
                 getIconTextureHeight(icon),
                 color
         );
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     private static void renderMenuIconPrecise(DrawContext context, Identifier icon, float x, float y, float width, float height, int color) {
@@ -1609,7 +1608,6 @@ public class MainMenuScreen extends TitleScreen {
                 getIconTextureHeight(icon),
                 color
         );
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     private static int getIconTextureWidth(Identifier icon) {
@@ -2430,7 +2428,6 @@ public class MainMenuScreen extends TitleScreen {
 
         @Override
         protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
             boolean hovered = this.isHovered();
             boolean topBarIconStyle = visualStyle == ButtonVisualStyle.TOP_BAR_ICON && this.getMessage().getString().isEmpty();
             float target = hovered ? 1.0F : 0.0F;

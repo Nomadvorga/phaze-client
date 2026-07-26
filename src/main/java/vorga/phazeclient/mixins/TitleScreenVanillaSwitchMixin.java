@@ -54,7 +54,6 @@ public abstract class TitleScreenVanillaSwitchMixin extends Screen {
             return;
         }
 
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         float iconHeight = 22.0F;
         float iconWidth = iconHeight * Math.max(1.0F, UiMsdfIconAtlas.resolveAspectRatio(PHAZE_MENU_SWITCH_ICON));
         float iconX = phaze$switchBackButton.getX() + (phaze$switchBackButton.getWidth() - iconWidth) / 2.0F;
@@ -78,6 +77,5 @@ public abstract class TitleScreenVanillaSwitchMixin extends Screen {
                     tint
             );
         }
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 }

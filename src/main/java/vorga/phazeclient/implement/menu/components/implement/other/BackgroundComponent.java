@@ -776,8 +776,6 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private void renderConfigCross(MatrixStack matrix, float x, float y, float size, int color) {
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
         net.minecraft.util.Identifier phaze$tex = Identifier.of("phaze", "textures/menu/cross.png");
 
         Matrix4f positionMatrix = GuiMatrix.mat4(matrix);
@@ -787,7 +785,6 @@ public class BackgroundComponent extends AbstractComponent {
         buffer.vertex(positionMatrix, x + size, y + size, 0.0F).texture(1.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + size, y, 0.0F).texture(1.0F, 0.0F).color(color);
         vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
-        RenderSystem.disableBlend();
     }
 
     private boolean isSettingsTabActive() {
