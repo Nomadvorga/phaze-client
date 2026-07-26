@@ -97,7 +97,8 @@
     "ClickableWidgetMixin",
     "EntryListWidgetCursorMixin",
     "ScreenshotRecorderScreencopyMixin",
-    "NativeImageGetColorInvoker"
+    "NativeImageGetColorInvoker",
+    "NativeImageSetColorInvoker"
   ],
   "injectors": {
     "defaultRequire": 0

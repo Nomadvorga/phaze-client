@@ -7,6 +7,9 @@ import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.texture.TextureManager;
 import net.minecraft.util.Identifier;
 
+import vorga.phazeclient.mixins.NativeImageGetColorInvoker;
+import vorga.phazeclient.mixins.NativeImageSetColorInvoker;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ByteArrayInputStream;
@@ -77,61 +80,6 @@ public final class MenuPanoramaRegistry {
                 "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/post-soviet-night.zip",
                 "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/post-soviet-night-preview.png"
         ));
-    }
-
-    public static synchronized void ensureDirectoryExists() {
-        try {
-            Files.createDirectories(getPanoramasDirectory());
-        } catch (IOException e) {
-            System.err.println("[Phaze] failed to create panoramas directory: " + e);
-        }
-    }
-
-    public static Path getPanoramasDirectory() {
-        return FabricLoader.getInstance().getGameDir().resolve(ROOT_DIR).resolve(PANORAMAS_DIR);
-    }
-
-    public static List<MenuUiSettings.PanoramaDescriptor> getAllPresets() {
-        maybeRefresh();
-        List<MenuUiSettings.PanoramaDescriptor> presets = new ArrayList<>();
-        presets.addAll(Arrays.asList(MenuUiSettings.PanoramaPreset.values()));
-        for (RemotePanoramaDescriptor remote : REMOTE_PANORAMAS.values()) {
-            if (!remote.isDownloaded()) {
-                presets.add(remote);
-            }
-        }
-        presets.addAll(CUSTOM_PANORAMAS.values());
-        return presets;
-    }
-
-    public static synchronized MenuUiSettings.PanoramaDescriptor findById(String id) {
-        maybeRefresh();
-        if (id != null) {
-            for (MenuUiSettings.PanoramaPreset preset : MenuUiSettings.PanoramaPreset.values()) {
-                if (preset.getId().equalsIgnoreCase(id)) {
-                    return preset;
-                }
-            }
-            CustomPanoramaDescriptor custom = CUSTOM_PANORAMAS.get(id.toLowerCase(Locale.ROOT));
-            if (custom != null) {
-                return custom;
-            }
-            RemotePanoramaDescriptor remote = REMOTE_PANORAMAS.get(id.toLowerCase(Locale.ROOT));
-            if (remote != null) {
-                return remote;
-            }
-        }
-        return MenuUiSettings.PanoramaPreset.VANILLA;
-    }
-
-    public static boolean isRemotePanorama(String id) {
-        return id != null && REMOTE_PANORAMAS.containsKey(id.toLowerCase(Locale.ROOT));
-    }
-
-    public static void activateRemotePanorama(String id) {
-        if (id == null) return;
-        RemotePanoramaDescriptor remote = REMOTE_PANORAMAS.get(id.toLowerCase(Locale.ROOT));
-        if (remote != null) remote.activate();
 
         // --- Minecraft version panoramas ---------------------------
         // Mirrored from Modrinth under their original licenses; see
@@ -249,6 +197,61 @@ public final class MenuPanoramaRegistry {
                 "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-11-panorama.zip",
                 "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-11-panorama-preview.png"
         ));
+    }
+
+    public static synchronized void ensureDirectoryExists() {
+        try {
+            Files.createDirectories(getPanoramasDirectory());
+        } catch (IOException e) {
+            System.err.println("[Phaze] failed to create panoramas directory: " + e);
+        }
+    }
+
+    public static Path getPanoramasDirectory() {
+        return FabricLoader.getInstance().getGameDir().resolve(ROOT_DIR).resolve(PANORAMAS_DIR);
+    }
+
+    public static List<MenuUiSettings.PanoramaDescriptor> getAllPresets() {
+        maybeRefresh();
+        List<MenuUiSettings.PanoramaDescriptor> presets = new ArrayList<>();
+        presets.addAll(Arrays.asList(MenuUiSettings.PanoramaPreset.values()));
+        for (RemotePanoramaDescriptor remote : REMOTE_PANORAMAS.values()) {
+            if (!remote.isDownloaded()) {
+                presets.add(remote);
+            }
+        }
+        presets.addAll(CUSTOM_PANORAMAS.values());
+        return presets;
+    }
+
+    public static synchronized MenuUiSettings.PanoramaDescriptor findById(String id) {
+        maybeRefresh();
+        if (id != null) {
+            for (MenuUiSettings.PanoramaPreset preset : MenuUiSettings.PanoramaPreset.values()) {
+                if (preset.getId().equalsIgnoreCase(id)) {
+                    return preset;
+                }
+            }
+            CustomPanoramaDescriptor custom = CUSTOM_PANORAMAS.get(id.toLowerCase(Locale.ROOT));
+            if (custom != null) {
+                return custom;
+            }
+            RemotePanoramaDescriptor remote = REMOTE_PANORAMAS.get(id.toLowerCase(Locale.ROOT));
+            if (remote != null) {
+                return remote;
+            }
+        }
+        return MenuUiSettings.PanoramaPreset.VANILLA;
+    }
+
+    public static boolean isRemotePanorama(String id) {
+        return id != null && REMOTE_PANORAMAS.containsKey(id.toLowerCase(Locale.ROOT));
+    }
+
+    public static void activateRemotePanorama(String id) {
+        if (id == null) return;
+        RemotePanoramaDescriptor remote = REMOTE_PANORAMAS.get(id.toLowerCase(Locale.ROOT));
+        if (remote != null) remote.activate();
     }
 
     private static void registerRemote(RemotePanoramaDescriptor panorama) {
@@ -518,6 +521,103 @@ public final class MenuPanoramaRegistry {
                 .orElse(null);
     }
 
+    /**
+     * Edge length of a cached preview thumbnail. The cards render at
+     * well under this even on a 4K display, and it turns a ~2 MB
+     * panorama face into a ~40 KB file.
+     */
+    private static final int PREVIEW_CACHE_SIZE = 256;
+    private static final String PREVIEW_CACHE_DIR = ".previews";
+
+    private static Path previewCacheDirectory() {
+        return getPanoramasDirectory().resolve(PREVIEW_CACHE_DIR);
+    }
+
+    /**
+     * Cache file for one preview. The archive stamp is part of the
+     * name, so replacing a pack with a different file of the same name
+     * misses the cache instead of showing the old thumbnail forever.
+     */
+    private static Path previewCacheFile(String token, long stamp) {
+        return previewCacheDirectory().resolve(token + "_" + Long.toHexString(stamp) + ".png");
+    }
+
+    private static NativeImage readCachedPreview(Path cacheFile) {
+        if (!Files.isRegularFile(cacheFile)) {
+            return null;
+        }
+        try (InputStream input = Files.newInputStream(cacheFile)) {
+            return NativeImage.read(input);
+        } catch (Throwable t) {
+            try { Files.deleteIfExists(cacheFile); } catch (IOException ignored) { }
+            return null;
+        }
+    }
+
+    private static void writeCachedPreview(Path cacheFile, NativeImage image, String token) {
+        try {
+            Files.createDirectories(cacheFile.getParent());
+            // Drop older thumbnails for the same panorama before
+            // writing the new one, so the folder cannot grow a file
+            // per edit of the same pack.
+            try (var stream = Files.list(cacheFile.getParent())) {
+                stream.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().startsWith(token + "_"))
+                        .filter(p -> !p.equals(cacheFile))
+                        .forEach(p -> {
+                            try { Files.deleteIfExists(p); } catch (IOException ignored) { }
+                        });
+            }
+            image.writeTo(cacheFile);
+        } catch (Throwable t) {
+            // A cache that cannot be written is a performance problem,
+            // never a correctness one - the caller already has the
+            // decoded image.
+            System.err.println("[Phaze] could not cache panorama preview " + cacheFile.getFileName() + ": " + t);
+        }
+    }
+
+    /**
+     * Box-filter downscale to {@link #PREVIEW_CACHE_SIZE}. Averaging
+     * the source block rather than point-sampling matters here: these
+     * are photographic skyboxes, and nearest-neighbour on a 8x
+     * reduction turns foliage and clouds into noise.
+     */
+    private static NativeImage downscaleSquare(NativeImage source, int target) {
+        int size = Math.min(source.getWidth(), source.getHeight());
+        if (size <= target) {
+            return source;
+        }
+        NativeImage out = new NativeImage(target, target, false);
+        NativeImageGetColorInvoker reader = (NativeImageGetColorInvoker) (Object) source;
+        NativeImageSetColorInvoker writer = (NativeImageSetColorInvoker) (Object) out;
+        int block = size / target;
+        int blockPixels = block * block;
+
+        for (int y = 0; y < target; y++) {
+            for (int x = 0; x < target; x++) {
+                long a = 0, b = 0, g = 0, r = 0;
+                int baseX = x * block;
+                int baseY = y * block;
+                for (int dy = 0; dy < block; dy++) {
+                    for (int dx = 0; dx < block; dx++) {
+                        int color = reader.phaze$invokeGetColor(baseX + dx, baseY + dy);
+                        a += (color >>> 24) & 0xFF;
+                        b += (color >>> 16) & 0xFF;
+                        g += (color >>> 8) & 0xFF;
+                        r += color & 0xFF;
+                    }
+                }
+                writer.phaze$invokeSetColor(x, y, (int) ((a / blockPixels) << 24
+                        | (b / blockPixels) << 16
+                        | (g / blockPixels) << 8
+                        | (r / blockPixels)));
+            }
+        }
+        source.close();
+        return out;
+    }
+
     private static NativeImage cropToSquare(NativeImage image) {
         int width = image.getWidth();
         int height = image.getHeight();
@@ -684,6 +784,21 @@ public final class MenuPanoramaRegistry {
                 previewTextureSize = 256;
                 return;
             }
+
+            // Fast path: a thumbnail cached from a previous session.
+            // Reading a 256x256 PNG is not comparable to decoding a
+            // multi-megabyte panorama face, and this runs on the
+            // client thread once per panorama per launch.
+            String token = sanitizeTextureToken(stripZipExtension(archivePath.getFileName().toString()));
+            Path cacheFile = previewCacheFile(token, archiveStamp);
+            NativeImage cached = readCachedPreview(cacheFile);
+            if (cached != null) {
+                previewTextureSize = Math.max(1, cached.getWidth());
+                previewTexture = new NativeImageBackedTexture(cached);
+                client.getTextureManager().registerTexture(previewTextureId, previewTexture);
+                return;
+            }
+
             try (ZipFile zip = new ZipFile(archivePath.toFile())) {
                 ZipEntry previewEntry = findEntryIgnoreCase(zip, "icon.png");
                 boolean usePanoramaFace = previewEntry == null;
@@ -700,7 +815,11 @@ public final class MenuPanoramaRegistry {
                 }
 
                 try (InputStream input = zip.getInputStream(previewEntry)) {
-                    NativeImage preview = cropToSquare(NativeImage.read(input));
+                    NativeImage preview = downscaleSquare(
+                            cropToSquare(NativeImage.read(input)), PREVIEW_CACHE_SIZE);
+                    // Write the thumbnail before handing the image to
+                    // the texture, so the next launch skips all of this.
+                    writeCachedPreview(cacheFile, preview, token);
                     previewTextureSize = Math.max(1, preview.getWidth());
                     previewTexture = new NativeImageBackedTexture(preview);
                     client.getTextureManager().registerTexture(previewTextureId, previewTexture);
@@ -795,6 +914,20 @@ public final class MenuPanoramaRegistry {
         private void ensurePreview() {
             MinecraftClient client = MinecraftClient.getInstance();
             if (previewTexture != null || client == null || !previewLoading.compareAndSet(false, true)) return;
+
+            // Served from disk after the first sighting. Without this
+            // the grid re-fetches every thumbnail over HTTP on every
+            // launch, which is both slow to appear and pointless
+            // traffic for images that never change.
+            Path cacheFile = previewCacheFile(sanitizeTextureToken(id), 0L);
+            NativeImage cached = readCachedPreview(cacheFile);
+            if (cached != null) {
+                previewTexture = new NativeImageBackedTexture(cached);
+                client.getTextureManager().registerTexture(previewTextureId, previewTexture);
+                previewLoading.set(false);
+                return;
+            }
+
             HttpRequest request = HttpRequest.newBuilder(previewUri).GET().build();
             HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
                     .thenAccept(response -> {
@@ -804,7 +937,10 @@ public final class MenuPanoramaRegistry {
                         }
                         client.execute(() -> {
                             try {
-                                NativeImage image = NativeImage.read(new ByteArrayInputStream(response.body()));
+                                NativeImage image = downscaleSquare(
+                                        cropToSquare(NativeImage.read(new ByteArrayInputStream(response.body()))),
+                                        PREVIEW_CACHE_SIZE);
+                                writeCachedPreview(cacheFile, image, sanitizeTextureToken(id));
                                 previewTexture = new NativeImageBackedTexture(image);
                                 client.getTextureManager().registerTexture(previewTextureId, previewTexture);
                             } catch (Throwable error) {
