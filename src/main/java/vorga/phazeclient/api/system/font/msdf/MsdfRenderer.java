@@ -1,30 +1,79 @@
 package vorga.phazeclient.api.system.font.msdf;
 
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DepthTestFunction;
+import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormatElement;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gl.Defines;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramKey;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.Tessellator;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
+import vorga.phazeclient.api.system.draw.GpuDraw;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 
+/**
+ * MSDF text renderer.
+ *
+ * <h3>1.21.11 port</h3>
+ *
+ * The 1.21.4 version bound {@code phaze:core/msdf_font} through a
+ * {@code ShaderProgramKey} and pushed twelve uniforms. Only three of those
+ * ever carried real values here ({@code Range}, {@code Thickness},
+ * {@code Smoothness}); the other nine were nailed to constants at every
+ * call site. Loose uniforms are gone from the 1.21.11 pipeline model, so
+ * the three live values became a vertex attribute and the constant
+ * branches were folded out of the shader.
+ *
+ * <p>The atlas is sampled from its {@code GpuTextureView} rather than an
+ * Identifier, which a {@code RenderLayer} cannot express - hence the
+ * explicit {@link GpuDraw} path.
+ */
 public final class MsdfRenderer {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
     private static boolean msdfFailed = false;
 
-    public static final ShaderProgramKey MSDF_FONT_SHADER_KEY = new ShaderProgramKey(
-            Identifier.of("phaze", "core/msdf_font"),
-            VertexFormats.POSITION_TEXTURE_COLOR,
-            Defines.EMPTY
-    );
+    private static final VertexFormatElement MSDF_PARAMS;
+    private static final VertexFormat FORMAT;
+    private static final RenderPipeline PIPELINE;
+
+    static {
+        VertexFormatElement params = null;
+        for (int id = 7; id < 32 && params == null; id++) {
+            if (VertexFormatElement.get(id) == null) {
+                params = VertexFormatElement.register(
+                        id, 0, VertexFormatElement.ComponentType.FLOAT,
+                        VertexFormatElement.Usage.GENERIC, 4);
+            }
+        }
+        if (params == null) {
+            throw new IllegalStateException("No free VertexFormatElement slot for MsdfRenderer");
+        }
+        MSDF_PARAMS = params;
+
+        FORMAT = VertexFormat.builder()
+                .add("Position", VertexFormatElement.POSITION)
+                .add("UV0", VertexFormatElement.UV0)
+                .add("Color", VertexFormatElement.COLOR)
+                .add("MsdfParams", MSDF_PARAMS)
+                .build();
+
+        PIPELINE = RenderPipeline.builder()
+                .withLocation(Identifier.of("phaze", "pipeline/msdf_font"))
+                .withVertexShader(Identifier.of("phaze", "core/msdf_font"))
+                .withFragmentShader(Identifier.of("phaze", "core/msdf_font"))
+                .withSampler("Sampler0")
+                .withVertexFormat(FORMAT, VertexFormat.DrawMode.QUADS)
+                .withBlend(BlendFunction.TRANSLUCENT)
+                .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                .withDepthWrite(false)
+                .withCull(false)
+                .build();
+    }
 
     private MsdfRenderer() {
     }
@@ -35,61 +84,36 @@ public final class MsdfRenderer {
 
     public static void renderText(MsdfFont font, String text, float size, int color, Matrix4f matrix, float x, float y, float z, float thickness, float smoothness) {
         if (msdfFailed || font == null) {
-            // Fallback uses vanilla TextRenderer which immediately
-            // submits its own draw call against the same render thread
-            // - the batched rect queue must be drained first or those
-            // pending rects would render over (i.e. after) the
-            // fallback text. Same reason as the non-fallback path
-            // below: any draw that emits its own primitives into the
-            // current GL pipeline has to come AFTER our cached batch.
+            // Fallback uses vanilla TextRenderer which submits its own draw,
+            // so the batched rect queue must be drained first or those
+            // pending rects would land over the fallback text.
             BatchedRectangle.flushIfBatching();
             fallback(text, color, matrix, x, y);
             return;
         }
 
-        // Flush pending rects before MSDF text so the rasterizer order
-        // matches the call order: text always paints OVER previously
-        // submitted rectangles, never under them. Without this flush
-        // the BufferBuilder.begin below would steal the tessellator
-        // from our pending rect batch and Tessellator.getInstance()
-        // would assert (only one buffer can be open at a time).
+        // Flush pending rects before MSDF text so rasterizer order matches
+        // call order, and because the shared Tessellator only allows one
+        // open buffer at a time.
         BatchedRectangle.flushIfBatching();
 
         try {
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.disableCull();
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-            RenderSystem.setShaderTexture(0, font.getTextureId());
-
-            ShaderProgram shader = RenderSystem.setShader(MSDF_FONT_SHADER_KEY);
-            if (shader != null) {
-                shader.getUniform("Range").set(font.getAtlas().range());
-                shader.getUniform("Thickness").set(thickness);
-                shader.getUniform("Smoothness").set(smoothness);
-                shader.getUniform("Outline").set(0);
-                shader.getUniform("OutlineThickness").set(0.0F);
-                shader.getUniform("OutlineColor").set(0.0F, 0.0F, 0.0F, 0.0F);
-                shader.getUniform("EnableFadeout").set(0);
-                shader.getUniform("FadeoutStart").set(0.0F);
-                shader.getUniform("FadeoutEnd").set(1.0F);
-                shader.getUniform("MaxWidth").set(0.0F);
-                shader.getUniform("TextPosX").set(x);
-                shader.getUniform("ColorModulator").set(1.0F, 1.0F, 1.0F, 1.0F);
-            }
-
-            BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-            font.applyGlyphs(matrix, builder, text, size, thickness * 0.5F * size, 0.0F, x - 0.75F, y + (size * 0.7F), z, color);
+            BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, FORMAT);
+            font.applyGlyphs(
+                    matrix, builder, text, size,
+                    thickness * 0.5F * size, 0.0F,
+                    x - 0.75F, y + (size * 0.7F), z, color,
+                    MSDF_PARAMS, font.getAtlas().range(), smoothness);
 
             BuiltBuffer builtBuffer = builder.endNullable();
             if (builtBuffer != null) {
-                BufferRenderer.drawWithGlobalProgram(builtBuffer);
+                try {
+                    GpuDraw.draw(PIPELINE, builtBuffer, "Sampler0",
+                            font.getTextureView(), FilterMode.LINEAR, matrix);
+                } finally {
+                    builtBuffer.close();
+                }
             }
-
-            RenderSystem.setShaderTexture(0, 0);
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-            RenderSystem.enableCull();
-            RenderSystem.disableBlend();
         } catch (Exception ignored) {
             msdfFailed = true;
             fallback(text, color, matrix, x, y);

@@ -6,11 +6,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Defines;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramKey;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
@@ -43,21 +40,6 @@ public class Blur implements Shape {
     private static final long NAMETAG_BLUR_REFRESH_INTERVAL_NS = 8_333_333L;
     private static final int MENU_BLUR_CACHE_SLOTS = 4;
     private static final int MAX_HUD_BLUR_STATES = 32;
-    private static final ShaderProgramKey MASK_SHADER_KEY = new ShaderProgramKey(
-            Identifier.of("phaze", "core/blur"),
-            VertexFormats.POSITION_COLOR,
-            Defines.EMPTY
-    );
-    private static final ShaderProgramKey GAUSSIAN_SHADER_KEY = new ShaderProgramKey(
-            Identifier.of("phaze", "core/blur_gaussian"),
-            VertexFormats.POSITION,
-            Defines.EMPTY
-    );
-    private static final ShaderProgramKey DUAL_KAWASE_SHADER_KEY = new ShaderProgramKey(
-            Identifier.of("phaze", "core/blur_dual_kawase"),
-            VertexFormats.POSITION,
-            Defines.EMPTY
-    );
     private static final int MAX_PREPARED_HUD_GAUSSIAN_REGIONS = 32;
 
     private final DrawEngineImpl drawEngine = new DrawEngineImpl();
@@ -334,7 +316,7 @@ public class Blur implements Shape {
         );
         RenderSystem.setShaderTexture(0, slot.framebuffer.getColorAttachment());
         RenderSystem.setShaderTexture(1, slot.framebuffer.getColorAttachment());
-        ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
+        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         if (shader != null) {
             shader.getUniformOrDefault("Size").set(width, height);
             shader.getUniformOrDefault("Radius").set(round);
@@ -344,7 +326,7 @@ public class Blur implements Shape {
             shader.getUniformOrDefault("BlurMode").set(0);
             shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
             shader.getUniformOrDefault("FrameMix").set(1.0F);
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
+            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
         } else {
             buffer.end();
         }
@@ -429,7 +411,7 @@ public class Blur implements Shape {
 
         RenderSystem.setShaderTexture(0, nametagInput.getColorAttachment());
         RenderSystem.setShaderTexture(1, nametagInput.getColorAttachment());
-        ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
+        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         if (shader != null) {
             Theme theme = Theme.getInstance();
             int blurMode = theme.getHudBlurMode();
@@ -441,7 +423,7 @@ public class Blur implements Shape {
             shader.getUniformOrDefault("BlurMode").set(blurMode);
             shader.getUniformOrDefault("FrameMix").set(1.0F);
             setTintUniform(shader, tintColor);
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
+            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
         } else {
             buffer.end();
         }
@@ -490,8 +472,7 @@ public class Blur implements Shape {
         }
         BufferBuilder fallback = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         drawEngine.quad(matrix, fallback, x, y, width, height, tintColor);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
-        BufferRenderer.drawWithGlobalProgram(fallback.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(fallback.end()); // TODO(1.21.11 port)
     }
 
     /**
@@ -611,7 +592,7 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("BlurMode").set(preparedState.blurMode());
         shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
         shader.getUniformOrDefault("FrameMix").set(1.0F);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
     }
 
     private void render(ShapeProperties shape, boolean cacheFrame) {
@@ -705,7 +686,7 @@ public class Blur implements Shape {
 
         RenderSystem.setShaderTexture(0, preparedState.sourceTexture());
         RenderSystem.setShaderTexture(1, preparedState.sourceTexture());
-        ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
+        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         hudBatchMaskShader = shader;
         if (shader == null) {
             return false;
@@ -718,7 +699,7 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("BlurMode").set(preparedState.blurMode());
         shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
         shader.getUniformOrDefault("FrameMix").set(1.0F);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
         return true;
     }
 
@@ -1055,7 +1036,7 @@ public class Blur implements Shape {
         int h = sourceInput.textureHeight;
         // Keep radius continuous to avoid abrupt jumps on the HUD slider.
         float quantizedRadius = MathHelper.clamp(blurRadius, 0.0f, 24.0f);
-        ShaderProgram shader = RenderSystem.setShader(DUAL_KAWASE_SHADER_KEY);
+        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         if (shader == null) {
             return false;
         }
@@ -1144,7 +1125,7 @@ public class Blur implements Shape {
             return slot.framebuffer;
         }
 
-        ShaderProgram shader = RenderSystem.setShader(DUAL_KAWASE_SHADER_KEY);
+        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         if (shader == null) {
             return null;
         }
@@ -1314,7 +1295,7 @@ public class Blur implements Shape {
             return slot.framebuffer;
         }
 
-        ShaderProgram shader = RenderSystem.setShader(DUAL_KAWASE_SHADER_KEY);
+        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         if (shader == null) {
             return null;
         }
@@ -1413,7 +1394,7 @@ public class Blur implements Shape {
             return true;
         }
 
-        ShaderProgram shader = RenderSystem.setShader(GAUSSIAN_SHADER_KEY);
+        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         if (shader == null) {
             return false;
         }
