@@ -2,10 +2,8 @@ package vorga.phazeclient.implement.menu.components.implement.window.implement.s
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Getter;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
@@ -257,11 +255,7 @@ public final class ItemPickerColorWindow extends AbstractWindow {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, HUE_TEXTURE);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        net.minecraft.util.Identifier phaze$tex = HUE_TEXTURE;
 
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
@@ -269,7 +263,7 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         buffer.vertex(matrix, x, y + height, 0.0F).texture(0.0F, 1.0F).color(color);
         buffer.vertex(matrix, x + width, y + height, 0.0F).texture(1.0F, 1.0F).color(color);
         buffer.vertex(matrix, x + width, y, 0.0F).texture(1.0F, 0.0F).color(color);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
         RenderSystem.disableBlend();
     }
 
