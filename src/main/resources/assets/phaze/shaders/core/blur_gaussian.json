@@ -1,0 +1,26 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "one",
+    "dstrgb": "zero"
+  },
+  "vertex": "phaze:core/blur_gaussian",
+  "fragment": "phaze:core/blur_gaussian",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [
+    { "name": "Sampler0" }
+  ],
+  "uniforms": [
+    { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+    { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+    { "name": "Direction", "type": "float", "count": 2, "values": [ 1.0, 0.0 ] },
+    { "name": "TexelSize", "type": "float", "count": 2, "values": [ 1.0, 1.0 ] },
+    { "name": "Support", "type": "int", "count": 1, "values": [ 1 ] },
+    { "name": "Sigma", "type": "float", "count": 1, "values": [ 1.0 ] },
+    { "name": "Brightness", "type": "float", "count": 1, "values": [ 1.0 ] }
+  ]
+}
+
+
