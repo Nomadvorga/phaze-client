@@ -385,6 +385,11 @@ public class InGameHudMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         boolean hudHidden = client == null || client.options == null || client.options.hudHidden;
 
+        // Operator announcements sit above everything else the HUD
+        // draws and are deliberately not suppressed by F1: they are
+        // the operator talking, not decoration.
+        vorga.phazeclient.implement.menu.AnnouncementOverlay.render(context);
+
         if (!renderedThisFrame) {
             // Capture the clean world/vanilla-HUD framebuffer at the one safe
             // point shared by normal gameplay and open GUIs. Doing this before
