@@ -85,7 +85,7 @@ public final class Lang {
         en("modal.share.placeholder", "Number of uses");
         en("modal.share.primary", "Create");
         en("modal.cloud.title", "Cloud Configs");
-        en("modal.cloud.subtitle", "Temporarily unavailable");
+        en("modal.cloud.subtitle", "Share a config or load one by code");
 
         // Modal: RENAME
         en("modal.rename.title", "Rename Config");
@@ -107,7 +107,17 @@ public final class Lang {
         en("status.copied_prefix", "Code");
         en("status.copied_suffix", "copied");
         en("status.cloud_disabled_short", "Unavailable");
-        en("status.cloud_disabled_detail", "This is not a bug. It is intentionally disabled.");
+        en("status.cloud_disabled_detail", "Cloud sharing is turned off in this build.");
+        en("status.cloud_quota_exceeded", "Limit reached: %d configs per player");
+        en("status.cloud_rate_limited", "Too many requests, try again in a minute");
+        en("status.cloud_network_error", "No connection to the server");
+        en("status.cloud_server_error", "Server error (%d)");
+        en("status.cloud_bad_payload", "Config could not be packed");
+        en("status.cloud_bad_response", "Unexpected server response");
+        en("status.cloud_bad_code", "Invalid code format");
+        en("status.cloud_not_found", "Code not found");
+        en("status.cloud_exhausted", "This code has run out of uses");
+        en("status.kicked_by_admin", "You were kicked by admin");
         en("status.import_failed", "Import failed");
         en("status.imported_prefix", "Imported:");
         en("status.key_not_found", "Key not found");
@@ -136,7 +146,7 @@ public final class Lang {
 
         // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
-        ru("modal.cloud.subtitle", "Временно недоступно");
+        ru("modal.cloud.subtitle", "Поделись конфигом или загрузи по коду");
         ru("modal.share.title", "Создание ключа");
         ru("modal.share.subtitle.prefix", "Конфиг");
         ru("modal.share.placeholder", "Количество использований");
@@ -159,7 +169,17 @@ public final class Lang {
         ru("status.copied_prefix", "Код");
         ru("status.copied_suffix", "скопирован");
         ru("status.cloud_disabled_short", "Недоступно");
-        ru("status.cloud_disabled_detail", "Это не баг. Это сделано специально.");
+        ru("status.cloud_disabled_detail", "Облачные конфиги отключены в этой сборке.");
+        ru("status.cloud_quota_exceeded", "Достигнут лимит: %d конфигов на игрока");
+        ru("status.cloud_rate_limited", "Слишком много запросов, попробуй через минуту");
+        ru("status.cloud_network_error", "Нет связи с сервером");
+        ru("status.cloud_server_error", "Ошибка сервера (%d)");
+        ru("status.cloud_bad_payload", "Не удалось упаковать конфиг");
+        ru("status.cloud_bad_response", "Неожиданный ответ сервера");
+        ru("status.cloud_bad_code", "Неверный формат кода");
+        ru("status.cloud_not_found", "Код не найден");
+        ru("status.cloud_exhausted", "У этого кода закончились использования");
+        ru("status.kicked_by_admin", "Вы были кикнуты админом");
         ru("status.import_failed", "Не удалось импортировать");
         ru("status.imported_prefix", "Импортирован:");
         ru("status.key_not_found", "Ключ не найден");
@@ -316,6 +336,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Color Preset", "Пресет цветов");
         SETTING_TRANSLATIONS.put("Color Settings", "Настройки цвета");
         SETTING_TRANSLATIONS.put("Color When In Range", "Цвет в радиусе");
+        SETTING_TRANSLATIONS.put("Controls outline opacity in Filled mode without affecting fill opacity.", "Управляет прозрачностью обводки в режиме Filled, не затрагивая прозрачность заливки.");
         SETTING_TRANSLATIONS.put("Colors", "Цвета");
         SETTING_TRANSLATIONS.put("Command", "Команда");
         SETTING_TRANSLATIONS.put("Compact", "Компактный");
@@ -462,6 +483,9 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Hit Range", "Зона удара");
         SETTING_TRANSLATIONS.put("Hit Sound", "Звук удара");
         SETTING_TRANSLATIONS.put("Hitbox Color", "Цвет хитбокса");
+        SETTING_TRANSLATIONS.put("Fill", "Заполнение");
+        SETTING_TRANSLATIONS.put("Fill the hitbox faces in addition to the outline", "Заполняет грани хитбокса помимо контура");
+        SETTING_TRANSLATIONS.put("Opacity of the hitbox fill", "Прозрачность заливки хитбокса");
         SETTING_TRANSLATIONS.put("Hold", "Удерживать");
         SETTING_TRANSLATIONS.put("Hue", "Оттенок");
         SETTING_TRANSLATIONS.put("Hold Shift + drag the mouse over slots to shift-click them all without extra clicks", "Зажмите Shift и протащите мышь по слотам — все будут shift-кликнуты без лишних кликов");
@@ -477,6 +501,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Impact Marker", "Маркер попадания");
         SETTING_TRANSLATIONS.put("Imported from cloud", "Импортировано из облака");
         SETTING_TRANSLATIONS.put("In Range Color", "Цвет в радиусе");
+        SETTING_TRANSLATIONS.put("Base color of the circle. In Filled mode, this alpha controls fill opacity.", "Базовый цвет круга. В режиме Filled его альфа управляет прозрачностью заливки.");
         SETTING_TRANSLATIONS.put("Info", "Инфо");
         SETTING_TRANSLATIONS.put("Info Display", "Информация");
         SETTING_TRANSLATIONS.put("Info Items", "Элементы информации");
@@ -559,6 +584,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Bottom", "Снизу");
         SETTING_TRANSLATIONS.put("Side", "Сторона");
         SETTING_TRANSLATIONS.put("Outline", "Контур");
+        SETTING_TRANSLATIONS.put("Outline Opacity", "Прозрачность обводки");
         SETTING_TRANSLATIONS.put("Filled", "Заливка");
         SETTING_TRANSLATIONS.put("Chat", "Чат");
         SETTING_TRANSLATIONS.put("Clipboard", "Буфер обмена");
@@ -1177,6 +1203,33 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Theme Selector", "Выбор темы");
         SETTING_TRANSLATIONS.put("Themes", "Темы");
         SETTING_TRANSLATIONS.put("just now", "только что");
+        SETTING_TRANSLATIONS.put("General", "Общие");
+        SETTING_TRANSLATIONS.put("Advanced", "Расширенное");
+        SETTING_TRANSLATIONS.put("Blocks", "Блоки");
+        SETTING_TRANSLATIONS.put("Fluids", "Жидкости");
+        SETTING_TRANSLATIONS.put("Sky", "Небо");
+        SETTING_TRANSLATIONS.put("Clouds", "Облака");
+        SETTING_TRANSLATIONS.put("Players", "Игроки");
+        SETTING_TRANSLATIONS.put("Entities", "Сущности");
+        SETTING_TRANSLATIONS.put("Red", "Красный");
+        SETTING_TRANSLATIONS.put("Green", "Зелёный");
+        SETTING_TRANSLATIONS.put("Blue", "Синий");
+        SETTING_TRANSLATIONS.put("Alpha", "Прозрачность");
+        SETTING_TRANSLATIONS.put("Brightness", "Яркость");
+        SETTING_TRANSLATIONS.put("Saturation", "Насыщенность");
+        SETTING_TRANSLATIONS.put("Open", "Открыть");
+        SETTING_TRANSLATIONS.put("World color correction for blocks", "Цветокоррекция мира для блоков");
+        SETTING_TRANSLATIONS.put("World color correction for fluids", "Цветокоррекция мира для жидкостей");
+        SETTING_TRANSLATIONS.put("World color correction for empty sky", "Цветокоррекция пустого неба");
+        SETTING_TRANSLATIONS.put("World color correction for clouds", "Цветокоррекция облаков");
+        SETTING_TRANSLATIONS.put("World color correction for players", "Цветокоррекция игроков");
+        SETTING_TRANSLATIONS.put("World color correction for entities", "Цветокоррекция сущностей");
+        SETTING_TRANSLATIONS.put("Red multiplier", "Множитель красного");
+        SETTING_TRANSLATIONS.put("Green multiplier", "Множитель зелёного");
+        SETTING_TRANSLATIONS.put("Blue multiplier", "Множитель синего");
+        SETTING_TRANSLATIONS.put("Alpha multiplier", "Множитель прозрачности");
+        SETTING_TRANSLATIONS.put("Brightness offset", "Смещение яркости");
+        SETTING_TRANSLATIONS.put("Saturation multiplier", "Множитель насыщенности");
     }
 
     private static void en(String key, String value) { EN_TABLE.put(key, value); }

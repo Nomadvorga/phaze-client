@@ -238,9 +238,11 @@ public class ConfigShareModalComponent extends AbstractComponent {
     }
 
     private String subText() {
-        if (mode == Mode.IMPORT || mode == Mode.SHARE) {
-            return Lang.t("modal.cloud.subtitle");
+        if (mode == Mode.IMPORT) {
+            return Lang.t("modal.import.subtitle");
         }
+        // SHARE and RENAME both act on a named config, so both show
+        // which one - that context is the whole point of the line.
         String name = configName == null ? ConfigManager.getInstance().getCurrentConfigName() : configName;
         return Lang.t("modal.share.subtitle.prefix") + " " + name + "  •  " + authorLabel;
     }
@@ -256,9 +258,9 @@ public class ConfigShareModalComponent extends AbstractComponent {
 
     private String primaryLabel() {
         switch (mode) {
-            case SHARE: return Lang.t("status.cloud_disabled_short");
+            case SHARE: return Lang.t("modal.share.primary");
             case RENAME: return Lang.t("modal.rename.primary");
-            case IMPORT: return Lang.t("status.cloud_disabled_short");
+            case IMPORT: return Lang.t("modal.import.primary");
         }
         return "";
     }
@@ -374,20 +376,19 @@ public class ConfigShareModalComponent extends AbstractComponent {
         cancelHover.setDirection(cancelHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
         // Primary - themed accent fill (CHIP_ACTIVE = palette accent).
+        // The red, muted variant used while cloud sharing was switched
+        // off is gone: the button does something again, so it looks
+        // like every other actionable primary in the menu.
         float pHover = primaryHover.getOutputFloat();
-        int primaryFill = mode == Mode.RENAME
-                ? MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, pHover * 0.10F)
-                : MenuStyle.mix(MenuStyle.PANEL_CHIP, 0xFFE05050, 0.10F + pHover * 0.08F);
-        int primaryOutline = mode == Mode.RENAME
-                ? MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, 0.18F)
-                : MenuStyle.mix(0xFFE05050, 0xFFFFFFFF, 0.15F);
+        int primaryFill = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, pHover * 0.10F);
+        int primaryOutline = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, 0.18F);
         rectangle.render(ShapeProperties.create(matrix, primaryX, by, primaryW, BUTTON_HEIGHT)
                 .round(4.0F).thickness(1.5F)
                 .outlineColor(MenuStyle.withAlpha(primaryOutline, fadeAlpha))
                 .color(MenuStyle.withAlpha(primaryFill, fadeAlpha))
                 .build());
         String primaryLabel = primaryLabel();
-        int primaryTextColor = mode == Mode.RENAME ? 0xFFFFFFFF : 0xFFE05050;
+        int primaryTextColor = 0xFFFFFFFF;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), primaryLabel, BUTTON_TEXT_SIZE,
                 MenuStyle.withAlpha(primaryTextColor, fadeAlpha),

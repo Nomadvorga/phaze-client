@@ -165,10 +165,13 @@ public class Module extends SettingRepository implements QuickImports {
     }
 
     public boolean isEnabled() {
-        return !showEnable || state;
+        return !showEnable || (state && !isServerLocked());
     }
 
     public boolean isVisible() {
+        if (RemoteRulesService.getInstance().shouldHideModuleWhenOffline(getIdentifier())) {
+            return false;
+        }
         return !isServerLocked();
     }
 
@@ -267,18 +270,38 @@ public class Module extends SettingRepository implements QuickImports {
      * <p>Server-based locks are skipped entirely in singleplayer / when the player isn't
      * connected to anything: there's no realistic threat model there (no other players,
      * no anti-cheat, no economy), and forcing modules off in your own world is the
-     * opposite of what the user wants. {@link ServerUtil#getCurrentServerHost()} returns
-     * an empty string in those cases.
+     * opposite of what the user wants. The one exception is the explicit offline
+     * fallback hide-list used when the Phaze rules backend is unavailable outside
+     * singleplayer.
      */
     public boolean isServerLocked() {
+        if (RemoteRulesService.getInstance().shouldHideModuleWhenOffline(getIdentifier())) {
+            return true;
+        }
         String host = ServerUtil.getCurrentServerHost();
         if (host == null || host.isEmpty()) {
             return false;
         }
+
+        String identifier = getIdentifier();
+
+        // An explicit allow from the admin panel outranks the local
+        // whitelists. Those lists are compiled into the jar and go
+        // stale the moment a server is added; the API answer is
+        // current and specific to this host, so when the operator says
+        // a module is fine here, it is fine here. Without this the
+        // panel could only ever add locks, never lift one, and adding
+        // support for a new server meant shipping a new build.
+        if (RemoteRulesService.getInstance().isModuleExplicitlyAllowed(identifier)) {
+            return false;
+        }
+
         if (!isServerAllowed()) {
             return true;
         }
-        String identifier = getIdentifier();
+        if (!ServerUtil.isModuleAllowedByMirroredRules(identifier)) {
+            return true;
+        }
         return RemoteRulesService.getInstance().isModuleBlocked(identifier)
                 || HolyWorldFeatureControlService.getInstance().isFeatureDisabled(identifier);
     }
