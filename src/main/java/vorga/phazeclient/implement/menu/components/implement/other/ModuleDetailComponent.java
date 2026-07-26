@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -139,7 +143,7 @@ public class ModuleDetailComponent extends AbstractComponent {
     }
 
     private void renderHeader(DrawContext context, int mouseX, int mouseY, float anim) {
-        MatrixStack matrices = context.getMatrices();
+        Matrix3x2fStack matrices = context.getMatrices();
 
         boolean backHovered = MathUtil.isHovered(mouseX, mouseY, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE);
         backHoverAnimation.setDirection(backHovered ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -170,11 +174,11 @@ public class ModuleDetailComponent extends AbstractComponent {
         float titleX = backButtonX() + BACK_BUTTON_SIZE + 8.0F;
         float titleY;
         titleY = MenuStyle.centerMsdfTextY(8.2F, backButtonY(), BACK_BUTTON_SIZE);
-        MsdfRenderer.renderText(MsdfFonts.bold(), title, 8.2F, MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, anim), matrices.peek().getPositionMatrix(), titleX, titleY, 0.0F);
+        MsdfRenderer.renderText(MsdfFonts.bold(), title, 8.2F, MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, anim), GuiMatrix.mat4(matrices), titleX, titleY, 0.0F);
     }
 
     private void renderDescription(DrawContext context, float anim) {
-        MatrixStack matrices = context.getMatrices();
+        Matrix3x2fStack matrices = context.getMatrices();
         String description = module.getDescription();
         if (description == null || description.isEmpty()) {
             description = "Custom themes for GUI";
@@ -198,7 +202,7 @@ public class ModuleDetailComponent extends AbstractComponent {
                     line,
                     DESCRIPTION_TEXT_SIZE,
                     MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, anim),
-                    matrices.peek().getPositionMatrix(),
+                    GuiMatrix.mat4(matrices),
                     descX,
                     descY,
                     0.0F
@@ -208,7 +212,7 @@ public class ModuleDetailComponent extends AbstractComponent {
     }
 
     private void renderSettingsPanel(DrawContext context, int mouseX, int mouseY, float delta, float anim) {
-        MatrixStack matrices = context.getMatrices();
+        Matrix3x2fStack matrices = context.getMatrices();
         float panelX = settingsPanelX();
         float panelY = settingsPanelY();
         float panelWidth = settingsPanelWidth();
@@ -231,7 +235,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         float scissorWidth = innerWidth;
         float scissorHeight = innerHeight + scissorTopLift;
 
-        Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+        Matrix4f positionMatrix = GuiMatrix.mat4(matrices);
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
         scissorManager.push(positionMatrix, scissorX, scissorY, scissorWidth, scissorHeight);
 

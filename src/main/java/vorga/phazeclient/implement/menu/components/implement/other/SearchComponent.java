@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.client.gui.DrawContext;
@@ -87,7 +91,7 @@ public class SearchComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         FontRenderer font = Fonts.getSize(12);
 
         // Drag-to-extend: while a press is held inside the search box
@@ -157,7 +161,7 @@ public class SearchComponent extends AbstractComponent {
             float inputTextY = centeredTextY(font, centeredText, y, height);
 
             ScissorManager scissor = Main.getInstance().getScissorManager();
-            scissor.push(matrix.peek().getPositionMatrix(), x + 13, y, width - 15, height);
+            scissor.push(GuiMatrix.mat4(matrix), x + 13, y, width - 15, height);
 
                 if (typing && hasSelection()) {
                     int s = Math.max(0, Math.min(selStart(), text.length()));

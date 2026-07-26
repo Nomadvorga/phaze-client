@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -219,7 +223,7 @@ public class ConfigsViewComponent extends AbstractComponent {
     private void renderRows(DrawContext context, int mouseX, int mouseY,
                             float listX, float listY, float listW, float listBottom,
                             float fadeAlpha) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         ConfigManager mgr = ConfigManager.getInstance();
         String[] names = mgr.getConfigList();
 
@@ -315,7 +319,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), ts, TIMESTAMP_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 textX,
                 timestampY,
                 0.0F
@@ -327,7 +331,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), name, NAME_SIZE,
                 nameColor,
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 textX,
                 nameY,
                 0.0F
@@ -348,7 +352,7 @@ public class ConfigsViewComponent extends AbstractComponent {
             MsdfRenderer.renderText(
                     MsdfFonts.bold(), authorLabel, NAME_SIZE,
                     authorColor,
-                    matrix.peek().getPositionMatrix(),
+                    GuiMatrix.mat4(matrix),
                     authorX,
                     nameY,
                     0.0F
@@ -425,7 +429,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), label, META_SIZE,
                 color,
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 labelX, baselineY + labelDeltaY, 0.0F
         );
         return labelX + MsdfFonts.bold().getWidth(label, META_SIZE);
@@ -795,7 +799,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         }
 
         void render(DrawContext context, int mouseX, int mouseY, float menuFadeAlpha) {
-            MatrixStack matrix = context.getMatrices();
+            Matrix3x2fStack matrix = context.getMatrices();
             float a = fade.getOutputFloat() * menuFadeAlpha;
             if (a <= 0.001F) return;
 
@@ -845,7 +849,7 @@ public class ConfigsViewComponent extends AbstractComponent {
                 MsdfRenderer.renderText(
                         MsdfFonts.bold(), Lang.t(ITEMS[i]), TEXT_SIZE,
                         MenuStyle.withAlpha(textColor, a),
-                        matrix.peek().getPositionMatrix(),
+                        GuiMatrix.mat4(matrix),
                         popupX + 10.0F,
                         MenuStyle.centerMsdfTextY(TEXT_SIZE, iy, ITEM_H),
                         0.0F

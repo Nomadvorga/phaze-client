@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu.components.implement.window.implement;
 
+import org.joml.Matrix3x2fStack;
+
 import lombok.RequiredArgsConstructor;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -27,7 +29,7 @@ public abstract class AbstractBindWindow extends AbstractWindow {
 
     @Override
     public void drawWindow(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
 
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(4).softness(25).color(0x32000000).build());

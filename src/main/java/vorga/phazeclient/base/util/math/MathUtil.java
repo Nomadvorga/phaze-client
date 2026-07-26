@@ -28,7 +28,7 @@ public class MathUtil {
             return box.getCenter();
         }
 
-        Vec3d eye = client.player.getCameraPosVec(client.getRenderTickCounter().getTickDelta(true));
+        Vec3d eye = client.player.getCameraPosVec(client.getRenderTickCounter().getTickProgress(true));
         return new Vec3d(Math.min(Math.max(eye.x, box.minX), box.maxX), Math.min(Math.max(eye.y, box.minY), box.maxY), Math.min(Math.max(eye.z, box.minZ), box.maxZ));
     }
 
@@ -136,12 +136,12 @@ public class MathUtil {
 
     public float interpolate(float prev, float orig) {
         RenderTickCounter tickCounter = currentTickCounter();
-        return tickCounter != null ? lerp(tickCounter.getTickDelta(false), prev, orig) : orig;
+        return tickCounter != null ? lerp(tickCounter.getTickProgress(false), prev, orig) : orig;
     }
 
     public double interpolate(double prev, double orig) {
         RenderTickCounter tickCounter = currentTickCounter();
-        return tickCounter != null ? lerp(tickCounter.getTickDelta(false), prev, orig) : orig;
+        return tickCounter != null ? lerp(tickCounter.getTickProgress(false), prev, orig) : orig;
     }
 
     public float interpolateSmooth(double smooth, float prev, float orig) {

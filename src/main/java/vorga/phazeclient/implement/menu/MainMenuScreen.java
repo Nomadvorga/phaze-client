@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -268,7 +270,7 @@ public class MainMenuScreen extends TitleScreen {
         syncDisplayedPanoramaName();
         updateThemeUiAnimationTiming();
         renderMainMenuBackground(context, delta);
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().scale(overlayRenderScale, overlayRenderScale, 1.0F);
         int overlayMouseX = Math.round(toOverlayCoordinate(mouseX));
         int overlayMouseY = Math.round(toOverlayCoordinate(mouseY));
@@ -294,7 +296,7 @@ public class MainMenuScreen extends TitleScreen {
             renderModMenuTooltip(context, overlayMouseX, overlayMouseY);
             renderThemeSelectorTooltip(context);
         }
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     private void refreshLocalizedMainMenuTexts() {
@@ -428,13 +430,13 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderThemeSelectorBackdrop(DrawContext context, float overlayW, float overlayH, float alpha) {
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, 0.0F, 120.0F);
         rectangle.render(ShapeProperties.create(context.getMatrices(), 0.0F, 0.0F, overlayW, overlayH)
                 .softness(1.0F)
                 .color(scaleColorAlpha(THEME_MODAL_DIM_COLOR, alpha))
                 .build());
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     private void renderMainMenuWidgets(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -465,7 +467,7 @@ public class MainMenuScreen extends TitleScreen {
                 text,
                 textSize,
                 0xFFFFFFFF,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 x,
                 y,
                 0.0F
@@ -493,7 +495,7 @@ public class MainMenuScreen extends TitleScreen {
                 accountText,
                 textSize,
                 ACCOUNT_SWITCHER_NAME_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 x,
                 y,
                 0.0F
@@ -605,7 +607,7 @@ public class MainMenuScreen extends TitleScreen {
         String line2 = Lang.translate("External");
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), line1, 9.6F * scale, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 x + 8.0F * scale, y + 8.0F * scale, 0.0F
         );
         renderTooltipLine(context, ICON_EXTERNAL, line2, x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale, (12.5F / (1.3F * 1.15F)) * scale);
@@ -631,7 +633,7 @@ public class MainMenuScreen extends TitleScreen {
 
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), Lang.translate("Minecraft Settings"), 9.6F * scale, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 x + 8.0F * scale, y + 8.0F * scale, 0.0F
         );
         renderTooltipLine(context, ICON_CUBE, Lang.translate("Minecraft"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale);
@@ -657,7 +659,7 @@ public class MainMenuScreen extends TitleScreen {
 
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), Lang.translate("Minecraft Realms"), 9.6F * scale, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 x + 8.0F * scale, y + 8.0F * scale, 0.0F
         );
         renderTooltipLine(context, ICON_CUBE, Lang.translate("Minecraft"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale);
@@ -701,7 +703,7 @@ public class MainMenuScreen extends TitleScreen {
 
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), title, titleSize, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 x + 8.0F * scale, y + 8.0F * scale, 0.0F
         );
         renderTooltipLine(context, ICON_EXTERNAL, Lang.translate("External"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale, (12.5F / (1.3F * 1.15F)) * scale);
@@ -732,7 +734,7 @@ public class MainMenuScreen extends TitleScreen {
                 title,
                 textSize,
                 TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 x + 9.0F * scale,
                 MenuStyle.centerMsdfTextY(textSize, y, h),
                 0.0F
@@ -814,7 +816,7 @@ public class MainMenuScreen extends TitleScreen {
             themeSelectorCloseHoverAnim = 0.0F;
             themeSelectorResetHoverAnim = 0.0F;
         }
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, modalYOffset, 140.0F);
 
         renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10.0F, 0xFF11161F, 0xFF212838, modalAlpha);
@@ -825,7 +827,7 @@ public class MainMenuScreen extends TitleScreen {
                 Lang.translate("Select Theme"),
                 titleTextSize,
                 scaleColorAlpha(0xFFF6F8FE, modalAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.panelX + 12.0F * layout.scale,
                 layout.panelY + 12.0F * layout.scale,
                 0.0F
@@ -854,7 +856,7 @@ public class MainMenuScreen extends TitleScreen {
                 Lang.translate("Themes") + " (" + visiblePresets.size() + ")",
                 9.4F * layout.scale,
                 scaleColorAlpha(0xFFE5EAF7, modalAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.panelX + 12.0F * layout.scale,
                 layout.sectionLabelY - 1.0F * layout.scale,
                 0.0F
@@ -866,7 +868,7 @@ public class MainMenuScreen extends TitleScreen {
                 importHint,
                 importHintSize,
                 scaleColorAlpha(0xFF7E8799, modalAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.panelX + layout.panelW - 15.0F * layout.scale - MsdfFonts.medium().getWidth(importHint, importHintSize),
                 layout.sectionLabelY + 0.1F * layout.scale,
                 0.0F
@@ -890,7 +892,7 @@ public class MainMenuScreen extends TitleScreen {
                 Lang.translate("Active") + ": " + activeThemeName,
                 footerTextSize,
                 scaleColorAlpha(0xFFE5EAF7, modalAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.panelX + 12.0F * layout.scale,
                 footerTextY,
                 0.0F
@@ -910,13 +912,13 @@ public class MainMenuScreen extends TitleScreen {
                 Lang.translate("Reset to default"),
                 resetTextSize,
                 scaleColorAlpha(lerpArgb(0xFFCBD4E6, 0xFFFFFFFF, themeSelectorResetHoverAnim), modalAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.resetX + resetIconSize + 4.0F * layout.scale + resetTextShiftX,
                 resetTextY,
                 0.0F
         );
 
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
         if (themeSelectorSettingsOpen) {
             renderThemeSettingsBackdrop(context, layout, settingsModalProgress);
             renderThemeSettingsModal(context, layout, mouseX, mouseY, settingsModalProgress);
@@ -935,7 +937,7 @@ public class MainMenuScreen extends TitleScreen {
                     text,
                     textSize,
                     scaleColorAlpha(0xFF9099AD, alpha),
-                    context.getMatrices().peek().getPositionMatrix(),
+                    GuiMatrix.mat4(context.getMatrices()),
                     layout.panelX + (layout.panelW - MsdfFonts.medium().getWidth(text, textSize)) / 2.0F,
                     layout.cardsY + layout.cardPreviewH / 2.0F - textSize / 2.0F,
                     0.0F
@@ -1036,7 +1038,7 @@ public class MainMenuScreen extends TitleScreen {
                 String percent = Math.round(progress * 100.0F) + "%";
                 float textSize = 7.0F * layout.scale;
                 MsdfRenderer.renderText(MsdfFonts.bold(), percent, textSize, scaleColorAlpha(0xFFFFFFFF, alpha),
-                        context.getMatrices().peek().getPositionMatrix(), previewX + previewW - MsdfFonts.bold().getWidth(percent, textSize) - 7.0F * layout.scale,
+                        GuiMatrix.mat4(context.getMatrices()), previewX + previewW - MsdfFonts.bold().getWidth(percent, textSize) - 7.0F * layout.scale,
                         previewY + 7.0F * layout.scale, 0.0F);
             } else {
                 float iconSize = Math.min(previewW, previewH) * 0.42F;
@@ -1073,7 +1075,7 @@ public class MainMenuScreen extends TitleScreen {
                     "ZIP",
                     customBadgeLayout.badgeTextSize,
                     scaleColorAlpha(0xFFF2FAF5, alpha),
-                    context.getMatrices().peek().getPositionMatrix(),
+                    GuiMatrix.mat4(context.getMatrices()),
                     customBadgeLayout.badgeX + customBadgeLayout.badgePaddingX + 0.5F,
                     MenuStyle.centerMsdfTextY(customBadgeLayout.badgeTextSize, customBadgeLayout.badgeY, customBadgeLayout.badgeH),
                     0.0F
@@ -1105,7 +1107,7 @@ public class MainMenuScreen extends TitleScreen {
                 preset.displayName(),
                 nameTextSize,
                 scaleColorAlpha(0xFFF5F7FD, alpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 previewX,
                 nameY,
                 0.0F
@@ -1175,14 +1177,14 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderThemeSettingsBackdrop(DrawContext context, ThemeSelectorLayout layout, float alpha) {
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, 0.0F, 180.0F);
         rectangle.render(ShapeProperties.create(context.getMatrices(), layout.panelX, layout.panelY, layout.panelW, layout.panelH)
                 .round(10.0F)
                 .softness(1.0F)
                 .color(scaleColorAlpha(THEME_SETTINGS_MODAL_DIM_COLOR, alpha))
                 .build());
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     private void renderThemePreviewScrollbar(DrawContext context, ThemeSelectorLayout layout, float contentHeight, float alpha) {
@@ -1249,7 +1251,7 @@ public class MainMenuScreen extends TitleScreen {
         ThemeSettingsLayout layout = getThemeSettingsLayout(themeLayout);
         float modalAlpha = modalProgress;
         float modalYOffset = (1.0F - modalProgress) * 16.0F * layout.scale;
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, modalYOffset, 200.0F);
 
         renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10.0F, 0xFF121720, 0xFF222A39, modalAlpha);
@@ -1260,7 +1262,7 @@ public class MainMenuScreen extends TitleScreen {
                 Lang.translate("Settings"),
                 titleSize,
                 scaleColorAlpha(0xFFF6F8FE, modalAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.panelX + 13.0F * layout.scale,
                 layout.panelY + 12.0F * layout.scale,
                 0.0F
@@ -1324,14 +1326,14 @@ public class MainMenuScreen extends TitleScreen {
                 Lang.translate("Panorama Preset"),
                 presetTitleSize,
                 scaleColorAlpha(0xFFF0F4FE, modalAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.contentX,
                 layout.presetSectionY - 1.0F * layout.scale,
                 0.0F
         );
 
         renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.VANILLA, 0, mouseX, mouseY, modalAlpha);
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     private void renderThemeModalPanel(DrawContext context, float x, float y, float width, float height, float round, int fillColor, int outlineColor, float alpha) {
@@ -1383,7 +1385,7 @@ public class MainMenuScreen extends TitleScreen {
                 title,
                 titleSize,
                 scaleColorAlpha(0xFFF0F4FE, alpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.contentX,
                 labelY,
                 0.0F
@@ -1394,7 +1396,7 @@ public class MainMenuScreen extends TitleScreen {
                 valueLabel,
                 valueSize,
                 scaleColorAlpha(0xFFCAD5EC, alpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 valueX,
                 labelY + 1.0F * layout.scale,
                 0.0F
@@ -1432,7 +1434,7 @@ public class MainMenuScreen extends TitleScreen {
                 subtitle,
                 subtitleSize,
                 scaleColorAlpha(0xFF8E99AF, alpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 layout.contentX,
                 trackY + trackHeight + 8.0F * layout.scale,
                 0.0F
@@ -1494,7 +1496,7 @@ public class MainMenuScreen extends TitleScreen {
                 scaleColorAlpha(selected
                         ? lerpArgb(0xFFF4F8FF, 0xFFFFFFFF, hoverAnim)
                         : lerpArgb(0xFFCCD5E6, 0xFFF4F8FF, hoverAnim), alpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 dotX + dotOuter + 6.0F * layout.scale,
                 MenuStyle.centerMsdfTextY(nameSize, rowY, layout.presetRowHeight),
                 0.0F
@@ -1513,7 +1515,7 @@ public class MainMenuScreen extends TitleScreen {
         renderMenuIcon(context, icon, x, y + iconYOffset, iconSize, iconSize);
         MsdfRenderer.renderText(
                 MsdfFonts.medium(), text, 8.6F * scale, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 x + iconSize + 4.0F * scale, y, 0.0F
         );
     }
@@ -1534,7 +1536,7 @@ public class MainMenuScreen extends TitleScreen {
                 FOOTER_LEFT_TEXT,
                 footerSize,
                 footerColor,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 footerMarginX,
                 footerTextY,
                 0.0F
@@ -1548,7 +1550,7 @@ public class MainMenuScreen extends TitleScreen {
                 rightFooterText,
                 footerSize,
                 footerColor,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 rightFooterX,
                 footerTextY,
                 0.0F
@@ -2344,7 +2346,7 @@ public class MainMenuScreen extends TitleScreen {
                 displayText,
                 textSize,
                 textColor,
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 textX,
                 textY,
                 0.0F
@@ -2510,7 +2512,7 @@ public class MainMenuScreen extends TitleScreen {
                         label,
                         size,
                         textColor,
-                        context.getMatrices().peek().getPositionMatrix(),
+                        GuiMatrix.mat4(context.getMatrices()),
                         textX,
                         MenuStyle.centerMsdfTextY(size, this.getY(), this.height),
                         0.0F

@@ -71,7 +71,7 @@ public abstract class AbstractWindow extends AbstractComponent {
         float scale = scaleAnimation.getOutputFloat();
         float alpha = alphaAnimation.getOutputFloat();
         context.draw();
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, 0.0F, 280.0F);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
@@ -83,7 +83,7 @@ public abstract class AbstractWindow extends AbstractComponent {
         context.draw();
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     protected abstract void drawWindow(DrawContext context, int mouseX, int mouseY, float delta);

@@ -191,7 +191,7 @@ public class PlayerListHudMixin {
         }
 
         context.draw();
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         phaze$tabTransformPushed = true;
 
         if (module.isTabSlideStyle()) {
@@ -227,7 +227,7 @@ public class PlayerListHudMixin {
             return;
         }
         context.draw();
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
         phaze$tabTransformPushed = false;
     }
 

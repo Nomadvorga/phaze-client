@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.window.implement.settings.group;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -46,8 +50,8 @@ public final class WorldColorGroupWindow extends AbstractWindow {
 
     @Override
     protected void drawWindow(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrices = context.getMatrices();
-        Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+        Matrix3x2fStack matrices = context.getMatrices();
+        Matrix4f positionMatrix = GuiMatrix.mat4(matrices);
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
 
         renderWindowBlur(matrices);
@@ -89,7 +93,7 @@ public final class WorldColorGroupWindow extends AbstractWindow {
 
         float contentY = (float) (y + CONTENT_TOP + smoothedScroll);
         if (clip) {
-            scissorManager.push(matrices.peek().getPositionMatrix(), x + 4.0F, y + CONTENT_TOP - 2.0F, width - 8.0F, viewportHeight + 2.0F);
+            scissorManager.push(GuiMatrix.mat4(matrices), x + 4.0F, y + CONTENT_TOP - 2.0F, width - 8.0F, viewportHeight + 2.0F);
         }
 
         float offset = 0.0F;

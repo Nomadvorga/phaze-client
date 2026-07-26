@@ -1,5 +1,7 @@
 package vorga.phazeclient.api.system.snapshot;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import com.mojang.blaze3d.opengl.GlStateManager;
 import com.mojang.blaze3d.systems.ProjectionType;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -299,7 +301,7 @@ public final class CardSnapshotCache {
             // Scissor box was set up against the main framebuffer
             // dimensions; it does not apply to our smaller card FBO
             // and would clip the entire card to nothing.
-            RenderSystem.disableScissor();
+            RenderSystem.disableScissorForRenderTypeDraws();
         }
         s.savedShaderColor = RenderSystem.getShaderColor().clone();
         // Ensure the card's content is captured at full opacity - the
@@ -385,7 +387,7 @@ public final class CardSnapshotCache {
             // RenderSystem.enableScissor takes (x, y, width, height)
             // in framebuffer coords - same coord system glGetIntegerv
             // returned, so just pass through.
-            RenderSystem.enableScissor(s.savedScissorX, s.savedScissorY, s.savedScissorW, s.savedScissorH);
+            RenderSystem.enableScissorForRenderTypeDraws(s.savedScissorX, s.savedScissorY, s.savedScissorW, s.savedScissorH);
         }
         RenderSystem.setShaderColor(s.savedShaderColor[0], s.savedShaderColor[1], s.savedShaderColor[2], s.savedShaderColor[3]);
 
@@ -449,7 +451,7 @@ public final class CardSnapshotCache {
         // BufferBuilder must not collide with that pending batch.
         BatchedRectangle.flushIfBatching();
 
-        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
+        Matrix4f matrix = GuiMatrix.mat4(context.getMatrices());
 
         // Pack alpha into the per-vertex int color so the standard
         // POSITION_TEX_COLOR shader applies it as a multiplier
@@ -503,7 +505,7 @@ public final class CardSnapshotCache {
                 .color(backgroundColor)
                 .build());
 
-        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
+        Matrix4f matrix = GuiMatrix.mat4(context.getMatrices());
         int alphaByte = Math.max(0, Math.min(255, Math.round(alpha * 255.0F)));
         int color = (alphaByte << 24) | 0x00FFFFFF;
 

@@ -22,7 +22,7 @@ public class ItemPhysicsManager {
         if (!ItemPhysics.getInstance().isEnabled()) return;
 
         MinecraftClient mc = MinecraftClient.getInstance();
-        float rotateBy = mc.getRenderTickCounter().getTickDelta(true) * BASE_MULTIPLIER * ItemPhysics.getInstance().getRotationSpeed();
+        float rotateBy = mc.getRenderTickCounter().getTickProgress(true) * BASE_MULTIPLIER * ItemPhysics.getInstance().getRotationSpeed();
         if (mc.isPaused()) rotateBy = 0;
 
         int id = entity.getId();

@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import vorga.phazeclient.api.feature.module.Module;
@@ -80,7 +84,7 @@ public class ColorComponent extends AbstractSettingComponent {
             return;
         }
 
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
 
         // Pump the preset component just to keep its internal state
         // consistent (it still gets mouseClicked etc.); we no longer
@@ -189,7 +193,7 @@ public class ColorComponent extends AbstractSettingComponent {
                 header,
                 HEADER_TEXT_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, currentAlpha),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 x + 10,
                 y + HEADER_TOP_PAD,
                 0.0F

@@ -1,5 +1,7 @@
 package vorga.phazeclient.api.system.shape.implement;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
@@ -72,9 +74,9 @@ public class Arc implements Shape, QuickImports {
 
     private static VertexFormatElement registerGeneric() {
         for (int id = 7; id < 32; id++) {
-            if (VertexFormatElement.get(id) == null) {
+            if (VertexFormatElement.byId(id) == null) {
                 return VertexFormatElement.register(
-                        id, 0, VertexFormatElement.ComponentType.FLOAT,
+                        id, 0, VertexFormatElement.Type.FLOAT,
                         VertexFormatElement.Usage.GENERIC, 4);
             }
         }
@@ -97,7 +99,7 @@ public class Arc implements Shape, QuickImports {
         float scale = (float) window().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
 
-        Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
+        Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f pos = matrix4f.transformPosition(shape.getX(), shape.getY(), 0, scratchPosition).mul(scale);
         Vector3f size = matrix4f.getScale(scratchSize).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);

@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import lombok.AccessLevel;
 import lombok.experimental.FieldDefaults;
 import net.minecraft.client.gui.DrawContext;
@@ -64,7 +68,7 @@ public class TextComponent extends AbstractSettingComponent {
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
 
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         FontRenderer font = Fonts.getSize(12);
 
         String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 75 - textOffset), 14);
@@ -125,13 +129,13 @@ public class TextComponent extends AbstractSettingComponent {
         // when the cursor walks past the right edge. Use the
         // stack-based {@link ScissorManager} (push/pop) instead of
         // {@code DrawContext.enableScissor} - the DrawContext API
-        // calls {@code RenderSystem.disableScissor()} on disable
+        // calls {@code RenderSystem.disableScissorForRenderTypeDraws()} on disable
         // which would clobber the parent panel's clip and let
         // sibling rows render past the panel boundary. Stack
         // intersection guarantees the input box never escapes the
         // already-clipped panel band.
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
-        scissorManager.push(matrix.peek().getPositionMatrix(),
+        scissorManager.push(GuiMatrix.mat4(matrix),
                 rectX + 1, rectY + 1, rectWidth - 2, rectHeight - 2);
 
         if (typing && selectionStart != -1 && selectionEnd != -1 && selectionStart != selectionEnd) {

@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.window.implement.settings.color;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
@@ -72,8 +76,8 @@ public final class SettingColorPickerWindow extends AbstractWindow {
 
     @Override
     protected void drawWindow(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrices = context.getMatrices();
-        Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+        Matrix3x2fStack matrices = context.getMatrices();
+        Matrix4f positionMatrix = GuiMatrix.mat4(matrices);
 
         renderWindowBlur(matrices);
 
@@ -355,7 +359,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         RenderSystem.defaultBlendFunc();
         net.minecraft.util.Identifier phaze$tex = HUE_TEXTURE;
 
-        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        Matrix4f matrix = GuiMatrix.mat4(matrices);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         buffer.vertex(matrix, x, y, 0.0F).texture(0.0F, 0.0F).color(color);
         buffer.vertex(matrix, x, y + height, 0.0F).texture(0.0F, 1.0F).color(color);

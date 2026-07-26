@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.ShaderProgram;
@@ -102,7 +104,7 @@ public final class UiMsdfIconAtlas {
         float drawWidth = precise ? Math.max(1.0F, width) : Math.max(1.0F, Math.round(width));
         float drawHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
         FittedRect fittedRect = fitRect(x1, y1, drawWidth, drawHeight, atlasIcon.aspectRatio);
-        return renderQuad(context.getMatrices().peek().getPositionMatrix(), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false);
+        return renderQuad(GuiMatrix.mat4(context.getMatrices()), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false);
     }
 
     public static boolean renderIcon(

@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu.components.implement.category;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -129,7 +131,7 @@ public class CategoryComponent extends AbstractComponent {
         float gridHeight = menuScreen.height - GRID_TOP - GRID_BOTTOM_PADDING;
         float columnWidth = (gridWidth - COLUMN_GAP * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
 
-        Matrix4f positionMatrix = context.getMatrices().peek().getPositionMatrix();
+        Matrix4f positionMatrix = GuiMatrix.mat4(context.getMatrices());
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
         scissorManager.push(positionMatrix, gridX, gridY, gridWidth, gridHeight);
 

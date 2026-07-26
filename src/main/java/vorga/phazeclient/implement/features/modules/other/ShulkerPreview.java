@@ -263,7 +263,7 @@ public final class ShulkerPreview extends Module {
         // render at a high Z so even vanilla tooltips (Z=400) can't
         // poke through.
         context.draw();
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, 0.0F, 500.0F);
 
         // Tint resolution. The 1.21.4 GUI render layer samples
@@ -297,7 +297,7 @@ public final class ShulkerPreview extends Module {
         // {@code .mcmeta} sidecar declares nine_slice scaling
         // (border=7, source 32x32), so corners stay pixel-locked
         // while the inner area stretches to PREVIEW_W x PREVIEW_H.
-        context.drawGuiTexture(RenderLayer::getGuiTextured, PANEL_SPRITE,
+        context.drawGuiTexture(RenderPipelines.GUI_TEXTURED, PANEL_SPRITE,
                 x, y, PREVIEW_W, PREVIEW_H, tintArgb);
         context.draw();
 
@@ -377,7 +377,7 @@ public final class ShulkerPreview extends Module {
             }
 
             if (highlighted) {
-                context.drawGuiTexture(RenderLayer::getGuiTextured,
+                context.drawGuiTexture(RenderPipelines.GUI_TEXTURED,
                         SLOT_HIGHLIGHT_FRONT,
                         slotX - HIGHLIGHT_OFFSET, slotY - HIGHLIGHT_OFFSET,
                         HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
@@ -385,7 +385,7 @@ public final class ShulkerPreview extends Module {
         }
 
         context.draw();
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     private static boolean computeOverlayFlag(ItemStack stack, MinecraftClient mc) {

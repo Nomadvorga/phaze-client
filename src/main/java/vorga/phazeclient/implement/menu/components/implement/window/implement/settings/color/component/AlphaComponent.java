@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.window.implement.settings.color.component;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.RequiredArgsConstructor;
 import net.minecraft.client.gui.DrawContext;
@@ -35,7 +39,7 @@ public class AlphaComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
 
         // Vertical alpha strip placed after the hue strip and its
         // triangle indicator. Layout from the picker's right edge:
@@ -128,7 +132,7 @@ public class AlphaComponent extends AbstractComponent {
         RenderSystem.defaultBlendFunc();
         net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);
 
-        Matrix4f mat = matrix.peek().getPositionMatrix();
+        Matrix4f mat = GuiMatrix.mat4(matrix);
         BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
 
         buf.vertex(mat, x,     y,     0).texture(0, 0).color(color);
@@ -154,7 +158,7 @@ public class AlphaComponent extends AbstractComponent {
         RenderSystem.defaultBlendFunc();
         net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);
 
-        Matrix4f mat = matrix.peek().getPositionMatrix();
+        Matrix4f mat = GuiMatrix.mat4(matrix);
         BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
 
         buf.vertex(mat, x,     y,     0).texture(0, 1).color(color);

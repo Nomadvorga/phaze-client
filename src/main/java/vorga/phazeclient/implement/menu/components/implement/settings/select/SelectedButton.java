@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.settings.select;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
@@ -45,7 +49,7 @@ public class SelectedButton extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrices = context.getMatrices();
+        Matrix3x2fStack matrices = context.getMatrices();
         isHovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
 
         alphaAnimation.setDirection(setting.getSelected().contains(text) ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -65,7 +69,7 @@ public class SelectedButton extends AbstractComponent {
                 text,
                 ITEM_TEXT_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, alpha),
-                matrices.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrices),
                 x + 4,
                 MenuStyle.centerMsdfTextY(ITEM_TEXT_SIZE, y, height),
                 0.0F

@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
+import org.joml.Matrix3x2fStack;
+
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import vorga.phazeclient.api.feature.module.setting.implement.MultiColorSetting;
@@ -35,7 +37,7 @@ public class MultiColorComponent extends AbstractSettingComponent {
             return;
         }
 
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
 
         int colorCount = setting.getColorCount();
         String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - colorCount * 9 - 18 - textOffset), 14);

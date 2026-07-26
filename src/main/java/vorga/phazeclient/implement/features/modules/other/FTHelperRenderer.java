@@ -93,7 +93,7 @@ public final class FTHelperRenderer {
 
     private static Vec3d lerpedPlayerPos(MinecraftClient mc, RenderTickCounter tickCounter) {
         ClientPlayerEntity player = mc.player;
-        float td = tickCounter.getTickDelta(false);
+        float td = tickCounter.getTickProgress(false);
         return new Vec3d(
                 MathHelper.lerp(td, player.prevX, player.getX()),
                 MathHelper.lerp(td, player.prevY, player.getY()),
@@ -192,7 +192,7 @@ public final class FTHelperRenderer {
         if (mc.world == null) return;
         FTHelper module = FTHelper.getInstance();
         PlayerEntity player = mc.player;
-        float tickDelta = tickCounter.getTickDelta(false);
+        float tickDelta = tickCounter.getTickProgress(false);
         // Use the render-tick camera state. Tick-only eye/rotation values
         // make the projected impact zone visibly step while walking,
         // jumping, sneaking, or turning the camera.
@@ -313,7 +313,7 @@ public final class FTHelperRenderer {
         // Scale by the snowball ring's radius (3.5) relative to the
         // CIRCLE_10 reference so all FT rings stay visually balanced.
         float thickness = scaledThickness(module, 3.5F);
-        float tickDelta = tickCounter.getTickDelta(false);
+        float tickDelta = tickCounter.getTickProgress(false);
         for (var t : list) {
             Vec3d p = t.getRenderPosition(tickDelta);
             float ringX = (float) (p.x - cameraPos.x);

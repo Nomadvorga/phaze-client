@@ -185,17 +185,17 @@ public final class ServerAddressHud extends RectHudModule {
         // in the same physical-pixel space as the rect. Without this
         // the DrawContext is still in GUI-scaled coords and the icon
         // renders 2x / 3x / 4x oversized at higher GUI Scale settings.
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
         context.drawTexture(
-                RenderLayer::getGuiTextured,
+                RenderPipelines.GUI_TEXTURED,
                 textureId,
                 iconX, iconY,
                 0.0F, 0.0F,
                 iconSize, iconSize,
                 iconSize, iconSize
         );
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     /**

@@ -1,5 +1,7 @@
 package vorga.phazeclient.api.system.shape.batched;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
@@ -135,15 +137,15 @@ public final class BatchedRectangle {
         boolean disabled = true;
         try {
             int id = findFreeSlot(7);
-            base = VertexFormatElement.register(id, 0, VertexFormatElement.ComponentType.FLOAT, VertexFormatElement.Usage.GENERIC, 2);
+            base = VertexFormatElement.register(id, 0, VertexFormatElement.Type.FLOAT, VertexFormatElement.Usage.GENERIC, 2);
             id = findFreeSlot(id + 1);
-            size = VertexFormatElement.register(id, 0, VertexFormatElement.ComponentType.FLOAT, VertexFormatElement.Usage.GENERIC, 2);
+            size = VertexFormatElement.register(id, 0, VertexFormatElement.Type.FLOAT, VertexFormatElement.Usage.GENERIC, 2);
             id = findFreeSlot(id + 1);
-            radius = VertexFormatElement.register(id, 0, VertexFormatElement.ComponentType.FLOAT, VertexFormatElement.Usage.GENERIC, 4);
+            radius = VertexFormatElement.register(id, 0, VertexFormatElement.Type.FLOAT, VertexFormatElement.Usage.GENERIC, 4);
             id = findFreeSlot(id + 1);
-            params = VertexFormatElement.register(id, 0, VertexFormatElement.ComponentType.FLOAT, VertexFormatElement.Usage.GENERIC, 2);
+            params = VertexFormatElement.register(id, 0, VertexFormatElement.Type.FLOAT, VertexFormatElement.Usage.GENERIC, 2);
             id = findFreeSlot(id + 1);
-            outline = VertexFormatElement.register(id, 0, VertexFormatElement.ComponentType.FLOAT, VertexFormatElement.Usage.GENERIC, 4);
+            outline = VertexFormatElement.register(id, 0, VertexFormatElement.Type.FLOAT, VertexFormatElement.Usage.GENERIC, 4);
 
             format = VertexFormat.builder()
                     .add("Position", VertexFormatElement.POSITION)
@@ -200,7 +202,7 @@ public final class BatchedRectangle {
         // makes the resulting VertexFormat layout reproducible across
         // Phaze versions for debugging.
         for (int id = startFrom; id < 32; id++) {
-            if (VertexFormatElement.get(id) == null) {
+            if (VertexFormatElement.byId(id) == null) {
                 return id;
             }
         }
@@ -413,7 +415,7 @@ public final class BatchedRectangle {
                 : mc.getWindow().getFramebufferHeight();
         float globalAlpha = RenderSystem.getShaderColor()[3];
 
-        Matrix4f matrix = shape.getMatrix().peek().getPositionMatrix();
+        Matrix4f matrix = GuiMatrix.mat4(shape.getMatrix());
         Vector3f basePos = matrix.transformPosition(shape.getX(), shape.getY(), 0, SCRATCH_BASE_POS).mul(scale);
         Vector3f sizeVec = matrix.getScale(SCRATCH_SIZE).mul(scale);
 

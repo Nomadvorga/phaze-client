@@ -1,5 +1,7 @@
 package vorga.phazeclient.api.system.shape.implement;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import com.mojang.blaze3d.opengl.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
@@ -293,7 +295,7 @@ public class Blur implements Shape {
         }
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
-        Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
+        Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f size = matrix4f.getScale(scratchScale).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);
         float softness = Math.max(0.001F, shape.getSoftness());
@@ -565,7 +567,7 @@ public class Blur implements Shape {
 
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
-        Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
+        Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f size = matrix4f.getScale(scratchScale).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);
         float softness = Math.max(0.001F, shape.getSoftness());
@@ -665,7 +667,7 @@ public class Blur implements Shape {
 
         float scale = (float) client.getWindow().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
-        Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
+        Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f size = matrix4f.getScale(scratchScale).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);
         float softness = Math.max(0.001F, shape.getSoftness());
@@ -1329,9 +1331,9 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("Offset").set(offset);
         shader.getUniformOrDefault("Downsample").set(downsample ? 1 : 0);
         BlurRegion targetRegion = scaleBlurRegion(region, target.textureWidth, target.textureHeight);
-        RenderSystem.enableScissor(targetRegion.x, targetRegion.y, targetRegion.width, targetRegion.height);
+        RenderSystem.enableScissorForRenderTypeDraws(targetRegion.x, targetRegion.y, targetRegion.width, targetRegion.height);
         ShaderHelper.drawFullScreenQuad();
-        RenderSystem.disableScissor();
+        RenderSystem.disableScissorForRenderTypeDraws();
         target.endWrite();
     }
 
@@ -1422,11 +1424,11 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("Brightness").set(1.0F);
 
         if (region != null) {
-            RenderSystem.enableScissor(region.x, region.y, region.width, region.height);
+            RenderSystem.enableScissorForRenderTypeDraws(region.x, region.y, region.width, region.height);
         }
         ShaderHelper.drawFullScreenQuad();
         if (region != null) {
-            RenderSystem.disableScissor();
+            RenderSystem.disableScissorForRenderTypeDraws();
         }
         // Ensure we finish writing to the target FBO for this pass
         target.endWrite();
@@ -1438,7 +1440,7 @@ public class Blur implements Shape {
         }
 
         float scale = (float) client.getWindow().getScaleFactor();
-        Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
+        Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         float softness = Math.max(0.001F, shape.getSoftness());
         Vector3f pos = matrix4f.transformPosition(
                 shape.getX() - softness / 2.0F,

@@ -132,11 +132,11 @@ public final class PhazeBadgeUtil {
 
     public static void drawChatBadgeAsText(DrawContext context, TextRenderer renderer, float x, float y, int color) {
         float scale = 1.0F / 1.1F;
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(Math.round(x), Math.round(y + 1.0F), 0.0F);
         context.getMatrices().scale(scale, scale, 1.0F);
         context.drawText(renderer, CHAT_BADGE_TEXT, 0, 0, color, false);
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     public static void drawWorldBadge(

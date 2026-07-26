@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import net.minecraft.client.gui.DrawContext;
@@ -29,7 +33,7 @@ public class ButtonComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         String resolved = text == null ? "" : text;
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
         if (hovered) {
@@ -46,11 +50,11 @@ public class ButtonComponent extends AbstractComponent {
         float centerX = x + width / 2.0F;
         float centerY = y + height / 2.0F;
 
-        matrix.push();
-        matrix.translate(centerX, centerY, 0.0F);
-        matrix.scale(scale, scale, 1.0F);
-        matrix.translate(-centerX, -centerY, 0.0F);
-        Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
+        matrix.pushMatrix();
+        matrix.translate(centerX, centerY);
+        matrix.scale(scale, scale);
+        matrix.translate(-centerX, -centerY);
+        Matrix4f positionMatrix = GuiMatrix.mat4(matrix);
 
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(3.4F)
@@ -70,7 +74,7 @@ public class ButtonComponent extends AbstractComponent {
                 MenuStyle.centerMsdfTextY(TEXT_SIZE, y, height),
                 0.0F
         );
-        matrix.pop();
+        matrix.popMatrix();
     }
 
     @Override
