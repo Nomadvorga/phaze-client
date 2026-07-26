@@ -1,11 +1,9 @@
-#version 150
+#version 330
 
-uniform float radius;
-uniform float thickness;
-uniform float start;
-uniform float end;
-uniform vec2 size;
-uniform vec2 location;
+// Identical arc maths to the 1.21.4 version; parameters are varyings now
+// instead of loose uniforms.
+in vec4 vArcRect;
+in vec4 vArcParams;
 
 out vec4 fragColor;
 
@@ -13,6 +11,13 @@ out vec4 fragColor;
 #define RAD 0.0174533
 
 void main() {
+    vec2 location = vArcRect.xy;
+    vec2 size = vArcRect.zw;
+    float radius = vArcParams.x;
+    float thickness = vArcParams.y;
+    float start = vArcParams.z;
+    float end = vArcParams.w;
+
     float startAngle = start * RAD;
     float endAngle = startAngle + min(end * RAD, PI * 2);
 
@@ -24,7 +29,6 @@ void main() {
     float angle = (atan(centerPos.y, centerPos.x) + PI);
     float angleAlpha = smoothstep(angle, angle - smoothThresh, startAngle - 0.1) * smoothstep(angle, angle + smoothThresh, endAngle + 0.1);
 
-    // Р‘РµР»С‹Р№ С†РІРµС‚ РґР»СЏ РёРЅРІРµСЂСЃРёРё
+    // White, so the inverting blend function flips whatever is underneath
     fragColor = vec4(1.0, 1.0, 1.0, bandAlpha * angleAlpha);
 }
-

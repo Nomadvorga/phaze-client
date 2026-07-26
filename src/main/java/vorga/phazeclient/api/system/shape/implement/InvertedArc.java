@@ -1,41 +1,72 @@
 package vorga.phazeclient.api.system.shape.implement;
 
-import com.mojang.blaze3d.opengl.GlStateManager;
-import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.gl.Defines;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramKey;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
+import com.mojang.blaze3d.vertex.VertexFormatElement;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderSetup;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
+import org.lwjgl.system.MemoryUtil;
 import vorga.phazeclient.api.system.shape.Shape;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
 
+/**
+ * Inverting arc / ring segment.
+ *
+ * <h3>1.21.11 port</h3>
+ *
+ * Same treatment as {@link Arc} - the six loose uniforms became vertex
+ * attributes - but with no colors (the shader emits white and the
+ * inverting blend does the rest) and with that blend baked into the
+ * pipeline as {@link BlendFunction#INVERT} instead of being configured
+ * imperatively around the draw.
+ *
+ * <p>Reuses {@link Arc}'s {@code ArcRect} / {@code ArcParams} elements
+ * rather than registering its own: element ids are a shared 32-slot
+ * registry, and the two shapes want byte-identical attributes.
+ */
 public class InvertedArc implements Shape, QuickImports {
-    private final ShaderProgramKey SHADER_KEY = new ShaderProgramKey(Identifier.of("phaze", "core/arc_inverted"), VertexFormats.POSITION, Defines.EMPTY);
+
+    private static final VertexFormat FORMAT = VertexFormat.builder()
+            .add("Position", VertexFormatElement.POSITION)
+            .add("ArcRect", Arc.ARC_RECT)
+            .add("ArcParams", Arc.ARC_PARAMS)
+            .build();
+
+    private static final RenderLayer LAYER;
+
+    static {
+        RenderPipeline pipeline = RenderPipeline.builder()
+                .withLocation(Identifier.of("phaze", "pipeline/arc_inverted"))
+                .withVertexShader(Identifier.of("phaze", "core/arc_inverted"))
+                .withFragmentShader(Identifier.of("phaze", "core/arc_inverted"))
+                .withVertexFormat(FORMAT, VertexFormat.DrawMode.QUADS)
+                .withBlend(BlendFunction.INVERT)
+                .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+                .withDepthWrite(false)
+                .withCull(true)
+                .build();
+
+        LAYER = RenderLayer.of(
+                "phaze_arc_inverted",
+                RenderSetup.builder(pipeline).translucent().build());
+    }
+
     private final Vector3f scratchPosition = new Vector3f();
     private final Vector3f scratchSize = new Vector3f();
     private final Vector4f scratchRound = new Vector4f();
 
     @Override
     public void render(ShapeProperties shape) {
-        vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
-
-        RenderSystem.enableBlend();
-        RenderSystem.blendFuncSeparate(
-                GlStateManager.SrcFactor.ONE_MINUS_DST_COLOR,
-                GlStateManager.DstFactor.ONE_MINUS_SRC_COLOR,
-                GlStateManager.SrcFactor.ONE,
-                GlStateManager.DstFactor.ZERO
-        );
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
+        BatchedRectangle.flushIfBatching();
 
         if (window() == null) return;
         float scale = (float) window().getScaleFactor();
@@ -48,20 +79,39 @@ public class InvertedArc implements Shape, QuickImports {
         float width = shape.getWidth() * size.x;
         float height = shape.getHeight() * size.y;
 
-        BufferBuilder buffer = tessellator().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION);
-        drawEngine.quad(matrix4f, buffer, shape.getX(), shape.getY(), shape.getWidth(), shape.getHeight());
+        float locX = pos.x;
+        float locY = BatchedRectangle.getActiveFbHeight() - height - pos.y;
 
-        ShaderProgram shader = RenderSystem.setShader(SHADER_KEY);
-        if (shader == null) return;
-        shader.getUniformOrDefault("size").set(width, height);
-        shader.getUniformOrDefault("location").set(pos.x, window().getHeight() - height - pos.y);
-        shader.getUniformOrDefault("radius").set(round.x);
-        shader.getUniformOrDefault("thickness").set(shape.getThickness());
-        shader.getUniformOrDefault("start").set(shape.getStart());
-        shader.getUniformOrDefault("end").set(shape.getEnd());
+        float x = shape.getX();
+        float y = shape.getY();
+        float w = shape.getWidth();
+        float h = shape.getHeight();
 
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        RenderSystem.disableBlend();
-        RenderSystem.defaultBlendFunc();
+        BufferBuilder buffer = tessellator().begin(VertexFormat.DrawMode.QUADS, FORMAT);
+        emit(buffer, matrix4f, x, y, locX, locY, width, height, round.x, shape);
+        emit(buffer, matrix4f, x, y + h, locX, locY, width, height, round.x, shape);
+        emit(buffer, matrix4f, x + w, y + h, locX, locY, width, height, round.x, shape);
+        emit(buffer, matrix4f, x + w, y, locX, locY, width, height, round.x, shape);
+
+        LAYER.draw(buffer.end());
+    }
+
+    private static void emit(BufferBuilder buffer, Matrix4f matrix,
+                             float x, float y,
+                             float locX, float locY, float sizeX, float sizeY,
+                             float radius, ShapeProperties shape) {
+        buffer.vertex(matrix, x, y, 0.0F);
+
+        long ptr = buffer.beginElement(Arc.ARC_RECT);
+        MemoryUtil.memPutFloat(ptr, locX);
+        MemoryUtil.memPutFloat(ptr + 4L, locY);
+        MemoryUtil.memPutFloat(ptr + 8L, sizeX);
+        MemoryUtil.memPutFloat(ptr + 12L, sizeY);
+
+        ptr = buffer.beginElement(Arc.ARC_PARAMS);
+        MemoryUtil.memPutFloat(ptr, radius);
+        MemoryUtil.memPutFloat(ptr + 4L, shape.getThickness());
+        MemoryUtil.memPutFloat(ptr + 8L, shape.getStart());
+        MemoryUtil.memPutFloat(ptr + 12L, shape.getEnd());
     }
 }

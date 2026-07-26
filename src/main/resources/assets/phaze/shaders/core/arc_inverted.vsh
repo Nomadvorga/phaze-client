@@ -1,21 +1,21 @@
-#version 150
+#version 330
 
-#moj_import <phaze:common.glsl>
+#moj_import <minecraft:dynamictransforms.glsl>
+#moj_import <minecraft:projection.glsl>
 
+// Shares Arc's ArcRect / ArcParams attribute layout - same two vec4s,
+// no colors (the fragment stage emits white and the inverting blend on
+// the pipeline does the rest).
 in vec3 Position;
-in vec4 Color;
+in vec4 ArcRect;    // location.xy, size.xy
+in vec4 ArcParams;  // radius, thickness, start, end
 
-uniform mat4 ModelViewMat;
-uniform mat4 ProjMat;
-
-out vec2 FragCoord;
-out vec4 FragColor;
+out vec4 vArcRect;
+out vec4 vArcParams;
 
 void main() {
-    FragCoord = rvertexcoord(gl_VertexID);
-    FragColor = Color;
+    vArcRect = ArcRect;
+    vArcParams = ArcParams;
 
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
 }
-
-

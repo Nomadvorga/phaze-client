@@ -1,13 +1,11 @@
-#version 150
+#version 330
 
-uniform vec4 color1;
-uniform vec4 color2;
-uniform float radius;
-uniform float thickness;
-uniform float start;
-uniform float end;
-uniform vec2 size;
-uniform vec2 location;
+// Identical arc maths to the 1.21.4 version; only the parameter source
+// changed from uniforms to varyings.
+in vec4 vArcRect;
+in vec4 vArcParams;
+in vec4 vArcColor1;
+in vec4 vArcColor2;
 
 out vec4 fragColor;
 
@@ -15,6 +13,13 @@ out vec4 fragColor;
 #define RAD 0.0174533
 
 void main() {
+    vec2 location = vArcRect.xy;
+    vec2 size = vArcRect.zw;
+    float radius = vArcParams.x;
+    float thickness = vArcParams.y;
+    float start = vArcParams.z;
+    float end = vArcParams.w;
+
     float startAngle = start * RAD;
     float endAngle = startAngle + min(end * RAD, PI * 2);
 
@@ -33,6 +38,5 @@ void main() {
     } else {
         angle2 = angle2 * 2.;
     }
-    fragColor = mix(color1, color2, angle2 / 360.) * bandAlpha * angleAlpha;
+    fragColor = mix(vArcColor1, vArcColor2, angle2 / 360.) * bandAlpha * angleAlpha;
 }
-
