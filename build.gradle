@@ -88,6 +88,10 @@ processResources {
 def targetJavaVersion = 21
 tasks.withType(JavaCompile).configureEach {
     it.options.encoding = "UTF-8"
+    // Port aid: javac stops listing after 100 errors by default, which
+    // hides the real size of the remaining work. Lift the caps while the
+    // 1.21.11 port is in progress.
+    it.options.compilerArgs += ['-Xmaxerrs', '20000', '-Xmaxwarns', '20000']
     if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
         it.options.release.set(targetJavaVersion)
     }
