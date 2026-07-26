@@ -44,7 +44,10 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
+import net.minecraft.client.gl.UniformType;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
@@ -99,11 +102,15 @@ public final class HitRangeCircleRenderer {
         if (config.randomColors.isValue()) {
             // Hash the display name into an opaque-ARGB color. Same name
             // -> same color across frames -> visually stable per player.
-            color = state.name.hashCode() | 0xFF000000;
+            // 1.21.11: PlayerEntityRenderState.name (String) was replaced by
+            // playerName (Text); hash its plain-text form so the derived
+            // color stays identical to the pre-port one for a given name.
+            color = playerNameHash(state) | 0xFF000000;
         } else if (
                 config.colorWhenInRange.isValue()
                         && state.id != player.getId()
-                        && entityPos.isInRange(player.getPos(), config.radius.getValue())
+                        // 1.21.11: Entity.getPos() -> getEntityPos().
+                        && entityPos.isInRange(player.getEntityPos(), config.radius.getValue())
         ) {
             color = config.inRangeColor.getColor();
         }
@@ -130,6 +137,17 @@ public final class HitRangeCircleRenderer {
             }
         }
         matrices.pop();
+    }
+
+    /**
+     * 1.21.11 replacement for the removed {@code PlayerEntityRenderState.name}
+     * String field. Falls back to the generic display name and finally to the
+     * entity id so a missing name still yields a stable, per-player value
+     * instead of an NPE.
+     */
+    private static int playerNameHash(PlayerEntityRenderState state) {
+        Text name = state.playerName != null ? state.playerName : state.displayName;
+        return name != null ? name.getString().hashCode() : state.id;
     }
 
     private static ResolvedCircleColors resolveColors(HitRange config, HitRange.Mode mode, int color) {
@@ -254,6 +272,14 @@ public final class HitRangeCircleRenderer {
                 .withLocation(Identifier.of("phaze", "pipeline/hitrange_" + mode.name().toLowerCase(Locale.ROOT)))
                 .withVertexShader(Identifier.of("minecraft", "core/position_color"))
                 .withFragmentShader(Identifier.of("minecraft", "core/position_color"))
+                // core/position_color reads both std140 blocks. Vanilla supplies them
+                // through the private RenderPipelines.TRANSFORMS_AND_PROJECTION_SNIPPET,
+                // which is not reachable from a mod, so declare them by hand - the
+                // names must match exactly or the draw renders nothing.
+                // RenderLayer.draw() fills DynamicTransforms via RenderSystem's
+                // DynamicUniforms; Projection is bound globally for the frame.
+                .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+                .withUniform("Projection", UniformType.UNIFORM_BUFFER)
                 .withVertexFormat(VertexFormats.POSITION_COLOR, mode)
                 .withBlend(BlendFunction.TRANSLUCENT)
                 .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)

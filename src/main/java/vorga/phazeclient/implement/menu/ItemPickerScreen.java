@@ -1,11 +1,13 @@
 package vorga.phazeclient.implement.menu;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import vorga.phazeclient.api.feature.module.setting.implement.ItemPickerSetting;
@@ -16,6 +18,7 @@ import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
+import vorga.phazeclient.base.util.render.GuiMatrix;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 
 import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
@@ -72,12 +75,16 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
         FontRenderer titleFont = Fonts.getSize(15, INTER_BOLD);
         FontRenderer subtitleFont = Fonts.getSize(11);
 
+        // 1.21.11: DrawContext.getMatrices() is a Matrix3x2fStack, but FontRenderer still
+        // consumes a MatrixStack. Bake the GUI pose once per frame (see fontPose()).
+        MatrixStack textPose = fontPose(context);
+
         float textX = panelX + PANEL_PADDING - 7.0F;
         int headerTitleColor = MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, 0.55F);
         int headerSubtitleColor = MenuStyle.mix(MenuStyle.TEXT_MUTED, 0xFFFFFFFF, 0.40F);
-        titleFont.drawString(context.getMatrices(), Lang.translate("Choose Highlight Item"), textX, panelY + 11.0F, headerTitleColor);
+        titleFont.drawString(textPose, Lang.translate("Choose Highlight Item"), textX, panelY + 11.0F, headerTitleColor);
         subtitleFont.drawString(
-                context.getMatrices(),
+                textPose,
                 Lang.translate("Click any inventory item to add it to Item Highlighter"),
                 textX,
                 panelY + 25.0F,
@@ -96,8 +103,8 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
             FontRenderer emptyFont = Fonts.getSize(12, INTER_BOLD);
             String line1 = Lang.translate("Join a world to choose an item");
             String line2 = Lang.translate("Click outside or press Esc to go back");
-            emptyFont.drawString(context.getMatrices(), line1, panelX + (panelWidth - emptyFont.getStringWidth(line1)) / 2.0F, panelY + panelHeight / 2.0F - 10.0F, MenuStyle.TEXT_PRIMARY);
-            subtitleFont.drawString(context.getMatrices(), line2, panelX + (panelWidth - subtitleFont.getStringWidth(line2)) / 2.0F, panelY + panelHeight / 2.0F + 4.0F, MenuStyle.TEXT_MUTED);
+            emptyFont.drawString(textPose, line1, panelX + (panelWidth - emptyFont.getStringWidth(line1)) / 2.0F, panelY + panelHeight / 2.0F - 10.0F, MenuStyle.TEXT_PRIMARY);
+            subtitleFont.drawString(textPose, line2, panelX + (panelWidth - subtitleFont.getStringWidth(line2)) / 2.0F, panelY + panelHeight / 2.0F + 4.0F, MenuStyle.TEXT_MUTED);
             return;
         }
 
@@ -129,8 +136,8 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
 
         titleFont = Fonts.getSize(12, INTER_BOLD);
         subtitleFont = Fonts.getSize(10);
-        titleFont.drawString(context.getMatrices(), trimToWidth(titleFont, footerTitle, panelWidth - PANEL_PADDING * 2.0F), textX, footerY + 6.0F, MenuStyle.TEXT_PRIMARY);
-        subtitleFont.drawString(context.getMatrices(), trimToWidth(subtitleFont, footerSubtitle, panelWidth - PANEL_PADDING * 2.0F), textX, footerY + 16.0F, MenuStyle.TEXT_MUTED);
+        titleFont.drawString(textPose, trimToWidth(titleFont, footerTitle, panelWidth - PANEL_PADDING * 2.0F), textX, footerY + 6.0F, MenuStyle.TEXT_PRIMARY);
+        subtitleFont.drawString(textPose, trimToWidth(subtitleFont, footerSubtitle, panelWidth - PANEL_PADDING * 2.0F), textX, footerY + 16.0F, MenuStyle.TEXT_MUTED);
     }
 
     private void renderInventoryRows(DrawContext context, int mouseX, int mouseY, PlayerInventory inventory, float startX, float startY, int startIndex, int slotCount, boolean storage) {
@@ -139,7 +146,8 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
         for (int row = 0; row < rows; row++) {
             for (int column = 0; column < GRID_COLUMNS; column++) {
                 int slotIndex = startIndex + row * GRID_COLUMNS + column;
-                ItemStack stack = inventory.main.get(slotIndex);
+                // 1.21.11: PlayerInventory.main is private now; getMainStacks() exposes the same DefaultedList.
+                ItemStack stack = inventory.getMainStacks().get(slotIndex);
                 float slotX = startX + column * SLOT_SIZE;
                 float slotY = startY + row * SLOT_SIZE;
                 boolean hovered = MathUtil.isHovered(mouseX, mouseY, slotX, slotY, SLOT_SIZE - 1.0F, SLOT_SIZE - 1.0F);
@@ -170,11 +178,16 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
         }
     }
 
+    // 1.21.11: Element.mouseClicked(double, double, int) became mouseClicked(Click, boolean doubled).
+    // Click carries x()/y()/button(); the boolean flags a double-click, which this screen ignores.
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button != 0) {
-            return super.mouseClicked(mouseX, mouseY, button);
+    public boolean mouseClicked(Click click, boolean doubled) {
+        if (click.button() != 0) {
+            return super.mouseClicked(click, doubled);
         }
+
+        double mouseX = click.x();
+        double mouseY = click.y();
 
         if (!MathUtil.isHovered(mouseX, mouseY, panelX, panelY, panelWidth, panelHeight)) {
             playClick();
@@ -189,7 +202,7 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
             return true;
         }
 
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.mouseClicked(click, doubled);
     }
 
     @Override
@@ -211,8 +224,30 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
     private void playClick() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null && client.getSoundManager() != null) {
-            client.getSoundManager().play(PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+            // 1.21.11: PositionedSoundInstance.master(...) was renamed to ui(...); same MASTER-category behaviour.
+            client.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.UI_BUTTON_CLICK, 1.0F));
         }
+    }
+
+    /**
+     * Bridges the 1.21.11 GUI pose to the pose type {@link FontRenderer} still takes.
+     *
+     * <p>1.21.6 changed {@code DrawContext.getMatrices()} from {@code MatrixStack} to
+     * {@code org.joml.Matrix3x2fStack}, but {@code FontRenderer.drawString} still accepts a
+     * {@code MatrixStack} and only ever reads {@code peek().getPositionMatrix()} from it.
+     * Baking the promoted 2D pose into a throwaway {@code MatrixStack} therefore reproduces the
+     * 1.21.4 geometry exactly, with no behaviour change.
+     *
+     * <p>One instance per {@code render()} is sufficient: this screen never mutates the GUI pose
+     * while drawing, and {@code FontRenderer.drawGlyphs} pushes/pops symmetrically.
+     *
+     * <p>TODO(1.21.11): drop this once FontRenderer itself is ported to take a
+     * {@code Matrix3x2fc} - then {@code context.getMatrices()} can be passed directly again.
+     */
+    private static MatrixStack fontPose(DrawContext context) {
+        MatrixStack pose = new MatrixStack();
+        pose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));
+        return pose;
     }
 
     private static String trimToWidth(FontRenderer font, String text, float maxWidth) {

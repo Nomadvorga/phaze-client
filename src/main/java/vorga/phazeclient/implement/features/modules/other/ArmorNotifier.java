@@ -394,7 +394,11 @@ public final class ArmorNotifier extends Module {
             return;
         }
         SoundEvent sound = SoundEvents.BLOCK_NOTE_BLOCK_PLING.value();
-        soundManager.play(PositionedSoundInstance.master(sound, 1.6F, 0.9F));
+        // 1.21.11: PositionedSoundInstance.master(...) was renamed to ui(...)
+        // and now files the instance under SoundCategory.UI instead of
+        // MASTER. Same (sound, pitch, volume) argument order, so the cue
+        // is unchanged - it just follows the UI volume slider now.
+        soundManager.play(PositionedSoundInstance.ui(sound, 1.6F, 0.9F));
     }
 
     /**
@@ -410,11 +414,12 @@ public final class ArmorNotifier extends Module {
         if (soundManager == null) {
             return;
         }
-        // {@code ENTITY_ITEM_BREAK} is one of the SoundEvents fields
-        // exposed as a bare {@code SoundEvent} (no RegistryEntry wrap),
-        // unlike {@code BLOCK_NOTE_BLOCK_PLING} above which needs
-        // {@code .value()}. The asymmetry is upstream - yarn mirrors it.
-        SoundEvent sound = SoundEvents.ENTITY_ITEM_BREAK;
-        soundManager.play(PositionedSoundInstance.master(sound, 1.0F, 1.0F));
+        // 1.21.11: every SoundEvents constant is now a
+        // RegistryEntry.Reference<SoundEvent>, so ENTITY_ITEM_BREAK needs
+        // .value() just like BLOCK_NOTE_BLOCK_PLING above - the old
+        // bare-SoundEvent asymmetry is gone.
+        SoundEvent sound = SoundEvents.ENTITY_ITEM_BREAK.value();
+        // master(...) -> ui(...), see playPing.
+        soundManager.play(PositionedSoundInstance.ui(sound, 1.0F, 1.0F));
     }
 }

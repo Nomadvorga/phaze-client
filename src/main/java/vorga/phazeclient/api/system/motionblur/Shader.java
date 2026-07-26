@@ -1,6 +1,5 @@
 package vorga.phazeclient.api.system.motionblur;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
@@ -36,11 +35,14 @@ public class Shader {
      * render loop outruns the mouse polling rate, so while the player is
      * actively turning there are still plenty of individual frames with an
      * unchanged camera. Gating the pass on that made it run every other
-     * frame, and since the pass rebinds the framebuffer and normalises depth
-     * / blend state right before the hand is drawn, the hand visibly blinked.
-     * The pass is only dropped after the camera has genuinely been at rest
-     * for {@link #STATIC_FRAMES_TO_SKIP} frames, and resumes on the first
-     * frame that moves.
+     * frame, and in 1.21.4 - where the pass rebound the framebuffer and
+     * normalised depth / blend state right before the hand was drawn - the
+     * hand visibly blinked. The pass is only dropped after the camera has
+     * genuinely been at rest for {@link #STATIC_FRAMES_TO_SKIP} frames, and
+     * resumes on the first frame that moves. The blink is gone in 1.21.11
+     * (there is no global state for the pass to leave behind any more), but
+     * the hysteresis is still worth keeping: it is what stops the blur from
+     * flickering on and off while the camera drifts.
      */
     private int staticFrames = 0;
     private static final int STATIC_FRAMES_TO_SKIP = 8;
@@ -87,29 +89,20 @@ public class Shader {
 
         if (staticFrames >= STATIC_FRAMES_TO_SKIP) {
             // Camera at rest: the pass would write back exactly what it read,
-            // so skip the work - but leave the render state exactly as the
-            // pass would have, because renderHand runs straight after this
-            // and depends on it. Without this the hand blinked on every
-            // transition between the two paths.
-            leaveRenderStateAsPassWould();
+            // so skip the work.
+            //
+            // 1.21.11: this used to call leaveRenderStateAsPassWould(), which
+            // re-bound the main framebuffer (Framebuffer.beginWrite) and reset
+            // the depth function (RenderSystem.depthFunc) so that renderHand,
+            // which runs straight after this, saw the same global GL state a
+            // completed pass would have left behind. Both of those APIs are
+            // gone: the render target is chosen per render pass and depth
+            // state lives on the RenderPipeline, so a skipped pass leaks
+            // nothing and there is nothing left to reproduce. Method deleted.
             return;
         }
 
         applyMotionBlur();
-    }
-
-    /**
-     * Reproduces the framebuffer binding and depth / blend state that a
-     * completed motion-blur pass leaves behind, for the path where the pass
-     * itself is skipped.
-     */
-    private void leaveRenderStateAsPassWould() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getFramebuffer() == null) {
-            return;
-        }
-        client.getFramebuffer().beginWrite(true);
-        RenderSystem.depthFunc(515); // GL_LEQUAL
     }
 
     private void applyMotionBlur() {
@@ -139,8 +132,12 @@ public class Shader {
             lastSampleAmount = sampleAmount;
         }
 
-        float viewWidth = client.getFramebuffer().viewportWidth;
-        float viewHeight = client.getFramebuffer().viewportHeight;
+        // 1.21.11: Framebuffer no longer carries a viewport size - the viewport
+        // is a property of the render pass' target now. textureWidth/Height are
+        // the attachment's real dimensions and are what the old viewport fields
+        // were initialised to for the main framebuffer, so view_res is unchanged.
+        float viewWidth = client.getFramebuffer().textureWidth;
+        float viewHeight = client.getFramebuffer().textureHeight;
         if (viewWidth != lastViewWidth || viewHeight != lastViewHeight) {
             motionBlurShader.setUniformValue("view_res", viewWidth, viewHeight);
             lastViewWidth = viewWidth;
@@ -159,8 +156,9 @@ public class Shader {
         }
 
         motionBlurShader.render(0.0f);
-
-        RenderSystem.depthFunc(515); // GL_LEQUAL
+        // 1.21.11: the trailing RenderSystem.depthFunc(GL_LEQUAL) is gone. Depth
+        // state is a RenderPipeline property, so the post-effect pass cannot
+        // disturb what the hand renderer's pipeline asks for.
     }
 
     private int getSampleAmountForFPS(float fps) {

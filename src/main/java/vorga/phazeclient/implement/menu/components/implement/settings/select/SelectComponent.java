@@ -19,7 +19,7 @@ import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.ResetIconComponent;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix3x2fc;
 import org.joml.Matrix4f;
 
 import java.util.List;
@@ -132,7 +132,11 @@ public class SelectComponent extends AbstractSettingComponent {
         return MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
     }
 
-    private void renderArrowSelector(MatrixStack matrices, int mouseX, int mouseY) {
+    // 1.21.11: the GUI pose is org.joml.Matrix3x2f now, not MatrixStack.
+    // Read-only in here (ShapeProperties copies it, GuiMatrix promotes it),
+    // so the read-only interface type is enough and it binds directly to the
+    // Matrix3x2fStack handed out by DrawContext.getMatrices().
+    private void renderArrowSelector(Matrix3x2fc matrices, int mouseX, int mouseY) {
         float boxX = selectedBoxX();
         float boxY = selectedBoxY();
         float boxWidth = selectedBoxWidth();
@@ -270,7 +274,8 @@ public class SelectComponent extends AbstractSettingComponent {
         setting.setSelected(list.get(newIndex));
     }
 
-    private void renderLabelText(MatrixStack matrices, String wrapped, float textX, int color) {
+    // 1.21.11: same pose-type change as renderArrowSelector above.
+    private void renderLabelText(Matrix3x2fc matrices, String wrapped, float textX, int color) {
         String[] lines = wrapped.split("\n");
         float lineHeight = LABEL_TEXT_SIZE + 1.5F;
         float totalHeight = lines.length == 0 ? LABEL_TEXT_SIZE : lines.length * lineHeight - 1.5F;

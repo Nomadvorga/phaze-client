@@ -105,15 +105,10 @@ public class TintingVertexConsumer implements VertexConsumer {
         return this;
     }
 
-    @Override
-    public VertexConsumer colorRgb(int rgb) {
-        if (!colorTransform && !alphaTransform) {
-            parent.colorRgb(rgb);
-            return this;
-        }
-        parent.color(phaze$transformArgb(0xFF000000 | (rgb & 0x00FFFFFF)));
-        return this;
-    }
+    // 1.21.11: VertexConsumer.colorRgb(int) was removed from the interface; the
+    // opaque-RGB shorthand is gone and callers pass a full ARGB through color(int).
+    // Nothing in Phaze called it, so the override is dropped rather than kept as a
+    // dead non-override method.
 
     @Override
     public VertexConsumer texture(float u, float v) {
@@ -151,6 +146,15 @@ public class TintingVertexConsumer implements VertexConsumer {
         return this;
     }
 
+    // 1.21.11: line width became a per-vertex attribute (VertexFormatElement.LINE_WIDTH)
+    // and lineWidth(float) is now abstract on VertexConsumer, replacing the removed
+    // global RenderSystem.lineWidth. Colour correction does not touch it - pass through.
+    @Override
+    public VertexConsumer lineWidth(float width) {
+        parent.lineWidth(width);
+        return this;
+    }
+
     @Override
     public void vertex(float x, float y, float z, int color, float u, float v, int overlay, int light, float normalX, float normalY, float normalZ) {
         parent.vertex(x, y, z, phaze$transformArgb(color), u, v, overlay, light, normalX, normalY, normalZ);
@@ -181,10 +185,15 @@ public class TintingVertexConsumer implements VertexConsumer {
         );
     }
 
+    // 1.21.11: the trailing `boolean useQuadColorData` parameter was removed from this
+    // overload. BakedQuad no longer carries per-vertex colour data on this path - vanilla's
+    // default impl now derives the vertex colour purely from brightnesses[i] * (r,g,b) with
+    // the given alpha - so there is no flag left to forward. Tinting is unaffected: we still
+    // correct the r/g/b/a tint before handing it down.
     @Override
-    public void quad(MatrixStack.Entry matrixEntry, BakedQuad quad, float[] brightnesses, float red, float green, float blue, float alpha, int[] lights, int overlay, boolean useQuadColorData) {
+    public void quad(MatrixStack.Entry matrixEntry, BakedQuad quad, float[] brightnesses, float red, float green, float blue, float alpha, int[] lights, int overlay) {
         if (!colorTransform && !alphaTransform) {
-            parent.quad(matrixEntry, quad, brightnesses, red, green, blue, alpha, lights, overlay, useQuadColorData);
+            parent.quad(matrixEntry, quad, brightnesses, red, green, blue, alpha, lights, overlay);
             return;
         }
 
@@ -203,8 +212,7 @@ public class TintingVertexConsumer implements VertexConsumer {
                 (corrected & 255) / 255.0F,
                 ((corrected >>> 24) & 255) / 255.0F,
                 lights,
-                overlay,
-                useQuadColorData
+                overlay
         );
     }
 

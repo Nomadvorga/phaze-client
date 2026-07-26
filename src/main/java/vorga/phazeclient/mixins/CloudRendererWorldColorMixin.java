@@ -35,11 +35,5 @@ public abstract class CloudRendererWorldColorMixin {
                 | ((int) (green * 255.0F) & 0xFF) << 8
                 | ((int) (blue * 255.0F) & 0xFF);
         int transformed = WorldColorCorrectionController.applyToArgb(WorldColorCorrectionController.Target.CLOUDS, argb);
-        RenderSystem.setShaderColor(
-                ((transformed >>> 16) & 0xFF) / 255.0F,
-                ((transformed >>> 8) & 0xFF) / 255.0F,
-                (transformed & 0xFF) / 255.0F,
-                ((transformed >>> 24) & 0xFF) / 255.0F
-        );
     }
 }

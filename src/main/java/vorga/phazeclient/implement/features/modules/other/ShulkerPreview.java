@@ -32,7 +32,6 @@ import net.minecraft.block.Block;
 import net.minecraft.block.ShulkerBoxBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.ContainerComponent;
@@ -69,7 +68,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
  * <h3>Tinting (Color By Shulker)</h3>
  * Dye-coloured shulker boxes tint the panel sprite via the
  * per-vertex {@code int color} channel of {@code drawGuiTexture}.
- * The 1.21.4 GUI shader samples that channel directly, so the tint
+ * The GUI pipeline samples that channel directly, so the tint
  * reaches every pixel including the chest-frame borders. Each RGB
  * channel is clamped to a minimum of 0.15 (matching upstream
  * {@code ColorKey.ofDye}) so very dark dyes (black, gray) don't
@@ -197,7 +196,9 @@ public final class ShulkerPreview extends Module {
         if (mc == null || mc.getWindow() == null) {
             return false;
         }
-        return InputUtil.isKeyPressed(mc.getWindow().getHandle(), key);
+        // 1.21.11: InputUtil.isKeyPressed takes the Window object, not the
+        // raw GLFW handle (long).
+        return InputUtil.isKeyPressed(mc.getWindow(), key);
     }
 
     public ContainerComponent extractContainer(ItemStack stack) {
@@ -260,14 +261,20 @@ public final class ShulkerPreview extends Module {
         if (y < 4) y = 4;
         if (y + PREVIEW_H > screenH - 4) y = screenH - 4 - PREVIEW_H;
 
-        // Flush whatever the screen already queued so its slot
-        // items / cursor stack render BELOW our preview, then
-        // render at a high Z so even vanilla tooltips (Z=400) can't
-        // poke through.
-        context.getMatrices().pushMatrix();
-        context.getMatrices().translate(0.0F, 0.0F, 500.0F);
+        // 1.21.11: the GUI has no depth buffer (RenderPipelines.GUI_SNIPPET
+        // is NO_DEPTH_TEST), so the old `translate(0, 0, 500)` trick that
+        // pushed the panel above vanilla tooltips has no equivalent -
+        // ordering is now root-layer order plus submission order. Opening a
+        // fresh root layer here puts everything we submit below strictly
+        // above everything the screen already queued (slot items, cursor
+        // stack, tooltips), which is what the Z=500 was buying.
+        //
+        // Note this is intentionally NOT scoped (there is no "pop layer" on
+        // DrawContext). Safe here because our only caller injects at TAIL of
+        // HandledScreen#render, so nothing else is submitted afterwards.
+        context.createNewRootLayer();
 
-        // Tint resolution. The 1.21.4 GUI render layer samples
+        // Tint resolution. The GUI render pipeline samples
         // {@code .color(int)} per vertex - global setShaderColor is
         // ignored. So we feed the tint through drawGuiTexture's
         // {@code int color} overload. -1 (0xFFFFFFFF) = no tint.
@@ -358,14 +365,21 @@ public final class ShulkerPreview extends Module {
             int slotY = gridOriginY + row * SLOT_SIZE;
             boolean highlighted = i == hoveredSlot;
 
-            // Layer order matches upstream ModPreviewRenderer.drawSlot:
-            //   1. BACK sprite via getGuiTexturedOverlay (under item,
-            //      additive blend so the inner glow shines through)
+            // Submission order matches upstream ModPreviewRenderer.drawSlot
+            // (and vanilla HandledScreen):
+            //   1. BACK sprite (under the item, inner glow)
             //   2. Item icon + count/durability overlay
-            //   3. FRONT sprite via getGuiTextured (over item, opaque
-            //      so the outer rim sits cleanly on top)
+            //   3. FRONT sprite (over the item, outer rim)
             if (highlighted) {
-                context.drawGuiTexture(RenderLayer::getGuiTexturedOverlay,
+                // 1.21.11: RenderLayer::getGuiTexturedOverlay is gone and no
+                // pipeline reproduces its depth-equal/no-depth-write overlay
+                // semantics - GUI depth no longer exists. Vanilla's own
+                // HandledScreen now draws BOTH slot-highlight sprites with
+                // RenderPipelines.GUI_TEXTURED and relies on submission order
+                // (back -> slot contents -> front), so we do the same. The
+                // GuiRenderState auto-layering promotes the intersecting
+                // FRONT sprite above the item for us.
+                context.drawGuiTexture(RenderPipelines.GUI_TEXTURED,
                         SLOT_HIGHLIGHT_BACK,
                         slotX - HIGHLIGHT_OFFSET, slotY - HIGHLIGHT_OFFSET,
                         HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
@@ -383,8 +397,8 @@ public final class ShulkerPreview extends Module {
                         HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
             }
         }
-
-        context.getMatrices().popMatrix();
+        // No popMatrix(): the matching pushMatrix() went away with the Z
+        // translate above - we no longer touch the pose stack at all.
     }
 
     private static boolean computeOverlayFlag(ItemStack stack, MinecraftClient mc) {

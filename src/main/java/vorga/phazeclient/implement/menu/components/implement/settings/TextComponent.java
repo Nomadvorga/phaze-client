@@ -7,7 +7,7 @@ import org.joml.Matrix3x2fStack;
 import lombok.AccessLevel;
 import lombok.experimental.FieldDefaults;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.util.math.MatrixStack;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
@@ -69,6 +69,16 @@ public class TextComponent extends AbstractSettingComponent {
         float textOffset = animatedTextOffset(isModified);
 
         Matrix3x2fStack matrix = context.getMatrices();
+        // 1.21.11: DrawContext.getMatrices() is a Matrix3x2fStack, but FontRenderer still
+        // consumes a world-style MatrixStack. Bake the GUI pose into one MatrixStack per
+        // render() and feed that to every drawString below - identical geometry, one
+        // promotion instead of one per glyph run. Nothing in this method mutates the GUI
+        // pose (ShapeProperties.create copies it, ScissorManager only reads it), so a
+        // single bake at the top stays valid for the whole frame.
+        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
+
         FontRenderer font = Fonts.getSize(12);
 
         String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 75 - textOffset), 14);
@@ -99,10 +109,12 @@ public class TextComponent extends AbstractSettingComponent {
                 .color(MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, currentAlpha))
                 .build());
 
+        // 1.21.11: ResetIconComponent.render() now takes the GUI pose (Matrix3x2fc) directly -
+        // it only feeds ShapeProperties.create, which is Matrix3x2fc-based since the port.
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
 
         float textX = x + 10 + textOffset;
-        labelFont.drawString(context.getMatrices(), wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        labelFont.drawString(textPose, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
 
         // Drag-to-move-cursor: ONLY the component that was clicked
         // first holds the {@link #dragging} flag (set inside
@@ -158,11 +170,11 @@ public class TextComponent extends AbstractSettingComponent {
             }
         }
 
-        font.drawString(context.getMatrices(), text, rectX + 3 - xOffset, inputTextY,
+        font.drawString(textPose, text, rectX + 3 - xOffset, inputTextY,
                 MenuStyle.withAlpha(typing ? MenuStyle.TEXT_PRIMARY : MenuStyle.TEXT_MUTED, currentAlpha));
 
         if (!typing && text.isEmpty()) {
-            font.drawString(context.getMatrices(), text = setting.getText(), rectX + 3, inputTextY, mutedText());
+            font.drawString(textPose, text = setting.getText(), rectX + 3, inputTextY, mutedText());
         }
 
         long currentTime = System.currentTimeMillis();
@@ -272,14 +284,20 @@ public class TextComponent extends AbstractSettingComponent {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (typing) {
-            if (Screen.hasControlDown()) switch (keyCode) {
+            // 1.21.11: Screen.hasControlDown()/hasShiftDown() were removed - modifier
+            // state now travels with the event instead of being polled from the window.
+            // net.minecraft.client.input.KeyInput(key, scancode, modifiers) wraps the
+            // triple and its hasCtrlOrCmd() keeps the old Screen.hasControlDown()
+            // semantics (Cmd on macOS, Ctrl elsewhere) that the polling helper had.
+            KeyInput input = new KeyInput(keyCode, scanCode, modifiers);
+            if (input.hasCtrlOrCmd()) switch (keyCode) {
                 case GLFW.GLFW_KEY_A -> selectAllText();
                 case GLFW.GLFW_KEY_V -> pasteFromClipboard();
                 case GLFW.GLFW_KEY_C -> copyToClipboard();
             }
             else switch (keyCode) {
                 case GLFW.GLFW_KEY_BACKSPACE, GLFW.GLFW_KEY_ENTER -> handleTextModification(keyCode);
-                case GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_RIGHT -> moveCursor(keyCode);
+                case GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_RIGHT -> moveCursor(keyCode, input.hasShift());
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -323,18 +341,20 @@ public class TextComponent extends AbstractSettingComponent {
     }
 
     
-    private void moveCursor(int keyCode) {
+    // 1.21.11: shift state is threaded down from the KeyInput of the event that
+    // triggered the move, because Screen.hasShiftDown() (a window poll) is gone.
+    private void moveCursor(int keyCode, boolean shiftDown) {
         if (keyCode == GLFW.GLFW_KEY_LEFT && cursorPosition > 0) {
             cursorPosition--;
         } else if (keyCode == GLFW.GLFW_KEY_RIGHT && cursorPosition < text.length()) {
             cursorPosition++;
         }
-        updateSelectionAfterCursorMove();
+        updateSelectionAfterCursorMove(shiftDown);
     }
 
-    
-    private void updateSelectionAfterCursorMove() {
-        if (Screen.hasShiftDown()) {
+
+    private void updateSelectionAfterCursorMove(boolean shiftDown) {
+        if (shiftDown) {
             if (selectionStart == -1) selectionStart = cursorPosition;
             selectionEnd = cursorPosition;
         } else {

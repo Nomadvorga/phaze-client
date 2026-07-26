@@ -3,9 +3,9 @@ package vorga.phazeclient.implement.menu.components.implement.settings;
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import org.joml.Matrix3x2fStack;
+import org.joml.Matrix3x2fc;
 
 import lombok.Getter;
-import org.joml.Matrix4f;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -17,7 +17,6 @@ import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
 
 import java.math.BigDecimal;
@@ -140,7 +139,10 @@ public class ValueComponent extends AbstractSettingComponent {
         resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(matrices);
     }
 
-    private void renderLabelText(MatrixStack matrices, String wrapped, float textX, int color) {
+    // 1.21.11: the GUI pose is org.joml.Matrix3x2f now, not MatrixStack.
+    // Read-only here, so the interface type is enough and it accepts the
+    // Matrix3x2fStack handed out by DrawContext.getMatrices().
+    private void renderLabelText(Matrix3x2fc matrices, String wrapped, float textX, int color) {
         String[] lines = wrapped.split("\n");
         float lineHeight = LABEL_TEXT_SIZE + 1.5F;
         float totalHeight = lines.length == 0 ? LABEL_TEXT_SIZE : lines.length * lineHeight - 1.5F;
@@ -196,7 +198,9 @@ public class ValueComponent extends AbstractSettingComponent {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    private float renderSlider(int mouseX, MatrixStack matrix, float sliderStartX, float sliderY, float sliderWidth) {
+    // 1.21.11: same pose-type change as renderLabelText - ShapeProperties.create
+    // now takes a Matrix3x2fc and copies it, so read-only is all we need.
+    private float renderSlider(int mouseX, Matrix3x2fc matrix, float sliderStartX, float sliderY, float sliderWidth) {
         float percentValue = sliderWidth * (setting.getValue() - setting.getMin()) / (setting.getMax() - setting.getMin());
         float difference = MathHelper.clamp(mouseX - sliderStartX, 0, sliderWidth);
 

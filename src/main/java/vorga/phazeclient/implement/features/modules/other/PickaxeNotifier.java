@@ -25,9 +25,11 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
  * {@link vorga.phazeclient.mixins.ClientPlayerInteractionManagerMixin})
  * we inspect the held stack:
  * <ol>
- *   <li>Stack must be a {@link PickaxeItem} (any tier - wooden up
- *       to netherite). Non-pickaxes silently reset the warning
- *       cooldown so the next pickaxe pickup gets a fresh warning.</li>
+ *   <li>Stack must carry the {@code #minecraft:pickaxes} item tag
+ *       (any tier - wooden up to netherite; 1.21.11 removed the
+ *       per-tool {@code PickaxeItem} class). Non-pickaxes silently
+ *       reset the warning cooldown so the next pickaxe pickup gets
+ *       a fresh warning.</li>
  *   <li>Remaining durability ({@code maxDamage - damage}) must be
  *       below the user's threshold.</li>
  * </ol>
@@ -133,7 +135,8 @@ public final class PickaxeNotifier extends Module {
             return;
         }
 
-        String currentSignature = mc.player.getInventory().selectedSlot + ":" + System.identityHashCode(stack);
+        // 1.21.11: PlayerInventory.selectedSlot is private now - use the accessors.
+        String currentSignature = mc.player.getInventory().getSelectedSlot() + ":" + System.identityHashCode(stack);
         if (currentSignature.equals(warnedSignature)) {
             return;
         }
@@ -156,11 +159,13 @@ public final class PickaxeNotifier extends Module {
     }
 
     private boolean switchToConfiguredSlot(MinecraftClient mc) {
+        // 1.21.11: field access replaced by get/setSelectedSlot; the setter throws on
+        // out-of-hotbar indices, which clampHotbarSlot already rules out (0..8).
         int targetSlot = clampHotbarSlot(swapSlot.getInt()) - 1;
-        if (mc.player.getInventory().selectedSlot == targetSlot) {
+        if (mc.player.getInventory().getSelectedSlot() == targetSlot) {
             return false;
         }
-        mc.player.getInventory().selectedSlot = targetSlot;
+        mc.player.getInventory().setSelectedSlot(targetSlot);
         if (mc.getNetworkHandler() != null) {
             mc.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(targetSlot));
         }
@@ -179,7 +184,10 @@ public final class PickaxeNotifier extends Module {
         }
         mc.inGameHud.getChatHud().addMessage(line);
         if (playSound.isValue() && mc.getSoundManager() != null) {
-            mc.getSoundManager().play(PositionedSoundInstance.master(
+            // 1.21.11: PositionedSoundInstance.master(...) was renamed to ui(...) with the same
+            // (event, pitch, volume) signature; it now files the sound under the new
+            // SoundCategory.UI slider instead of MASTER. Behaviour is otherwise identical.
+            mc.getSoundManager().play(PositionedSoundInstance.ui(
                     SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.25F, 1.0F
             ));
         }

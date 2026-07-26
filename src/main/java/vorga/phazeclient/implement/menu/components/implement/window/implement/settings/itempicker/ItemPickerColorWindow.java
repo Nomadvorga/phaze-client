@@ -3,19 +3,18 @@ package vorga.phazeclient.implement.menu.components.implement.window.implement.s
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import org.joml.Matrix3x2fStack;
+import org.joml.Matrix3x2fc;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.setting.implement.ItemPickerSetting;
+import vorga.phazeclient.api.system.draw.PhazeDrawLayers;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
@@ -220,7 +219,9 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         brightness = hsb[2];
     }
 
-    private void renderHueStrip(MatrixStack matrices, float x, float y, float width, float height, int outlineColor) {
+    // 1.21.11: GUI pose is a Matrix3x2f now, so these helpers take Matrix3x2fc
+    // instead of MatrixStack. Geometry and colours are unchanged.
+    private void renderHueStrip(Matrix3x2fc matrices, float x, float y, float width, float height, int outlineColor) {
         float radius = 2.35F;
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
                 .round(radius)
@@ -254,18 +255,17 @@ public final class ItemPickerColorWindow extends AbstractWindow {
                 .build());
     }
 
-    private static void renderHorizontalHueTexture(MatrixStack matrices, float x, float y, float width, float height, int color) {
+    private static void renderHorizontalHueTexture(Matrix3x2fc matrices, float x, float y, float width, float height, int color) {
         BatchedRectangle.flushIfBatching();
 
-        net.minecraft.util.Identifier phaze$tex = HUE_TEXTURE;
-
-        Matrix4f matrix = GuiMatrix.mat4(matrices);
+        // 1.21.11: VertexConsumer has a native vertex(Matrix3x2fc, x, y) overload for
+        // GUI poses, so no Matrix4f promotion is needed on this path.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-        buffer.vertex(matrix, x, y, 0.0F).texture(0.0F, 0.0F).color(color);
-        buffer.vertex(matrix, x, y + height, 0.0F).texture(0.0F, 1.0F).color(color);
-        buffer.vertex(matrix, x + width, y + height, 0.0F).texture(1.0F, 1.0F).color(color);
-        buffer.vertex(matrix, x + width, y, 0.0F).texture(1.0F, 0.0F).color(color);
-        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
+        buffer.vertex(matrices, x, y).texture(0.0F, 0.0F).color(color);
+        buffer.vertex(matrices, x, y + height).texture(0.0F, 1.0F).color(color);
+        buffer.vertex(matrices, x + width, y + height).texture(1.0F, 1.0F).color(color);
+        buffer.vertex(matrices, x + width, y).texture(1.0F, 0.0F).color(color);
+        PhazeDrawLayers.positionTexColor(HUE_TEXTURE).draw(buffer.end());
     }
 
     private static int opaque(int color) {

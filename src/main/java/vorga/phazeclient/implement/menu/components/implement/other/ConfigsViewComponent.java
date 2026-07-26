@@ -2,11 +2,11 @@ package vorga.phazeclient.implement.menu.components.implement.other;
 
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
+import org.joml.Matrix3x2fc;
 import org.joml.Matrix3x2fStack;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -259,7 +259,11 @@ public class ConfigsViewComponent extends AbstractComponent {
      *  area itself so the icon has comfortable breathing room. */
     private static final float ICON_SIZE = 19.6875F;
 
-    private void renderRow(MatrixStack matrix, int mouseX, int mouseY,
+    // 1.21.11: the GUI pose is org.joml.Matrix3x2f(Stack), not MatrixStack.
+    // Taking the read-only Matrix3x2fc interface keeps every call site
+    // (ShapeProperties.create / GuiMatrix.mat4) compiling unchanged and makes
+    // it explicit that these helpers only READ the pose, never mutate it.
+    private void renderRow(Matrix3x2fc matrix, int mouseX, int mouseY,
                            float listX, float rowY, float listW,
                            String name, String authorLabel, float fadeAlpha) {
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, listX, rowY, listW, ROW_HEIGHT);
@@ -379,7 +383,7 @@ public class ConfigsViewComponent extends AbstractComponent {
      * separated by a fixed gap so the strip layout stays predictable
      * across different label widths.
      */
-    private void renderRowMeta(MatrixStack matrix, float startX, float metaY,
+    private void renderRowMeta(Matrix3x2fc matrix, float startX, float metaY,
                                String configName, boolean imported, float fadeAlpha) {
         float cursorX = startX;
         int metaColor = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.95F);
@@ -418,7 +422,7 @@ public class ConfigsViewComponent extends AbstractComponent {
      *  icon is asymmetrically weighted in its bbox. {@code iconSize}
      *  picks between the standard 6.5px rendering and the 1.5×
      *  oversized variant for the cloud / clock glyphs. */
-    private float renderMetaChip(MatrixStack matrix, float startX, float baselineY,
+    private float renderMetaChip(Matrix3x2fc matrix, float startX, float baselineY,
                                  String iconTexture, String label,
                                  int color, float fadeAlpha,
                                  float labelDeltaY, float iconSize) {
@@ -440,7 +444,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         return iconHeight * Math.max(0.0001F, aspectRatio);
     }
 
-    private void renderUiIcon(MatrixStack matrix, String iconTexture, float x, float y, float width, float height, int color) {
+    private void renderUiIcon(Matrix3x2fc matrix, String iconTexture, float x, float y, float width, float height, int color) {
         // Image.render still uses the legacy swapped width/height convention,
         // so pass the box dimensions in that order to keep non-square icons
         // aligned without stretching in Configs rows.
@@ -520,7 +524,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         }
     }
 
-    private void renderActionButtons(MatrixStack matrix, int mouseX, int mouseY,
+    private void renderActionButtons(Matrix3x2fc matrix, int mouseX, int mouseY,
                                      float listX, float rowY, float listW,
                                      String configName, float fadeAlpha) {
         ActionKind[] kinds = ActionKind.values();
@@ -554,7 +558,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         }
     }
 
-    private void renderActionButton(MatrixStack matrix, int mouseX, int mouseY,
+    private void renderActionButton(Matrix3x2fc matrix, int mouseX, int mouseY,
                                     float btnX, float rowY, String configName,
                                     ActionKind kind, float fadeAlpha) {
         boolean hover = MathUtil.isHovered(mouseX, mouseY, btnX, rowY, ACTION_BUTTON_W, ROW_HEIGHT);

@@ -92,6 +92,10 @@ public class SearchComponent extends AbstractComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         Matrix3x2fStack matrix = context.getMatrices();
+        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
+        // consumes a MatrixStack. Bake the promoted GUI pose once per frame
+        // (see fontPose()) instead of handing getMatrices() straight over.
+        MatrixStack textPose = fontPose(context);
         FontRenderer font = Fonts.getSize(12);
 
         // Drag-to-extend: while a press is held inside the search box
@@ -203,7 +207,7 @@ public class SearchComponent extends AbstractComponent {
                                 float textWidth = font.getStringWidth(text);
 
                                 FontRenderer italicFont = Fonts.getSize(12, Fonts.Type.INTER_DEFAULT);
-                                italicFont.drawString(context.getMatrices(), remainingText,
+                                italicFont.drawString(textPose, remainingText,
                                         textX + textWidth, centeredTextY(italicFont, remainingText, y, height), autocompleteColor);
                             }, () -> findFirstMatchingSetting(searchText).ifPresent(setting -> {
                                 String completion = setting.getLocalizedName();
@@ -211,15 +215,15 @@ public class SearchComponent extends AbstractComponent {
                                 float textWidth = font.getStringWidth(text);
 
                                 FontRenderer italicFont = Fonts.getSize(12, Fonts.Type.INTER_DEFAULT);
-                                italicFont.drawString(context.getMatrices(), remainingText,
+                                italicFont.drawString(textPose, remainingText,
                                         textX + textWidth, centeredTextY(italicFont, remainingText, y, height), autocompleteColor);
                             }));
                 }
 
                 if (displayText.isEmpty() && !typing) {
-                    font.drawString(context.getMatrices(), "Search", x + 13, inputTextY, MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, applyGlobalAlpha(textAlpha)));
+                    font.drawString(textPose, "Search", x + 13, inputTextY, MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, applyGlobalAlpha(textAlpha)));
                 } else {
-                    font.drawString(context.getMatrices(), displayText, textX, inputTextY, MenuStyle.withAlpha(0xFFFFFFFF, applyGlobalAlpha(textAlpha)));
+                    font.drawString(textPose, displayText, textX, inputTextY, MenuStyle.withAlpha(0xFFFFFFFF, applyGlobalAlpha(textAlpha)));
                 }
 
                 scissor.pop();
@@ -237,7 +241,27 @@ public class SearchComponent extends AbstractComponent {
             }
     }
 
-    
+    /**
+     * Bridges the 1.21.11 GUI pose to the pose type {@link FontRenderer} still takes.
+     *
+     * <p>1.21.6 changed {@code DrawContext.getMatrices()} from {@code MatrixStack} to
+     * {@code org.joml.Matrix3x2fStack}, but {@code FontRenderer.drawString} still accepts a
+     * {@code MatrixStack} and only ever reads {@code peek().getPositionMatrix()} from it.
+     * Baking the promoted 2D pose into a throwaway {@code MatrixStack} therefore reproduces the
+     * 1.21.4 geometry exactly, with no behaviour change.
+     *
+     * <p>One instance per {@code render()} is sufficient: this component never mutates the GUI
+     * pose while drawing, and {@code FontRenderer.drawGlyphs} pushes/pops symmetrically.
+     *
+     * <p>TODO(1.21.11): drop this once FontRenderer itself is ported to take a
+     * {@code Matrix3x2fc} - then {@code context.getMatrices()} can be passed directly again.
+     */
+    private static MatrixStack fontPose(DrawContext context) {
+        MatrixStack pose = new MatrixStack();
+        pose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));
+        return pose;
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);

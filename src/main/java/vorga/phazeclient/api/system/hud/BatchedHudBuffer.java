@@ -1,11 +1,10 @@
 package vorga.phazeclient.api.system.hud;
 
-import com.mojang.blaze3d.opengl.GlStateManager;
+import com.mojang.blaze3d.systems.CommandEncoder;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;
-import org.lwjgl.opengl.GL11C;
 
 /**
  * Single global FBO that captures all of our 2D HUD rendering and blits the
@@ -17,6 +16,18 @@ import org.lwjgl.opengl.GL11C;
  */
 public final class BatchedHudBuffer {
     public static final BatchedHudBuffer INSTANCE = new BatchedHudBuffer();
+
+    /** ARGB clear value for the capture target: fully transparent black. */
+    private static final int CLEAR_ARGB = 0x00000000;
+
+    /**
+     * 1.21.11: {@code Framebuffer.fbo} (the raw GL handle) is gone, so
+     * {@link HudBuffer#activeCaptureTarget} degenerated into a plain
+     * "capture in progress" flag ({@code >= 0} while capturing). This is the
+     * value written into it; the actual target now travels in
+     * {@link HudBuffer#activeCaptureFramebuffer}.
+     */
+    private static final int CAPTURE_ACTIVE = 1;
 
     private SimpleFramebuffer fbo;
     private int lastWidth = -1;
@@ -99,10 +110,17 @@ public final class BatchedHudBuffer {
 
         if (fbo == null || w != lastWidth || h != lastHeight) {
             if (fbo != null) {
+                // 1.21.11: un-publish before deleting - the capture target is a
+                // live Framebuffer reference now, not an int handle.
+                if (HudBuffer.activeCaptureFramebuffer == fbo) {
+                    HudBuffer.activeCaptureFramebuffer = null;
+                    HudBuffer.activeCaptureTarget = -1;
+                }
                 fbo.delete();
                 fbo = null;
             }
-            fbo = new SimpleFramebuffer(w, h, true);
+            // 1.21.11: the debug name is the FIRST ctor arg now.
+            fbo = new SimpleFramebuffer("phaze/batched_hud", w, h, true);
             lastWidth = w;
             lastHeight = h;
             hasContent = false;
@@ -122,65 +140,58 @@ public final class BatchedHudBuffer {
         MinecraftClient mc = MinecraftClient.getInstance();
         realMainFramebuffer = mc != null ? mc.getFramebuffer() : null;
 
-        // Defensive GL-state reset before clearing the cached FBO.
-        // glClear is gated by THREE pieces of state that vanilla MC and
-        // Phaze freely toggle during world / vanilla-HUD rendering:
+        // 1.21.11: the defensive GL-state reset that used to live here is now
+        // redundant and has been deleted.
         //
-        //   1. GL_SCISSOR_TEST + glScissor(...). When enabled, glClear
-        //      only touches pixels INSIDE the scissor box. If anything
-        //      upstream (vanilla chat clipping in some 1.21.x builds,
-        //      ScissorManager paths from menu/tooltip rendering that
-        //      didn't fully unwind, OR a future feature that forgets to
-        //      pop) leaves a scissor smaller than the framebuffer
-        //      enabled, our (0,0,0,0) clear only erases that sub-region
-        //      and pixels OUTSIDE it keep the previous frame's HUD
-        //      contents.
+        // It existed because glClear is gated by GL_SCISSOR_TEST, glColorMask
+        // and glDepthMask: a leaked scissor box or a masked-off channel meant
+        // the (0,0,0,0) clear only erased part of the FBO, so last frame's
+        // glyph pixels survived. With TRANSLUCENT alpha blending
+        // (a = src.a + dst.a*(1-src.a)) a surviving alpha=1.0 text pixel stays
+        // at 1.0 under the new alpha=0.5 background fill, which is exactly the
+        // "background goes transparent in the shape of the OLD digits" bug.
         //
-        //   2. glColorMask. If any channel was disabled (e.g. an alpha-
-        //      only stencil pass that masked RGB) the corresponding
-        //      channels are skipped during the clear, leaving stale
-        //      values that "burn through" subsequent renders.
-        //
-        //   3. glDepthMask. SimpleFramebuffer.clear() always issues a
-        //      depth-buffer-bit clear when depth attachment is present,
-        //      but a depthMask(false) leftover would silently no-op it,
-        //      causing later depth-tested HUD geometry to either reject
-        //      every pixel or accumulate Z-fight against last frame's
-        //      depth values.
-        //
-        // The user-visible failure mode of (1) is exactly what the
-        // current ticket describes: when the HUD text changes, the OLD
-        // glyph shapes "burn through" the HUD background because the
-        // FBO's old text pixels were never cleared - the new bg-fill
-        // alpha-blends over them but, with TRANSLUCENT_TRANSPARENCY's
-        // alpha = src.alpha + dst.alpha*(1-src.alpha), bg-fill at
-        // alpha=0.5 over an old-text pixel at alpha=1.0 yields
-        // result.alpha=1.0, locking the old glyph mask into the FBO
-        // forever and producing the user's "the background becomes
-        // transparent in the shape of old digits" effect.
-        //
-        // Forcing the three masks open + scissor disabled here costs a
-        // handful of GL state-cache writes per cache refresh (i.e. once
-        // every ~33 ms at the default 30 Hz) and absolutely guarantees
-        // glClear hits every pixel of the FBO.
-        GlStateManager._disableScissorTest();
-        GlStateManager._colorMask(true, true, true, true);
-        GlStateManager._depthMask(true);
+        // setClearColor + clear() are gone; the clear is a CommandEncoder
+        // operation now, and GlCommandEncoder.clearColorAndDepthTextures does
+        // _disableScissorTest() + _depthMask(true) + _colorMask(true,true,true,true)
+        // itself immediately before _clear (verified in bytecode). Re-doing it
+        // from mod code would only write behind the backend's own state cache.
+        clearFbo();
 
-        fbo.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
-        fbo.clear();
-        fbo.beginWrite(false);
-        HudBuffer.activeCaptureTarget = fbo.fbo;
+        // beginWrite() is gone - a draw picks its target when it opens a render
+        // pass, so all we can do is publish the target and let the
+        // MinecraftClient#getFramebuffer redirect mixin route passes into it.
+        HudBuffer.activeCaptureFramebuffer = fbo;
+        HudBuffer.activeCaptureTarget = CAPTURE_ACTIVE;
+    }
+
+    /**
+     * Clears the capture FBO to fully transparent black.
+     *
+     * <p>NOTE (plan J-6): the encoder throws
+     * {@code IllegalStateException("Close the existing render pass before
+     * creating a new one!")} if a render pass is open, so this - and therefore
+     * {@link #beginCapture()} - must run OUTSIDE the GUI batch pass.
+     */
+    private void clearFbo() {
+        CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
+        if (fbo.getDepthAttachment() != null) {
+            encoder.clearColorAndDepthTextures(
+                    fbo.getColorAttachment(), CLEAR_ARGB,
+                    fbo.getDepthAttachment(), 1.0);
+        } else {
+            encoder.clearColorTexture(fbo.getColorAttachment(), CLEAR_ARGB);
+        }
     }
 
     public void endCapture() {
+        HudBuffer.activeCaptureTarget = -1;
+        HudBuffer.activeCaptureFramebuffer = null;
         if (fbo == null) {
-            HudBuffer.activeCaptureTarget = -1;
             return;
         }
-        HudBuffer.activeCaptureTarget = -1;
-        fbo.endWrite();
-        MinecraftClient.getInstance().getFramebuffer().beginWrite(false);
+        // 1.21.11: no endWrite(), and nothing to re-bind afterwards - the main
+        // framebuffer is simply whatever the next render pass names.
         hasContent = true;
         dirty = false;
         lastRefreshMs = System.currentTimeMillis();
@@ -210,6 +221,13 @@ public final class BatchedHudBuffer {
     }
 
     public void cleanup() {
+        // 1.21.11: the capture target is now a live Framebuffer reference, not
+        // an int handle, so it must be un-published before the FBO is deleted -
+        // otherwise HudBuffer.activeCaptureFramebuffer dangles.
+        if (HudBuffer.activeCaptureFramebuffer == fbo) {
+            HudBuffer.activeCaptureFramebuffer = null;
+            HudBuffer.activeCaptureTarget = -1;
+        }
         if (fbo != null) {
             fbo.delete();
             fbo = null;

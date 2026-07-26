@@ -3,18 +3,16 @@ package vorga.phazeclient.implement.menu.components.implement.window.implement.s
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import org.joml.Matrix3x2fStack;
+import org.joml.Matrix3x2fc;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.RequiredArgsConstructor;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
@@ -125,7 +123,10 @@ public class AlphaComponent extends AbstractComponent {
      * each control its own POSITION_TEX_COLOR draw without crossing
      * dependencies.
      */
-    private static void renderVerticalGradientStrip(MatrixStack matrix, String texture, float x, float y, float w, float h, int color) {
+    // 1.21.11: GUI pose is org.joml.Matrix3x2f, not MatrixStack. The
+    // vertex writes below still want a Matrix4f, so the 2D pose is
+    // promoted with GuiMatrix.mat4 at the draw call (vanilla's own idiom).
+    private static void renderVerticalGradientStrip(Matrix3x2fc matrix, String texture, float x, float y, float w, float h, int color) {
         BatchedRectangle.flushIfBatching();
 
         net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);
@@ -148,7 +149,8 @@ public class AlphaComponent extends AbstractComponent {
      * so AlphaComponent stays self-contained against future package
      * reorganization.
      */
-    private static void renderLeftPointingTriangle(MatrixStack matrix, String texture, float x, float y, float w, float h, int color) {
+    // 1.21.11: see renderVerticalGradientStrip - GUI pose is 2D now.
+    private static void renderLeftPointingTriangle(Matrix3x2fc matrix, String texture, float x, float y, float w, float h, int color) {
         BatchedRectangle.flushIfBatching();
 
         net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);

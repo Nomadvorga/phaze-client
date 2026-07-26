@@ -533,7 +533,8 @@ public final class MenuPanoramaRegistry {
                 try (InputStream input = zip.getInputStream(previewEntry)) {
                     NativeImage preview = cropToSquare(NativeImage.read(input));
                     previewTextureSize = Math.max(1, preview.getWidth());
-                    previewTexture = new NativeImageBackedTexture(preview);
+                    // 1.21.11: NativeImageBackedTexture now requires a debug-label Supplier<String> first.
+                    previewTexture = new NativeImageBackedTexture(previewTextureId::toString, preview);
                     client.getTextureManager().registerTexture(previewTextureId, previewTexture);
                 }
             } catch (Throwable t) {
@@ -556,8 +557,10 @@ public final class MenuPanoramaRegistry {
                     }
                     try (InputStream input = zip.getInputStream(faceEntry)) {
                         NativeImage face = NativeImage.read(input);
-                        loadedTextures[i] = new NativeImageBackedTexture(face);
-                        client.getTextureManager().registerTexture(faceTextureIds[i], loadedTextures[i]);
+                        Identifier faceTextureId = faceTextureIds[i];
+                        // 1.21.11: NativeImageBackedTexture now requires a debug-label Supplier<String> first.
+                        loadedTextures[i] = new NativeImageBackedTexture(faceTextureId::toString, face);
+                        client.getTextureManager().registerTexture(faceTextureId, loadedTextures[i]);
                     }
                 }
                 faceTextures = loadedTextures;
@@ -636,7 +639,8 @@ public final class MenuPanoramaRegistry {
                         client.execute(() -> {
                             try {
                                 NativeImage image = NativeImage.read(new ByteArrayInputStream(response.body()));
-                                previewTexture = new NativeImageBackedTexture(image);
+                                // 1.21.11: NativeImageBackedTexture now requires a debug-label Supplier<String> first.
+                                previewTexture = new NativeImageBackedTexture(previewTextureId::toString, image);
                                 client.getTextureManager().registerTexture(previewTextureId, previewTexture);
                             } catch (Throwable error) {
                                 System.err.println("[Phaze] remote panorama preview failed: " + error);

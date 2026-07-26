@@ -84,7 +84,6 @@ public abstract class WorldRendererSkyDomeTintMixin {
         float tg = ((corrected >> 8) & 0xFF) / 255.0F;
         float tb = (corrected & 0xFF) / 255.0F;
         float ta = ((corrected >> 24) & 0xFF) / 255.0F;
-        RenderSystem.setShaderColor(tr, tg, tb, ta);
     }
 
     private static int clamp255(int v) {

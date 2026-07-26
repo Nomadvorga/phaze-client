@@ -3,20 +3,17 @@ package vorga.phazeclient.implement.menu.components.implement.window.implement.s
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import org.joml.Matrix3x2fStack;
+import org.joml.Matrix3x2fc;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.RequiredArgsConstructor;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
-import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
@@ -115,8 +112,13 @@ public class SaturationComponent extends AbstractComponent {
      * buffer would fight over the active vertex format between the
      * batched-rect GENERIC attributes and this draw's POSITION_
      * TEXTURE_COLOR layout.
+     *
+     * <p>1.21.11: the GUI pose is a {@link Matrix3x2fc}, not a
+     * {@code MatrixStack}, so it is promoted to the 4x4 the vertex
+     * shader wants via {@link GuiMatrix#mat4}. Geometry and UVs are
+     * unchanged.
      */
-    private static void renderVerticalGradientStrip(MatrixStack matrix, String texture, float x, float y, float w, float h, int color) {
+    private static void renderVerticalGradientStrip(Matrix3x2fc matrix, String texture, float x, float y, float w, float h, int color) {
         BatchedRectangle.flushIfBatching();
 
         net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);
@@ -167,7 +169,7 @@ public class SaturationComponent extends AbstractComponent {
      * lands on the slider's right edge when the bounding box is
      * placed at (X + W, ...).
      */
-    private static void renderLeftPointingTriangle(MatrixStack matrix, String texture, float x, float y, float w, float h, int color) {
+    private static void renderLeftPointingTriangle(Matrix3x2fc matrix, String texture, float x, float y, float w, float h, int color) {
         BatchedRectangle.flushIfBatching();
 
         net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);

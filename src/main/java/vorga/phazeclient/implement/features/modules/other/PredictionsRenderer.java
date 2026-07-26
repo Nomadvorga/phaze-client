@@ -1,6 +1,5 @@
 package vorga.phazeclient.implement.features.modules.other;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.RenderTickCounter;
@@ -297,9 +296,17 @@ public final class PredictionsRenderer {
             // behind walls / mobs instead of bleeding through. Mask
             // stays off so the line doesn't imprint into the depth
             // buffer either (which would block subsequent draws).
-            RenderSystem.lineWidth(Math.max(1.0F, module.lineWidth.getInt()));
+            //
+            // 1.21.11: RenderSystem.lineWidth() is gone - line width
+            // is a per-vertex attribute on
+            // VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH (the
+            // replacement for the removed VertexFormats.LINES), so
+            // the user's slider is handed down to vertexLine()
+            // instead of being set as global GL state. Depth test
+            // now lives on the pipeline the layer is built from.
+            float lineWidth = Math.max(1.0F, module.lineWidth.getInt());
 
-            BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
+            BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
             for (Predictions.TrajectoryResult r : trajectories) {
                 // Same per-trajectory rule as the trail lines above:
                 // recolor to the entity-hit accent when this path
@@ -308,7 +315,7 @@ public final class PredictionsRenderer {
                 // for block hits / misses.
                 int lineColor = (r != null && r.type() == HitResult.Type.ENTITY)
                         ? entityAccent : accent;
-                emitPath(matrices, buffer, r, lineColor, cameraPos);
+                emitPath(matrices, buffer, r, lineColor, cameraPos, lineWidth);
             }
 
             net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
@@ -695,7 +702,14 @@ public final class PredictionsRenderer {
         if (entity.isGlowing()) return true;
         if (!entity.isInvisible()) return true;
         if (!(entity instanceof net.minecraft.entity.LivingEntity living)) return false;
-        for (ItemStack armor : living.getArmorItems()) {
+        // 1.21.11: LivingEntity.getArmorItems() was removed. Walk the
+        // equipment slots instead and keep exactly the old slot set
+        // (HUMANOID_ARMOR = feet/legs/chest/head) so an invisible mob
+        // is still treated as "visible enough to target" only when it
+        // actually wears rendered armour.
+        for (net.minecraft.entity.EquipmentSlot slot : net.minecraft.entity.EquipmentSlot.VALUES) {
+            if (slot.getType() != net.minecraft.entity.EquipmentSlot.Type.HUMANOID_ARMOR) continue;
+            ItemStack armor = living.getEquippedStack(slot);
             if (armor != null && !armor.isEmpty()) {
                 return true;
             }
@@ -703,7 +717,9 @@ public final class PredictionsRenderer {
         return false;
     }
 
-    private static void emitPath(MatrixStack matrices, BufferBuilder buffer, Predictions.TrajectoryResult result, int color, Vec3d cameraPos) {
+    // 1.21.11: takes the line width explicitly - it is now a
+    // per-vertex attribute rather than RenderSystem global state.
+    private static void emitPath(MatrixStack matrices, BufferBuilder buffer, Predictions.TrajectoryResult result, int color, Vec3d cameraPos, float lineWidth) {
         var path = result.path();
         if (path.size() < 2) return;
         for (int i = 0; i < path.size() - 1; i++) {
@@ -719,7 +735,8 @@ public final class PredictionsRenderer {
                     end.y - cameraPos.y,
                     end.z - cameraPos.z,
                     color,
-                    color
+                    color,
+                    lineWidth
             );
         }
     }

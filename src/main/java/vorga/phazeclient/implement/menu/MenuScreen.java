@@ -26,8 +26,11 @@ import vorga.phazeclient.implement.menu.components.implement.settings.TextCompon
 import vorga.phazeclient.implement.menu.components.implement.settings.multiselect.MultiSelectComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.select.SelectComponent;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.input.CharInput;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.util.Window;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
@@ -151,7 +154,10 @@ public class MenuScreen extends Screen implements QuickImports {
         searchComponent.position(searchX, y + CATEGORY_ROW_Y);
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(overlayRenderScale, overlayRenderScale, 1.0F);
+        // 1.21.11: the GUI pose is a Matrix3x2fStack - there is no Z axis, so the
+        // old scale(x, y, 1.0F) becomes the 2D scale(x, y). The 3-arg overload on
+        // Matrix3x2f is scale(x, y, dest) and would silently bind wrong.
+        context.getMatrices().scale(overlayRenderScale, overlayRenderScale);
         float scaleAnimation = getScaleAnimation();
         float alphaAnimation = getAlphaAnimation();
         MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> renderGuiRegionBlur(context));
@@ -261,7 +267,11 @@ public class MenuScreen extends Screen implements QuickImports {
     protected void renderDarkening(DrawContext context, int x, int y, int width, int height) {
     }
 
-    protected void applyBlur() {
+    // 1.21.11: Screen.applyBlur() gained a DrawContext parameter. Kept as an empty
+    // override so vanilla's own screen blur stays suppressed - Phaze draws its own
+    // rounded blur in renderGuiRegionBlur().
+    @Override
+    protected void applyBlur(DrawContext context) {
     }
 
     private void drawGuideLine(DrawContext context, float x, float y, float width, float height, float alpha) {
@@ -384,8 +394,15 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
 
+    // 1.21.11: Element/ParentElement replaced the loose (x, y, button) tuple with a
+    // net.minecraft.client.gui.Click record (plus a "doubled" double-click flag).
+    // Phaze's own component tree still speaks (double, double, int), so the record is
+    // unpacked here at the boundary and everything below is unchanged.
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(Click click, boolean doubled) {
+        double mouseX = click.x();
+        double mouseY = click.y();
+        int button = click.button();
         updateOverlayMetrics();
         double overlayMouseX = toOverlayCoordinate(mouseX);
         double overlayMouseY = toOverlayCoordinate(mouseY);
@@ -460,12 +477,15 @@ public class MenuScreen extends Screen implements QuickImports {
             SelectComponent.handleGlobalClick(overlayMouseX, overlayMouseY);
             MultiSelectComponent.handleGlobalClick(overlayMouseX, overlayMouseY);
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.mouseClicked(click, doubled);
     }
 
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(Click click) {
+        double mouseX = click.x();
+        double mouseY = click.y();
+        int button = click.button();
         updateOverlayMetrics();
         double overlayMouseX = toOverlayCoordinate(mouseX);
         double overlayMouseY = toOverlayCoordinate(mouseY);
@@ -482,11 +502,14 @@ public class MenuScreen extends Screen implements QuickImports {
 
         components.forEach(component -> component.mouseReleased(overlayMouseX, overlayMouseY, button));
         windowManager.mouseReleased(overlayMouseX, overlayMouseY, button);
-        return super.mouseReleased(mouseX, mouseY, button);
+        return super.mouseReleased(click);
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        double mouseX = click.x();
+        double mouseY = click.y();
+        int button = click.button();
         updateOverlayMetrics();
         double overlayMouseX = toOverlayCoordinate(mouseX);
         double overlayMouseY = toOverlayCoordinate(mouseY);
@@ -524,7 +547,7 @@ public class MenuScreen extends Screen implements QuickImports {
         if (!windowManager.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY)) {
             components.forEach(component -> component.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY));
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        return super.mouseDragged(click, deltaX, deltaY);
     }
 
     @Override
@@ -567,8 +590,13 @@ public class MenuScreen extends Screen implements QuickImports {
         return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
     }
 
+    // 1.21.11: keyPressed/keyReleased take a net.minecraft.client.input.KeyInput
+    // record instead of (keyCode, scanCode, modifiers). Unpacked at the boundary.
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyInput input) {
+        int keyCode = input.key();
+        int scanCode = input.scancode();
+        int modifiers = input.modifiers();
         // Modal owns key input while open so Esc closes it and the
         // text field gets every keystroke before menu hotkeys.
         if (configShareModal.isOpen() && configShareModal.keyPressed(keyCode, scanCode, modifiers)) {
@@ -608,12 +636,15 @@ public class MenuScreen extends Screen implements QuickImports {
         if (!windowManager.keyPressed(keyCode, scanCode, modifiers)) {
             components.forEach(component -> component.keyPressed(keyCode, scanCode, modifiers));
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(input);
     }
 
 
     @Override
-    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+    public boolean keyReleased(KeyInput input) {
+        int keyCode = input.key();
+        int scanCode = input.scancode();
+        int modifiers = input.modifiers();
         if (backgroundComponent.keyReleased(keyCode, scanCode, modifiers)) {
             return true;
         }
@@ -625,11 +656,16 @@ public class MenuScreen extends Screen implements QuickImports {
         if (!windowManager.keyReleased(keyCode, scanCode, modifiers)) {
             components.forEach(component -> component.keyReleased(keyCode, scanCode, modifiers));
         }
-        return super.keyReleased(keyCode, scanCode, modifiers);
+        return super.keyReleased(input);
     }
 
+    // 1.21.11: charTyped takes a CharInput record carrying a full codepoint. Phaze's
+    // text fields are char-based (as vanilla's own callback was before 1.21.6), so the
+    // codepoint is narrowed here; astral-plane input is outside what the menu accepts.
     @Override
-    public boolean charTyped(char chr, int modifiers) {
+    public boolean charTyped(CharInput input) {
+        char chr = (char) input.codepoint();
+        int modifiers = input.modifiers();
         if (configShareModal.isOpen() && configShareModal.charTyped(chr, modifiers)) {
             return true;
         }
@@ -644,7 +680,7 @@ public class MenuScreen extends Screen implements QuickImports {
         if (!windowManager.charTyped(chr, modifiers)) {
             components.forEach(component -> component.charTyped(chr, modifiers));
         }
-        return super.charTyped(chr, modifiers);
+        return super.charTyped(input);
     }
 
     @Override

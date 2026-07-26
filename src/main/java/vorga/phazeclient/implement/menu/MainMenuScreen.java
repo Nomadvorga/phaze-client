@@ -5,10 +5,13 @@ import vorga.phazeclient.base.util.render.GuiMatrix;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.screen.option.OptionsScreen;
+import net.minecraft.client.input.CharInput;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.realms.gui.screen.RealmsMainScreen;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.screen.world.SelectWorldScreen;
@@ -16,7 +19,6 @@ import net.minecraft.client.util.Window;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
-import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
@@ -271,7 +273,8 @@ public class MainMenuScreen extends TitleScreen {
         updateThemeUiAnimationTiming();
         renderMainMenuBackground(context, delta);
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(overlayRenderScale, overlayRenderScale, 1.0F);
+        // 1.21.11: the GUI pose is a Matrix3x2fStack - scale() is 2D only (the old z was 1.0F anyway).
+        context.getMatrices().scale(overlayRenderScale, overlayRenderScale);
         int overlayMouseX = Math.round(toOverlayCoordinate(mouseX));
         int overlayMouseY = Math.round(toOverlayCoordinate(mouseY));
         float overlayW = getOverlayViewportWidth();
@@ -422,7 +425,8 @@ public class MainMenuScreen extends TitleScreen {
         // freshly-rendered panorama, then composite Mojang's darkening
         // texture over it so the menu regains the subdued backdrop.
         if (this.client != null) {
-            this.applyBlur();
+            // 1.21.11: Screen.applyBlur() now takes the DrawContext (it records a blur marker on the GUI render state).
+            this.applyBlur(context);
             if (!themeSelectorOpen) {
                 this.renderDarkening(context);
             }
@@ -430,8 +434,11 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderThemeSelectorBackdrop(DrawContext context, float overlayW, float overlayH, float alpha) {
+        // 1.21.11: GUI depth is gone (all GUI pipelines are NO_DEPTH_TEST). The old translate z=120
+        // becomes an explicit root layer; the four theme-modal tiers (120/140/180/200) are already
+        // submitted in ascending order, so layer order reproduces the previous stacking exactly.
+        context.createNewRootLayer();
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(0.0F, 0.0F, 120.0F);
         rectangle.render(ShapeProperties.create(context.getMatrices(), 0.0F, 0.0F, overlayW, overlayH)
                 .softness(1.0F)
                 .color(scaleColorAlpha(THEME_MODAL_DIM_COLOR, alpha))
@@ -816,8 +823,10 @@ public class MainMenuScreen extends TitleScreen {
             themeSelectorCloseHoverAnim = 0.0F;
             themeSelectorResetHoverAnim = 0.0F;
         }
+        // 1.21.11: former z=140 tier -> its own root layer, submitted after the backdrop layer.
+        context.createNewRootLayer();
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(0.0F, modalYOffset, 140.0F);
+        context.getMatrices().translate(0.0F, modalYOffset);
 
         renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10.0F, 0xFF11161F, 0xFF212838, modalAlpha);
 
@@ -1177,8 +1186,9 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderThemeSettingsBackdrop(DrawContext context, ThemeSelectorLayout layout, float alpha) {
+        // 1.21.11: former z=180 tier -> its own root layer, submitted after the selector modal layer.
+        context.createNewRootLayer();
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(0.0F, 0.0F, 180.0F);
         rectangle.render(ShapeProperties.create(context.getMatrices(), layout.panelX, layout.panelY, layout.panelW, layout.panelH)
                 .round(10.0F)
                 .softness(1.0F)
@@ -1251,8 +1261,10 @@ public class MainMenuScreen extends TitleScreen {
         ThemeSettingsLayout layout = getThemeSettingsLayout(themeLayout);
         float modalAlpha = modalProgress;
         float modalYOffset = (1.0F - modalProgress) * 16.0F * layout.scale;
+        // 1.21.11: former z=200 tier -> the last root layer, so the settings modal stays on top.
+        context.createNewRootLayer();
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(0.0F, modalYOffset, 200.0F);
+        context.getMatrices().translate(0.0F, modalYOffset);
 
         renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10.0F, 0xFF121720, 0xFF222A39, modalAlpha);
 
@@ -2110,10 +2122,12 @@ public class MainMenuScreen extends TitleScreen {
         return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
     }
 
+    // 1.21.11: Screen.resize lost its MinecraftClient parameter (the client is a final field now),
+    // and Screen.init(int, int) replaces init(MinecraftClient, int, int).
     @Override
-    public void resize(MinecraftClient client, int width, int height) {
-        super.resize(client, width, height);
-        init(client, width, height);
+    public void resize(int width, int height) {
+        super.resize(width, height);
+        init(width, height);
     }
 
     @Override
@@ -2122,11 +2136,16 @@ public class MainMenuScreen extends TitleScreen {
         super.removed();
     }
 
+    // 1.21.11: Element.mouseClicked takes a Click record (x, y, MouseInput) plus a "double click" flag.
+    // The overlay-space remap that used to be done on the loose doubles is now done by rebuilding the
+    // Click with scaled coordinates before it is handed to vanilla.
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(Click click, boolean doubled) {
         updateOverlayMetrics();
-        float overlayMouseX = toOverlayCoordinate(mouseX);
-        float overlayMouseY = toOverlayCoordinate(mouseY);
+        float overlayMouseX = toOverlayCoordinate(click.x());
+        float overlayMouseY = toOverlayCoordinate(click.y());
+        Click overlayClick = toOverlayClick(click);
+        int button = click.button();
 
         if (themeSelectorOpen) {
             if (themeSelectorButton != null && isPointInside(
@@ -2137,7 +2156,7 @@ public class MainMenuScreen extends TitleScreen {
                     themeSelectorButton.getWidth(),
                     themeSelectorButton.getHeight()
             )) {
-                return super.mouseClicked(overlayMouseX, overlayMouseY, button);
+                return super.mouseClicked(overlayClick, doubled);
             }
 
             ThemeSelectorLayout layout = getThemeSelectorLayout();
@@ -2214,34 +2233,38 @@ public class MainMenuScreen extends TitleScreen {
             return true;
         }
 
-        return super.mouseClicked(overlayMouseX, overlayMouseY, button);
+        return super.mouseClicked(overlayClick, doubled);
+    }
+
+    /** Rebuilds a Click in overlay space; the button/modifier info is carried over untouched. */
+    private Click toOverlayClick(Click click) {
+        return new Click(toOverlayCoordinate(click.x()), toOverlayCoordinate(click.y()), click.buttonInfo());
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(Click click) {
         updateOverlayMetrics();
         if (themeSelectorOpen) {
             activeThemeSettingsSlider = ThemeSettingsSlider.NONE;
             return true;
         }
-        return super.mouseReleased(toOverlayCoordinate(mouseX), toOverlayCoordinate(mouseY), button);
+        return super.mouseReleased(toOverlayClick(click));
     }
 
+    // 1.21.11: mouseDragged(Click, double offsetX, double offsetY) - the button now lives in the Click.
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+    public boolean mouseDragged(Click click, double offsetX, double offsetY) {
         updateOverlayMetrics();
         if (themeSelectorOpen) {
-            if (themeSelectorSettingsOpen && button == 0 && activeThemeSettingsSlider != ThemeSettingsSlider.NONE) {
-                updateThemeSettingsSlider(activeThemeSettingsSlider, getThemeSettingsLayout(getThemeSelectorLayout()), toOverlayCoordinate(mouseX));
+            if (themeSelectorSettingsOpen && click.button() == 0 && activeThemeSettingsSlider != ThemeSettingsSlider.NONE) {
+                updateThemeSettingsSlider(activeThemeSettingsSlider, getThemeSettingsLayout(getThemeSelectorLayout()), toOverlayCoordinate(click.x()));
             }
             return true;
         }
         return super.mouseDragged(
-                toOverlayCoordinate(mouseX),
-                toOverlayCoordinate(mouseY),
-                button,
-                toOverlayCoordinate(deltaX),
-                toOverlayCoordinate(deltaY)
+                toOverlayClick(click),
+                toOverlayCoordinate(offsetX),
+                toOverlayCoordinate(offsetY)
         );
     }
 
@@ -2286,8 +2309,12 @@ public class MainMenuScreen extends TitleScreen {
         }
     }
 
+    // 1.21.11: keyPressed(KeyInput) - key/scancode/modifiers are bundled in the record, and
+    // Screen.hasControlDown() is gone; KeyInput.hasCtrlOrCmd() is the platform-aware replacement
+    // (it tests SystemKeycodes.CTRL_MOD, i.e. Cmd on macOS, exactly like the old helper).
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyInput input) {
+        int keyCode = input.key();
         if (themeSelectorOpen) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 if (themeSelectorSettingsOpen) {
@@ -2299,11 +2326,11 @@ public class MainMenuScreen extends TitleScreen {
             }
 
             if (!themeSelectorSettingsOpen && themeSelectorSearchFocused) {
-                if (Screen.hasControlDown() && keyCode == GLFW.GLFW_KEY_A) {
+                if (input.hasCtrlOrCmd() && keyCode == GLFW.GLFW_KEY_A) {
                     themeSelectorSearchQuery = "";
                     return true;
                 }
-                if (Screen.hasControlDown() && keyCode == GLFW.GLFW_KEY_V) {
+                if (input.hasCtrlOrCmd() && keyCode == GLFW.GLFW_KEY_V) {
                     String clipboard = this.client != null ? this.client.keyboard.getClipboard() : "";
                     if (clipboard != null && !clipboard.isEmpty()) {
                         themeSelectorSearchQuery = sanitizeThemeSelectorSearch(themeSelectorSearchQuery + clipboard);
@@ -2320,16 +2347,18 @@ public class MainMenuScreen extends TitleScreen {
                 }
             }
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(input);
     }
 
+    // 1.21.11: charTyped(CharInput) carries a codepoint instead of a char. isValidChar() is vanilla's
+    // own control-character filter and asString() handles codepoints outside the BMP correctly.
     @Override
-    public boolean charTyped(char chr, int modifiers) {
-        if (themeSelectorOpen && !themeSelectorSettingsOpen && themeSelectorSearchFocused && !Character.isISOControl(chr)) {
-            themeSelectorSearchQuery = sanitizeThemeSelectorSearch(themeSelectorSearchQuery + chr);
+    public boolean charTyped(CharInput input) {
+        if (themeSelectorOpen && !themeSelectorSettingsOpen && themeSelectorSearchFocused && input.isValidChar()) {
+            themeSelectorSearchQuery = sanitizeThemeSelectorSearch(themeSelectorSearchQuery + input.asString());
             return true;
         }
-        return super.charTyped(chr, modifiers);
+        return super.charTyped(input);
     }
 
     private void renderThemeSelectorSearchText(DrawContext context, ThemeSelectorLayout layout, float alpha) {
@@ -2385,6 +2414,8 @@ public class MainMenuScreen extends TitleScreen {
         return builder.toString();
     }
 
+    // 1.21.11: ButtonWidget gained a nested subclass named `Text`, which shadows net.minecraft.text.Text
+    // for every simple-name reference inside this subclass - hence the fully qualified message types below.
     private static class MainMenuButtonWidget extends ButtonWidget {
         private enum ButtonVisualStyle {
             DEFAULT,
@@ -2398,27 +2429,27 @@ public class MainMenuScreen extends TitleScreen {
         private float hoverAnim = 0.0F;
         private long lastFrameTimeNs = -1L;
 
-        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, PressAction onPress) {
+        MainMenuButtonWidget(int x, int y, int width, int height, net.minecraft.text.Text message, Identifier leftIcon, PressAction onPress) {
             this(x, y, width, height, message, leftIcon, false, ButtonVisualStyle.DEFAULT, 1.0F, onPress);
         }
 
-        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, float iconScaleMultiplier, PressAction onPress) {
+        MainMenuButtonWidget(int x, int y, int width, int height, net.minecraft.text.Text message, Identifier leftIcon, float iconScaleMultiplier, PressAction onPress) {
             this(x, y, width, height, message, leftIcon, false, ButtonVisualStyle.DEFAULT, iconScaleMultiplier, onPress);
         }
 
-        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, ButtonVisualStyle visualStyle, float iconScaleMultiplier, PressAction onPress) {
+        MainMenuButtonWidget(int x, int y, int width, int height, net.minecraft.text.Text message, Identifier leftIcon, ButtonVisualStyle visualStyle, float iconScaleMultiplier, PressAction onPress) {
             this(x, y, width, height, message, leftIcon, false, visualStyle, iconScaleMultiplier, onPress);
         }
 
-        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, boolean dangerStyle, PressAction onPress) {
+        MainMenuButtonWidget(int x, int y, int width, int height, net.minecraft.text.Text message, Identifier leftIcon, boolean dangerStyle, PressAction onPress) {
             this(x, y, width, height, message, leftIcon, dangerStyle, ButtonVisualStyle.DEFAULT, 1.0F, onPress);
         }
 
-        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, boolean dangerStyle, float iconScaleMultiplier, PressAction onPress) {
+        MainMenuButtonWidget(int x, int y, int width, int height, net.minecraft.text.Text message, Identifier leftIcon, boolean dangerStyle, float iconScaleMultiplier, PressAction onPress) {
             this(x, y, width, height, message, leftIcon, dangerStyle, ButtonVisualStyle.DEFAULT, iconScaleMultiplier, onPress);
         }
 
-        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, boolean dangerStyle, ButtonVisualStyle visualStyle, float iconScaleMultiplier, PressAction onPress) {
+        MainMenuButtonWidget(int x, int y, int width, int height, net.minecraft.text.Text message, Identifier leftIcon, boolean dangerStyle, ButtonVisualStyle visualStyle, float iconScaleMultiplier, PressAction onPress) {
             super(x, y, width, height, message, onPress, DEFAULT_NARRATION_SUPPLIER);
             this.leftIcon = leftIcon;
             this.dangerStyle = dangerStyle;
@@ -2426,8 +2457,11 @@ public class MainMenuScreen extends TitleScreen {
             this.iconScaleMultiplier = iconScaleMultiplier;
         }
 
+        // 1.21.11: PressableWidget.renderWidget is final and now simply calls drawIcon(...) + setCursor(...),
+        // so the whole custom look moves into drawIcon. Vanilla's own button chrome (drawButton) is only
+        // drawn by ButtonWidget.Text, which we do not extend - the Phaze visuals stay the sole rendering.
         @Override
-        protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+        protected void drawIcon(DrawContext context, int mouseX, int mouseY, float delta) {
             boolean hovered = this.isHovered();
             boolean topBarIconStyle = visualStyle == ButtonVisualStyle.TOP_BAR_ICON && this.getMessage().getString().isEmpty();
             float target = hovered ? 1.0F : 0.0F;

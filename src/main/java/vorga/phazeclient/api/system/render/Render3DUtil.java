@@ -1,6 +1,5 @@
 package vorga.phazeclient.api.system.render;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
@@ -15,9 +14,8 @@ import org.joml.Vector3f;
 
 /**
  * Minimal 3D draw helpers used by the FT Helper renderer, the
- * Predictions module, and the Snowball Tracker. Each helper drains
- * the {@code RenderSystem} state it needs, submits one
- * {@link BufferBuilder}, and restores neutral state on exit.
+ * Predictions module, and the Snowball Tracker. Each helper builds
+ * one {@link BufferBuilder} and submits it.
  *
  * <h3>Camera-relative coordinates</h3>
  * Every call expects coordinates already translated by the camera
@@ -28,15 +26,31 @@ import org.joml.Vector3f;
  * camera position itself for ad-hoc callers that don't sit inside
  * a pushed camera-relative frame.
  *
- * <h3>Shader / state contract</h3>
- * The line / box variants use {@code RENDERTYPE_LINES} and
- * {@code POSITION_COLOR} respectively; both are vanilla
- * {@code ShaderProgramKeys}. We deliberately don't cache a
- * {@code BufferBuilder} between calls because batching would force
- * us to flush at every state change in a way that conflicts with
- * the specialised batched-rect pipeline used by the GUI. Per-shape
- * submission is still cheap because the BufferBuilder pool is
- * thread-local in vanilla.
+ * <h3>Shader / state contract (1.21.11)</h3>
+ * Imperative GPU state is gone: blend, depth test, depth write,
+ * cull and polygon offset are now properties of the
+ * {@code RenderPipeline} a draw is submitted through, so every
+ * {@code RenderSystem.enableBlend/depthMask/lineWidth/...} call that
+ * used to bracket these helpers has been deleted rather than
+ * emulated. The {@code depthTest} parameters kept on the public
+ * methods below therefore only select which layer the geometry must
+ * eventually go to - see the per-method TODOs.
+ *
+ * <p>Line width is no longer global state either: it is a per-vertex
+ * attribute ({@code VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH}
+ * + {@code VertexConsumer.lineWidth(float)}), which is what the old
+ * {@code VertexFormats.LINES} was replaced by.
+ *
+ * <p>The actual submission still routes through
+ * {@code PhazeWorldDrawStub} (world overlays are stubbed for the
+ * first compiling tree); the geometry produced here is already in
+ * the shape the real {@code RenderLayer}s will want.
+ *
+ * <p>We deliberately don't cache a {@code BufferBuilder} between
+ * calls because batching would force us to flush at every state
+ * change in a way that conflicts with the specialised batched-rect
+ * pipeline used by the GUI. Per-shape submission is still cheap
+ * because the BufferBuilder pool is thread-local in vanilla.
  *
  * <h3>Adapted from</h3>
  * {@code winvi.moscow.soupbetter.util.Render3DUtil} (FunTime
@@ -51,6 +65,12 @@ public final class Render3DUtil {
     private static final SphereLatitudeLut[] SPHERE_LATITUDE_CACHE = new SphereLatitudeLut[MAX_CACHED_SPHERE_STACKS + 1];
     private static final Vector3f BILLBOARD_RIGHT = new Vector3f();
     private static final Vector3f BILLBOARD_UP = new Vector3f();
+    /**
+     * Fallback width for the {@code vertexLine} overloads that predate
+     * 1.21.11's per-vertex LINE_WIDTH attribute. 1.0 matches what the
+     * driver clamped {@code RenderSystem.lineWidth} to on most GPUs.
+     */
+    private static final float DEFAULT_LINE_WIDTH = 1.0F;
 
     private Render3DUtil() {
     }
@@ -77,14 +97,15 @@ public final class Render3DUtil {
         float b = (color & 0xFF) / 255.0F;
         float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
 
-        // Polygon offset pushes the fill slightly closer to the camera
-        // in the depth buffer, eliminating z-fighting flicker against
-        // world geometry that shares the same plane. Belt-and-braces
-        // pair: disable on exit so subsequent draws (predictions
-        // lines, vanilla outline, etc.) aren't biased.
-        RenderSystem.polygonOffset(-1.0F, -1.0F);
-        RenderSystem.enablePolygonOffset();
-
+        // 1.21.11: RenderSystem.polygonOffset / enablePolygonOffset are
+        // gone - depth bias is a pipeline property now
+        // (RenderPipeline.Builder.withDepthBias(factor, units)). The
+        // bias that used to push this fill slightly closer to the
+        // camera (and so stopped it z-fighting with coplanar world
+        // geometry) must be baked into the layer this buffer is drawn
+        // with, so it can no longer leak into later draws either.
+        // TODO(1.21.11): when PhazeWorldDrawStub is replaced, give this
+        //  fill its own layer built with .withDepthBias(-1.0F, -1.0F).
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         // bottom
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
@@ -117,8 +138,6 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
-
-        RenderSystem.disablePolygonOffset();
     }
 
     /**
@@ -175,24 +194,27 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
-        // Outline lines.
-        RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
-        buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
+        // Outline lines. 1.21.11: RenderSystem.lineWidth is gone and
+        // VertexFormats.LINES was replaced by
+        // POSITION_COLOR_NORMAL_LINE_WIDTH - the width travels with
+        // each vertex now, so it is threaded through line(...).
+        float lw = Math.max(1.0F, lineWidth);
+        buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
         // bottom edges
-        line(matrix, buffer, x1, y1, z1, x2, y1, z1, r, g, b, a);
-        line(matrix, buffer, x2, y1, z1, x2, y1, z2, r, g, b, a);
-        line(matrix, buffer, x2, y1, z2, x1, y1, z2, r, g, b, a);
-        line(matrix, buffer, x1, y1, z2, x1, y1, z1, r, g, b, a);
+        line(matrix, buffer, x1, y1, z1, x2, y1, z1, r, g, b, a, lw);
+        line(matrix, buffer, x2, y1, z1, x2, y1, z2, r, g, b, a, lw);
+        line(matrix, buffer, x2, y1, z2, x1, y1, z2, r, g, b, a, lw);
+        line(matrix, buffer, x1, y1, z2, x1, y1, z1, r, g, b, a, lw);
         // top edges
-        line(matrix, buffer, x1, y2, z1, x2, y2, z1, r, g, b, a);
-        line(matrix, buffer, x2, y2, z1, x2, y2, z2, r, g, b, a);
-        line(matrix, buffer, x2, y2, z2, x1, y2, z2, r, g, b, a);
-        line(matrix, buffer, x1, y2, z2, x1, y2, z1, r, g, b, a);
+        line(matrix, buffer, x1, y2, z1, x2, y2, z1, r, g, b, a, lw);
+        line(matrix, buffer, x2, y2, z1, x2, y2, z2, r, g, b, a, lw);
+        line(matrix, buffer, x2, y2, z2, x1, y2, z2, r, g, b, a, lw);
+        line(matrix, buffer, x1, y2, z2, x1, y2, z1, r, g, b, a, lw);
         // verticals
-        line(matrix, buffer, x1, y1, z1, x1, y2, z1, r, g, b, a);
-        line(matrix, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a);
-        line(matrix, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a);
-        line(matrix, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a);
+        line(matrix, buffer, x1, y1, z1, x1, y2, z1, r, g, b, a, lw);
+        line(matrix, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a, lw);
+        line(matrix, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a, lw);
+        line(matrix, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a, lw);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
     }
@@ -264,9 +286,9 @@ public final class Render3DUtil {
         float b = (color & 0xFF) / 255.0F;
         float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
 
-        if (depthTest) {
-        } else {
-        }
+        // 1.21.11: depth test is a pipeline property, not a call.
+        // TODO(1.21.11): pick a depth-testing / always-on-top layer from
+        //  `depthTest` when PhazeWorldDrawStub is replaced.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         // bottom
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
@@ -358,9 +380,11 @@ public final class Render3DUtil {
         // overlap on transparent fills produces the two-tone seam
         // artefact reported by users. The UV-sphere mesh below
         // emits CCW from outside, matching GL's default GL_BACK.
-        if (depthTest) {
-        } else {
-        }
+        // 1.21.11: cull / depth-write / depth-test are pipeline
+        // properties now.
+        // TODO(1.21.11): the layer replacing PhazeWorldDrawStub for this
+        //  sphere must be built .withCull(true).withDepthWrite(false)
+        //  and pick its depth-test function from `depthTest`.
 
         CircleLut circle = circleLut(segments);
         SphereLatitudeLut latitudes = sphereLatitudeLut(stacks);
@@ -456,20 +480,21 @@ public final class Render3DUtil {
         float rx = rightV.x * radius, ry = rightV.y * radius, rz = rightV.z * radius;
         float ux = upV.x * radius,    uy = upV.y * radius,    uz = upV.z * radius;
 
-        com.mojang.blaze3d.systems.RenderSystem.enableBlend();
-        com.mojang.blaze3d.systems.RenderSystem.blendFunc(
-                com.mojang.blaze3d.opengl.GlStateManager.SrcFactor.SRC_ALPHA,
-                com.mojang.blaze3d.opengl.GlStateManager.DstFactor.ONE
-        );
-        com.mojang.blaze3d.systems.RenderSystem.disableCull();
-        if (depthTest) {
-            com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
-        } else {
-            com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
-        }
-        com.mojang.blaze3d.systems.RenderSystem.depthMask(false);
-        com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0, texture);
-        com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.gl.ShaderProgramKeys.POSITION_TEX_COLOR);
+        // 1.21.11: the whole state block that used to live here
+        // (enableBlend + blendFunc(SRC_ALPHA, ONE) additive, disableCull,
+        // depthMask(false), depth test from `depthTest`, setShaderTexture
+        // + setShader(POSITION_TEX_COLOR)) is gone from RenderSystem.
+        // Blend / cull / depth now live on the RenderPipeline, and the
+        // texture is bound by the RenderSetup of the layer, so all of it
+        // has to be encoded in the layer this buffer is submitted to.
+        // TODO(1.21.11): replace PhazeWorldDrawStub below with a
+        //  POSITION_TEXTURE_COLOR layer for `texture` (see
+        //  PhazeDrawLayers.positionTexColor) built with
+        //  new BlendFunction(SRC_ALPHA, ONE, ONE, ZERO) for the additive
+        //  glow, .withCull(false), .withDepthWrite(false) and a depth-test
+        //  function chosen from `depthTest`. PhazeDrawLayers' cached
+        //  textured layer is TRANSLUCENT, so it is NOT a drop-in here -
+        //  using it would turn the halo from additive into a flat sticker.
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         // Triangle-fan quad with the camera-aligned right/up basis.
@@ -485,19 +510,15 @@ public final class Render3DUtil {
         if (built != null) {
             vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
         }
-
-        com.mojang.blaze3d.systems.RenderSystem.depthMask(true);
-        com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
-        com.mojang.blaze3d.systems.RenderSystem.enableCull();
-        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
-        com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+        // No state restore needed: state travels with the pipeline in
+        // 1.21.11 and cannot leak into the next draw.
     }
 
     private static void line(Matrix4f matrix, BufferBuilder buffer,
                              float x1, float y1, float z1, float x2, float y2, float z2,
-                             float r, float g, float b, float a) {
-        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0);
-        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0);
+                             float r, float g, float b, float a, float lineWidth) {
+        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0).lineWidth(lineWidth);
+        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0).lineWidth(lineWidth);
     }
 
     /**
@@ -530,9 +551,9 @@ public final class Render3DUtil {
         float inner = Math.max(0.0F, radius - thickness * 0.5F);
         float outer = radius + thickness * 0.5F;
 
-        if (depthTest) {
-        } else {
-        }
+        // 1.21.11: depth test is a pipeline property.
+        // TODO(1.21.11): select the layer from `depthTest` once
+        //  PhazeWorldDrawStub is replaced.
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -585,9 +606,10 @@ public final class Render3DUtil {
 
         // Additive blending so the disc reads as a soft glow on top
         // of the world rather than a flat tinted overlay.
-        if (depthTest) {
-        } else {
-        }
+        // 1.21.11: blend mode and depth test are pipeline properties.
+        // TODO(1.21.11): the replacement layer needs
+        //  new BlendFunction(SRC_ALPHA, ONE, ONE, ZERO) (additive) plus a
+        //  TRIANGLES draw mode, and its depth test picked from `depthTest`.
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
@@ -636,23 +658,23 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        if (depthTest) {
-        } else {
-        }
-        RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
+        // 1.21.11: depth test is a pipeline property; line width is a
+        // per-vertex attribute.
+        // TODO(1.21.11): select the layer from `depthTest`.
+        float lw = Math.max(1.0F, lineWidth);
 
         CircleLut circle = circleLut(segments);
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
         float topY = centerY + height;
         for (int i = 0; i < circle.segments; i++) {
             float x1 = centerX + circle.cos[i] * radius;
             float z1 = centerZ + circle.sin[i] * radius;
             float x2 = centerX + circle.cos[i + 1] * radius;
             float z2 = centerZ + circle.sin[i + 1] * radius;
-            buffer.vertex(matrix, x1, centerY, z1).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, x2, centerY, z2).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, x1, topY, z1).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, x2, topY, z2).color(r, g, b, a).normal(0, 1, 0);
+            buffer.vertex(matrix, x1, centerY, z1).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
+            buffer.vertex(matrix, x2, centerY, z2).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
+            buffer.vertex(matrix, x1, topY, z1).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
+            buffer.vertex(matrix, x2, topY, z2).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
@@ -705,13 +727,13 @@ public final class Render3DUtil {
         float vy = nz * ux - nx * uz;
         float vz = nx * uy - ny * ux;
 
-        if (depthTest) {
-        } else {
-        }
-        RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
+        // 1.21.11: depth test is a pipeline property; line width is a
+        // per-vertex attribute.
+        // TODO(1.21.11): select the layer from `depthTest`.
+        float lw = Math.max(1.0F, lineWidth);
 
         CircleLut circle = circleLut(segments);
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
         for (int i = 0; i < circle.segments; i++) {
             float c1 = circle.cos[i], s1 = circle.sin[i];
             float c2 = circle.cos[i + 1], s2 = circle.sin[i + 1];
@@ -722,8 +744,8 @@ public final class Render3DUtil {
             float p2x = centerX + (ux * c2 + vx * s2) * radius;
             float p2y = centerY + (uy * c2 + vy * s2) * radius;
             float p2z = centerZ + (uz * c2 + vz * s2) * radius;
-            buffer.vertex(matrix, p1x, p1y, p1z).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, p2x, p2y, p2z).color(r, g, b, a).normal(0, 1, 0);
+            buffer.vertex(matrix, p1x, p1y, p1z).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
+            buffer.vertex(matrix, p2x, p2y, p2z).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
@@ -775,9 +797,8 @@ public final class Render3DUtil {
         float vy = nz * ux - nx * uz;
         float vz = nx * uy - ny * ux;
 
-        if (depthTest) {
-        } else {
-        }
+        // 1.21.11: depth test is a pipeline property.
+        // TODO(1.21.11): select the layer from `depthTest`.
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -818,14 +839,42 @@ public final class Render3DUtil {
         vertexLine(matrices, buffer,
                 start.x, start.y, start.z,
                 end.x, end.y, end.z,
-                startColor, endColor);
+                startColor, endColor, DEFAULT_LINE_WIDTH);
+    }
+
+    /** @see #vertexLine(MatrixStack, VertexConsumer, double, double, double, double, double, double, int, int, float) */
+    public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
+                                  Vec3d start, Vec3d end,
+                                  int startColor, int endColor, float lineWidth) {
+        vertexLine(matrices, buffer,
+                start.x, start.y, start.z,
+                end.x, end.y, end.z,
+                startColor, endColor, lineWidth);
     }
 
     public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
                                   double startX, double startY, double startZ,
                                   double endX, double endY, double endZ,
                                   int startColor, int endColor) {
+        vertexLine(matrices, buffer, startX, startY, startZ, endX, endY, endZ,
+                startColor, endColor, DEFAULT_LINE_WIDTH);
+    }
+
+    /**
+     * 1.21.11: line width is a per-vertex attribute
+     * ({@code VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH}), not
+     * global state, so callers that batch their own line buffer have
+     * to hand their width down here. {@code VertexConsumer.lineWidth}
+     * is a no-op on formats without a LINE_WIDTH element, so this is
+     * safe to call on a plain {@code POSITION_COLOR_NORMAL} buffer
+     * too.
+     */
+    public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
+                                  double startX, double startY, double startZ,
+                                  double endX, double endY, double endZ,
+                                  int startColor, int endColor, float lineWidth) {
         Matrix4f matrix = matrices.peek().getPositionMatrix();
+        float lw = Math.max(1.0F, lineWidth);
         float a1 = ((startColor >>> 24) & 0xFF) / 255.0F;
         float r1 = ((startColor >>> 16) & 0xFF) / 255.0F;
         float g1 = ((startColor >>> 8) & 0xFF) / 255.0F;
@@ -835,15 +884,15 @@ public final class Render3DUtil {
         float g2 = ((endColor >>> 8) & 0xFF) / 255.0F;
         float b2 = (endColor & 0xFF) / 255.0F;
         buffer.vertex(matrix, (float) startX, (float) startY, (float) startZ)
-                .color(r1, g1, b1, a1).normal(0, 1, 0);
+                .color(r1, g1, b1, a1).normal(0, 1, 0).lineWidth(lw);
         buffer.vertex(matrix, (float) endX, (float) endY, (float) endZ)
-                .color(r2, g2, b2, a2).normal(0, 1, 0);
+                .color(r2, g2, b2, a2).normal(0, 1, 0).lineWidth(lw);
     }
 
     /** Convenience: same colour at both ends. */
     public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
                                   Vec3d start, Vec3d end, int color) {
-        vertexLine(matrices, buffer, start, end, color, color);
+        vertexLine(matrices, buffer, start, end, color, color, DEFAULT_LINE_WIDTH);
     }
 
     /**
@@ -856,24 +905,25 @@ public final class Render3DUtil {
         if (client == null || client.gameRenderer == null || client.gameRenderer.getCamera() == null) {
             return;
         }
-        Vec3d camera = client.gameRenderer.getCamera().getPos();
+        // 1.21.11: Camera.getPos -> getCameraPos.
+        Vec3d camera = client.gameRenderer.getCamera().getCameraPos();
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         float a = ((color >>> 24) & 0xFF) / 255.0F;
         float r = ((color >>> 16) & 0xFF) / 255.0F;
         float gC = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
+        float lw = Math.max(1.0F, lineWidth);
 
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
         buffer.vertex(matrix,
                 (float) (start.x - camera.x),
                 (float) (start.y - camera.y),
-                (float) (start.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0);
+                (float) (start.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0).lineWidth(lw);
         buffer.vertex(matrix,
                 (float) (end.x - camera.x),
                 (float) (end.y - camera.y),
-                (float) (end.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0);
+                (float) (end.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0).lineWidth(lw);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
     }
@@ -915,12 +965,12 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        if (depthTest) {
-        } else {
-        }
-        RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
+        // 1.21.11: depth test is a pipeline property; line width is a
+        // per-vertex attribute.
+        // TODO(1.21.11): select the layer from `depthTest`.
+        float lw = Math.max(1.0F, lineWidth);
 
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
         for (int i = 0; i < points.size() - 1; i++) {
             Vec3d start = points.get(i);
             Vec3d end = points.get(i + 1);
@@ -928,11 +978,11 @@ public final class Render3DUtil {
             buffer.vertex(matrix,
                     (float) (start.x - origin.x),
                     (float) (start.y - origin.y),
-                    (float) (start.z - origin.z)).color(r, g, b, a).normal(0, 1, 0);
+                    (float) (start.z - origin.z)).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
             buffer.vertex(matrix,
                     (float) (end.x - origin.x),
                     (float) (end.y - origin.y),
-                    (float) (end.z - origin.z)).color(r, g, b, a).normal(0, 1, 0);
+                    (float) (end.z - origin.z)).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
@@ -993,12 +1043,12 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        if (depthTest) {
-        } else {
-        }
-        RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
+        // 1.21.11: depth test is a pipeline property; line width is a
+        // per-vertex attribute.
+        // TODO(1.21.11): select the layer from `depthTest`.
+        float lw = Math.max(1.0F, lineWidth);
 
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
 
         // Walk the polyline, accumulating arc length. Within the
         // fade band the alpha ramps linearly from 0 (at length 0)
@@ -1037,14 +1087,14 @@ public final class Render3DUtil {
                 double my = sy + dy * t;
                 double mz = sz + dz * t;
                 // First half: ramp up to full alpha at the boundary.
-                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0).lineWidth(lw);
+                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0).lineWidth(lw);
                 // Second half: full alpha across the rest.
-                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, maxA).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0).lineWidth(lw);
+                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, maxA).normal(0, 1, 0).lineWidth(lw);
             } else {
-                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, endAlpha).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0).lineWidth(lw);
+                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, endAlpha).normal(0, 1, 0).lineWidth(lw);
             }
 
             accLen = endLen;

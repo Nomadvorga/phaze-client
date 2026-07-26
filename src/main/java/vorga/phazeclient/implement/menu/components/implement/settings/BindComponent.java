@@ -3,7 +3,6 @@ package vorga.phazeclient.implement.menu.components.implement.settings;
 import org.joml.Matrix3x2fStack;
 
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
 import vorga.phazeclient.api.system.font.Fonts;
@@ -33,6 +32,12 @@ public class BindComponent extends AbstractSettingComponent {
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
 
+        // 1.21.11: DrawContext.getMatrices() hands out org.joml.Matrix3x2fStack,
+        // not MatrixStack. The stack is passed straight through to the shape /
+        // font / icon helpers, all of which now take a Matrix3x2fc (a
+        // Matrix3x2fStack IS-A Matrix3x2fc), so no promotion to Matrix4f is
+        // needed here - only draws that build their own vertex buffers need
+        // GuiMatrix.mat4(...).
         Matrix3x2fStack matrix = context.getMatrices();
 
         String bindName = StringUtil.getBindName(setting.getKey());

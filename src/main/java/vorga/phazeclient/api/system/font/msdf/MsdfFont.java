@@ -1,19 +1,18 @@
 package vorga.phazeclient.api.system.font.msdf;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.FilterMode;
 import it.unimi.dsi.fastutil.ints.Int2FloatMap;
 import it.unimi.dsi.fastutil.ints.Int2FloatOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.texture.AbstractTexture;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public final class MsdfFont {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
@@ -47,17 +46,6 @@ public final class MsdfFont {
     private record WidthKey(String text, float size) {}
     private final Map<WidthKey, Float> widthCache = new HashMap<>(64);
 
-    /**
-     * Latches whether {@link #applyGlyphs} has already pinned the
-     * atlas's GL_TEXTURE_MIN/MAG_FILTER to LINEAR/LINEAR. Vanilla's
-     * {@code AbstractTexture.setFilter(true, true)} performs two
-     * {@code glTexParameteri} calls which Sodium / Iris hook for
-     * tracking - cheap individually, but called per-glyph-batch by
-     * the menu they add up. Filter modes never change for an MSDF
-     * atlas after the first paint, so we only set them once.
-     */
-    private boolean filterApplied = false;
-
     private MsdfFont(AbstractTexture texture, FontData.AtlasData atlas, Int2ObjectMap<MsdfGlyph> glyphs, Int2ObjectMap<Int2FloatMap> kernings) {
         this.texture = texture;
         this.atlas = atlas;
@@ -69,9 +57,11 @@ public final class MsdfFont {
         return atlas;
     }
 
-    public int getTextureId() {
-        return texture.getGlId();
-    }
+    // 1.21.11: getTextureId() removed. AbstractTexture.getGlId() is gone -
+    // the raw GL name now lives behind GlTexture, i.e. the OpenGL backend
+    // only, and nothing in Phaze binds this atlas imperatively any more.
+    // MsdfRenderer samples it through getTextureView() below, so the int
+    // handle had no remaining caller.
 
     /**
      * Texture view for the atlas, for binding as a shader sampler.
@@ -92,13 +82,13 @@ public final class MsdfFont {
      *                      because writing a custom attribute needs
      *                      {@code beginElement}.
      */
+    // 1.21.11: the per-batch texture.setFilter(true, true) that used to sit
+    // at the top of this method is gone. Filtering is a sampler property
+    // now, not texture state, so it is set once in Builder.build() and the
+    // `filterApplied` latch that guarded the repeated glTexParameteri calls
+    // has no purpose any more.
     public void applyGlyphs(Matrix4f matrix, net.minecraft.client.render.BufferBuilder consumer, String text, float size, float thickness, float spacing, float x, float y, float z, int color,
                             com.mojang.blaze3d.vertex.VertexFormatElement paramsElement, float range, float smoothness) {
-        if (!filterApplied) {
-            texture.setFilter(true, true);
-            filterApplied = true;
-        }
-
         int previousChar = -1;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
@@ -183,7 +173,24 @@ public final class MsdfFont {
             FontData data = ResourceProvider.fromJsonToInstance(dataIdentifier, FontData.class);
             AbstractTexture texture = MC.getTextureManager().getTexture(atlasIdentifier);
 
-            RenderSystem.recordRenderCall(() -> texture.setFilter(true, false));
+            // 1.21.11: setFilter(bilinear, mipmap) and recordRenderCall are
+            // both gone. Filtering is now a sampler property, so the old
+            // setFilter(true, false) becomes a cached sampler assignment.
+            // SamplerCache.get(FilterMode) is (CLAMP_TO_EDGE, CLAMP_TO_EDGE,
+            // LINEAR min, LINEAR mag, no mipmap) - verified from bytecode -
+            // which is exactly what an MSDF atlas needs: bilinear taps, no
+            // mip chain, and clamping so edge glyphs cannot bleed across the
+            // atlas seam. Samplers are owned by the cache and shared, so this
+            // neither leaks nor needs closing. Assigned inline rather than
+            // deferred: builders run lazily from MsdfFonts during rendering,
+            // i.e. already on the render thread. The off-thread branch is a
+            // no-op rather than a crash because this assignment is only a
+            // default for other bind paths - MsdfRenderer's own draw goes
+            // through GpuDraw, which binds SamplerCache.get(LINEAR) on the
+            // render pass itself and never consults texture.sampler.
+            if (RenderSystem.isOnRenderThread()) {
+                texture.sampler = RenderSystem.getSamplerCache().get(FilterMode.LINEAR);
+            }
 
             float atlasWidth = data.atlas().width();
             float atlasHeight = data.atlas().height();

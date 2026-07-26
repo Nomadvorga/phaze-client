@@ -49,12 +49,6 @@ public final class WorldColorRenderHelper {
         state[2] = current[2];
         state[3] = current[3];
         ENTITY_SHADER_COLOR_STACK.get().push(state);
-        RenderSystem.setShaderColor(
-                current[0],
-                current[1],
-                current[2],
-                current[3] * WorldColorCorrectionController.getAlpha(target)
-        );
         return true;
     }
 
@@ -65,7 +59,6 @@ public final class WorldColorRenderHelper {
         }
 
         float[] previous = stack.pop();
-        RenderSystem.setShaderColor(previous[0], previous[1], previous[2], previous[3]);
         ENTITY_SHADER_COLOR_POOL.get().push(previous);
     }
 
