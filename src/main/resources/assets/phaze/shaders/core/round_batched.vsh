@@ -1,4 +1,11 @@
-#version 150
+#version 330
+
+// 1.21.11: ModelViewMat and ProjMat are no longer loose uniforms. They
+// live in the DynamicTransforms / Projection std140 blocks that these
+// two vanilla includes declare, so the shader pulls them in instead of
+// declaring its own.
+#moj_import <minecraft:dynamictransforms.glsl>
+#moj_import <minecraft:projection.glsl>
 
 // Batched rounded-rect shader: per-vertex SDF data so an arbitrary
 // number of independent rectangles can be drawn in a single
@@ -21,9 +28,6 @@ in vec2 RectSize;
 in vec4 Radius;
 in vec2 Params;
 in vec4 OutlineColor;
-
-uniform mat4 ModelViewMat;
-uniform mat4 ProjMat;
 
 out vec4 vColor;
 out vec2 vRectBase;

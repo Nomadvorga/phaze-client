@@ -1,13 +1,14 @@
 package vorga.phazeclient.api.system.shape.batched;
 
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.Defines;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramKey;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.BuiltBuffer;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderSetup;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
@@ -101,7 +102,22 @@ public final class BatchedRectangle {
      */
     public static final VertexFormat BATCHED_FORMAT;
 
-    public static final ShaderProgramKey SHADER_KEY;
+    /**
+     * Draw target for the batch.
+     *
+     * <p>1.21.11 replaced {@code ShaderProgramKey} + {@code RenderSystem.setShader}
+     * + {@code BufferRenderer.drawWithGlobalProgram} with a
+     * {@link RenderPipeline} wrapped in a {@link RenderLayer}, whose
+     * {@link RenderLayer#draw(BuiltBuffer)} performs the whole
+     * GpuDevice / CommandEncoder / RenderPass submission internally.
+     *
+     * <p>This shader needs no custom uniforms at all - every SDF
+     * parameter is a vertex attribute - which is why it maps onto the new
+     * model cleanly. {@code UniformType} in 1.21.11 only offers
+     * {@code UNIFORM_BUFFER} / {@code TEXEL_BUFFER}, so a uniform-based
+     * shader would have needed a hand-packed std140 block instead.
+     */
+    public static final RenderLayer BATCHED_LAYER;
 
     /**
      * Latched off if {@link VertexFormatElement#register} threw or any
@@ -115,7 +131,7 @@ public final class BatchedRectangle {
     static {
         VertexFormatElement base = null, size = null, radius = null, params = null, outline = null;
         VertexFormat format = null;
-        ShaderProgramKey shaderKey = null;
+        RenderLayer layer = null;
         boolean disabled = true;
         try {
             int id = findFreeSlot(7);
@@ -138,10 +154,25 @@ public final class BatchedRectangle {
                     .add("Params", params)
                     .add("OutlineColor", outline)
                     .build();
-            shaderKey = new ShaderProgramKey(
-                    Identifier.of("phaze", "core/round_batched"),
-                    format,
-                    Defines.EMPTY);
+            // Blend / depth / cull state used to be set imperatively around
+            // the draw (enableBlend + defaultBlendFunc + enableDepthTest +
+            // enableCull) and declared again in the shader json's "blend"
+            // block. In 1.21.11 it is baked into the pipeline instead, so
+            // the state travels with the draw and cannot be left dangling.
+            RenderPipeline pipeline = RenderPipeline.builder()
+                    .withLocation(Identifier.of("phaze", "pipeline/round_batched"))
+                    .withVertexShader(Identifier.of("phaze", "core/round_batched"))
+                    .withFragmentShader(Identifier.of("phaze", "core/round_batched"))
+                    .withVertexFormat(format, VertexFormat.DrawMode.QUADS)
+                    .withBlend(BlendFunction.TRANSLUCENT)
+                    .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .withCull(true)
+                    .build();
+
+            layer = RenderLayer.of(
+                    "phaze_round_batched",
+                    RenderSetup.builder(pipeline).translucent().build());
             disabled = false;
         } catch (Throwable t) {
             // Common offender: another mod (Sodium, Iris, etc.) already
@@ -155,7 +186,7 @@ public final class BatchedRectangle {
         RECT_PARAMS = params;
         RECT_OUTLINE = outline;
         BATCHED_FORMAT = format;
-        SHADER_KEY = shaderKey;
+        BATCHED_LAYER = layer;
         DISABLED = disabled;
     }
 
@@ -325,12 +356,11 @@ public final class BatchedRectangle {
         RenderSystem.enableCull();
 
         try {
-            ShaderProgram shader = RenderSystem.setShader(SHADER_KEY);
-            if (shader == null) {
-                built.close();
-                return;
-            }
-            BufferRenderer.drawWithGlobalProgram(built);
+            // Blend / depth / cull now live on the pipeline, and the layer
+            // owns the whole submission. The surrounding RenderSystem state
+            // calls above are kept only for the other renderers that still
+            // read that state; this draw itself no longer depends on them.
+            BATCHED_LAYER.draw(built);
         } finally {
             RenderSystem.disableBlend();
         }
@@ -440,6 +470,16 @@ public final class BatchedRectangle {
                 baseX, baseY, scaledWidth, scaledHeight, scaledRadius, thickness, softness, outlineColor);
 
         pendingRects++;
+
+        // Outside a begin/endScope window nothing else will drain the
+        // queue, so draw immediately. This is the path every non-menu
+        // caller (HUD, standalone components) takes now that Rectangle
+        // has no separate eager implementation: one rect per draw, which
+        // is exactly what the old eager path did anyway. Inside a scope
+        // the rects keep accumulating and endScope() flushes them as one.
+        if (!isBatching()) {
+            flush();
+        }
     }
 
     /**
