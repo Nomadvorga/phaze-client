@@ -104,7 +104,84 @@ Full `RenderPipeline.Builder` surface: `withLocation`, `withVertexShader`,
    `RectSize`, `Radius`, `Params`, `OutlineColor`) need re-declaring as a
    `VertexFormat` built from `com.mojang.blaze3d.vertex.VertexFormatElement`.
 
-Order to work in: `DrawEngineImpl` and one simple shape (`Rectangle`)
-first to establish the pattern, then the rest of the shapes, then
-`BatchedRectangle` (custom format), then `Blur`, then the two font
-renderers.
+## Step 1 findings: the pattern, verified
+
+Three facts change the plan materially.
+
+### 1. `RenderLayer.draw(BuiltBuffer)` still exists
+
+`net.minecraft.client.render.RenderLayer` has `draw(BuiltBuffer)` and
+`getRenderPipeline()`. So a custom draw does **not** need hand-rolled
+`GpuDevice` / `CommandEncoder` / `RenderPass` code — wrap the custom
+`RenderPipeline` in a `RenderLayer` and call `layer.draw(buffer.end())`.
+That removes most of the boilerplate feared above.
+
+`net.minecraft.client.gl.Framebuffer` also exposes
+`getColorAttachmentView()` / `getDepthAttachmentView()`, which is what
+`Blur` will need for its ping-pong targets.
+
+### 2. Individual uniforms are gone — it is UBO or nothing
+
+`UniformType` has exactly two constants: `UNIFORM_BUFFER` and
+`TEXEL_BUFFER`. There is no `VEC2` / `VEC4` / `FLOAT`. So
+`shader.getUniformOrDefault("size").set(w, h)` has no direct equivalent:
+every custom uniform must be packed into a std140 block.
+
+Vanilla's own shaders show the shape:
+
+```glsl
+#version 330
+#moj_import <minecraft:dynamictransforms.glsl>
+#moj_import <minecraft:projection.glsl>
+```
+
+```glsl
+layout(std140) uniform DynamicTransforms {
+    mat4 ModelViewMat;
+    vec4 ColorModulator;
+    vec3 ModelOffset;
+    mat4 TextureMat;
+};
+```
+
+Shader assets keep the old location (`assets/<ns>/shaders/core/*.vsh|fsh`)
+and gain `#moj_import` includes.
+
+For `Rectangle` that would mean hand-packing a nine-field std140 block
+(`size`, `location`, `radius`, `softness`, `thickness`, `color1..4`,
+`outlineColor`) per draw, and getting std140 alignment right by hand for
+every one of Phaze's ~10 custom shaders. That is exactly where silent
+"shader reads garbage" bugs live.
+
+### 3. Phaze already has the uniform-free variant
+
+`BatchedRectangle` + `phaze:core/round_batched` already carry every
+per-rect parameter as `GENERIC` vertex attributes (`RectBase`,
+`RectSize`, `Radius`, `Params`, `OutlineColor`) with the gradient done
+through the standard `COLOR` attribute. Its own javadoc states the output
+is pixel-identical to the uniform path.
+
+That is precisely the architecture 1.21.11 wants: no custom uniforms at
+all, so it composes with `RenderLayer.draw(BuiltBuffer)` directly.
+
+### Recommended design
+
+Make the vertex-attribute path the **only** path:
+
+- delete `Rectangle`'s eager 9-uniform branch, always route through the batch
+- give `BatchedRectangle` a custom `RenderPipeline` + `RenderLayer`
+- port `round_batched.vsh/fsh` to `#version 330` + `#moj_import`
+- repeat the shape for `Arc`, `Image`, `Inverted*`
+
+Upside: no std140 hand-packing anywhere, fewer draw calls, and it matches
+the direction the engine moved.
+
+**Open question for the operator:** today, if `VertexFormatElement.register`
+cannot allocate GENERIC slots (Sodium / Iris having claimed them), Phaze
+falls back to the eager uniform path. Under this design that fallback
+disappears — there would be no non-attribute path left. Options are to
+accept that, or to keep a reduced uniform-based fallback with a
+hand-packed UBO purely for that case.
+
+Order after the decision: `BatchedRectangle` (pipeline + layer + shader)
+→ `Rectangle` → the other shapes → `Blur` → the two font renderers.
