@@ -314,8 +314,6 @@ public class FontRenderer implements QuickImports {
         matrix.scale(0.5F, 0.5F, 1);
         Matrix4f matrix4f = matrix.peek().getPositionMatrix();
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
         for (Identifier identifier : GLYPH_PAGE_CACHE.keySet()) {
             net.minecraft.util.Identifier phaze$tex = identifier;
         BufferBuilder buffer = tessellator().begin(QUADS, POSITION_TEXTURE_COLOR);
@@ -343,7 +341,6 @@ public class FontRenderer implements QuickImports {
             }
             vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
         }
-        RenderSystem.disableBlend();
         matrix.pop();
     }
 

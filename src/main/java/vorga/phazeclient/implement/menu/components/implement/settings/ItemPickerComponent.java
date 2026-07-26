@@ -226,8 +226,6 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
 
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, currentAlpha);
         context.drawItem(stack, 0, 0);
-        context.draw();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
         matrices.popMatrix();
     }

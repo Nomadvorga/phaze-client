@@ -1,5 +1,7 @@
 package vorga.phazeclient.mixins;
 
+import net.minecraft.client.gl.RenderPipelines;
+
 import org.joml.Matrix3x2fStack;
 
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -321,11 +323,6 @@ public class InGameHudMixin {
 
     @Unique
     private static void phaze$resetGuiRenderState() {
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     @Inject(method = "render", at = @At("HEAD"))
@@ -394,7 +391,6 @@ public class InGameHudMixin {
             // cleared/intermediate framebuffer used during Screen rendering.
             boolean hasLiveBlurHud = !hudHidden && phaze$prescanBlurStateFlips();
             if (hasLiveBlurHud) {
-                context.draw();
                 Blur.INSTANCE.captureBaseFrameForBlur();
             }
 
@@ -461,14 +457,12 @@ public class InGameHudMixin {
                     // frame. Flushing here pushes vanilla's chat onto
                     // the main framebuffer where it belongs, and the
                     // FBO ends up containing ONLY our own HUD widgets.
-                    context.draw();
                     inBatchPass = true;
                     batchIncludesBlur = true;
                     BatchedHudBuffer.INSTANCE.beginCapture();
                     renderHudInternal(context);
                     // Flush deferred DrawContext draws into the FBO before unbinding,
                     // otherwise vanilla flushes them later into the main framebuffer.
-                    context.draw();
                     BatchedHudBuffer.INSTANCE.endCapture();
                     batchIncludesBlur = false;
                     inBatchPass = false;
@@ -1196,7 +1190,6 @@ public class InGameHudMixin {
             }
             if (hudIndex != HUD_KEYSTROKES) {
                 context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
-                context.draw();
             }
         }
 
@@ -1520,7 +1513,6 @@ public class InGameHudMixin {
                 bgColor = blendARGB(bgColor, hoverFill);
             }
             context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
-            context.draw();
         }
 
         for (int i = 0; i < stacks.size(); i++) {
@@ -1804,7 +1796,6 @@ public class InGameHudMixin {
                 bgColor = blendARGB(bgColor, hoverFill);
             }
             context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
-            context.draw();
         }
 
         // Icon pass: drawItem internally pushes its own
@@ -2157,7 +2148,6 @@ public class InGameHudMixin {
         float textX = 7.0F;
         float textY = (BASE_HEIGHT - 9.0F) * 0.5F;
         context.drawText(client.textRenderer, text, Math.round(textX), Math.round(textY), resolveHudTextColor(), module.textShadow.isValue());
-        context.draw();
         context.getMatrices().popMatrix();
         context.getMatrices().popMatrix();
     }
@@ -2197,7 +2187,6 @@ public class InGameHudMixin {
         float textX = (baseWidth - textWidth) * 0.5f;
         float textY = (baseHeight - 9.0f) * 0.5f;
         context.drawText(client.textRenderer, text, Math.round(textX), Math.round(textY), resolveHudTextColor(), module.textShadow.isValue());
-        context.draw();
         context.getMatrices().popMatrix();
         context.getMatrices().popMatrix();
     }
@@ -2391,7 +2380,6 @@ public class InGameHudMixin {
                         blurHeight
                 );
                 Blur.INSTANCE.registerHudBlurState(HUD_SCOREBOARD, blurStateKey);
-                context.draw();
                 if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(),
                                     0.0f, backgroundTopLocal, blurWidth, blurHeight)
@@ -2405,7 +2393,6 @@ public class InGameHudMixin {
                     context.fill(0, -topInset, rightEdgeLocal, -1, titleBgColor);
                 }
                 context.fill(0, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
-                context.draw();
             } else {
                 if (module.showTitle.isValue()) {
                     context.fill(0, -topInset, rightEdgeLocal, -1, titleBgColor);
@@ -2673,7 +2660,6 @@ public class InGameHudMixin {
         renderKeyButton(context, 0, 38, 54, 8, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale);
         renderKeyButton(context, 0, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale);
         renderKeyButton(context, 28, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale);
-        context.draw();
         context.getMatrices().popMatrix();
 
         renderKeyLabel(context, client, "W", x, y, 20, 4, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale, scale, module.textShadow.isValue());
@@ -2785,7 +2771,6 @@ public class InGameHudMixin {
                 Sprite sprite = client.getStatusEffectSpriteManager().getSprite(effects.get(i).getEffectType());
                 context.drawSpriteStretched(RenderPipelines.GUI_TEXTURED, sprite, Math.round(paddingX), Math.round(rowY + 2.0f), Math.round(iconSize), Math.round(iconSize));
             }
-            context.draw();
             context.getMatrices().popMatrix();
         }
         for (int i = 0; i < rows; i++) {
@@ -3159,7 +3144,6 @@ public class InGameHudMixin {
         renderLiveKeystrokeButton(context, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE]);
         renderLiveKeystrokeButton(context, 0, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_LMB]);
         renderLiveKeystrokeButton(context, 28, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_RMB]);
-        context.draw();
         context.getMatrices().popMatrix();
 
         boolean shadow = module.textShadow.isValue();
@@ -3272,7 +3256,6 @@ public class InGameHudMixin {
         context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
         context.getMatrices().scale(scale, scale, 1.0f);
         context.fill(Math.round(lx), Math.round(ly), Math.round(lx + lineWidth), Math.round(ly + lineThickness), lineColor);
-        context.draw();
         context.getMatrices().popMatrix();
     }
 
@@ -4256,15 +4239,12 @@ public class InGameHudMixin {
             float iconDrawScale = effectiveIconSize / 16.0f;
             context.getMatrices().scale(iconDrawScale, iconDrawScale, 1.0f);
             // Disable blend to prevent blur from affecting icon
-            RenderSystem.disableBlend();
             context.drawItem(icon, 0, 0);
-            context.draw();
             // Re-enable blend so subsequent HUD elements (hotbar selection,
             // tab list, chat, etc.) render with proper alpha blending. Without
             // this the rest of the HUD inherits a blend-off state and looks
             // noticeably darker/desaturated until something else triggers a
             // RenderLayer state re-setup (e.g. a context.draw() flush).
-            RenderSystem.enableBlend();
             context.getMatrices().popMatrix();
         }
 
@@ -4608,7 +4588,6 @@ public class InGameHudMixin {
         // Flush any pending text batches under this z so the pop
         // doesn't leave the digits stuck behind subsequent
         // post-hotbar overlays.
-        context.draw();
         matrices.popMatrix();
     }
 
@@ -4689,7 +4668,6 @@ public class InGameHudMixin {
     private void phaze$openMirrorScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         if (ExordiumAnimationBridge.isCapturingHotbar()) return;
         if (!phaze$hotbarShouldDrawMirror) return;
-        context.draw();
         int hotbarLeft = context.getScaledWindowWidth() / 2 - PHAZE_HOTBAR_BG_W / 2;
         int hotbarTop = context.getScaledWindowHeight() - PHAZE_HOTBAR_BG_H;
         context.enableScissor(hotbarLeft, hotbarTop, hotbarLeft + PHAZE_HOTBAR_BG_W, hotbarTop + PHAZE_HOTBAR_BG_H);
@@ -4754,7 +4732,6 @@ public class InGameHudMixin {
     private void phaze$drawMirrorAndCloseScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         if (!phaze$hotbarShouldDrawMirror || phaze$hotbarLastTexture == null || phaze$hotbarLastSpriteFn == null) {
             if (phaze$hotbarScissorOn) {
-                context.draw();
                 context.disableScissor();
                 phaze$hotbarScissorOn = false;
             }
@@ -4765,7 +4742,6 @@ public class InGameHudMixin {
                 (Function<Identifier, RenderLayer>) phaze$hotbarLastSpriteFn,
                 phaze$hotbarLastTexture, mirrorX, phaze$hotbarLastDrawY,
                 phaze$hotbarLastWidth, phaze$hotbarLastHeight);
-        context.draw();
         if (phaze$hotbarScissorOn) {
             context.disableScissor();
             phaze$hotbarScissorOn = false;
@@ -4912,11 +4888,6 @@ public class InGameHudMixin {
         int centerX = screenW / 2;
         int itemY = screenH - 16 - 3;
 
-        context.draw();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
 
         for (int n = 0; n < 9; n++) {
             ItemStack stack = player.getInventory().main.get(n);
@@ -4931,8 +4902,6 @@ public class InGameHudMixin {
                 phaze$fillHotbarOverlay(context, itemX, itemY, healing.colorForPreparedStack(stack));
             }
         }
-        context.draw();
-        RenderSystem.depthMask(true);
         phaze$resetGuiRenderState();
     }
 
@@ -4949,7 +4918,6 @@ public class InGameHudMixin {
 
     @Inject(method = "renderHotbar", at = @At("TAIL"))
     private void phaze$flushHotbarBatch(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        context.draw();
         phaze$resetGuiRenderState();
     }
 
@@ -5413,7 +5381,6 @@ public class InGameHudMixin {
                 }
             }
         }
-        context.draw();
         context.getMatrices().popMatrix();
 
         if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05F) {

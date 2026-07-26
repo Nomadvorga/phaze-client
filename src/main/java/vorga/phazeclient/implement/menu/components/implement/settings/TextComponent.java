@@ -175,7 +175,6 @@ public class TextComponent extends AbstractSettingComponent {
                     .build());
         }
 
-        context.draw();
         scissorManager.pop();
     }
 

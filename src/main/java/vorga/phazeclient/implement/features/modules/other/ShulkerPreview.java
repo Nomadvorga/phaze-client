@@ -26,6 +26,8 @@
  */
 package vorga.phazeclient.implement.features.modules.other;
 
+import net.minecraft.client.gl.RenderPipelines;
+
 import net.minecraft.block.Block;
 import net.minecraft.block.ShulkerBoxBlock;
 import net.minecraft.client.MinecraftClient;
@@ -262,7 +264,6 @@ public final class ShulkerPreview extends Module {
         // items / cursor stack render BELOW our preview, then
         // render at a high Z so even vanilla tooltips (Z=400) can't
         // poke through.
-        context.draw();
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, 0.0F, 500.0F);
 
@@ -299,7 +300,6 @@ public final class ShulkerPreview extends Module {
         // while the inner area stretches to PREVIEW_W x PREVIEW_H.
         context.drawGuiTexture(RenderPipelines.GUI_TEXTURED, PANEL_SPRITE,
                 x, y, PREVIEW_W, PREVIEW_H, tintArgb);
-        context.draw();
 
         // Refresh the per-tick cache.
         int tick = mc.inGameHud != null ? mc.inGameHud.getTicks() : 0;
@@ -384,7 +384,6 @@ public final class ShulkerPreview extends Module {
             }
         }
 
-        context.draw();
         context.getMatrices().popMatrix();
     }
 

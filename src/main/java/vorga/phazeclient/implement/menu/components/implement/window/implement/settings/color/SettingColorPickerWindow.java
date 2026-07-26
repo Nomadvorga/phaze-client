@@ -355,8 +355,6 @@ public final class SettingColorPickerWindow extends AbstractWindow {
     private static void renderHorizontalHueTexture(MatrixStack matrices, float x, float y, float width, float height, int color) {
         BatchedRectangle.flushIfBatching();
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
         net.minecraft.util.Identifier phaze$tex = HUE_TEXTURE;
 
         Matrix4f matrix = GuiMatrix.mat4(matrices);
@@ -366,6 +364,5 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         buffer.vertex(matrix, x + width, y + height, 0.0F).texture(1.0F, 1.0F).color(color);
         buffer.vertex(matrix, x + width, y, 0.0F).texture(1.0F, 0.0F).color(color);
         vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
-        RenderSystem.disableBlend();
     }
 }

@@ -352,10 +352,6 @@ public final class BatchedRectangle {
         // but depth test stays on so ordering matches the eager path,
         // back-face cull stays on (we emit in the same winding the
         // legacy quad emitter does, so no flipped quads).
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
 
         try {
             // Blend / depth / cull now live on the pipeline, and the layer
@@ -364,7 +360,6 @@ public final class BatchedRectangle {
             // read that state; this draw itself no longer depends on them.
             BATCHED_LAYER.draw(built);
         } finally {
-            RenderSystem.disableBlend();
         }
     }
 
@@ -413,7 +408,7 @@ public final class BatchedRectangle {
         float windowHeight = renderTargetFbHeightOverride > 0.0F
                 ? renderTargetFbHeightOverride
                 : mc.getWindow().getFramebufferHeight();
-        float globalAlpha = RenderSystem.getShaderColor()[3];
+        float globalAlpha = vorga.phazeclient.api.system.draw.PhazeAlpha.get();
 
         Matrix4f matrix = GuiMatrix.mat4(shape.getMatrix());
         Vector3f basePos = matrix.transformPosition(shape.getX(), shape.getY(), 0, SCRATCH_BASE_POS).mul(scale);

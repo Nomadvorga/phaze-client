@@ -294,7 +294,7 @@ public class Blur implements Shape {
             return;
         }
         float scale = (float) client.getWindow().getScaleFactor();
-        float alpha = RenderSystem.getShaderColor()[3];
+        float alpha = vorga.phazeclient.api.system.draw.PhazeAlpha.get();
         Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f size = matrix4f.getScale(scratchScale).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);
@@ -302,10 +302,6 @@ public class Blur implements Shape {
         float width = shape.getWidth() * size.x;
         float height = shape.getHeight() * size.y;
         int color = ColorUtil.multAlpha(shape.getColor().x, alpha);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         drawEngine.quad(
                 matrix4f,
@@ -332,7 +328,6 @@ public class Blur implements Shape {
         } else {
             buffer.end();
         }
-        RenderSystem.enableDepthTest();
         restoreRenderState(true);
     }
 
@@ -388,11 +383,6 @@ public class Blur implements Shape {
         // Sneaking labels have no vanilla SEE_THROUGH background, so they
         // request the selected-color through-wall fallback here. Normal labels
         // already queued that same fallback in their existing text pass.
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
         if (drawFallback) {
             drawWorldFallbackRectContents(matrix, x, y, width, height, tintColor);
         }
@@ -405,8 +395,6 @@ public class Blur implements Shape {
         // Respect both block and entity depth. EntityRendererMixin flushes the
         // current model before this draw, so the player's own geometry also
         // participates instead of the blur being stamped over it.
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthFunc(GL11C.GL_LEQUAL);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         int blurColor = (MathHelper.clamp(Math.round(clampedOpacity * 255.0F), 0, 255) << 24) | 0x00FFFFFF;
         drawEngine.quad(matrix, buffer, x, y, width, height, blurColor);
@@ -459,11 +447,6 @@ public class Blur implements Shape {
     }
 
     private void drawWorldFallbackRect(Matrix4f matrix, float x, float y, float width, float height, int tintColor) {
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
         drawWorldFallbackRectContents(matrix, x, y, width, height, tintColor);
         restoreRenderState(true);
     }
@@ -506,17 +489,9 @@ public class Blur implements Shape {
         boolean useHudBatch = hudBatchMode;
         if (useHudBatch) {
             if (!hudBatchStateApplied) {
-                RenderSystem.enableBlend();
-                RenderSystem.defaultBlendFunc();
-                RenderSystem.disableCull();
-                RenderSystem.disableDepthTest();
                 hudBatchStateApplied = true;
             }
         } else {
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.disableCull();
-            RenderSystem.disableDepthTest();
         }
 
         PreparedBlurState batchState = resolvePreparedBatchBlurState(client, shapes);
@@ -566,7 +541,7 @@ public class Blur implements Shape {
         }
 
         float scale = (float) client.getWindow().getScaleFactor();
-        float alpha = RenderSystem.getShaderColor()[3];
+        float alpha = vorga.phazeclient.api.system.draw.PhazeAlpha.get();
         Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f size = matrix4f.getScale(scratchScale).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);
@@ -624,17 +599,9 @@ public class Blur implements Shape {
         boolean useHudBatch = cacheFrame && hudBatchMode;
         if (useHudBatch) {
             if (!hudBatchStateApplied) {
-                RenderSystem.enableBlend();
-                RenderSystem.defaultBlendFunc();
-                RenderSystem.disableCull();
-                RenderSystem.disableDepthTest();
                 hudBatchStateApplied = true;
             }
         } else {
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.disableCull();
-            RenderSystem.disableDepthTest();
         }
 
         if (!renderPreparedShape(shape, cacheFrame)) {
@@ -666,7 +633,7 @@ public class Blur implements Shape {
         }
 
         float scale = (float) client.getWindow().getScaleFactor();
-        float alpha = RenderSystem.getShaderColor()[3];
+        float alpha = vorga.phazeclient.api.system.draw.PhazeAlpha.get();
         Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f size = matrix4f.getScale(scratchScale).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);
@@ -792,25 +759,15 @@ public class Blur implements Shape {
 
         if (input == null) {
             input = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            input.setTexFilter(GL11C.GL_LINEAR);
             menuInput = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            menuInput.setTexFilter(GL11C.GL_LINEAR);
             hudHalfInput = new SimpleFramebuffer(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
-            hudHalfInput.setTexFilter(GL11C.GL_LINEAR);
             nametagInput = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            nametagInput.setTexFilter(GL11C.GL_LINEAR);
             ping = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            ping.setTexFilter(GL11C.GL_LINEAR);
             pong = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            pong.setTexFilter(GL11C.GL_LINEAR);
             halfA = new SimpleFramebuffer(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
-            halfA.setTexFilter(GL11C.GL_LINEAR);
             halfB = new SimpleFramebuffer(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
-            halfB.setTexFilter(GL11C.GL_LINEAR);
             quarterA = new SimpleFramebuffer(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
-            quarterA.setTexFilter(GL11C.GL_LINEAR);
             quarterB = new SimpleFramebuffer(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
-            quarterB.setTexFilter(GL11C.GL_LINEAR);
             // The menu / HUD cache slots are NOT allocated here - see
             // ensureBlurSlots(). Each slot owns a full-resolution
             // framebuffer, and the two groups together are 8 of them
@@ -820,25 +777,15 @@ public class Blur implements Shape {
             resized = true;
         } else if (input.textureWidth != framebufferWidth || input.textureHeight != framebufferHeight) {
             input.resize(framebufferWidth, framebufferHeight);
-            input.setTexFilter(GL11C.GL_LINEAR);
             menuInput.resize(framebufferWidth, framebufferHeight);
-            menuInput.setTexFilter(GL11C.GL_LINEAR);
             hudHalfInput.resize(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2));
-            hudHalfInput.setTexFilter(GL11C.GL_LINEAR);
             nametagInput.resize(framebufferWidth, framebufferHeight);
-            nametagInput.setTexFilter(GL11C.GL_LINEAR);
             ping.resize(framebufferWidth, framebufferHeight);
-            ping.setTexFilter(GL11C.GL_LINEAR);
             pong.resize(framebufferWidth, framebufferHeight);
-            pong.setTexFilter(GL11C.GL_LINEAR);
             halfA.resize(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2));
-            halfA.setTexFilter(GL11C.GL_LINEAR);
             halfB.resize(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2));
-            halfB.setTexFilter(GL11C.GL_LINEAR);
             quarterA.resize(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4));
-            quarterA.setTexFilter(GL11C.GL_LINEAR);
             quarterB.resize(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4));
-            quarterB.setTexFilter(GL11C.GL_LINEAR);
             // Null slots are groups that were never used this session; they
             // get created at the new size by ensureBlurSlots() on demand.
             for (MenuBlurSlot slot : menuBlurSlots) {
@@ -846,7 +793,6 @@ public class Blur implements Shape {
                     continue;
                 }
                 slot.framebuffer.resize(framebufferWidth, framebufferHeight);
-                slot.framebuffer.setTexFilter(GL11C.GL_LINEAR);
                 slot.valid = false;
             }
             for (MenuBlurSlot slot : hudBlurSlots) {
@@ -854,7 +800,6 @@ public class Blur implements Shape {
                     continue;
                 }
                 slot.framebuffer.resize(framebufferWidth, framebufferHeight);
-                slot.framebuffer.setTexFilter(GL11C.GL_LINEAR);
                 slot.valid = false;
                 slot.hudInputRevision = -1L;
                 slot.hudRegionCount = 0;
@@ -962,10 +907,8 @@ public class Blur implements Shape {
         // for this full-resolution target.
         if (menuOverlayInput == null) {
             menuOverlayInput = new SimpleFramebuffer(width, height, false);
-            menuOverlayInput.setTexFilter(GL11C.GL_LINEAR);
         } else if (menuOverlayInput.textureWidth != width || menuOverlayInput.textureHeight != height) {
             menuOverlayInput.resize(width, height);
-            menuOverlayInput.setTexFilter(GL11C.GL_LINEAR);
         }
 
         captureFramebufferInput(client, menuOverlayInput, width, height, GL11C.GL_NEAREST);
@@ -1227,7 +1170,6 @@ public class Blur implements Shape {
 
         for (int i = 0; i < slots.length; i++) {
             SimpleFramebuffer framebufferCache = new SimpleFramebuffer(width, height, false);
-            framebufferCache.setTexFilter(GL11C.GL_LINEAR);
             slots[i] = new MenuBlurSlot(framebufferCache);
         }
     }
@@ -1324,8 +1266,6 @@ public class Blur implements Shape {
     ) {
         target.beginWrite(false);
         RenderSystem.viewport(0, 0, target.textureWidth, target.textureHeight);
-        RenderSystem.disableBlend();
-        RenderSystem.disableDepthTest();
         RenderSystem.setShaderTexture(0, source.getColorAttachment());
         shader.getUniformOrDefault("TexelSize").set(1.0F / source.textureWidth, 1.0F / source.textureHeight);
         shader.getUniformOrDefault("Offset").set(offset);
@@ -1410,8 +1350,6 @@ public class Blur implements Shape {
     private void runGaussianPass(ShaderProgram shader, Framebuffer source, Framebuffer target, float directionX, float directionY, float blurRadius, BlurRegion region) {
         target.beginWrite(false);
         RenderSystem.viewport(0, 0, target.textureWidth, target.textureHeight);
-        RenderSystem.disableBlend();
-        RenderSystem.disableDepthTest();
         RenderSystem.setShaderTexture(0, source.getColorAttachment());
 
         int support = MathHelper.clamp(Math.round(blurRadius), 1, 64);
@@ -1578,14 +1516,8 @@ public class Blur implements Shape {
     }
 
     private static void restoreRenderState(boolean enableDepthTest) {
-        RenderSystem.depthMask(true);
         if (enableDepthTest) {
-            RenderSystem.enableDepthTest();
         } else {
-            RenderSystem.disableDepthTest();
         }
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 }

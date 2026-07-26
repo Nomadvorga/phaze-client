@@ -31,12 +31,9 @@ public class Render2DUtil implements QuickImports {
         Matrix3x2fStack matrix = context.getMatrices();
         Matrix4f matrix4f = GuiMatrix.mat4(matrix);
         if (!QUAD.isEmpty()) {
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             QUAD.forEach(quad -> drawEngine.quad(matrix4f, buffer, quad.x, quad.y, quad.width, quad.height, quad.color));
             vorga.phazeclient.api.system.draw.PhazeDrawLayers.POSITION_COLOR.draw(buffer.end());
-            RenderSystem.disableBlend();
             QUAD.clear();
         }
     }
@@ -67,10 +64,7 @@ public class Render2DUtil implements QuickImports {
             matrix.translate(x, y);
             matrix.scale(size, size);
 
-            RenderSystem.enableBlend();
-            RenderSystem.blendFunc(GL40C.GL_DST_ALPHA, GL40C.GL_ONE_MINUS_DST_ALPHA);
             drawTexture(matrix, id, 0, 0, 1, 1, uvSize, uvSize, regionSize, regionSize, textureSize, textureSize, color);
-            RenderSystem.disableBlend();
 
             matrix.translate(-x, -y);
             matrix.popMatrix();
@@ -87,8 +81,6 @@ public class Render2DUtil implements QuickImports {
             matrix.scale(size, size);
 
             net.minecraft.util.Identifier phaze$tex = id;
-            RenderSystem.enableBlend();
-            RenderSystem.blendFunc(GL40C.GL_DST_ALPHA, GL40C.GL_ONE_MINUS_DST_ALPHA);
 
             GL40C.glTexParameteri(GL40C.GL_TEXTURE_2D, GL40C.GL_TEXTURE_MIN_FILTER, GL40C.GL_NEAREST);
             GL40C.glTexParameteri(GL40C.GL_TEXTURE_2D, GL40C.GL_TEXTURE_MAG_FILTER, GL40C.GL_NEAREST);
@@ -118,7 +110,6 @@ public class Render2DUtil implements QuickImports {
 
             vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
 
-            RenderSystem.disableBlend();
 
             matrix.translate(-x, -y);
             matrix.popMatrix();
@@ -155,7 +146,7 @@ public class Render2DUtil implements QuickImports {
     }
 
     public void drawQuad(float x, float y, float width, float height, int color) {
-        QUAD.add(new Quad(x, y, width, height, ColorUtil.multAlpha(color, RenderSystem.getShaderColor()[3])));
+        QUAD.add(new Quad(x, y, width, height, ColorUtil.multAlpha(color, vorga.phazeclient.api.system.draw.PhazeAlpha.get())));
     }
 
     public record Quad(float x, float y, float width, float height, int color) {

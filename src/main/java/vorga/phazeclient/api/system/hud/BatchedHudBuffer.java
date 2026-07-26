@@ -103,7 +103,6 @@ public final class BatchedHudBuffer {
                 fbo = null;
             }
             fbo = new SimpleFramebuffer(w, h, true);
-            fbo.setTexFilter(GL11C.GL_LINEAR);
             lastWidth = w;
             lastHeight = h;
             hasContent = false;

@@ -60,11 +60,6 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private static void phaze$resetGuiRenderState() {
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     // ---------------------------------------------------------------
@@ -236,12 +231,6 @@ public abstract class HandledScreenMixin {
             return;
         }
 
-        context.draw();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
         MinecraftClient client = MinecraftClient.getInstance();
         PlayerInventory playerInventory = client != null && client.player != null ? client.player.getInventory() : null;
@@ -266,8 +255,6 @@ public abstract class HandledScreenMixin {
             }
         }
 
-        context.draw();
-        RenderSystem.depthMask(true);
         phaze$resetGuiRenderState();
     }
 

@@ -103,7 +103,6 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
 
         renderInventoryRows(context, mouseX, mouseY, inventory, gridX, storageY, 9, 27, true);
         renderInventoryRows(context, mouseX, mouseY, inventory, gridX, hotbarY, 0, 9, false);
-        context.draw();
 
         float footerY = panelY + panelHeight - FOOTER_HEIGHT;
         rectangle.render(ShapeProperties.create(context.getMatrices(), panelX + 1.0F, footerY, panelWidth - 2.0F, FOOTER_HEIGHT - 1.0F)

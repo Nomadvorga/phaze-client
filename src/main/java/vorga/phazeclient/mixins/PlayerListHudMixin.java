@@ -190,7 +190,6 @@ public class PlayerListHudMixin {
             return;
         }
 
-        context.draw();
         context.getMatrices().pushMatrix();
         phaze$tabTransformPushed = true;
 
@@ -226,7 +225,6 @@ public class PlayerListHudMixin {
         if (module == null || !module.isTabSlideEnabled() || !phaze$tabTransformPushed) {
             return;
         }
-        context.draw();
         context.getMatrices().popMatrix();
         phaze$tabTransformPushed = false;
     }
@@ -369,7 +367,6 @@ public class PlayerListHudMixin {
         );
         int fadedColor = phaze$applyTabAlpha(color);
         if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
-            context.draw();
             float size = PhazeBadgeUtil.guiBadgeSize(renderer);
             PhazeBadgeUtil.drawGuiBadge(context, x - 2.5F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(fadedColor));
         }
@@ -521,14 +518,10 @@ public class PlayerListHudMixin {
             return;
         }
 
-        context.draw();
-        RenderSystem.enableBlend();
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alphaMultiplier);
         try {
             draw.run();
-            context.draw();
         } finally {
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         }
     }
 

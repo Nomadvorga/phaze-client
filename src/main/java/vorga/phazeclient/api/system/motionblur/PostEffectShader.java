@@ -53,17 +53,12 @@ public class PostEffectShader {
         ensureInitialized();
         if (processor == null) return;
 
-        RenderSystem.disableBlend();
-        RenderSystem.disableDepthTest();
         RenderSystem.resetTextureMatrix();
 
         MinecraftClient client = MinecraftClient.getInstance();
         processor.render(client.getFramebuffer(), ((GameRendererAccessor) client.gameRenderer).getPool());
         client.getFramebuffer().beginWrite(true);
 
-        RenderSystem.disableBlend();
-        RenderSystem.blendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        RenderSystem.enableDepthTest();
     }
 
     public void setUniformValue(String name, float value) {

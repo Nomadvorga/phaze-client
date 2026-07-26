@@ -292,16 +292,11 @@ public final class PredictionsRenderer {
         // reaches the impact point. The Circle / Sphere choice only
         // affects how the marker itself looks at the destination.
         if (hasLines) {
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.disableCull();
             // Depth-test ON: trajectory lines and impact markers
             // respect world geometry, so the line gets occluded
             // behind walls / mobs instead of bleeding through. Mask
             // stays off so the line doesn't imprint into the depth
             // buffer either (which would block subsequent draws).
-            RenderSystem.enableDepthTest();
-            RenderSystem.depthMask(false);
             RenderSystem.lineWidth(Math.max(1.0F, module.lineWidth.getInt()));
 
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
@@ -321,10 +316,6 @@ public final class PredictionsRenderer {
                 vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
             }
 
-            RenderSystem.depthMask(true);
-            RenderSystem.enableDepthTest();
-            RenderSystem.enableCull();
-            RenderSystem.disableBlend();
         }
 
         // Impact markers: optional black sphere or floor circle at

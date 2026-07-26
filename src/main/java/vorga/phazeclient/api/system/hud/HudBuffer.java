@@ -68,7 +68,6 @@ public class HudBuffer {
                 framebuffer.delete();
             }
             framebuffer = new SimpleFramebuffer(width, height, true);
-            framebuffer.setTexFilter(GL11C.GL_LINEAR);
             lastScreenWidth = width;
             lastScreenHeight = height;
             hasContent = false;
