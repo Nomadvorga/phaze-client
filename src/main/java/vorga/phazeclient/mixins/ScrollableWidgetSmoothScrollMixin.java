@@ -112,15 +112,19 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
      * would only "snap" a single subsequent setScrollY anyway, so the
      * blast radius of a missed clear is one frame at worst).
      */
+    // 1.21.11: mouseDragged(double,double,int,double,double) became
+    // mouseDragged(Click, double, double). These carry require = 0, so a
+    // stale descriptor would have silently stopped matching instead of
+    // failing at launch - the smoothing would just have gone dead.
     @Inject(method = "mouseDragged", at = @At("HEAD"), require = 0)
-    private void phaze$dragHead(double mouseX, double mouseY, int button,
+    private void phaze$dragHead(net.minecraft.client.gui.Click click,
                                 double deltaX, double deltaY,
                                 CallbackInfoReturnable<Boolean> cir) {
         phaze$insideMouseDragged = true;
     }
 
     @Inject(method = "mouseDragged", at = @At("RETURN"), require = 0)
-    private void phaze$dragTail(double mouseX, double mouseY, int button,
+    private void phaze$dragTail(net.minecraft.client.gui.Click click,
                                 double deltaX, double deltaY,
                                 CallbackInfoReturnable<Boolean> cir) {
         phaze$insideMouseDragged = false;
