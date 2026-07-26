@@ -30,7 +30,7 @@ import org.joml.Matrix4f;
 
 import java.awt.*;
 
-import static net.minecraft.client.render.VertexFormat.DrawMode.QUADS;
+import static com.mojang.blaze3d.vertex.VertexFormat.DrawMode.QUADS;
 import static net.minecraft.client.render.VertexFormats.POSITION_TEXTURE_COLOR;
 
 @Setter

@@ -504,7 +504,7 @@ public abstract class EntityRendererMixin {
         com.mojang.blaze3d.systems.RenderSystem.depthMask(false);
         com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.gl.ShaderProgramKeys.POSITION_COLOR);
         net.minecraft.client.render.BufferBuilder buffer = net.minecraft.client.render.Tessellator.getInstance()
-                .begin(net.minecraft.client.render.VertexFormat.DrawMode.QUADS, net.minecraft.client.render.VertexFormats.POSITION_COLOR);
+                .begin(com.mojang.blaze3d.vertex.VertexFormat.DrawMode.QUADS, net.minecraft.client.render.VertexFormats.POSITION_COLOR);
         buffer.vertex(matrix, x, y, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x, y + height, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x + width, y + height, 0.0f).color(r, g, b, a);

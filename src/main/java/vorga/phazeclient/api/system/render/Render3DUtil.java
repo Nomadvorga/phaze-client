@@ -7,7 +7,7 @@ import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Box;
@@ -502,8 +502,8 @@ public final class Render3DUtil {
 
         com.mojang.blaze3d.systems.RenderSystem.enableBlend();
         com.mojang.blaze3d.systems.RenderSystem.blendFunc(
-                com.mojang.blaze3d.platform.GlStateManager.SrcFactor.SRC_ALPHA,
-                com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE
+                com.mojang.blaze3d.opengl.GlStateManager.SrcFactor.SRC_ALPHA,
+                com.mojang.blaze3d.opengl.GlStateManager.DstFactor.ONE
         );
         com.mojang.blaze3d.systems.RenderSystem.disableCull();
         if (depthTest) {
@@ -642,8 +642,8 @@ public final class Render3DUtil {
         // Additive blending so the disc reads as a soft glow on top
         // of the world rather than a flat tinted overlay.
         RenderSystem.blendFunc(
-                com.mojang.blaze3d.platform.GlStateManager.SrcFactor.SRC_ALPHA,
-                com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE
+                com.mojang.blaze3d.opengl.GlStateManager.SrcFactor.SRC_ALPHA,
+                com.mojang.blaze3d.opengl.GlStateManager.DstFactor.ONE
         );
         RenderSystem.disableCull();
         if (depthTest) {

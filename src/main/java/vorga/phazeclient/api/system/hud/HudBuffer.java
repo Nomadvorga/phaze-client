@@ -114,14 +114,14 @@ public class HudBuffer {
 
         RenderSystem.enableBlend();
         RenderSystem.blendFunc(
-                com.mojang.blaze3d.platform.GlStateManager.SrcFactor.ONE,
-                com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
+                com.mojang.blaze3d.opengl.GlStateManager.SrcFactor.ONE,
+                com.mojang.blaze3d.opengl.GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
         );
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.disableCull();
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        com.mojang.blaze3d.platform.GlStateManager._viewport(0, 0, width, height);
+        com.mojang.blaze3d.opengl.GlStateManager._viewport(0, 0, width, height);
 
         ShaderProgram shader = RenderSystem.setShader(ShaderProgramKeys.BLIT_SCREEN);
         shader.addSamplerTexture("InSampler", framebuffer.getColorAttachment());
