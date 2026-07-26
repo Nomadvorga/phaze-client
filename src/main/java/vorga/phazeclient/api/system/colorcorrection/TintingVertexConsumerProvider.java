@@ -28,12 +28,11 @@ public final class TintingVertexConsumerProvider implements VertexConsumerProvid
     }
 
     private VertexConsumer createConsumer(VertexConsumer parentConsumer) {
-        if (SODIUM_LOADED) {
-            VertexConsumer optimized = SodiumTintingVertexConsumer.create(parentConsumer, target);
-            if (optimized != null) {
-                return optimized;
-            }
-        }
+        // The Sodium fast path is parked under port-staging/ along with the
+        // rest of the Sodium compat: this build targets vanilla plus Fabric
+        // API only, and the Sodium vertex API it needs is not on the
+        // compile classpath. The generic consumer produces identical
+        // colours, just without the bulk-transform shortcut.
         return new TintingVertexConsumer(parentConsumer, target);
     }
 }

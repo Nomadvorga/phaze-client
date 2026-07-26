@@ -84,6 +84,11 @@ public final class PhazeDrawLayers {
      * it samples. The set of textures Phaze draws through here is small
      * and stable, so they are cached for the process lifetime.
      */
+    /** Lines, for the world overlays that used RENDERTYPE_LINES. */
+    public static final RenderLayer LINES = RenderLayer.of(
+            "phaze_lines",
+            RenderSetup.builder(net.minecraft.client.gl.RenderPipelines.LINES).translucent().build());
+
     private static final Map<Identifier, RenderLayer> TEXTURED = new HashMap<>();
 
     public static RenderLayer positionTexColor(Identifier texture) {

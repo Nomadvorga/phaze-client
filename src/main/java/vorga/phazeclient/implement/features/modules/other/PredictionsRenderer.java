@@ -2,9 +2,7 @@ package vorga.phazeclient.implement.features.modules.other;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -304,7 +302,6 @@ public final class PredictionsRenderer {
             // buffer either (which would block subsequent draws).
             RenderSystem.enableDepthTest();
             RenderSystem.depthMask(false);
-            RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
             RenderSystem.lineWidth(Math.max(1.0F, module.lineWidth.getInt()));
 
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
@@ -321,7 +318,7 @@ public final class PredictionsRenderer {
 
             net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
             if (built != null) {
-                BufferRenderer.drawWithGlobalProgram(built);
+                vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
             }
 
             RenderSystem.depthMask(true);

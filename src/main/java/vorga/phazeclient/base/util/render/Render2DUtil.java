@@ -7,7 +7,6 @@ import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.color.ColorUtil;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.*;
 import net.minecraft.client.texture.Sprite;
@@ -30,10 +29,9 @@ public class Render2DUtil implements QuickImports {
         if (!QUAD.isEmpty()) {
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
-            RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+            BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             QUAD.forEach(quad -> drawEngine.quad(matrix4f, buffer, quad.x, quad.y, quad.width, quad.height, quad.color));
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
+            vorga.phazeclient.api.system.draw.PhazeDrawLayers.POSITION_COLOR.draw(buffer.end());
             RenderSystem.disableBlend();
             QUAD.clear();
         }
@@ -84,8 +82,7 @@ public class Render2DUtil implements QuickImports {
             matrix.translate(x, y, 0);
             matrix.scale(size, size, 1);
 
-            RenderSystem.setShaderTexture(0, id);
-            RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+            net.minecraft.util.Identifier phaze$tex = id;
             RenderSystem.enableBlend();
             RenderSystem.blendFunc(GL40C.GL_DST_ALPHA, GL40C.GL_ONE_MINUS_DST_ALPHA);
 
@@ -115,7 +112,7 @@ public class Render2DUtil implements QuickImports {
             buffer.vertex(matrix4f, 1, 1, 0).texture(u2_overlay, v2_overlay).color(color);
             buffer.vertex(matrix4f, 1, 0, 0).texture(u2_overlay, v1_overlay).color(color);
 
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
+            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
 
             RenderSystem.disableBlend();
 
@@ -143,15 +140,14 @@ public class Render2DUtil implements QuickImports {
     }
 
     public void drawTexturedQuad(@NonNull MatrixStack matrix, @NonNull Identifier texture, float x1, float x2, float y1, float y2, float u1, float u2, float v1, float v2, int color) {
-        RenderSystem.setShaderTexture(0, texture);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+        net.minecraft.util.Identifier phaze$tex = texture;
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         Matrix4f matrix4f = matrix.peek().getPositionMatrix();
         buffer.vertex(matrix4f, x1, y1, 0).texture(u1, v1).color(color);
         buffer.vertex(matrix4f, x1, y2, 0).texture(u1, v2).color(color);
         buffer.vertex(matrix4f, x2, y2, 0).texture(u2, v2).color(color);
         buffer.vertex(matrix4f, x2, y1, 0).texture(u2, v1).color(color);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
     }
 
     public void drawQuad(float x, float y, float width, float height, int color) {

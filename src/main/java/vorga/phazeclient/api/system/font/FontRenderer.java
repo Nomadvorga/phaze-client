@@ -16,9 +16,7 @@ import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.color.ColorUtil;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
@@ -318,9 +316,8 @@ public class FontRenderer implements QuickImports {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
         for (Identifier identifier : GLYPH_PAGE_CACHE.keySet()) {
-            RenderSystem.setShaderTexture(0, identifier);
+            net.minecraft.util.Identifier phaze$tex = identifier;
         BufferBuilder buffer = tessellator().begin(QUADS, POSITION_TEXTURE_COLOR);
             for (DrawEntry drawEntry : GLYPH_PAGE_CACHE.get(identifier)) {
                 float x1 = drawEntry.atX();
@@ -344,7 +341,7 @@ public class FontRenderer implements QuickImports {
                 buffer.vertex(matrix4f, x1 + width, y1 + 0, 0).texture(u2, v1).color(color);
                 buffer.vertex(matrix4f, x1 + 0, y1 + 0, 0).texture(u1, v1).color(color);
             }
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
+            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
         }
         RenderSystem.disableBlend();
         matrix.pop();
