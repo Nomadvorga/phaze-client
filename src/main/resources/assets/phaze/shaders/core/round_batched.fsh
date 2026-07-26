@@ -1,5 +1,9 @@
-#version 150
+#version 330
 
+// No uniforms at all - every SDF parameter arrives as a varying, which
+// is exactly what the 1.21.11 pipeline model wants (UniformType only
+// offers UNIFORM_BUFFER / TEXEL_BUFFER; loose scalar uniforms are gone).
+//
 // Fragment SDF math is a direct port of phaze:core/round.fsh - same
 // rounded-box SDF, same outline / fill blending, same softness
 // behavior. The only structural differences are:
