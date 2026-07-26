@@ -9,7 +9,7 @@ import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BufferRenderer;
 import org.joml.Matrix4f;
 
-import static net.minecraft.client.render.VertexFormat.DrawMode.QUADS;
+import static com.mojang.blaze3d.vertex.VertexFormat.DrawMode.QUADS;
 import static net.minecraft.client.render.VertexFormats.POSITION_TEXTURE_COLOR;
 
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
