@@ -71,6 +71,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class RemoteRulesService {
 
     private static final Logger LOG = LoggerFactory.getLogger("PhazeRules");
+    private static final Set<String> OFFLINE_FALLBACK_HIDDEN_MODULES = Set.of(
+            "auc_helper",
+            "auto_respawn",
+            "auto_eat",
+            "autonear",
+            "autopotion",
+            "autoreissue",
+            "autoswap",
+            "binds",
+            "elytrautility",
+            "fast_swap",
+            "shifttap"
+    );
 
     /**
      * Default base URL - the standalone Worker on workers.dev rather
@@ -173,6 +186,19 @@ public final class RemoteRulesService {
     private final String clientId;
 
     private volatile Set<String> blocked = Collections.emptySet();
+
+    /**
+     * Modules the API has explicitly marked allowed for the current
+     * host. Distinct from "not in {@link #blocked}": an entry here is
+     * a positive statement from the operator, and it outranks the
+     * hard-coded server whitelists compiled into the client - see
+     * {@link vorga.phazeclient.api.feature.module.Module#isServerLocked()}.
+     *
+     * <p>The API has always returned this list; until now the client
+     * parsed only {@code blocked}, so the panel could add a lock but
+     * never lift one.
+     */
+    private volatile Set<String> allowed = Collections.emptySet();
     private volatile String lastHost = null;          // null = "never refreshed yet"
     private volatile long lastRefreshMs = 0L;
     private volatile long lastSuccessfulFetchMs = 0L;
@@ -217,6 +243,34 @@ public final class RemoteRulesService {
     /** Stable random identity for this install. See {@link #loadOrCreateClientId()}. */
     public String getClientId() {
         return clientId;
+    }
+
+    /**
+     * Base URL of the rules backend, trailing slashes stripped. Empty
+     * when the service is disabled via {@code -Dphaze.rules.api=}.
+     * Shared with {@link PhazeEventService} and the cloud-config
+     * client so the whole mod talks to one host.
+     */
+    public String getApiBase() {
+        return apiBase;
+    }
+
+    /**
+     * True when the API has explicitly allowed this module on the
+     * current server. Callers use it to override a local whitelist -
+     * an explicit allow from the operator is newer and more specific
+     * than a list compiled into the jar months ago.
+     */
+    public boolean isModuleExplicitlyAllowed(String moduleId) {
+        if (moduleId == null || moduleId.isEmpty()) {
+            return false;
+        }
+        // An outage must not let a stale allow linger: without a fresh
+        // answer we fall back to whatever the client ships with.
+        if (isRulesApiUnavailableNow()) {
+            return false;
+        }
+        return allowed.contains(moduleId.toLowerCase());
     }
 
     /**
@@ -313,6 +367,11 @@ public final class RemoteRulesService {
                 /* period       */ HEARTBEAT_SECONDS,
                 TimeUnit.SECONDS
         );
+
+        // The event stream carries rule changes in seconds and kicks
+        // immediately; the heartbeat above stays as the fallback for
+        // when the stream is down and as the presence ping.
+        PhazeEventService.getInstance().start();
     }
 
     /**
@@ -322,19 +381,66 @@ public final class RemoteRulesService {
      * (i.e. don't block) on any error or empty cache.
      */
     public boolean isModuleBlocked(String moduleId) {
-        if (!enabled || moduleId == null || moduleId.isEmpty()) {
+        if (moduleId == null || moduleId.isEmpty()) {
             return false;
         }
-        if (isStrictLockdownNow()) {
-            return true;
+        if (shouldUseOfflineModuleFallback()) {
+            String normalized = moduleId.toLowerCase();
+            if (ServerUtil.hasMirroredModuleRule(normalized)) {
+                return !ServerUtil.isModuleAllowedByMirroredRules(normalized);
+            }
+            return OFFLINE_FALLBACK_HIDDEN_MODULES.contains(normalized);
+        }
+        if (!enabled) {
+            return false;
         }
         return blocked.contains(moduleId.toLowerCase());
+    }
+
+    /**
+     * True when the rules backend is effectively unavailable for the
+     * current session and we should fall back to the local hide-list
+     * instead of the live remote blocklist. Singleplayer is exempt so
+     * the user always keeps the full module list in their own world.
+     */
+    public boolean shouldUseOfflineModuleFallback() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc != null && mc.isInSingleplayer()) {
+            return false;
+        }
+        return isRulesApiUnavailableNow();
+    }
+
+    /**
+     * GUI-facing probe: when the rules backend is down we still want a
+     * sane menu instead of hiding every server-controlled module. The
+     * caller can use this to hide only the small curated fallback set.
+     */
+    public boolean shouldHideModuleWhenOffline(String moduleId) {
+        if (moduleId == null || moduleId.isEmpty()) {
+            return false;
+        }
+        if (!shouldUseOfflineModuleFallback()) {
+            return false;
+        }
+        String normalized = moduleId.toLowerCase();
+        if (ServerUtil.hasMirroredModuleRule(normalized)) {
+            return false;
+        }
+        return OFFLINE_FALLBACK_HIDDEN_MODULES.contains(normalized);
     }
 
     private boolean isStrictLockdownNow() {
         String host = ServerUtil.getCurrentServerHost();
         if (host == null || host.isEmpty()) return false;
 
+        return isRulesApiUnavailableNow();
+    }
+
+    private boolean isRulesApiUnavailableNow() {
+        if (!enabled) {
+            return true;
+        }
         long now = System.currentTimeMillis();
         if (now - serviceStartMs < STARTUP_GRACE_MS) return false;
         if (lastSuccessfulFetchMs <= 0L) return true;
@@ -360,6 +466,20 @@ public final class RemoteRulesService {
             return;
         }
         scheduler.execute(this::heartbeat);
+    }
+
+    /** Reads a string array from the payload into a lower-cased set. */
+    private static Set<String> readModuleIds(JsonObject obj, String field) {
+        Set<String> out = new HashSet<>();
+        if (obj.has(field) && obj.get(field).isJsonArray()) {
+            JsonArray arr = obj.getAsJsonArray(field);
+            for (JsonElement el : arr) {
+                if (el.isJsonPrimitive()) {
+                    out.add(el.getAsString().toLowerCase());
+                }
+            }
+        }
+        return out;
     }
 
     private void heartbeat() {
@@ -486,15 +606,8 @@ public final class RemoteRulesService {
         if (!parsed.isJsonObject()) return;
         JsonObject obj = parsed.getAsJsonObject();
 
-        Set<String> next = new HashSet<>();
-        if (obj.has("blocked") && obj.get("blocked").isJsonArray()) {
-            JsonArray arr = obj.getAsJsonArray("blocked");
-            for (JsonElement el : arr) {
-                if (el.isJsonPrimitive()) {
-                    next.add(el.getAsString().toLowerCase());
-                }
-            }
-        }
+        Set<String> next = readModuleIds(obj, "blocked");
+        Set<String> nextAllowed = readModuleIds(obj, "allowed");
 
         if (obj.has("online") && obj.get("online").isJsonPrimitive()) {
             try {
@@ -520,6 +633,7 @@ public final class RemoteRulesService {
         // tick and re-fetch.
         if (host == null ? lastHost == null : host.equals(lastHost)) {
             blocked = Collections.unmodifiableSet(next);
+            allowed = Collections.unmodifiableSet(nextAllowed);
             lastRefreshMs = System.currentTimeMillis();
             lastSuccessfulFetchMs = lastRefreshMs;
         }

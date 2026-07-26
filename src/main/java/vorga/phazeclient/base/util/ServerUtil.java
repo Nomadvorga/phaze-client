@@ -5,11 +5,140 @@ import net.minecraft.client.network.ServerInfo;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Utility class for server detection
  */
 public class ServerUtil {
+    private static final Set<String> FUN_TIME_SEGMENTS = Set.of("funtime", "funsky");
+    private static volatile String cachedAddressInput;
+    private static volatile String cachedNormalizedHost = "";
+
+    /**
+     * Mirrors the current remote-rules allow matrix. These local
+     * allowlists act as a fail-safe when the rules backend is down,
+     * so they must stay aligned with the D1 rules the admin panel
+     * serves to the client.
+     */
+    private static final Set<String> SHIFT_TAP_SEGMENTS = Set.of(
+            "funtime",
+            "funmoon",
+            "skytime"
+    );
+    private static final Set<String> AUTO_SWAP_SEGMENTS = Set.of(
+            "funtime",
+            "funsky",
+            "holytime",
+            "spookytime",
+            "funtrainer",
+            "skytime"
+    );
+    private static final Set<String> AUTO_POTION_SEGMENTS = Set.of(
+            "funtime",
+            "funsky",
+            "holytime",
+            "space-times",
+            "spookytime",
+            "fillcube",
+            "skytime"
+    );
+    private static final Set<String> ELYTRA_UTILITY_SEGMENTS = Set.of(
+            "funtime",
+            "funsky",
+            "holytime",
+            "spookytime",
+            "funmoon",
+            "skytime",
+            "funtrainer"
+    );
+    private static final Set<String> ITEM_SCROLLER_SEGMENTS = Set.of(
+            "funtime",
+            "holyworld",
+            "skytime",
+            "holytime",
+            "funsky",
+            "space-times",
+            "spookytime",
+            "funmoon",
+            "stray"
+    );
+    private static final Set<String> MOUSE_CLICKER_SEGMENTS = Set.of(
+            "funtime",
+            "funsky",
+            "holytime",
+            "space-times",
+            "spookytime",
+            "funmoon",
+            "fillcube",
+            "skytime",
+            "funtrainer"
+    );
+    private static final Set<String> AUTO_REISSUE_SEGMENTS = Set.of(
+            "funtime",
+            "skytime"
+    );
+    private static final Set<String> AUC_HELPER_SEGMENTS = Set.of(
+            "funtime"
+    );
+    private static final Set<String> AUTO_EAT_SEGMENTS = Set.of(
+            "fillcube",
+            "funsky",
+            "funtime",
+            "holytime",
+            "skytime",
+            "space-times",
+            "spookytime"
+    );
+    private static final Set<String> AUTO_RESPAWN_SEGMENTS = Set.of(
+            "funsky",
+            "funtime",
+            "holytime",
+            "skytime",
+            "space-times",
+            "spookytime"
+    );
+    private static final Set<String> FAST_SWAP_SEGMENTS = Set.of(
+            "fillcube",
+            "funtime",
+            "space-times"
+    );
+    private static final Set<String> FT_HELPER_SEGMENTS = Set.of(
+            "funmoon",
+            "funsky",
+            "funtime",
+            "funtrainer",
+            "holytime",
+            "skytime",
+            "space-times",
+            "spookytime"
+    );
+    private static final Set<String> TRAP_TIMER_SEGMENTS = Set.of(
+            "funsky",
+            "funtime",
+            "funtrainer",
+            "holytime",
+            "skytime",
+            "spookytime"
+    );
+    private static final Map<String, Set<String>> MIRRORED_MODULE_SEGMENTS = Map.ofEntries(
+            Map.entry("auc_helper", AUC_HELPER_SEGMENTS),
+            Map.entry("auto_eat", AUTO_EAT_SEGMENTS),
+            Map.entry("auto_respawn", AUTO_RESPAWN_SEGMENTS),
+            Map.entry("autonear", Set.of("funtime")),
+            Map.entry("autopotion", AUTO_POTION_SEGMENTS),
+            Map.entry("autoreissue", AUTO_REISSUE_SEGMENTS),
+            Map.entry("autoswap", AUTO_SWAP_SEGMENTS),
+            Map.entry("elytrautility", ELYTRA_UTILITY_SEGMENTS),
+            Map.entry("fast_swap", FAST_SWAP_SEGMENTS),
+            Map.entry("ft_helper", FT_HELPER_SEGMENTS),
+            Map.entry("item_scroller", ITEM_SCROLLER_SEGMENTS),
+            Map.entry("mouseclicker", MOUSE_CLICKER_SEGMENTS),
+            Map.entry("shifttap", SHIFT_TAP_SEGMENTS),
+            Map.entry("trap_timer", TRAP_TIMER_SEGMENTS)
+    );
 
     /**
      * Get current server host address. Returns "" for singleplayer or
@@ -56,15 +185,21 @@ public class ServerUtil {
         // server-info object disappeared mid-session (transfer/relogin).
         SocketAddress peer = handler.getConnection().getAddress();
         if (peer instanceof InetSocketAddress isa && isa.getHostString() != null) {
-            return isa.getHostString().toLowerCase().trim();
+            return stripPort(isa.getHostString());
         }
         return "";
     }
 
     private static String stripPort(String addr) {
-        String s = addr.toLowerCase().trim();
+        if (addr.equals(cachedAddressInput)) {
+            return cachedNormalizedHost;
+        }
+        String s = addr.toLowerCase(Locale.ROOT).trim();
         int sep = s.indexOf(':');
-        return sep >= 0 ? s.substring(0, sep) : s;
+        String normalized = sep >= 0 ? s.substring(0, sep) : s;
+        cachedNormalizedHost = normalized;
+        cachedAddressInput = addr;
+        return normalized;
     }
 
     /**
@@ -76,9 +211,17 @@ public class ServerUtil {
             return false;
         }
 
-        String[] parts = host.split("\\.");
-        for (String part : parts) {
-            if (part.equals(expectedSegment)) {
+        return containsHostSegment(host, expectedSegment);
+    }
+
+    private static boolean hasAnyServerSegment(Set<String> expectedSegments) {
+        String host = getCurrentServerHost();
+        if (host.isEmpty()) {
+            return false;
+        }
+
+        for (String expectedSegment : expectedSegments) {
+            if (containsHostSegment(host, expectedSegment)) {
                 return true;
             }
         }
@@ -86,11 +229,42 @@ public class ServerUtil {
         return false;
     }
 
+    private static boolean containsHostSegment(String host, String expectedSegment) {
+        int start = 0;
+        while (start <= host.length()) {
+            int end = host.indexOf('.', start);
+            if (end < 0) {
+                end = host.length();
+            }
+            int length = end - start;
+            if (length == expectedSegment.length()
+                    && host.regionMatches(start, expectedSegment, 0, length)) {
+                return true;
+            }
+            if (end == host.length()) {
+                return false;
+            }
+            start = end + 1;
+        }
+        return false;
+    }
+
+    private static boolean isSingleplayerOrHasAnyServerSegment(Set<String> expectedSegments) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) {
+            return false;
+        }
+        if (mc.isInSingleplayer()) {
+            return true;
+        }
+        return hasAnyServerSegment(expectedSegments);
+    }
+
     /**
      * Check if current server is FunTime
      */
     public static boolean isFunTimeServer() {
-        return hasServerSegment("funtime") || hasServerSegment("funsky");
+        return hasAnyServerSegment(FUN_TIME_SEGMENTS);
     }
 
     /**
@@ -118,132 +292,101 @@ public class ServerUtil {
      * Check if ShiftTap is supported on current server
      */
     public static boolean isShiftTapSupported() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) {
-            return false;
-        }
-
-        if (mc.isInSingleplayer()) {
-            return true;
-        }
-
-        return isFunTimeServer() 
-                || hasServerSegment("funmoon")
-                || hasServerSegment("prostotrainer");
+        return isSupported("shifttap", SHIFT_TAP_SEGMENTS);
     }
 
     /**
      * Check if AutoSwap is supported on current server
-     * Supported servers: FunTime, FunSky, HolyTime, SpookyTime, ProstoTrainer, FunTrainer, Singleplayer
+     * Mirrors remote rules: FunTime, FunSky, HolyTime, SpookyTime,
+     * FunTrainer, SkyTime, Singleplayer.
      */
     public static boolean isAutoSwapSupported() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) {
-            return false;
-        }
-
-        // Always allow in singleplayer
-        if (mc.isInSingleplayer()) {
-            return true;
-        }
-
-        // Check supported servers
-        return hasServerSegment("funtime")
-                || hasServerSegment("funsky")
-                || hasServerSegment("holytime")
-                || hasServerSegment("spookytime")
-                || hasServerSegment("prostotrainer")
-                || hasServerSegment("funtrainer");
+        return isSupported("autoswap", AUTO_SWAP_SEGMENTS);
     }
 
     /**
      * Check if AutoPotion is supported on current server
-     * Supported servers: FunTime, FunSky, HolyTime, Space-Times, SpookyTime, FillCube, Singleplayer
+     * Mirrors remote rules: FunTime, FunSky, HolyTime, Space-Times,
+     * SpookyTime, FillCube, SkyTime, Singleplayer.
      */
     public static boolean isAutoPotionSupported() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) {
-            return false;
-        }
-
-        if (mc.isInSingleplayer()) {
-            return true;
-        }
-
-        return hasServerSegment("funtime")
-                || hasServerSegment("funsky")
-                || hasServerSegment("holytime")
-                || hasServerSegment("space-times")
-                || hasServerSegment("spookytime")
-                || hasServerSegment("fillcube");
+        return isSupported("autopotion", AUTO_POTION_SEGMENTS);
     }
 
     /**
      * Check if ElytraUtility is supported on current server
-     * Supported servers: FunTime, FunSky, HolyTime, SpookyTime, FunMoon, Singleplayer
+     * Mirrors remote rules: FunTime, FunSky, HolyTime, SpookyTime,
+     * FunMoon, SkyTime, FunTrainer, Singleplayer.
      */
     public static boolean isElytraUtilitySupported() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) {
-            return false;
-        }
-
-        if (mc.isInSingleplayer()) {
-            return true;
-        }
-
-        return hasServerSegment("funtime")
-                || hasServerSegment("funsky")
-                || hasServerSegment("holytime")
-                || hasServerSegment("spookytime")
-                || hasServerSegment("funmoon");
+        return isSupported("elytrautility", ELYTRA_UTILITY_SEGMENTS);
     }
 
     /**
      * Check if ItemScroller is supported on current server
-     * Supported servers: FunTime, HolyWorld, HolyTime, FunSky, Space-Times, SpookyTime, FunMoon, Singleplayer
+     * Mirrors remote rules: FunTime, HolyWorld, SkyTime, HolyTime,
+     * FunSky, Space-Times, SpookyTime, FunMoon, Stray, Singleplayer.
      */
     public static boolean isItemScrollerSupported() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) {
-            return false;
-        }
-
-        if (mc.isInSingleplayer()) {
-            return true;
-        }
-
-        return hasServerSegment("funtime")
-                || hasServerSegment("holyworld")
-                || hasServerSegment("holytime")
-                || hasServerSegment("funsky")
-                || hasServerSegment("space-times")
-                || hasServerSegment("spookytime")
-                || hasServerSegment("stray")
-                || hasServerSegment("funmoon");
+        return isSupported("item_scroller", ITEM_SCROLLER_SEGMENTS);
     }
 
     /**
      * Check if MouseClicker (Tape Mouse) is supported on current server
-     * Supported servers: FunTime, FunSky, HolyTime, Space-Times, SpookyTime, FunMoon, FillCube, Singleplayer
+     * Mirrors remote rules: FunTime, FunSky, HolyTime, Space-Times,
+     * SpookyTime, FunMoon, FillCube, SkyTime, FunTrainer,
+     * Singleplayer.
      */
     public static boolean isMouseClickerSupported() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) {
+        return isSupported("mouseclicker", MOUSE_CLICKER_SEGMENTS);
+    }
+
+    public static boolean isAutoReissueSupported() {
+        return isSupported("autoreissue", AUTO_REISSUE_SEGMENTS);
+    }
+
+    public static boolean hasMirroredModuleRule(String moduleId) {
+        if (moduleId == null || moduleId.isEmpty()) {
             return false;
         }
+        return MIRRORED_MODULE_SEGMENTS.containsKey(moduleId.toLowerCase());
+    }
 
-        if (mc.isInSingleplayer()) {
+    public static boolean isModuleAllowedByMirroredRules(String moduleId) {
+        if (moduleId == null || moduleId.isEmpty()) {
             return true;
         }
 
-        return hasServerSegment("funtime")
-                || hasServerSegment("funsky")
-                || hasServerSegment("holytime")
-                || hasServerSegment("space-times")
-                || hasServerSegment("spookytime")
-                || hasServerSegment("funmoon")
-                || hasServerSegment("fillcube");
+        Set<String> allowedSegments = MIRRORED_MODULE_SEGMENTS.get(moduleId.toLowerCase());
+        if (allowedSegments == null) {
+            return true;
+        }
+
+        return isSupported(moduleId, allowedSegments);
+    }
+
+    /**
+     * Local whitelist check with a remote override.
+     *
+     * <p>The segment sets above are a snapshot of the rules as they
+     * stood when the build was cut. When the admin panel explicitly
+     * allows a module on the current host, that answer is newer and
+     * more specific, so it wins - which is what makes "enable this
+     * module on a new server" a change in the dashboard rather than a
+     * client release.
+     *
+     * <p>It only ever loosens. A remote <em>block</em> is applied
+     * separately in {@link
+     * vorga.phazeclient.api.feature.module.Module#isServerLocked()};
+     * this path cannot be used to lock something the local list allows.
+     * And when the API is unreachable the override goes away, so a
+     * stale allow cannot outlive the outage.
+     */
+    private static boolean isSupported(String moduleId, Set<String> allowedSegments) {
+        if (RemoteRulesService.getInstance().isModuleExplicitlyAllowed(moduleId)) {
+            return true;
+        }
+        return isSingleplayerOrHasAnyServerSegment(allowedSegments);
     }
 
     /**
