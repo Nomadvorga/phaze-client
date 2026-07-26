@@ -4,6 +4,7 @@ import org.joml.Matrix3x2fStack;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
+import vorga.phazeclient.base.util.render.GuiMatrix;
 import vorga.phazeclient.api.feature.module.setting.implement.MultiColorSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.system.font.Fonts;
@@ -38,6 +39,14 @@ public class MultiColorComponent extends AbstractSettingComponent {
         }
 
         Matrix3x2fStack matrix = context.getMatrices();
+        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
+        // draws through a 4x4 MatrixStack. Promote once per row rather than
+        // once per glyph run - nothing below mutates the GUI pose
+        // (ShapeProperties copies it), so the bake stays valid for the whole
+        // call and the geometry is identical to 1.21.4.
+        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
 
         int colorCount = setting.getColorCount();
         String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - colorCount * 9 - 18 - textOffset), 14);
@@ -49,7 +58,7 @@ public class MultiColorComponent extends AbstractSettingComponent {
         renderSettingCard(context, 0.0f, hoverProgress);
 
         float textX = x + 10 + textOffset;
-        labelFont.drawString(matrix, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        labelFont.drawString(textPose, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
 
         for (int i = 0; i < colorCount; i++) {
             ColorSetting colorSetting = setting.getColor(i);

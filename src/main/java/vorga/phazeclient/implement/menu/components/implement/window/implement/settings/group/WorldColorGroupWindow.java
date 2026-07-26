@@ -6,8 +6,8 @@ import org.joml.Matrix3x2fStack;
 
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
+import org.joml.Matrix3x2fc;
 import org.joml.Matrix4f;
 import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.api.feature.module.setting.SettingComponentAdder;
@@ -206,7 +206,8 @@ public final class WorldColorGroupWindow extends AbstractWindow {
         return (int) total;
     }
 
-    private void renderWindowBlur(MatrixStack matrices) {
+    // 1.21.11: the GUI pose is a 2D Matrix3x2fStack, which is what ShapeProperties.create now takes.
+    private void renderWindowBlur(Matrix3x2fc matrices) {
         float blurRadius = Theme.getInstance().getMenuBlurRadius();
         if (blurRadius <= 0.0F) {
             return;

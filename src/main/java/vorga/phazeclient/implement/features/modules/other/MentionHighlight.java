@@ -233,8 +233,9 @@ public final class MentionHighlight extends Module {
         // also a valid trigger - matching it on our own messages was
         // pinging the user every time they typed.
         MinecraftClient mcc = MinecraftClient.getInstance();
+        // 1.21.11 (authlib 9.x): GameProfile is a record - getName() -> name().
         String selfName = (mcc != null && mcc.player != null)
-                ? mcc.player.getGameProfile().getName()
+                ? mcc.player.getGameProfile().name()
                 : null;
         if (selfName != null && !selfName.isEmpty() && isSelfAuthored(flat, selfName)) {
             return original;
@@ -297,8 +298,9 @@ public final class MentionHighlight extends Module {
         // Cache key: combined username + extras text. Recompile when
         // either changes; cheap because chat doesn't churn settings.
         MinecraftClient mc = MinecraftClient.getInstance();
+        // 1.21.11 (authlib 9.x): GameProfile is a record - getName() -> name().
         String username = (mc != null && mc.player != null && matchUsername.isValue())
-                ? mc.player.getGameProfile().getName()
+                ? mc.player.getGameProfile().name()
                 : null;
         String extras = extraTriggers.getText();
         String key = (username == null ? "" : username) + "\u0000" + (extras == null ? "" : extras);
@@ -439,7 +441,9 @@ public final class MentionHighlight extends Module {
         SoundEvent event = SoundEvents.BLOCK_NOTE_BLOCK_PLING.value();
         float v = clamp(volume.getValue(), 0.0F, 1.0F);
         float p = clamp(pitch.getValue(), 0.5F, 2.0F);
-        mc.getSoundManager().play(PositionedSoundInstance.master(event, p, v));
+        // 1.21.11: PositionedSoundInstance.master(...) was renamed to ui(...);
+        // same MASTER-category, same (sound, pitch, volume) argument order.
+        mc.getSoundManager().play(PositionedSoundInstance.ui(event, p, v));
     }
 
     private static float clamp(float v, float lo, float hi) {

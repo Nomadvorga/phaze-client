@@ -48,13 +48,15 @@ accessible field net/minecraft/entity/player/ItemCooldownManager entries Ljava/u
 accessible class net/minecraft/entity/player/ItemCooldownManager$Entry
 accessible field net/minecraft/entity/player/ItemCooldownManager$Entry endTick I
 
-# WorldRenderer frustum for projection
-accessible field net/minecraft/client/render/WorldRenderer frustum Lnet/minecraft/client/render/Frustum;
+# WorldRenderer.frustum is gone in 1.21.11 (only a private capturedFrustum
+# remains, for the debug frustum capture). Nothing in Phaze reads it any
+# more, so the entry is dropped rather than repointed.
 
-# ItemRenderState for item rendering
+# ItemRenderState for item rendering.
+# LayerRenderState.model (BakedModel) is gone - a layer now carries a
+# List<BakedQuad> directly. Unused by Phaze after the port, so dropped.
 accessible field net/minecraft/client/render/item/ItemRenderState layers [Lnet/minecraft/client/render/item/ItemRenderState$LayerRenderState;
 accessible field net/minecraft/client/render/item/ItemRenderState layerCount I
-accessible field net/minecraft/client/render/item/ItemRenderState$LayerRenderState model Lnet/minecraft/client/render/model/BakedModel;
 
 # Framebuffer depth attachment for stencil.
 # 1.21.11: no longer a raw GL int handle - attachments are GpuTexture now.
@@ -76,7 +78,7 @@ accessible field net/minecraft/entity/player/PlayerEntity inventory Lnet/minecra
 
 # ModelPart rendering for custom crystal rendering
 accessible method net/minecraft/client/model/ModelPart renderCuboids (Lnet/minecraft/client/util/math/MatrixStack$Entry;Lnet/minecraft/client/render/VertexConsumer;III)V
-accessible field net/minecraft/client/model/ModelPart pivotY F
+# ModelPart.pivotY no longer exists in 1.21.11 and nothing in Phaze reads it.
 
 # Motion Blur shader access
 accessible method net/minecraft/client/render/GameRenderer getFov (Lnet/minecraft/client/render/Camera;FZ)F

@@ -5,10 +5,10 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.cursor.HudCursorRelay;
 import vorga.phazeclient.implement.features.modules.other.Animations;
@@ -24,15 +24,22 @@ import vorga.phazeclient.implement.features.modules.other.StreamerMode;
  * {@code FADE_TIME=170} ms regardless of the {@code Chat Scroll Speed}
  * slider.
  *
- * <p>The translate is pushed right before vanilla's input-box background
- * {@code fill} call and popped right after the {@code TextFieldWidget.render}
- * call so it covers exactly the input field + its background, without
- * touching the overlay-rendered {@code ChatInputSuggestor} (which has its
- * own Z-translate to 200 to render above) or the parent {@code Screen.render}
- * which draws unrelated buttons.
+ * <p>1.21.11 moved the chat input field out of {@code ChatScreen.render}:
+ * it is now an {@code addDrawableChild} widget drawn by the
+ * {@code super.render} call, so the old "push before the background
+ * {@code fill}, pop after {@code TextFieldWidget.render}" pair no longer has
+ * a {@code TextFieldWidget.render} call site to hook. The slide is therefore
+ * applied as two separate push/pop pairs - one around the background
+ * {@code fill}, one around the {@code Screen.render} widget pass - which
+ * keeps the exact same coverage (background + input field) while leaving
+ * {@code ChatHud.render} in between untranslated, so chat history does not
+ * slide with the box. The overlay-rendered {@code ChatInputSuggestor} still
+ * stays outside the animation.
  */
 @Mixin(ChatScreen.class)
 public abstract class ChatScreenInputFieldMixin {
+
+    @Shadow protected TextFieldWidget chatField;
 
     /** Fade duration, ms. Hardcoded per ChatAnimation reference. */
     @Unique private static final float FADE_TIME = 170.0F;
@@ -78,6 +85,7 @@ public abstract class ChatScreenInputFieldMixin {
         return modifiedAlpha * FADE_OFFSET * screenFactor;
     }
 
+    /** Pair 1: the input-box background {@code fill}. */
     @Inject(
             method = "render",
             at = @At(
@@ -92,15 +100,17 @@ public abstract class ChatScreenInputFieldMixin {
         if (phaze$displacement == 0.0F) {
             return;
         }
+        // 1.21.11: DrawContext.getMatrices() is a 2D Matrix3x2fStack - translate
+        // takes (x, y); the old third argument was the (always 0) GUI z.
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(0.0F, phaze$displacement, 0.0F);
+        context.getMatrices().translate(0.0F, phaze$displacement);
     }
 
     @Inject(
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/widget/TextFieldWidget;render(Lnet/minecraft/client/gui/DrawContext;IIF)V",
+                    target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V",
                     shift = At.Shift.AFTER
             )
     )
@@ -110,6 +120,46 @@ public abstract class ChatScreenInputFieldMixin {
             return;
         }
         context.getMatrices().popMatrix();
+    }
+
+    /**
+     * Pair 2: the {@code super.render} widget pass, which is where 1.21.11
+     * draws {@code chatField}. The StreamerMode password mask is applied here
+     * too - see {@link #phaze$applyStreamerMask()} - because the old
+     * {@code @Redirect} on {@code TextFieldWidget.render} has no call site to
+     * redirect anymore.
+     */
+    @Inject(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/screen/Screen;render(Lnet/minecraft/client/gui/DrawContext;IIF)V",
+                    shift = At.Shift.BEFORE
+            )
+    )
+    private void phaze$beforeChatFieldRender(DrawContext context, int mouseX, int mouseY, float delta,
+                                             CallbackInfo ci) {
+        if (phaze$displacement != 0.0F) {
+            context.getMatrices().pushMatrix();
+            context.getMatrices().translate(0.0F, phaze$displacement);
+        }
+        phaze$applyStreamerMask();
+    }
+
+    @Inject(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/screen/Screen;render(Lnet/minecraft/client/gui/DrawContext;IIF)V",
+                    shift = At.Shift.AFTER
+            )
+    )
+    private void phaze$afterChatFieldRender(DrawContext context, int mouseX, int mouseY, float delta,
+                                            CallbackInfo ci) {
+        phaze$restoreStreamerMask();
+        if (phaze$displacement != 0.0F) {
+            context.getMatrices().popMatrix();
+        }
     }
 
     @Inject(method = "removed", at = @At("HEAD"))
@@ -126,75 +176,94 @@ public abstract class ChatScreenInputFieldMixin {
     }
 
     /**
-     * Stash for the original text between the StreamerMode HEAD swap
-     * and TAIL restore on the chat-input render call. {@code null}
-     * when no swap happened on the current frame.
+     * Stash for the original text between the StreamerMode swap and
+     * the restore around the widget render pass. {@code null} when no
+     * swap happened on the current frame.
      */
     @Unique
     private String phaze$savedChatText = null;
 
+    /** The field instance whose text is currently swapped, or {@code null}. */
+    @Unique
+    private TextFieldWidget phaze$maskedField = null;
+
     /**
-     * Wraps {@link TextFieldWidget#render} on the chat-input field
-     * with a temporary text swap so the StreamerMode password mask
-     * actually shows on screen. We bypass {@code setText} (which
-     * would fire {@code setChangedListener} and trigger a Brigadier
-     * re-parse on the masked text) by writing directly to the
-     * {@code private String text} field via reflection - the swap
-     * is a single-frame visual rewrite and never touches the
-     * onChanged path. Restored to the original text immediately
-     * after the render call so the next frame / suggestor parse
-     * sees the user's actual input.
+     * Brackets the chat-input field's draw with a temporary text swap
+     * so the StreamerMode password mask actually shows on screen. We
+     * bypass {@code setText} (which would fire
+     * {@code setChangedListener} and trigger a Brigadier re-parse on
+     * the masked text) by writing directly to the {@code private
+     * String text} field via reflection - the swap is a single-frame
+     * visual rewrite and never touches the onChanged path. Restored to
+     * the original text immediately after the render pass so the next
+     * frame / suggestor parse sees the user's actual input.
      *
-     * <p>Only the chat-input goes through this mixin because that
-     * is the only {@code TextFieldWidget} where a slash-command can
-     * carry a password. Other text fields (server names, book
-     * editor, etc.) are untouched.
+     * <p>1.21.11: this used to be a {@code @Redirect} on
+     * {@code TextFieldWidget.render} inside {@code ChatScreen.render}.
+     * The field is an {@code addDrawableChild} widget now and is drawn
+     * by {@code super.render}, so the swap straddles that call
+     * instead. Same single-frame semantics, same blast radius: only
+     * {@code ChatScreen}'s own {@code chatField} is touched, because
+     * that is the only {@code TextFieldWidget} where a slash-command
+     * can carry a password.
      */
-    @Redirect(
-            method = "render",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/widget/TextFieldWidget;render(Lnet/minecraft/client/gui/DrawContext;IIF)V"
-            )
-    )
-    private void phaze$maskedChatRender(TextFieldWidget chatField,
-                                        DrawContext context, int mouseX, int mouseY, float delta) {
+    @Unique
+    private void phaze$applyStreamerMask() {
+        phaze$savedChatText = null;
+        phaze$maskedField = null;
+
+        TextFieldWidget field = this.chatField;
+        if (field == null) {
+            return;
+        }
         StreamerMode streamer = StreamerMode.getInstance();
-        String original = chatField.getText();
+        String original = field.getText();
         boolean swap = streamer != null
                 && streamer.isHidePasswordsEnabled()
                 && original != null
                 && !original.isEmpty()
                 && original.charAt(0) == '/';
-        String masked = swap ? StreamerMode.maskPasswordIfMatching(original) : null;
-        boolean didSwap = masked != null && !masked.equals(original);
-        java.lang.reflect.Field textField = null;
-        if (didSwap) {
-            try {
-                textField = phaze$resolveTextField();
-                textField.set(chatField, masked);
-            } catch (Throwable ignored) {
-                didSwap = false;
-            }
+        if (!swap) {
+            return;
         }
-        chatField.render(context, mouseX, mouseY, delta);
-        if (didSwap) {
-            try {
-                textField.set(chatField, original);
-            } catch (Throwable ignored) {
-                // Last-ditch: setText restores even if we can't
-                // touch the field directly, at the cost of one
-                // spurious onChanged callback.
-                chatField.setText(original);
-            }
+        String masked = StreamerMode.maskPasswordIfMatching(original);
+        if (masked == null || masked.equals(original)) {
+            return;
+        }
+        try {
+            phaze$resolveTextField().set(field, masked);
+            phaze$savedChatText = original;
+            phaze$maskedField = field;
+        } catch (Throwable ignored) {
+            phaze$savedChatText = null;
+            phaze$maskedField = null;
+        }
+    }
+
+    @Unique
+    private void phaze$restoreStreamerMask() {
+        String original = phaze$savedChatText;
+        TextFieldWidget field = phaze$maskedField;
+        phaze$savedChatText = null;
+        phaze$maskedField = null;
+        if (original == null || field == null) {
+            return;
+        }
+        try {
+            phaze$resolveTextField().set(field, original);
+        } catch (Throwable ignored) {
+            // Last-ditch: setText restores even if we can't touch the
+            // field directly, at the cost of one spurious onChanged
+            // callback.
+            field.setText(original);
         }
     }
 
     /**
      * Cached {@code text} field reflection. Resolved lazily on the
      * first masked render so we don't pay the lookup cost on every
-     * un-masked frame. Yarn maps the field name to {@code text} on
-     * 1.21.4; mojang-mapped builds carry the same name. We probe
+     * un-masked frame. Yarn still maps the field name to {@code text}
+     * on 1.21.11; mojang-mapped builds carry the same name. We probe
      * both candidates plus the obfuscated {@code field_2092} as a
      * fallback so a future remap doesn't silently disable the mask.
      */

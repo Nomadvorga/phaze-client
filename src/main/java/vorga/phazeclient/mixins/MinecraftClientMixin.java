@@ -90,7 +90,8 @@ public abstract class MinecraftClientMixin {
             return;
         }
 
-        PlayerEntity nearest = player.getWorld().getClosestPlayer(
+        // 1.21.11: Entity.getWorld() was renamed to Entity.getEntityWorld().
+        PlayerEntity nearest = player.getEntityWorld().getClosestPlayer(
                 player.getX(),
                 player.getY(),
                 player.getZ(),

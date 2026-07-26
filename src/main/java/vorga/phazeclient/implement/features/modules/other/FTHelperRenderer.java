@@ -94,10 +94,11 @@ public final class FTHelperRenderer {
     private static Vec3d lerpedPlayerPos(MinecraftClient mc, RenderTickCounter tickCounter) {
         ClientPlayerEntity player = mc.player;
         float td = tickCounter.getTickProgress(false);
+        // 1.21.11: Entity.prevX/prevY/prevZ were renamed to lastX/lastY/lastZ.
         return new Vec3d(
-                MathHelper.lerp(td, player.prevX, player.getX()),
-                MathHelper.lerp(td, player.prevY, player.getY()),
-                MathHelper.lerp(td, player.prevZ, player.getZ())
+                MathHelper.lerp(td, player.lastX, player.getX()),
+                MathHelper.lerp(td, player.lastY, player.getY()),
+                MathHelper.lerp(td, player.lastZ, player.getZ())
         );
     }
 

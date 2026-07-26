@@ -4,12 +4,13 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.collection.DefaultedList;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
 /**
  * On-screen mini-inventory: paints the 27 main inventory slots from
- * {@code ClientPlayerEntity.getInventory().main} directly on the HUD
+ * {@code ClientPlayerEntity.getInventory().getMainStacks()} directly on the HUD
  * so the user can read their loadout without opening the full
  * inventory screen.
  *
@@ -74,7 +75,7 @@ public final class InventoryHud extends RectHudModule {
 
     /**
      * Per-tick snapshot of the 27 main-inventory slots (indices
-     * 9..35 in {@link PlayerInventory#main}) plus per-slot
+     * 9..35 in {@link PlayerInventory#getMainStacks()}) plus per-slot
      * "needs overlay" flags. The HUD render path reads from this
      * array every frame instead of poking the live inventory and
      * re-evaluating cooldown / damage state on every redraw.
@@ -124,8 +125,12 @@ public final class InventoryHud extends RectHudModule {
         lastSnapshotTick = tick;
         ClientPlayerEntity player = mc.player;
         PlayerInventory inv = player.getInventory();
+        // 1.21.11: PlayerInventory.main is private; the backing storage list
+        // is now reached through the getMainStacks() accessor. Hoisted out of
+        // the loop so the 27 reads share one accessor call.
+        DefaultedList<ItemStack> mainStacks = inv.getMainStacks();
         for (int i = 0; i < 27; i++) {
-            ItemStack stack = inv.main.get(9 + i);
+            ItemStack stack = mainStacks.get(9 + i);
             SNAPSHOT[i] = stack;
             OVERLAY_FLAGS[i] = computeOverlayFlag(stack, mc, player);
         }

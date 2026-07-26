@@ -2,10 +2,13 @@ package vorga.phazeclient.implement.menu.components.implement.settings;
 
 import vorga.phazeclient.api.system.localization.LocalizationManager;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix3x2fStack;
 import vorga.phazeclient.api.feature.module.setting.implement.ButtonSetting;
 import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.other.StringUtil;
+import vorga.phazeclient.base.util.render.GuiMatrix;
 import vorga.phazeclient.implement.menu.components.implement.other.ButtonComponent;
 import vorga.phazeclient.base.util.math.MathUtil;
 
@@ -35,10 +38,18 @@ public class SButtonComponent extends AbstractSettingComponent {
 
         renderSettingCard(context, 0.0f, hoverProgress);
 
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
+        // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack. ResetIconComponent.render and
+        // ShapeProperties.create take that 2D pose directly; FontRenderer still wants a
+        // world-style MatrixStack, so promote once per render() and reuse it below.
+        // TODO(1.21.11): drop textPose once FontRenderer takes a Matrix3x2fc directly.
+        Matrix3x2fStack matrix = context.getMatrices();
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
+
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
 
         float textX = x + 10 + textOffset;
-        labelFont.drawString(context.getMatrices(), wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        labelFont.drawString(textPose, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
 
         String buttonText = setting.getButtonName();
         if (buttonText == null || buttonText.isBlank()) {

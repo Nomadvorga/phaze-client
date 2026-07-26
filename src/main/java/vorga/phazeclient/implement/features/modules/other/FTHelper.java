@@ -453,7 +453,8 @@ public final class FTHelper extends Module {
             // long-flying projectile doesn't grow the list
             // unbounded - 200 ticks @ 20 tps is 10 seconds, more
             // than enough for any thrown snowball arc.
-            t.appendTrailPoint(t.snowball.getPos());
+            // 1.21.11: Entity.getPos() was renamed to getEntityPos().
+            t.appendTrailPoint(t.snowball.getEntityPos());
         }
     }
 
@@ -477,12 +478,14 @@ public final class FTHelper extends Module {
         TrackedSnowball(SnowballEntity snowball) {
             this.snowball = snowball;
             if (snowball != null) {
-                trail.add(snowball.getPos());
+                // 1.21.11: Entity.getPos() -> getEntityPos().
+                trail.add(snowball.getEntityPos());
             }
         }
 
         public Vec3d getPosition() {
-            return snowball.getPos();
+            // 1.21.11: Entity.getPos() -> getEntityPos().
+            return snowball.getEntityPos();
         }
 
         /** Entity position interpolated for the current render frame. */

@@ -8,6 +8,7 @@ import net.minecraft.client.render.LayeringTransform;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderSetup;
 import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.gl.UniformType;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
 
@@ -28,6 +29,15 @@ import java.util.function.Function;
  * {@code VIEW_OFFSET_Z_LAYERING} to nudge geometry forward slightly and
  * avoid z-fighting against world surfaces. That maps to
  * {@link LayeringTransform#VIEW_OFFSET_Z_LAYERING}, which is preserved below.
+ *
+ * <p>Each pipeline also has to declare the uniform blocks its shader
+ * imports. {@code RenderLayer.draw} writes {@code DynamicTransforms} and
+ * calls {@code RenderSystem.bindDefaultUniforms}, which supplies
+ * {@code Projection}, {@code Fog}, {@code Globals} and {@code Lighting} -
+ * but a block the pipeline never declared is not bound at all, so the
+ * shader would read garbage transforms. The declarations below mirror
+ * vanilla's own {@code POSITION_COLOR_SNIPPET} /
+ * {@code RENDERTYPE_LINES_SNIPPET}.
  */
 public final class PhazeRenderLayers {
 
@@ -35,6 +45,8 @@ public final class PhazeRenderLayers {
             .withLocation(Identifier.of("phaze", "pipeline/hitbox_fill"))
             .withVertexShader(Identifier.of("minecraft", "core/position_color"))
             .withFragmentShader(Identifier.of("minecraft", "core/position_color"))
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
@@ -54,15 +66,27 @@ public final class PhazeRenderLayers {
      * Memoized per line width, mirroring the vanilla pattern.
      *
      * <p>Line width used to be a {@code RenderPhase.LineWidth} on the
-     * layer. There is no per-layer line width in the new model, so every
-     * width currently resolves to the same pipeline; the memoization is
-     * kept so call sites and caching behaviour are unchanged.
+     * layer. There is no per-layer line width in the new model - it is a
+     * vertex attribute, {@code LineWidth} in
+     * {@link VertexFormats#POSITION_COLOR_NORMAL_LINE_WIDTH}, which
+     * {@code core/rendertype_lines.vsh} reads per vertex. Every width
+     * therefore resolves to the same pipeline and callers must emit
+     * {@code .lineWidth(width)} on each vertex; the memoization is kept
+     * so call sites and caching behaviour are unchanged.
+     *
+     * <p>{@code VertexFormats.LINES} itself is gone - the old
+     * POSITION_COLOR_NORMAL format had no width channel because the
+     * width lived in fixed-function {@code glLineWidth} state.
      */
     private static final RenderPipeline THICK_LINES_PIPELINE = RenderPipeline.builder()
             .withLocation(Identifier.of("phaze", "pipeline/thick_lines"))
             .withVertexShader(Identifier.of("minecraft", "core/rendertype_lines"))
             .withFragmentShader(Identifier.of("minecraft", "core/rendertype_lines"))
-            .withVertexFormat(VertexFormats.LINES, VertexFormat.DrawMode.LINES)
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
+            .withUniform("Fog", UniformType.UNIFORM_BUFFER)
+            .withUniform("Globals", UniformType.UNIFORM_BUFFER)
+            .withVertexFormat(VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH, VertexFormat.DrawMode.LINES)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
             .withCull(false)

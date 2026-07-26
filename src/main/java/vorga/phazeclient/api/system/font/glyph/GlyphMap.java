@@ -158,14 +158,24 @@ public class GlyphMap {
             }
         }
 
-        NativeImageBackedTexture texture = new NativeImageBackedTexture(nativeImage);
-        texture.upload();
-
+        // 1.21.11: NativeImageBackedTexture(NativeImage) is gone - the
+        // constructor now wants a label supplier used for the GPU texture's
+        // debug name, and it allocates the GpuTexture immediately, so it must
+        // run on the render thread. RenderSystem.recordRenderCall is gone as
+        // well; MinecraftClient (a ReentrantThreadExecutor) is the scheduler
+        // now. Both the allocation and the registration are therefore
+        // deferred together instead of only the registration.
         if (RenderSystem.isOnRenderThread()) {
-            MinecraftClient.getInstance().getTextureManager().registerTexture(textureIdentifier, texture);
+            uploadAndRegister(textureIdentifier, nativeImage);
         } else {
-            RenderSystem.recordRenderCall(() -> MinecraftClient.getInstance().getTextureManager().registerTexture(textureIdentifier, texture));
+            MinecraftClient.getInstance().execute(() -> uploadAndRegister(textureIdentifier, nativeImage));
         }
+    }
+
+    private static void uploadAndRegister(Identifier textureIdentifier, NativeImage nativeImage) {
+        NativeImageBackedTexture texture = new NativeImageBackedTexture(textureIdentifier::toString, nativeImage);
+        texture.upload();
+        MinecraftClient.getInstance().getTextureManager().registerTexture(textureIdentifier, texture);
     }
 
     private static Object createDataArrayBasedOnRaster(WritableRaster raster) {

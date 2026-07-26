@@ -3,8 +3,8 @@ package vorga.phazeclient.implement.menu;
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.FilterMode;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BuiltBuffer;
@@ -297,13 +297,17 @@ public final class UiMsdfIconAtlas {
     private static boolean renderQuad(Matrix4f matrix, AtlasIcon atlasIcon, float x1, float y1, float x2, float y2, int color, boolean legacyImageOrientation) {
         BatchedRectangle.flushIfBatching();
 
-        if (!filterApplied && atlasTexture != null) {
-            atlasTexture.setFilter(true, false);
+        // 1.21.11: AbstractTexture.setFilter(bilinear, mipmap) is gone -
+        // filtering is a sampler property now. SamplerCache.get(LINEAR) is
+        // the shared (CLAMP_TO_EDGE, LINEAR min/mag, no mipmap) sampler, i.e.
+        // exactly what setFilter(true, false) used to give this MSDF atlas.
+        // The cache owns it, so it is never closed here. PhazeDrawLayers
+        // binds no explicit sampler, and RenderSetup.resolveTextures falls
+        // back to AbstractTexture.getSampler() in that case, so assigning the
+        // field is what makes the draw below sample bilinearly.
+        if (!filterApplied && atlasTexture != null && RenderSystem.isOnRenderThread()) {
+            atlasTexture.sampler = RenderSystem.getSamplerCache().get(FilterMode.LINEAR);
             filterApplied = true;
-        }
-
-
-        if (shader != null) {
         }
 
         BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);

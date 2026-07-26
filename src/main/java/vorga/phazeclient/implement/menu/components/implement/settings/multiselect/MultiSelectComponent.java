@@ -5,7 +5,7 @@ import vorga.phazeclient.base.util.render.GuiMatrix;
 import org.joml.Matrix3x2fStack;
 
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix3x2fc;
 import org.joml.Matrix4f;
 import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
 import vorga.phazeclient.api.system.animation.Animation;
@@ -179,14 +179,20 @@ public class MultiSelectComponent extends AbstractSettingComponent {
         // way to mutate the selection.
     }
 
-    private void renderChips(DrawContext context, MatrixStack matrices, Matrix4f positionMatrix, ChipLayout layout, int mouseX, int mouseY) {
+    // 1.21.11: the GUI pose is org.joml.Matrix3x2f(Stack) now, not MatrixStack.
+    // Both the chip fan-out and the per-chip draw only READ the pose
+    // (ShapeProperties.create takes a Matrix3x2fc and copies it; the MSDF text
+    // runs go through the pre-promoted Matrix4f), so the read-only Matrix3x2fc
+    // interface is enough and binds directly to the Matrix3x2fStack that
+    // DrawContext.getMatrices() hands out.
+    private void renderChips(DrawContext context, Matrix3x2fc matrices, Matrix4f positionMatrix, ChipLayout layout, int mouseX, int mouseY) {
         for (int i = 0; i < layout.entries.size(); i++) {
             ChipEntry entry = layout.entries.get(i);
             renderChip(matrices, positionMatrix, entry, mouseX, mouseY);
         }
     }
 
-    private void renderChip(MatrixStack matrices, Matrix4f positionMatrix, ChipEntry entry, int mouseX, int mouseY) {
+    private void renderChip(Matrix3x2fc matrices, Matrix4f positionMatrix, ChipEntry entry, int mouseX, int mouseY) {
         boolean selected = setting.getSelected().contains(entry.name);
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, entry.x, entry.y, entry.width, CHIP_HEIGHT);
         if (hovered) {

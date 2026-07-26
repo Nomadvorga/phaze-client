@@ -120,7 +120,8 @@ public class ClientPlayerEntityMixin {
         }
         ClientPlayerEntity self = (ClientPlayerEntity) (Object) this;
         PlayerInventory inventory = self.getInventory();
-        if (lockSlot.isHotbarSlotLocked(inventory.selectedSlot)) {
+        // 1.21.11: PlayerInventory.selectedSlot is private - accessor only.
+        if (lockSlot.isHotbarSlotLocked(inventory.getSelectedSlot())) {
             cir.setReturnValue(false);
             cir.cancel();
         }

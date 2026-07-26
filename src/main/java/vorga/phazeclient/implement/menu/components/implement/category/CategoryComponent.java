@@ -4,8 +4,8 @@ import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
+import org.joml.Matrix3x2fc;
 import org.joml.Matrix4f;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
@@ -257,7 +257,10 @@ public class CategoryComponent extends AbstractComponent {
         return super.charTyped(chr, modifiers);
     }
 
-    private void drawCategoryTab(DrawContext context, MatrixStack matrix, int mouseX, int mouseY) {
+    // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack, not MatrixStack.
+    // Taking Matrix3x2fc lets the live stack be passed straight through
+    // (ShapeProperties.create copies it defensively).
+    private void drawCategoryTab(DrawContext context, Matrix3x2fc matrix, int mouseX, int mouseY) {
         boolean isSelected = MenuScreen.INSTANCE.getCategory() == category;
         selectionAnimation.setDirection(isSelected ? Direction.FORWARDS : Direction.BACKWARDS);
 
@@ -293,7 +296,7 @@ public class CategoryComponent extends AbstractComponent {
                 label,
                 CHIP_TEXT_SIZE,
                 applyGlobalAlpha(textColor),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), label, CHIP_TEXT_SIZE, x, width),
                 MenuStyle.centerMsdfTextY(CHIP_TEXT_SIZE, y, height),
                 0.0F

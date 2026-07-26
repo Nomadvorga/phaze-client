@@ -54,7 +54,12 @@ public class GroupWindow extends AbstractWindow {
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(4).thickness(2).softness(1).outlineColor(applyGlobalAlpha(ColorUtil.getOutline())).color(applyGlobalAlpha(ColorUtil.getGuiRectColor(1))).build());
 
-        Fonts.getSize(15, Fonts.Type.INTER_BOLD).drawString(context.getMatrices(), setting.getLocalizedName(), x + 9, y + 10, applyGlobalAlpha(ColorUtil.getText()));
+        // 1.21.11: FontRenderer still draws through a MatrixStack (its vertex path is unchanged),
+        // but the GUI pose is now 2D, so promote it into a throwaway stack for the text draw.
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
+
+        Fonts.getSize(15, Fonts.Type.INTER_BOLD).drawString(textPose, setting.getLocalizedName(), x + 9, y + 10, applyGlobalAlpha(ColorUtil.getText()));
 
         boolean isLimitedHeight = MathHelper.clamp(height, 0, 200) == 200;
         if (isLimitedHeight) scissorManager.push(GuiMatrix.mat4(matrix), x, y + 23, width, height - 28);

@@ -112,10 +112,14 @@ public class DiscordManager {
         String dimension = inWorld
                 ? mc.world.getRegistryKey().getValue().getPath()
                 : "menu";
-        String player = inWorld ? mc.player.getGameProfile().getName() : "";
+        // 1.21.11 (authlib 9.x): GameProfile is a record - getName() -> name().
+        String player = inWorld ? mc.player.getGameProfile().name() : "";
         String gamemode = "?";
         if (inWorld && mc.interactionManager != null && mc.interactionManager.getCurrentGameMode() != null) {
-            gamemode = mc.interactionManager.getCurrentGameMode().getName();
+            // 1.21.11: GameMode.getName() -> getId(); both return the same
+            // lowercase id string ("survival"/"creative"/...), so the {gamemode}
+            // token renders identically to before.
+            gamemode = mc.interactionManager.getCurrentGameMode().getId();
         }
         String health = inWorld ? String.valueOf((int) mc.player.getHealth()) : "0";
 

@@ -187,8 +187,12 @@ public final class ServerAddressHud extends RectHudModule {
         // in the same physical-pixel space as the rect. Without this
         // the DrawContext is still in GUI-scaled coords and the icon
         // renders 2x / 3x / 4x oversized at higher GUI Scale settings.
+        // 1.21.11: DrawContext.getMatrices() is a 2D org.joml.Matrix3x2fStack,
+        // so the old 3-arg scale(x, y, 1.0f) no longer means "z scale of 1" -
+        // Matrix3x2f's third float parameter is a destination matrix. Drop it;
+        // scale(x, y) is the exact 2D equivalent of the previous transform.
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.drawTexture(
                 RenderPipelines.GUI_TEXTURED,
                 textureId,

@@ -95,7 +95,9 @@ public abstract class AbstractComponent implements Component, QuickImports, Resi
             return;
         }
 
-        client.getSoundManager().play(PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+        // 1.21.11: PositionedSoundInstance.master(...) was renamed to ui(...).
+        // Same behaviour - a MASTER-category, non-positional UI sound.
+        client.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.UI_BUTTON_CLICK, 1.0F));
     }
 
     protected int applyGlobalAlpha(int color) {

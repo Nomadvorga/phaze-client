@@ -20,12 +20,25 @@ import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 import vorga.phazeclient.implement.features.modules.other.ColorCorrection;
 
 public class ClientMain implements ClientModInitializer {
+    /**
+     * 1.21.11: KeyBinding no longer takes a raw translation-key String for its
+     * category - it takes a {@link KeyBinding.Category} record created from an
+     * Identifier. The displayed label is derived by the game as
+     * {@code Identifier.toTranslationKey("key.category")}, i.e. this category
+     * renders as the lang key {@code key.category.phaze.main}
+     * (the old key was {@code category.phaze}).
+     * TODO(1.21.11): add "key.category.phaze.main" to assets/phaze/lang/*.json
+     * (value "Phaze") and drop the now-unused "category.phaze" entry.
+     */
+    private static final KeyBinding.Category PHAZE_CATEGORY =
+            KeyBinding.Category.create(Identifier.of("phaze", "main"));
+
     private static final KeyBinding OPEN_MENU_KEY = KeyBindingHelper.registerKeyBinding(
             new KeyBinding(
                     "key.phaze.open_menu",
                     InputUtil.Type.KEYSYM,
                     GLFW.GLFW_KEY_RIGHT_SHIFT,
-                    "category.phaze"
+                    PHAZE_CATEGORY
             )
     );
 
