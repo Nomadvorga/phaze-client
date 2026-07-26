@@ -73,7 +73,27 @@ public final class MsdfFont {
         return texture.getGlId();
     }
 
-    public void applyGlyphs(Matrix4f matrix, VertexConsumer consumer, String text, float size, float thickness, float spacing, float x, float y, float z, int color) {
+    /**
+     * Texture view for the atlas, for binding as a shader sampler.
+     *
+     * <p>1.21.11 dropped imperative texture binding; a sampler is bound on
+     * the render pass from a {@code GpuTextureView}, which
+     * {@code AbstractTexture} exposes directly.
+     */
+    public com.mojang.blaze3d.textures.GpuTextureView getTextureView() {
+        return texture.getGlTextureView();
+    }
+
+    /**
+     * @param paramsElement vertex attribute carrying (range, thickness,
+     *                      smoothness) - the 1.21.11 stand-in for the loose
+     *                      uniforms the MSDF shader used to read. Takes a
+     *                      BufferBuilder rather than a VertexConsumer
+     *                      because writing a custom attribute needs
+     *                      {@code beginElement}.
+     */
+    public void applyGlyphs(Matrix4f matrix, net.minecraft.client.render.BufferBuilder consumer, String text, float size, float thickness, float spacing, float x, float y, float z, int color,
+                            com.mojang.blaze3d.vertex.VertexFormatElement paramsElement, float range, float smoothness) {
         if (!filterApplied) {
             texture.setFilter(true, true);
             filterApplied = true;
@@ -92,7 +112,7 @@ public final class MsdfFont {
                 x += kerning.getOrDefault(c, 0.0F) * size;
             }
 
-            x += glyph.apply(matrix, consumer, size, x, y, z, color) + thickness + spacing;
+            x += glyph.apply(matrix, consumer, size, x, y, z, color, paramsElement, range, thickness, smoothness) + thickness + spacing;
             previousChar = c;
         }
     }

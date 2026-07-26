@@ -4,14 +4,7 @@ import com.mojang.blaze3d.opengl.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gl.SimpleFramebuffer;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
 import org.lwjgl.opengl.GL11C;
 
 /**
@@ -208,43 +201,13 @@ public final class BatchedHudBuffer {
             return;
         }
 
-        int width = mc.getWindow().getFramebufferWidth();
-        int height = mc.getWindow().getFramebufferHeight();
-
-        mc.getFramebuffer().beginWrite(false);
-
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(
-                GlStateManager.SrcFactor.ONE,
-                GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
-        );
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.disableCull();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        GlStateManager._viewport(0, 0, width, height);
-
-        ShaderProgram shader = RenderSystem.setShader(ShaderProgramKeys.BLIT_SCREEN);
-        shader.addSamplerTexture("InSampler", fbo.getColorAttachment());
-
-        BufferBuilder bb = Tessellator.getInstance().begin(
-                VertexFormat.DrawMode.QUADS,
-                VertexFormats.BLIT_SCREEN
-        );
-        bb.vertex(0.0F, 0.0F, 0.0F);
-        bb.vertex(1.0F, 0.0F, 0.0F);
-        bb.vertex(1.0F, 1.0F, 0.0F);
-        bb.vertex(0.0F, 1.0F, 0.0F);
-        BufferRenderer.drawWithGlobalProgram(bb.end());
-
-        RenderSystem.setShaderTexture(0, 0);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.defaultBlendFunc();
-
-        mc.getFramebuffer().beginWrite(true);
+        // See ScreenBlit: blend / depth / cull / colour-write moved onto the
+        // pipeline, the pass sets its own viewport, and the quad comes from
+        // gl_VertexID. Premultiplied-alpha blend is preserved, which is why
+        // this does not use Framebuffer.drawBlit - that runs
+        // ENTITY_OUTLINE_BLIT with straight-alpha blending and no
+        // destination alpha write.
+        vorga.phazeclient.api.system.draw.ScreenBlit.blitOverMain(fbo);
     }
 
     public void cleanup() {

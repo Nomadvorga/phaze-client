@@ -7,13 +7,20 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.Tessellator;
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DepthTestFunction;
+import com.mojang.blaze3d.platform.DestFactor;
+import com.mojang.blaze3d.platform.SourceFactor;
+import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
+import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
+import vorga.phazeclient.api.system.draw.GpuDraw;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL30C;
@@ -398,6 +405,41 @@ public final class CardSnapshotCache {
      * vertex and v=0 at the BOTTOM vertex, the FBO content appears
      * right-side up to the user.
      */
+    /**
+     * Straight alpha-blended blit of a snapshot texture.
+     *
+     * <p>Built on vanilla's position_tex_color shaders. The blend that used
+     * to be {@code RenderSystem.defaultBlendFunc()} around the draw is on
+     * the pipeline now, so it travels with it.
+     */
+    private static final RenderPipeline TRANSLUCENT_PIPELINE = RenderPipeline.builder()
+            .withLocation(Identifier.of("phaze", "pipeline/card_snapshot"))
+            .withVertexShader(Identifier.of("minecraft", "core/position_tex_color"))
+            .withFragmentShader(Identifier.of("minecraft", "core/position_tex_color"))
+            .withSampler("Sampler0")
+            .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
+            .withBlend(BlendFunction.TRANSLUCENT)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withCull(false)
+            .build();
+
+    /**
+     * Same, but with the DST_ALPHA blend the rounded variant relies on to
+     * clip the snapshot against the rounded background drawn underneath.
+     */
+    private static final RenderPipeline DST_ALPHA_PIPELINE = RenderPipeline.builder()
+            .withLocation(Identifier.of("phaze", "pipeline/card_snapshot_rounded"))
+            .withVertexShader(Identifier.of("minecraft", "core/position_tex_color"))
+            .withFragmentShader(Identifier.of("minecraft", "core/position_tex_color"))
+            .withSampler("Sampler0")
+            .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
+            .withBlend(new BlendFunction(SourceFactor.DST_ALPHA, DestFactor.ONE_MINUS_DST_ALPHA))
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withCull(false)
+            .build();
+
     public static void blit(DrawContext context, Snapshot snapshot, float x, float y, float widthGui, float heightGui, float alpha) {
         if (snapshot == null || snapshot.fbo == null || !snapshot.populated) {
             return;
@@ -417,11 +459,6 @@ public final class CardSnapshotCache {
         int alphaByte = Math.max(0, Math.min(255, Math.round(alpha * 255.0F)));
         int color = (alphaByte << 24) | 0x00FFFFFF;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, snapshot.fbo.getColorAttachment());
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         // Standard GUI quad winding (TL, BL, BR, TR), with v flipped
         // so the FBO renders right-side up.
@@ -430,8 +467,19 @@ public final class CardSnapshotCache {
         buffer.vertex(matrix, x + widthGui, y + heightGui, 0.0F).texture(1.0F, 0.0F).color(color);
         buffer.vertex(matrix, x + widthGui, y, 0.0F).texture(1.0F, 1.0F).color(color);
 
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        RenderSystem.disableBlend();
+        // 1.21.11: blend is on the pipeline and the sampler is bound on the
+        // pass. This is a matrix-transformed, alpha-modulated sub-rect, so
+        // Framebuffer.drawBlit is NOT a substitute - that one is always
+        // full-screen, reads no matrix and has no tint path.
+        BuiltBuffer built = buffer.endNullable();
+        if (built != null) {
+            try {
+                GpuDraw.draw(TRANSLUCENT_PIPELINE, built, "Sampler0",
+                        snapshot.fbo.getColorAttachmentView(), FilterMode.LINEAR, matrix);
+            } finally {
+                built.close();
+            }
+        }
     }
 
     public static void blitRounded(
@@ -459,20 +507,24 @@ public final class CardSnapshotCache {
         int alphaByte = Math.max(0, Math.min(255, Math.round(alpha * 255.0F)));
         int color = (alphaByte << 24) | 0x00FFFFFF;
 
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(GL40C.GL_DST_ALPHA, GL40C.GL_ONE_MINUS_DST_ALPHA);
-        RenderSystem.setShaderTexture(0, snapshot.fbo.getColorAttachment());
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         buffer.vertex(matrix, x, y, 0.0F).texture(0.0F, 1.0F).color(color);
         buffer.vertex(matrix, x, y + heightGui, 0.0F).texture(0.0F, 0.0F).color(color);
         buffer.vertex(matrix, x + widthGui, y + heightGui, 0.0F).texture(1.0F, 0.0F).color(color);
         buffer.vertex(matrix, x + widthGui, y, 0.0F).texture(1.0F, 1.0F).color(color);
 
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
+        // The DST_ALPHA / ONE_MINUS_DST_ALPHA blend that used to be set with
+        // blendFunc lives on its own pipeline now - that is what clips the
+        // snapshot to the rounded background drawn just above.
+        BuiltBuffer built = buffer.endNullable();
+        if (built != null) {
+            try {
+                GpuDraw.draw(DST_ALPHA_PIPELINE, built, "Sampler0",
+                        snapshot.fbo.getColorAttachmentView(), FilterMode.LINEAR, matrix);
+            } finally {
+                built.close();
+            }
+        }
     }
 
     /**

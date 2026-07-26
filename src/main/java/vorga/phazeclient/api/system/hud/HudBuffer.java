@@ -2,8 +2,6 @@ package vorga.phazeclient.api.system.hud;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.render.*;
 import org.lwjgl.opengl.GL11C;
@@ -106,44 +104,13 @@ public class HudBuffer {
             return false;
         }
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        int width = mc.getWindow().getFramebufferWidth();
-        int height = mc.getWindow().getFramebufferHeight();
-
-        mc.getFramebuffer().beginWrite(false);
-
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(
-                com.mojang.blaze3d.opengl.GlStateManager.SrcFactor.ONE,
-                com.mojang.blaze3d.opengl.GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
-        );
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.disableCull();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        com.mojang.blaze3d.opengl.GlStateManager._viewport(0, 0, width, height);
-
-        ShaderProgram shader = RenderSystem.setShader(ShaderProgramKeys.BLIT_SCREEN);
-        shader.addSamplerTexture("InSampler", framebuffer.getColorAttachment());
-
-        BufferBuilder bufferBuilder = Tessellator.getInstance().begin(
-                VertexFormat.DrawMode.QUADS,
-                VertexFormats.BLIT_SCREEN
-        );
-        bufferBuilder.vertex(0.0F, 0.0F, 0.0F);
-        bufferBuilder.vertex(1.0F, 0.0F, 0.0F);
-        bufferBuilder.vertex(1.0F, 1.0F, 0.0F);
-        bufferBuilder.vertex(0.0F, 1.0F, 0.0F);
-        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
-
-        RenderSystem.setShaderTexture(0, 0);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.defaultBlendFunc();
-
-        mc.getFramebuffer().beginWrite(true);
+        // 1.21.11: the whole imperative preamble is gone. Blend, depth,
+        // cull and colour-write live on the pipeline, the render pass sets
+        // its own viewport, and the screen quad is synthesised from
+        // gl_VertexID - so there is no framebuffer rebind, no manual
+        // viewport, no Tessellator and no state to put back afterwards.
+        // VertexFormats.BLIT_SCREEN and ShaderProgramKeys no longer exist.
+        vorga.phazeclient.api.system.draw.ScreenBlit.blitOverMain(framebuffer);
         return true;
     }
 
