@@ -154,7 +154,7 @@ public final class AutoEat extends Module {
         }
 
         PlayerInventory inventory = mc.player.getInventory();
-        previousSlot = inventory.selectedSlot;
+        previousSlot = inventory.getSelectedSlot();
         selectHotbarSlot(mc, foodSlot);
         ActionResult result = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
         if (result.isAccepted()) {
@@ -175,7 +175,7 @@ public final class AutoEat extends Module {
         if (mc == null || mc.player == null) {
             return;
         }
-        mc.player.getInventory().selectedSlot = slot;
+        mc.player.getInventory().setSelectedSlot(slot);
         if (mc.getNetworkHandler() != null) {
             mc.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(slot));
         }

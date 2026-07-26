@@ -262,7 +262,9 @@ public class ModuleComponent extends AbstractComponent {
             CardSnapshotCache.beginCapture(snapshot, width, height);
             try {
                 context.getMatrices().pushMatrix();
-                context.getMatrices().translate(-x, -y, 0.0F);
+                // 1.21.11: GUI pose is Matrix3x2fStack - translate is 2D only
+                // (the old third argument was a Z offset the GUI no longer has).
+                context.getMatrices().translate(-x, -y);
                 renderImmediate(context, mouseX, mouseY, delta, inSearchMode);
                 context.getMatrices().popMatrix();
                 snapshot.hash = hash;
@@ -344,7 +346,8 @@ public class ModuleComponent extends AbstractComponent {
         float optionsY = y + baseHeight - (showStateRow ? (OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT) : OPTIONS_ROW_HEIGHT);
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(offsetX, offsetY, 0);
+        // 1.21.11: 2D GUI pose - no Z component on translate.
+        context.getMatrices().translate(offsetX, offsetY);
 
         int outlineColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, outlineColorAnimation.getOutputFloat() * 0.75f);
         outlineColor = MenuStyle.withAlpha(outlineColor, applyGlobalAlpha(0.96F));

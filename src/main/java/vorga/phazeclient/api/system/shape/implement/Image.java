@@ -1,6 +1,5 @@
 package vorga.phazeclient.api.system.shape.implement;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.RenderLayer;
@@ -13,16 +12,17 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import vorga.phazeclient.api.system.draw.PhazeAlpha;
 import vorga.phazeclient.api.system.shape.Shape;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
+import vorga.phazeclient.base.util.render.GuiMatrix;
 import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.RotationAxis;
+import org.joml.Matrix3x2f;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 
 @Setter
 @Accessors(chain = true)
@@ -37,6 +37,14 @@ public class Image implements Shape, QuickImports {
      * built once per texture rather than per draw. The set of UI textures
      * is small and fixed, so a plain map is enough; entries are created
      * lazily on first use and live for the process.
+     *
+     * <p>The pipeline is vanilla's {@link RenderPipelines#GUI_TEXTURED}:
+     * {@code core/position_tex_color}, {@code Sampler0}, translucent
+     * blend, {@code POSITION_TEXTURE_COLOR} quads, no depth test - which
+     * is exactly the state the 1.21.4 path set by hand
+     * ({@code POSITION_TEX_COLOR} + {@code defaultBlendFunc}), and it
+     * comes with the shader's uniform-block declarations already
+     * attached.
      */
     private static final Map<Identifier, RenderLayer> TEXTURED_LAYERS = new HashMap<>();
 
@@ -60,23 +68,31 @@ public class Image implements Shape, QuickImports {
         // POSITION+GENERIC builder on the shared Tessellator.
         BatchedRectangle.flushIfBatching();
 
-        MatrixStack matrix = shape.getMatrix();
-
+        // 1.21.11: the GUI pose is a 2D Matrix3x2f, not a MatrixStack.
+        // ShapeProperties already hands out an owned copy, but this is
+        // mutated in place below so it is copied again rather than
+        // relying on that.
+        Matrix3x2f pose = new Matrix3x2f(shape.getMatrix());
 
         Identifier textureId = Identifier.of(texture);
         // No imperative texture bind or glTexParameteri here any more: in
         // 1.21.11 the sampler is declared on the layer's RenderSetup, and
         // filtering is a property of the sampler rather than of whatever
         // texture happens to be bound to unit 0 at this moment.
+        // enableBlend/defaultBlendFunc are gone too - blending is the
+        // pipeline's BlendFunction.TRANSLUCENT.
 
         float width = shape.getWidth();
         float x = shape.getX() + width;
         float y = shape.getY();
 
-        matrix.push();
-        matrix.translate(x, y, 0.0F);
-        matrix.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(shape.getRotation()));
-        matrix.translate(-x, -y, 0.0F);
+        // Was push / translate / multiply(POSITIVE_Z.rotationDegrees) /
+        // translate / pop on the 4x4 stack. Matrix3x2f.rotate is a Z
+        // rotation by definition and takes RADIANS, and the pose is a
+        // local copy so there is nothing to pop.
+        pose.translate(x, y);
+        pose.rotate((float) Math.toRadians(shape.getRotation()));
+        pose.translate(-x, -y);
 
         float rawWidth = shape.getHeight();
         float rawHeight = width;
@@ -90,16 +106,29 @@ public class Image implements Shape, QuickImports {
         float drawX = x + (rawWidth - drawWidth) * 0.5F;
         float drawY = y + (rawHeight - drawHeight) * 0.5F;
 
-        if (!UiMsdfIconAtlas.renderIcon(matrix, textureId, drawX, drawY, drawWidth, drawHeight, shape.getColor().x)) {
-            renderRawTexture(matrix, textureId, drawX, drawY, drawWidth, drawHeight, shape.getColor().x);
+        // 1.21.4 got the menu fade for free: the global shader colour was
+        // a real uniform in position_tex_color.fsh, so a faded component
+        // faded its icons too. There is no global colour in 1.21.11, so
+        // the fade has to be baked into the vertex colour - same thing
+        // Arc, Blur and BatchedRectangle do.
+        int color = PhazeAlpha.tint(shape.getColor().x);
+
+        Matrix4f positionMatrix = GuiMatrix.mat4(pose);
+
+        // UiMsdfIconAtlas keys its "legacy image orientation" winding (the
+        // 90-degree-rotated UVs this shape has always used) off the
+        // MatrixStack overload, so the promoted pose is handed over in a
+        // throwaway stack rather than through the Matrix4f overload,
+        // which would silently flip the icon.
+        MatrixStack atlasPose = new MatrixStack();
+        atlasPose.multiplyPositionMatrix(positionMatrix);
+
+        if (!UiMsdfIconAtlas.renderIcon(atlasPose, textureId, drawX, drawY, drawWidth, drawHeight, color)) {
+            renderRawTexture(positionMatrix, textureId, drawX, drawY, drawWidth, drawHeight, color);
         }
-
-        matrix.pop();
-
     }
 
-    private static void renderRawTexture(MatrixStack matrix, Identifier textureId, float x, float y, float width, float height, int color) {
-        Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
+    private static void renderRawTexture(Matrix4f positionMatrix, Identifier textureId, float x, float y, float width, float height, int color) {
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         buffer.vertex(positionMatrix, x, y, 0.0F).texture(0.0F, 0.0F).color(color);
         buffer.vertex(positionMatrix, x, y + height, 0.0F).texture(0.0F, 1.0F).color(color);

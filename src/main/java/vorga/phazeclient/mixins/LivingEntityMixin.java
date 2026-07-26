@@ -17,7 +17,9 @@ public class LivingEntityMixin {
     @Inject(method = "onDamaged", at = @At("HEAD"))
     private void phaze$onDamaged(DamageSource source, CallbackInfo ci) {
         LivingEntity self = (LivingEntity) (Object) this;
-        if (!self.getWorld().isClient) return;
+        // 1.21.11: Entity.getWorld() -> getEntityWorld(), and
+        // World.isClient is a private field now - use isClient().
+        if (!self.getEntityWorld().isClient()) return;
         if (!(self instanceof PlayerEntity)) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || !mc.player.equals(self)) return;

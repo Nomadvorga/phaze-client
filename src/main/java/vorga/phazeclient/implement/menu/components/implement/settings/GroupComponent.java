@@ -13,7 +13,9 @@ import vorga.phazeclient.implement.menu.components.implement.other.SettingCompon
 import vorga.phazeclient.implement.menu.components.implement.window.AbstractWindow;
 import vorga.phazeclient.implement.menu.components.implement.window.implement.settings.group.GroupWindow;
 import vorga.phazeclient.implement.menu.components.implement.window.implement.settings.group.WorldColorGroupWindow;
+import vorga.phazeclient.base.util.render.GuiMatrix;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.util.math.MatrixStack;
 
 import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
 
@@ -63,7 +65,13 @@ public class GroupComponent extends AbstractSettingComponent {
         renderSettingCard(context, activeProgress, hoverProgress);
 
         float textX = x + 10 + textOffset;
-        labelFont.drawString(context.getMatrices(), wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
+        // draws through a 4x4 MatrixStack, so promote the pose once per row.
+        // Nothing above mutates the GUI pose, so the bake matches 1.21.4 geometry.
+        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));
+        labelFont.drawString(textPose, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
 
         boolean isWindowOpen = isGroupWindowOpen();
 

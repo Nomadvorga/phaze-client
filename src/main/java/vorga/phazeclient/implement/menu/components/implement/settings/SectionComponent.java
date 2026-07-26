@@ -1,8 +1,10 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.util.math.MatrixStack;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.base.util.render.GuiMatrix;
 import vorga.phazeclient.implement.menu.MenuStyle;
 
 import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
@@ -25,7 +27,14 @@ public class SectionComponent extends AbstractSettingComponent {
         float textWidth = font.getStringWidth(text);
         float centerX = x + (width - textWidth) / 2.0f;
         int color = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, currentAlpha * 0.7f);
-        font.drawString(context.getMatrices(), text, centerX, y + 4, color);
+
+        // 1.21.11: DrawContext.getMatrices() is org.joml.Matrix3x2fStack, but FontRenderer
+        // still consumes a world-style MatrixStack. Promote the 2D GUI pose into a throwaway
+        // MatrixStack - same geometry, one promotion per render().
+        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));
+        font.drawString(textPose, text, centerX, y + 4, color);
     }
 
     @Override

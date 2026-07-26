@@ -12,6 +12,7 @@ import lombok.experimental.Accessors;
 import vorga.phazeclient.api.system.font.entry.DrawEntry;
 import vorga.phazeclient.api.system.font.glyph.Glyph;
 import vorga.phazeclient.api.system.font.glyph.GlyphMap;
+import vorga.phazeclient.base.util.render.GuiMatrix;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.color.ColorUtil;
 import vorga.phazeclient.base.util.math.MathUtil;
@@ -24,6 +25,7 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
+import org.joml.Matrix3x2fc;
 import org.joml.Matrix4f;
 
 import java.awt.*;
@@ -143,6 +145,50 @@ public class FontRenderer implements QuickImports {
         }
 
         drawString(matrix, text + separation + text, x - MathUtil.textScrolling(textWidth), y, color);
+    }
+
+    /**
+     * Scratch stack for promoting a 2D GUI pose.
+     *
+     * <p>{@link #drawGlyphs} needs a {@code MatrixStack} because it pushes,
+     * translates and scales before reading the final matrix. GUI callers
+     * now hold a {@code Matrix3x2fStack} instead, so the overloads below
+     * seed this one-element scratch rather than allocating a stack per
+     * draw - text is drawn dozens of times a frame and this is render
+     * thread only.
+     */
+    private final MatrixStack scratchPose = new MatrixStack();
+
+    private MatrixStack promote(Matrix3x2fc pose) {
+        scratchPose.peek().getPositionMatrix().set(GuiMatrix.mat4(pose));
+        return scratchPose;
+    }
+
+    /**
+     * 2D-pose overloads.
+     *
+     * <p>These are what GUI code should call on 1.21.11:
+     * {@code DrawContext.getMatrices()} is a {@code Matrix3x2fStack}, and
+     * without these every call site had to promote the pose itself.
+     */
+    public void drawString(Matrix3x2fc pose, String text, double x, double y, int color) {
+        drawString(promote(pose), text, x, y, color);
+    }
+
+    public void drawCenteredString(Matrix3x2fc pose, String text, double x, double y, int color) {
+        drawCenteredString(promote(pose), text, x, y, color);
+    }
+
+    public void drawStringWithScroll(Matrix3x2fc pose, String text, double x, double y, float width, int color) {
+        drawStringWithScroll(promote(pose), text, x, y, width, color);
+    }
+
+    public void drawText(Matrix3x2fc pose, Text text, double x, double y) {
+        drawText(promote(pose), text, x, y);
+    }
+
+    public void drawGradientString(Matrix3x2fc pose, String text, double x, double y, int colorStart, int colorEnd) {
+        drawGradientString(promote(pose), text, x, y, colorStart, colorEnd);
     }
 
     public void drawString(MatrixStack matrix, String text, double x, double y, int color) {

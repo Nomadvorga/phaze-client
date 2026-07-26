@@ -620,7 +620,9 @@ public final class Predictions extends Module {
         // forward-Euler simulation that {@link #predict} does for
         // the held visual. Storing the path once means the renderer
         // only has to slice it on each frame, not re-simulate.
-        Vec3d startPos = projectile.getPos();
+        // 1.21.11: Entity.getPos() -> getEntityPos(). Same value
+        // (the entity's tick-boundary world position); rename only.
+        Vec3d startPos = projectile.getEntityPos();
         Vec3d startMotion = projectile.getVelocity();
         // Gravity bucket: same classification used for held items.
         // We default to the thrown-item bucket (0.03) for everything
@@ -679,7 +681,8 @@ public final class Predictions extends Module {
             // doesn't think we're our own target.
             Entity owner = t.entity.getOwner();
             if (owner == null && mc != null) owner = mc.player;
-            Vec3d startPos = t.entity.getPos();
+            // 1.21.11: Entity.getPos() -> getEntityPos().
+            Vec3d startPos = t.entity.getEntityPos();
             Vec3d startMotion = v;
             double gravity = 0.03;
             boolean trident = false;
@@ -749,7 +752,8 @@ public final class Predictions extends Module {
 
         /** Live position of the projectile (camera-frame irrelevant - raw world coords). */
         public Vec3d getCurrentPos() {
-            return entity != null ? entity.getPos() : null;
+            // 1.21.11: Entity.getPos() -> getEntityPos().
+            return entity != null ? entity.getEntityPos() : null;
         }
 
         /** Returns the slice of the predicted path AHEAD of the

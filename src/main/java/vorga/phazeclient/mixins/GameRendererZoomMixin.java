@@ -173,6 +173,9 @@ public abstract class GameRendererZoomMixin {
 
     @Unique
     private static float zoom$frameStep(float animationSpeed) {
-        return MinecraftClient.getInstance().getRenderTickCounter().getLastFrameDuration() * animationSpeed;
+        // 1.21.11: RenderTickCounter.getLastFrameDuration() was renamed to
+        // getDynamicDeltaTicks() - same value (ticks elapsed since the last
+        // frame), so the animation timing is unchanged.
+        return MinecraftClient.getInstance().getRenderTickCounter().getDynamicDeltaTicks() * animationSpeed;
     }
 }

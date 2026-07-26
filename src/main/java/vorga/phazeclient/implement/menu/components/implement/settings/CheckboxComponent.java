@@ -1,12 +1,15 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix3x2fStack;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.base.util.other.StringUtil;
+import vorga.phazeclient.base.util.render.GuiMatrix;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.other.CheckComponent;
 import vorga.phazeclient.base.util.math.MathUtil;
@@ -44,12 +47,20 @@ public class CheckboxComponent extends AbstractSettingComponent {
 
         renderSettingCard(context, activeProgress, hoverProgress);
 
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
+        // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack. ResetIconComponent.render and
+        // ShapeProperties.create take that 2D pose directly; FontRenderer still wants a
+        // world-style MatrixStack, so promote once per render() and reuse it below.
+        // TODO(1.21.11): drop textPose once FontRenderer takes a Matrix3x2fc directly.
+        Matrix3x2fStack matrix = context.getMatrices();
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
+
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
 
         float textX = x + 10 + textOffset;
         float textY = centeredTextY(labelFont, wrapped);
         int textColor = MenuStyle.mix(primaryText(), MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha), hoverProgress * 0.16f);
-        labelFont.drawString(context.getMatrices(), wrapped, textX, textY, textColor);
+        labelFont.drawString(textPose, wrapped, textX, textY, textColor);
 
         ((CheckComponent) checkComponent.position(x + width - 29, y + height / 2 - 5.0F))
                 .setRunnable(() -> setting.setValue(!setting.isValue()))

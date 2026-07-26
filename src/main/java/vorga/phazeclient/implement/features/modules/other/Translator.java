@@ -1158,7 +1158,10 @@ public final class Translator extends Module {
                 .append(Text.literal("Original message:").formatted(Formatting.GRAY, Formatting.ITALIC))
                 .append(Text.literal("\n"))
                 .append(original);
-        return new HoverEvent(HoverEvent.Action.SHOW_TEXT, tooltip);
+        // 1.21.11: HoverEvent became a sealed interface with one record per
+        // action; the (Action, content) constructor is gone. SHOW_TEXT is now
+        // HoverEvent.ShowText(Text). Behaviour is unchanged.
+        return new HoverEvent.ShowText(tooltip);
     }
 
     /**

@@ -3,6 +3,7 @@ package vorga.phazeclient.implement.menu.components.implement.other;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import net.minecraft.client.gui.DrawContext;
+import org.joml.Matrix3x2fStack;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.EaseInOutAnimation;
@@ -10,7 +11,6 @@ import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
-import net.minecraft.util.math.RotationAxis;
 
 @Setter
 @Accessors(chain = true)
@@ -39,25 +39,29 @@ public class SettingComponent extends AbstractComponent {
         float centerX = x + buttonSize / 2f;
         float centerY = y + buttonSize / 2f;
 
-        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, buttonSize, buttonSize)
+        Matrix3x2fStack matrices = context.getMatrices();
+
+        rectangle.render(ShapeProperties.create(matrices, x, y, buttonSize, buttonSize)
                 .round(2)
                 .thickness(1.0F)
                 .outlineColor(MenuStyle.BORDER)
                 .color(MenuStyle.PANEL_CHIP)
                 .build());
 
-        context.getMatrices().pushMatrix();
-        context.getMatrices().translate(centerX, centerY, 0);
-        context.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationAngle));
-        context.getMatrices().translate(-centerX, -centerY, 0);
+        // 1.21.11: the GUI pose is a 2D Matrix3x2fStack, so the old
+        // translate(center) / multiply(RotationAxis.POSITIVE_Z) / translate(-center)
+        // triple has no quaternion to apply. rotateAbout() is exactly that triple
+        // in one call - same Z rotation, same pivot - and it takes RADIANS.
+        matrices.pushMatrix();
+        matrices.rotateAbout((float) Math.toRadians(rotationAngle), centerX, centerY);
 
         image.setTexture("textures/settings.png").render(
-            ShapeProperties.create(context.getMatrices(), x + 2, y + 2, 7, 7)
+            ShapeProperties.create(matrices, x + 2, y + 2, 7, 7)
                 .color(MenuStyle.TEXT_MUTED)
                 .build()
         );
 
-        context.getMatrices().popMatrix();
+        matrices.popMatrix();
     }
 
 

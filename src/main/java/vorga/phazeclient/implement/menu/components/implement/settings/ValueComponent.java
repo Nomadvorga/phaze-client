@@ -136,6 +136,8 @@ public class ValueComponent extends AbstractSettingComponent {
 
         changeValue(renderSlider(mouseX, matrices, cachedSliderStartX, centerY, cachedSliderWidth));
 
+        // 1.21.11: ResetIconComponent.render() takes the GUI pose (Matrix3x2fc) directly -
+        // it only feeds ShapeProperties.create, which is Matrix3x2fc-based since the port.
         resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(matrices);
     }
 

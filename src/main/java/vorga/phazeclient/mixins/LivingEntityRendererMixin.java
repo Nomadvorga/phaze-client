@@ -10,11 +10,13 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.command.OrderedRenderCommandQueue;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.feature.FeatureRenderer;
 import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
+import net.minecraft.client.render.state.CameraRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.util.math.Vec3d;
@@ -41,6 +43,14 @@ import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
  *       <a href="https://github.com/uku3lig/hitrange">uku's hitrange</a>,
  *       MIT). See per-method comment.</li>
  * </ul>
+ *
+ * <p>1.21.11: entity rendering is now a two-phase, deferred pipeline.
+ * {@code LivingEntityRenderer.render} and {@code FeatureRenderer.render} no
+ * longer receive a {@link VertexConsumerProvider}; they receive an
+ * {@link OrderedRenderCommandQueue} that collects draw commands, and
+ * {@code LivingEntityRenderer.render} also gained a trailing
+ * {@link CameraRenderState}. Both injection descriptors below were re-read
+ * from the 1.21.11 bytecode; the surrounding Phaze logic is unchanged.
  */
 @Mixin(LivingEntityRenderer.class)
 public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extends LivingEntityRenderState, M extends net.minecraft.client.model.Model> {
@@ -54,17 +64,17 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     // ---------------------------------------------------------------
 
     @WrapOperation(
-            method = {"render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V"},
+            method = {"render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/render/state/CameraRenderState;)V"},
             at = {@At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/entity/feature/FeatureRenderer;render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;ILnet/minecraft/client/render/entity/state/EntityRenderState;FF)V"
+                    target = "Lnet/minecraft/client/render/entity/feature/FeatureRenderer;render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;ILnet/minecraft/client/render/entity/state/EntityRenderState;FF)V"
             )},
             require = 1
     )
     private void phaze$renderFeatureWithHitColorOverlay(
             FeatureRenderer<?, ?> featureRenderer,
             MatrixStack matrices,
-            VertexConsumerProvider vertexConsumers,
+            OrderedRenderCommandQueue queue,
             int light,
             EntityRenderState entityRenderState,
             float limbAngle,
@@ -79,7 +89,7 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
             OverlayReloadListener.event();
         }
 
-        original.call(featureRenderer, matrices, vertexConsumers, light, entityRenderState, limbAngle, limbDistance);
+        original.call(featureRenderer, matrices, queue, light, entityRenderState, limbAngle, limbDistance);
     }
 
     // ---------------------------------------------------------------
@@ -126,14 +136,14 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     // ---------------------------------------------------------------
 
     @Inject(
-            method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/render/state/CameraRenderState;)V",
             at = @At("TAIL")
     )
     private void phaze$drawHitRange(
             S state,
             MatrixStack matrices,
-            VertexConsumerProvider vertexConsumers,
-            int light,
+            OrderedRenderCommandQueue queue,
+            CameraRenderState cameraState,
             CallbackInfo ci
     ) {
         HitRange config = HitRange.getInstance();
@@ -145,7 +155,8 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
             return;
         }
 
-        ClientPlayerEntity player = MinecraftClient.getInstance().player;
+        MinecraftClient client = MinecraftClient.getInstance();
+        ClientPlayerEntity player = client.player;
         if (player == null) {
             return;
         }
@@ -157,8 +168,9 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
             return;
         }
 
+        // 1.21.11: Entity.getPos() -> getEntityPos().
         Vec3d pos = new Vec3d(state.x, state.y, state.z);
-        if (!pos.isInRange(player.getPos(), config.maxDistance.getInt())) {
+        if (!pos.isInRange(player.getEntityPos(), config.maxDistance.getInt())) {
             return;
         }
 
@@ -172,6 +184,17 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
             return;
         }
 
+        // 1.21.11: the renderer no longer hands us a VertexConsumerProvider -
+        // the OrderedRenderCommandQueue only accepts pre-baked model/label/
+        // custom commands, and HitRangeCircleRenderer emits raw POSITION_COLOR
+        // geometry across three different RenderLayers, which does not map onto
+        // a single submitCustom() callback. Take the same immediate provider
+        // WorldRenderer itself uses for entity geometry: this mixin runs inside
+        // WorldRenderer.pushEntityRenders, and WorldRenderer flushes that
+        // provider (Immediate.draw()) later in the same world pass, after the
+        // entity command queue is dispatched - so the ring still lands in the
+        // world pass, depth-tested against terrain, as before.
+        VertexConsumerProvider vertexConsumers = client.getBufferBuilders().getEntityVertexConsumers();
         HitRangeCircleRenderer.drawCircle(matrices, vertexConsumers, playerState);
     }
 }

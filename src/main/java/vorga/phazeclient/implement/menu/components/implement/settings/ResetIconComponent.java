@@ -7,7 +7,7 @@ import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
-import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix3x2fc;
 
 public class ResetIconComponent implements QuickImports {
 
@@ -52,7 +52,13 @@ public class ResetIconComponent implements QuickImports {
         return this;
     }
 
-    public void render(MatrixStack matrix) {
+    /**
+     * 1.21.11: the GUI pose is {@code org.joml.Matrix3x2f}, not
+     * {@code MatrixStack}, and {@code ShapeProperties.create} takes a
+     * {@code Matrix3x2fc}, so the icon consumes the 2D pose directly -
+     * callers can hand over {@code DrawContext.getMatrices()} unchanged.
+     */
+    public void render(Matrix3x2fc matrix) {
         Direction targetDir = isModified ? Direction.FORWARDS : Direction.BACKWARDS;
         if (!visibilitySeeded) {
             // First render after a fresh attach: snap directly to

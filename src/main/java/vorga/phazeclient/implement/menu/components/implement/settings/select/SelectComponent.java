@@ -93,6 +93,8 @@ public class SelectComponent extends AbstractSettingComponent {
         renderSettingCard(context, 0.0f, hoverProgress);
         renderArrowSelector(matrices, mouseX, mouseY);
 
+        // 1.21.11: ResetIconComponent.render() takes the GUI pose (Matrix3x2fc) directly -
+        // it only feeds ShapeProperties.create, which is Matrix3x2fc-based since the port.
         resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(matrices);
 
         float textX = x + 10 + animatedTextOffset;

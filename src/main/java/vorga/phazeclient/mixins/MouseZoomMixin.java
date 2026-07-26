@@ -2,6 +2,7 @@ package vorga.phazeclient.mixins;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.Mouse;
+import net.minecraft.client.input.MouseInput;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -31,12 +32,18 @@ public class MouseZoomMixin {
     @Shadow
     private double cursorDeltaY;
 
+    // 1.21.11: Mouse.onMouseButton is now (long window, MouseInput input,
+    // int action) - the raw GLFW button/mods ints were folded into the
+    // MouseInput record. MouseInput.button() is the same raw GLFW button
+    // index we used to receive, so FreeLook's keybind comparison is
+    // unchanged. The old `mods` argument is gone (it lives on the record
+    // as modifiers()) and was unused here anyway.
     @Inject(method = "onMouseButton", at = @At("HEAD"))
-    private void phaze$onMouseButton(long window, int button, int action, int mods, CallbackInfo ci) {
+    private void phaze$onMouseButton(long window, MouseInput input, int action, CallbackInfo ci) {
         if (window == client.getWindow().getHandle()) {
             FreeLook freeLook = FreeLook.getInstance();
             if (freeLook != null && freeLook.isEnabled()) {
-                freeLook.onBindStateChanged(button, action);
+                freeLook.onBindStateChanged(input.button(), action);
             }
         }
     }
@@ -141,7 +148,10 @@ public class MouseZoomMixin {
             // exponent shrinks so the per-frame nudge is smaller,
             // and at lower fps it grows so the camera still catches
             // up.
-            float dt = MinecraftClient.getInstance().getRenderTickCounter().getLastFrameDuration() / 20.0F;
+            //
+            // 1.21.11: getLastFrameDuration() -> getDynamicDeltaTicks();
+            // same value (ticks since last frame), so dt is unchanged.
+            float dt = MinecraftClient.getInstance().getRenderTickCounter().getDynamicDeltaTicks() / 20.0F;
             float alpha = 1.0F - (float) Math.pow(1.0F - 0.15F, 60.0F * dt);
             if (alpha < 0.0F) alpha = 0.0F;
             if (alpha > 1.0F) alpha = 1.0F;
@@ -169,7 +179,8 @@ public class MouseZoomMixin {
         if (Zoom.getInstance().isCinematicCamera()) {
             // Same FPS-independent smoothing as zoomSensitivityX -
             // see that method for the alpha conversion rationale.
-            float dt = MinecraftClient.getInstance().getRenderTickCounter().getLastFrameDuration() / 20.0F;
+            // 1.21.11: getLastFrameDuration() -> getDynamicDeltaTicks().
+            float dt = MinecraftClient.getInstance().getRenderTickCounter().getDynamicDeltaTicks() / 20.0F;
             float alpha = 1.0F - (float) Math.pow(1.0F - 0.15F, 60.0F * dt);
             if (alpha < 0.0F) alpha = 0.0F;
             if (alpha > 1.0F) alpha = 1.0F;

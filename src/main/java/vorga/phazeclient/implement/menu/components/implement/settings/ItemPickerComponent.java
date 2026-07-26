@@ -4,7 +4,6 @@ import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import org.joml.Matrix3x2fStack;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -99,7 +98,13 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
                 MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha),
                 enabledProgress * 0.44F + hoverProgress * 0.08F
         );
-        titleFont.drawString(context.getMatrices(), title, textX, centeredTextY(titleFont, title, y, ROW_HEIGHT), titleColor);
+        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
+        // draws through a 4x4 MatrixStack, so promote the pose once per row.
+        // The MSDF "+" above already takes the promoted Matrix4f directly.
+        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));
+        titleFont.drawString(textPose, title, textX, centeredTextY(titleFont, title, y, ROW_HEIGHT), titleColor);
 
         ((CheckComponent) checkComponent.position(toggleX, toggleY))
                 .setRunnable(() -> setting.setEnabled(!setting.isEnabled()))

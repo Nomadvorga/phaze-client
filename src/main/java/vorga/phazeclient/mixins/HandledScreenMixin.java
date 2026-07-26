@@ -1,9 +1,8 @@
 package vorga.phazeclient.mixins;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.entity.player.PlayerInventory;
@@ -73,8 +72,12 @@ public abstract class HandledScreenMixin {
     // ItemScroller: shift-drag through inventory slots
     // ---------------------------------------------------------------
 
+    // 1.21.11: Element.mouseClicked(double,double,int) became
+    // mouseClicked(Click, boolean doubled). Click carries the cursor position,
+    // the button code and the GLFW modifier mask, so Screen.hasShiftDown()
+    // (removed in 1.21.11) is replaced by click.hasShift() here.
     @Inject(method = "mouseClicked", at = @At("HEAD"))
-    private void phaze$onMouseClickedHead(double mouseX, double mouseY, int button,
+    private void phaze$onMouseClickedHead(Click click, boolean doubled,
                                           CallbackInfoReturnable<Boolean> cir) {
         ItemScroller mod = ItemScroller.getInstance();
         if (mod == null || !mod.isEnabled() || !ServerUtil.isItemScrollerSupported()) {
@@ -86,7 +89,7 @@ public abstract class HandledScreenMixin {
             phaze$transferredSlots.clear();
             return;
         }
-        if (button != 0 || !Screen.hasShiftDown()) {
+        if (click.button() != 0 || !click.hasShift()) {
             return;
         }
 
@@ -98,19 +101,25 @@ public abstract class HandledScreenMixin {
         phaze$lastTransferAt = 0L;
     }
 
+    // 1.21.11: mouseReleased(double,double,int) -> mouseReleased(Click).
     @Inject(method = "mouseReleased", at = @At("HEAD"))
-    private void phaze$onMouseReleasedHead(double mouseX, double mouseY, int button,
+    private void phaze$onMouseReleasedHead(Click click,
                                            CallbackInfoReturnable<Boolean> cir) {
-        if (button == 0) {
+        if (click.button() == 0) {
             phaze$shiftDragActive = false;
             phaze$transferredSlots.clear();
         }
     }
 
+    // 1.21.11: mouseDragged(double,double,int,double,double) ->
+    // mouseDragged(Click, double offsetX, double offsetY). The Click holds the
+    // current (already scaled) cursor position, so the sampling maths below is
+    // unchanged apart from where the values come from.
     @Inject(method = "mouseDragged", at = @At("HEAD"))
-    private void phaze$onMouseDraggedHead(double mouseX, double mouseY, int button,
-                                          double deltaX, double deltaY,
+    private void phaze$onMouseDraggedHead(Click click, double deltaX, double deltaY,
                                           CallbackInfoReturnable<Boolean> cir) {
+        double mouseX = click.x();
+        double mouseY = click.y();
         if (!phaze$shiftDragActive) {
             phaze$shiftDragActive = true;
             phaze$transferredSlots.clear();
@@ -184,8 +193,10 @@ public abstract class HandledScreenMixin {
         phaze$resetGuiRenderState();
     }
 
+    // 1.21.11: drawSlot(DrawContext, Slot) gained the mouse coordinates.
     @Inject(method = "drawSlot", at = @At("HEAD"))
-    private void phaze$resetStateBeforeSlot(DrawContext context, Slot slot, CallbackInfo ci) {
+    private void phaze$resetStateBeforeSlot(DrawContext context, Slot slot, int mouseX, int mouseY,
+                                            CallbackInfo ci) {
         phaze$resetGuiRenderState();
     }
 
@@ -309,8 +320,15 @@ public abstract class HandledScreenMixin {
             return false;
         }
 
-        boolean leftPressed = GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
-        if (!phaze$shiftDragActive || !leftPressed || !Screen.hasShiftDown()) {
+        long windowHandle = client.getWindow().getHandle();
+        boolean leftPressed = GLFW.glfwGetMouseButton(windowHandle, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        // 1.21.11: Screen.hasShiftDown() was removed - modifier state now rides on
+        // the input event (Click/KeyInput). This path runs from the render tick and
+        // has no event to read, so poll GLFW directly, exactly like the mouse-button
+        // check above and like the removed helper used to do internally.
+        boolean shiftPressed = GLFW.glfwGetKey(windowHandle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(windowHandle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+        if (!phaze$shiftDragActive || !leftPressed || !shiftPressed) {
             if (!leftPressed) {
                 phaze$shiftDragActive = false;
                 phaze$transferredSlots.clear();

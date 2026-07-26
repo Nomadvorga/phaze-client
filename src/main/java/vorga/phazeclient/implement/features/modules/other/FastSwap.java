@@ -172,7 +172,7 @@ public final class FastSwap extends Module {
 
             int slot = findMatchingHotbarSlot(mc, hotkey.matcher);
             if (slot != -1) {
-                mc.player.getInventory().selectedSlot = slot;
+                mc.player.getInventory().setSelectedSlot(slot);
             }
             return;
         }
