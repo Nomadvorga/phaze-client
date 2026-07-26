@@ -2,6 +2,7 @@ package vorga.phazeclient.mixins;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.util.math.MathHelper;
@@ -38,12 +39,19 @@ import vorga.phazeclient.implement.features.modules.other.Animations;
 @Mixin(ClickableWidget.class)
 public abstract class ClickableWidgetDragSelectMixin {
 
+    /**
+     * 1.21.11 folded the mouse arguments into a {@link Click} record:
+     * {@code mouseDragged(double, double, int, double, double)} became
+     * {@code mouseDragged(Click, double, double)}, with x, y and button
+     * on the click.
+     */
     @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
-    private void phaze$dragSelect(double mouseX, double mouseY, int button,
-                                  double deltaX, double deltaY,
+    private void phaze$dragSelect(Click click, double deltaX, double deltaY,
                                   CallbackInfoReturnable<Boolean> cir) {
-        if (button != 0) return;
+        if (click.button() != 0) return;
         if (!Animations.getInstance().isComfortableTextSelectionEnabled()) return;
+
+        double mouseX = click.x();
 
         Object self = this;
         if (!(self instanceof TextFieldWidget tf)) return;

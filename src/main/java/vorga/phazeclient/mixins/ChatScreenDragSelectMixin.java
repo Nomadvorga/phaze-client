@@ -1,5 +1,6 @@
 package vorga.phazeclient.mixins;
 
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import org.spongepowered.asm.mixin.Mixin;
@@ -32,12 +33,21 @@ public abstract class ChatScreenDragSelectMixin {
 
     @Shadow protected TextFieldWidget chatField;
 
+    /**
+     * 1.21.11 folded the mouse arguments into a {@link Click} record:
+     * {@code mouseClicked(double, double, int)} became
+     * {@code mouseClicked(Click, boolean)}, where the boolean marks a
+     * double click.
+     */
     @Inject(method = "mouseClicked", at = @At("RETURN"))
-    private void phaze$armChatDrag(double mouseX, double mouseY, int button,
+    private void phaze$armChatDrag(Click click, boolean doubleClick,
                                    CallbackInfoReturnable<Boolean> cir) {
-        if (button != 0) return;
+        if (click.button() != 0) return;
         if (!Animations.getInstance().isComfortableTextSelectionEnabled()) return;
         if (chatField == null) return;
+
+        double mouseX = click.x();
+        double mouseY = click.y();
 
         // Only arm drag when the user actually clicked INSIDE the
         // input strip. Without the bbox check, clicking on a chat
