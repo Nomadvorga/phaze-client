@@ -288,28 +288,78 @@ public final class MenuPanoramaRegistry {
         return imported;
     }
 
+    /**
+     * Brings the registry in line with what is on disk, touching only
+     * what actually changed.
+     *
+     * <p>This used to close every descriptor and rebuild the whole map
+     * from scratch. That is very visible: loading a descriptor decodes
+     * its preview PNG - a multi-megabyte image - and it happens on the
+     * client thread, so one new archive re-decoded every installed
+     * panorama. Downloading a pack made the entire grid of previews
+     * blink and stalled the menu for as long as the decode took, and
+     * anything still holding a texture id across the teardown logged
+     * "Missing resource ... panorama_N.png".
+     *
+     * <p>Now each archive is keyed by path plus size and timestamp:
+     * unchanged entries are left alone, entries whose file changed are
+     * reloaded, and only genuinely removed ones are closed.
+     */
     public static synchronized void reload() {
         ensureDirectoryExists();
         MinecraftClient client = MinecraftClient.getInstance();
 
-        for (CustomPanoramaDescriptor panorama : CUSTOM_PANORAMAS.values()) {
-            panorama.close(client);
-        }
-        CUSTOM_PANORAMAS.clear();
-
         List<Path> archives = listArchives();
+        Map<String, CustomPanoramaDescriptor> next = new LinkedHashMap<>();
+
         for (Path archive : archives) {
+            String key = archive.getFileName().toString().toLowerCase(Locale.ROOT);
+            String id = customIdForArchiveName(archive.getFileName().toString()).toLowerCase(Locale.ROOT);
+            CustomPanoramaDescriptor existing = CUSTOM_PANORAMAS.get(id);
+            long stamp = archiveStamp(archive);
+
+            if (existing != null && existing.archiveStamp == stamp) {
+                // Same file, byte for byte as far as the filesystem is
+                // concerned - keep the live textures.
+                next.put(id, existing);
+                continue;
+            }
+
+            if (existing != null) {
+                existing.close(client);
+            }
             try {
                 CustomPanoramaDescriptor panorama = CustomPanoramaDescriptor.load(archive, client);
-                CUSTOM_PANORAMAS.put(panorama.getId().toLowerCase(Locale.ROOT), panorama);
+                panorama.archiveStamp = stamp;
+                next.put(panorama.getId().toLowerCase(Locale.ROOT), panorama);
             } catch (Throwable t) {
-                System.err.println("[Phaze] skipped invalid panorama archive " + archive.getFileName() + ": " + t.getMessage());
+                System.err.println("[Phaze] skipped invalid panorama archive " + key + ": " + t.getMessage());
             }
         }
+
+        // Whatever survived from the previous map but is not in the new
+        // one no longer exists on disk.
+        for (Map.Entry<String, CustomPanoramaDescriptor> entry : CUSTOM_PANORAMAS.entrySet()) {
+            if (!next.containsKey(entry.getKey())) {
+                entry.getValue().close(client);
+            }
+        }
+
+        CUSTOM_PANORAMAS.clear();
+        CUSTOM_PANORAMAS.putAll(next);
 
         loaded = true;
         lastFolderSignature = computeFolderSignature(archives);
         lastRefreshCheckMs = System.currentTimeMillis();
+    }
+
+    /** Size + last-modified, the same pair the folder signature uses. */
+    private static long archiveStamp(Path archive) {
+        try {
+            return mix(Files.size(archive), Files.getLastModifiedTime(archive).toMillis());
+        } catch (IOException e) {
+            return Long.MIN_VALUE;
+        }
     }
 
     public static synchronized boolean deleteCustomPanorama(String id) {
@@ -496,6 +546,8 @@ public final class MenuPanoramaRegistry {
         private NativeImageBackedTexture[] faceTextures;
         private int previewTextureSize;
         private boolean facesLoaded;
+        /** Size+mtime when this was loaded; lets a rescan skip it. */
+        private long archiveStamp = Long.MIN_VALUE;
 
         private CustomPanoramaDescriptor(String id,
                                          String displayName,
@@ -775,7 +827,11 @@ public final class MenuPanoramaRegistry {
             ensureDirectoryExists();
             downloadedBytes.set(0L);
             totalBytes = -1L;
-            Path temporary = target.resolveSibling(archiveName + ".tmp");
+            // Download beside the target but under a name the archive
+            // scanner ignores, so a half-written file is never picked
+            // up as a panorama and an interrupted download leaves at
+            // most one stale .part behind.
+            Path temporary = target.resolveSibling(archiveName + ".part");
             HttpRequest request = HttpRequest.newBuilder(downloadUri).GET().build();
             HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
                     .thenAcceptAsync(response -> {
