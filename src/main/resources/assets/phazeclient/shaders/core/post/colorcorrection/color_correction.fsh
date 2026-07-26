@@ -27,40 +27,70 @@ vec3 hsv2rgb(vec3 c) {
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
+// Каждая стадия обёрнута в проверку своего параметра.
+//
+// Ветвление идёт по uniform'у, то есть значение одинаково для всех
+// фрагментов вокруг - дивергенции варпов нет, ветка стоит практически
+// ничего. Раньше выполнялись все стадии подряд, включая две самых дорогих:
+// полный круг rgb2hsv/hsv2rgb и pow(). Обе при своих дефолтах (Hue = 0,
+// Gamma = 1) математически ничего не делают, но считались на каждый пиксель
+// экрана каждый кадр, даже если пользователь трогал только, скажем,
+// насыщенность.
 void main() {
     vec3 color = texture(MainSampler, texCoord).rgb;
 
     // Brightness
-    color += Brightness;
+    if (Brightness != 0.0) {
+        color += Brightness;
+    }
 
     // Contrast (around mid-gray)
-    color = (color - 0.5) * Contrast + 0.5;
+    if (Contrast != 1.0) {
+        color = (color - 0.5) * Contrast + 0.5;
+    }
 
-    // Saturation
-    float lum = dot(color, vec3(0.299, 0.587, 0.114));
-    color = mix(vec3(lum), color, Saturation);
+    // Saturation + Vibrance. lum берётся до применения насыщенности и
+    // переиспользуется vibrance - ровно как в неветвлённой версии.
+    if (Saturation != 1.0 || Vibrance != 0.0) {
+        float lum = dot(color, vec3(0.299, 0.587, 0.114));
 
-    // Vibrance (boost low-saturation colors more)
-    float maxC = max(color.r, max(color.g, color.b));
-    float minC = min(color.r, min(color.g, color.b));
-    float sat = maxC - minC;
-    float vibranceScale = 1.0 + Vibrance * (1.0 - sat);
-    color = mix(vec3(lum), color, vibranceScale);
+        if (Saturation != 1.0) {
+            color = mix(vec3(lum), color, Saturation);
+        }
 
-    // Hue rotation
-    vec3 hsv = rgb2hsv(clamp(color, 0.0, 1.0));
-    hsv.x = fract(hsv.x + Hue);
-    color = hsv2rgb(hsv);
+        // Vibrance (boost low-saturation colors more)
+        if (Vibrance != 0.0) {
+            float maxC = max(color.r, max(color.g, color.b));
+            float minC = min(color.r, min(color.g, color.b));
+            float sat = maxC - minC;
+            float vibranceScale = 1.0 + Vibrance * (1.0 - sat);
+            color = mix(vec3(lum), color, vibranceScale);
+        }
+    }
+
+    // Hue rotation. Самая дорогая стадия шейдера. При Hue = 0 круг
+    // rgb2hsv -> hsv2rgb - тождество с точностью до ошибки float, но кламп
+    // на входе в него влияет на результат, поэтому он сохранён отдельно.
+    if (Hue != 0.0) {
+        vec3 hsv = rgb2hsv(clamp(color, 0.0, 1.0));
+        hsv.x = fract(hsv.x + Hue);
+        color = hsv2rgb(hsv);
+    } else {
+        color = clamp(color, 0.0, 1.0);
+    }
 
     // Temperature (shift blue <-> orange)
-    color.r += Temperature * 0.1;
-    color.b -= Temperature * 0.1;
+    if (Temperature != 0.0) {
+        color.r += Temperature * 0.1;
+        color.b -= Temperature * 0.1;
+    }
 
-    // Gamma
-    color = pow(max(color, 0.0), vec3(1.0 / Gamma));
+    // Gamma. pow() - трансцендентная функция; при Gamma = 1 показатель
+    // равен единице, и вызов тождественен. Финальный clamp ниже делает то
+    // же, что делал max(color, 0.0) внутри pow.
+    if (Gamma != 1.0) {
+        color = pow(max(color, 0.0), vec3(1.0 / Gamma));
+    }
 
-    // Clamp
-    color = clamp(color, 0.0, 1.0);
-
-    fragColor = vec4(color, 1.0);
+    fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }

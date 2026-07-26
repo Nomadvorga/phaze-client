@@ -27,6 +27,9 @@ public class ScreenOpenMixin {
 
     @ModifyVariable(method = "setScreen", at = @At("HEAD"), argsOnly = true)
     private Screen phaze$replaceTitleScreenEarly(Screen screen) {
+        if (!MainMenuScreen.isCustomMainMenuEnabled()) {
+            return screen;
+        }
         if (screen instanceof TitleScreen
                 && !(screen instanceof MainMenuScreen)) {
             return new MainMenuScreen();
@@ -36,6 +39,9 @@ public class ScreenOpenMixin {
 
     @ModifyVariable(method = "setScreen", at = @At(value = "STORE"), ordinal = 0)
     private Screen phaze$replaceGeneratedTitleScreen(Screen screen) {
+        if (!MainMenuScreen.isCustomMainMenuEnabled()) {
+            return screen;
+        }
         if (screen instanceof TitleScreen
                 && !(screen instanceof MainMenuScreen)) {
             return new MainMenuScreen();
@@ -46,6 +52,9 @@ public class ScreenOpenMixin {
     @Inject(method = "setScreen", at = @At("TAIL"))
     private void phaze$replaceCurrentTitleScreenAfterSet(Screen screen, CallbackInfo ci) {
         MinecraftClient client = (MinecraftClient) (Object) this;
+        if (!MainMenuScreen.isCustomMainMenuEnabled()) {
+            return;
+        }
         if (this.phaze$redirectingTitleScreen
                 || !(client.currentScreen instanceof TitleScreen)
                 || client.currentScreen instanceof MainMenuScreen) {
@@ -63,6 +72,9 @@ public class ScreenOpenMixin {
     @Inject(method = "setOverlay", at = @At("TAIL"))
     private void phaze$replaceLingeringTitleScreenAfterOverlayClose(Overlay overlay, CallbackInfo ci) {
         MinecraftClient client = (MinecraftClient) (Object) this;
+        if (!MainMenuScreen.isCustomMainMenuEnabled()) {
+            return;
+        }
         if (overlay != null) {
             return;
         }

@@ -36,21 +36,27 @@ public class BindComponent extends AbstractSettingComponent {
         String bindName = StringUtil.getBindName(setting.getKey());
         String name = binding ? "(" + bindName + ") ..." : bindName;
         float stringWidth = bindFont.getStringWidth(name) - 2;
+        float badgeWidth = stringWidth + 10.0F;
+        float badgeX = x + width - stringWidth - 17.0F;
+        float badgeY = y + height / 2 - 5.75f;
 
         String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 74 - textOffset), 14);
         float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
         height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
+        if (MathUtil.isHovered(mouseX, mouseY, badgeX, badgeY, badgeWidth, 11.5F)) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
+
         renderSettingCard(context, binding ? 1.0f : 0.0f, hoverProgress);
 
-        rectangle.render(ShapeProperties.create(matrix, x + width - stringWidth - 17, y + height / 2 - 5.75f, stringWidth + 10, 11.5f)
+        rectangle.render(ShapeProperties.create(matrix, badgeX, badgeY, badgeWidth, 11.5f)
                 .round(2).thickness(1.1F)
                 .outlineColor(MenuStyle.withAlpha(MenuStyle.settingOutline(binding), currentAlpha))
                 .color(MenuStyle.withAlpha(MenuStyle.settingSurface(binding), currentAlpha))
                 .build());
 
-        float badgeY = y + height / 2 - 5.75f;
         bindFont.drawString(matrix, name, x + width - 12 - stringWidth - 1, centeredTextY(bindFont, name, badgeY, 11.5F), mutedText());
 
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);

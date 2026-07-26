@@ -48,6 +48,8 @@ import vorga.phazeclient.api.system.render.Render3DUtil;
 public final class FTHelperRenderer {
     /** Default fill colour scale factor (per-shape adjustable). */
     private static final float FILL_ALPHA_SCALE = 0.18F;
+    /** Pull block-aligned trap boxes slightly inside their voxel bounds to avoid z-fighting. */
+    private static final double TRAPKA_BLOCK_INSET = 0.01;
 
     /** Reference radius the user-set thickness corresponds to. The
      *  10-block CIRCLE_10 ring is the calibration target - smaller
@@ -83,7 +85,7 @@ public final class FTHelperRenderer {
             case TRAPKA_DRAGON -> drawTrapkaBox(matrices, cameraPos, tickCounter, 3);
             case CIRCLE_10 -> drawCircleAtFeet(matrices, cameraPos, tickCounter, 10.0F);
             case BOZHESTVENNAYA_AURA -> drawCircleAtFeet(matrices, cameraPos, tickCounter, 2.0F);
-            case SNEZHOK_PREDICTION -> drawSnezhokPrediction(matrices, cameraPos);
+            case SNEZHOK_PREDICTION -> drawSnezhokPrediction(matrices, cameraPos, tickCounter);
             case PLAST -> drawPlastBox(matrices, cameraPos);
             case NONE -> { /* unreachable */ }
         }
@@ -124,18 +126,18 @@ public final class FTHelperRenderer {
         // horizontal axis. Total footprint = (halfExtent * 2 + 1)^2
         // blocks. Height fixed at 3 for both variants - the trap
         // mechanic itself is the same vertical reach.
-        float x1 = block.getX() - halfExtent;
-        float y1 = block.getY();
-        float z1 = block.getZ() - halfExtent;
-        float x2 = block.getX() + halfExtent + 1;
-        float y2 = block.getY() + 3;
-        float z2 = block.getZ() + halfExtent + 1;
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
         // Block-aligned trapka uses depth-test on so the box reads
         // as a physical voxel range instead of a ghost overlay.
-        Render3DUtil.drawBox(matrices, x1, y1, z1, x2, y2, z2, color, FILL_ALPHA_SCALE, 2.0F);
-        matrices.pop();
+        // Keep vertex values near the camera before converting to float.
+        // This matches Predictions and remains stable at large coordinates.
+        Render3DUtil.drawBox(matrices,
+                (float) (block.getX() - halfExtent + TRAPKA_BLOCK_INSET - cameraPos.x),
+                (float) (block.getY() + TRAPKA_BLOCK_INSET - cameraPos.y),
+                (float) (block.getZ() - halfExtent + TRAPKA_BLOCK_INSET - cameraPos.z),
+                (float) (block.getX() + halfExtent + 1 - TRAPKA_BLOCK_INSET - cameraPos.x),
+                (float) (block.getY() + 3 - TRAPKA_BLOCK_INSET - cameraPos.y),
+                (float) (block.getZ() + halfExtent + 1 - TRAPKA_BLOCK_INSET - cameraPos.z),
+                color, FILL_ALPHA_SCALE, 2.0F);
     }
 
     private static void drawCircleAtFeet(MatrixStack matrices, Vec3d cameraPos, RenderTickCounter tickCounter, float radius) {
@@ -185,13 +187,43 @@ public final class FTHelperRenderer {
      * predicted impact point. Same forward-Euler raycast vanilla
      * uses for snowballs (drag 0.99, gravity 0.03).
      */
-    private static void drawSnezhokPrediction(MatrixStack matrices, Vec3d cameraPos) {
+    private static void drawSnezhokPrediction(MatrixStack matrices, Vec3d cameraPos, RenderTickCounter tickCounter) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.world == null) return;
         FTHelper module = FTHelper.getInstance();
         PlayerEntity player = mc.player;
-        Vec3d eye = player.getEyePos();
-        Vec3d look = player.getRotationVec(1.0F);
+        float tickDelta = tickCounter.getTickDelta(false);
+        // Use the render-tick camera state. Tick-only eye/rotation values
+        // make the projected impact zone visibly step while walking,
+        // jumping, sneaking, or turning the camera.
+        Vec3d eye = player.getCameraPosVec(tickDelta);
+        Vec3d look = player.getRotationVec(tickDelta);
+        Vec3d hit = resolveSnezhokHit(mc, player, eye, look);
+        if (hit == null) return;
+
+        int color = module.resolveCircleColor();
+        // 7x7 AOE: radius 3.5 blocks. Same as the in-flight tracker
+        // ring so a thrown снежок's predicted area matches its
+        // actual visible area while it travels.
+        float radius = 3.5F;
+        float thickness = scaledThickness(module, radius);
+        float ringX = (float) (hit.x - cameraPos.x);
+        float ringY = (float) (hit.y - cameraPos.y + 0.05F);
+        float ringZ = (float) (hit.z - cameraPos.z);
+        if (module.circleGlow.isValue()) {
+            float strength = module.circleGlowStrength.getValue();
+            int centerAlpha = Math.max(0, Math.min(255, Math.round(80.0F * Math.min(2.0F, strength))));
+            int centerColor = (centerAlpha << 24) | (color & 0x00FFFFFF);
+            int rimColor = color & 0x00FFFFFF;
+            Render3DUtil.drawFlatGlowDisc(matrices, ringX, ringY, ringZ,
+                    radius * (1.0F + 0.2F * Math.min(2.0F, strength)),
+                    centerColor, rimColor, 64, true);
+        }
+        Render3DUtil.drawThickFlatRing(matrices, ringX, ringY, ringZ,
+                radius, thickness, color, 64, true);
+    }
+
+    private static Vec3d resolveSnezhokHit(MinecraftClient mc, PlayerEntity player, Vec3d eye, Vec3d look) {
         Vec3d motion = look.multiply(1.5);
         Vec3d pos = eye;
         Vec3d hit = null;
@@ -208,29 +240,7 @@ public final class FTHelperRenderer {
             pos = next;
             if (next.y < -64 || next.distanceTo(eye) > 100) break;
         }
-        if (hit == null) return;
-
-        int color = module.resolveCircleColor();
-        // 7x7 AOE: radius 3.5 blocks. Same as the in-flight tracker
-        // ring so a thrown снежок's predicted area matches its
-        // actual visible area while it travels.
-        float radius = 3.5F;
-        float thickness = scaledThickness(module, radius);
-        float ringY = (float) hit.y + 0.05F;
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-        if (module.circleGlow.isValue()) {
-            float strength = module.circleGlowStrength.getValue();
-            int centerAlpha = Math.max(0, Math.min(255, Math.round(80.0F * Math.min(2.0F, strength))));
-            int centerColor = (centerAlpha << 24) | (color & 0x00FFFFFF);
-            int rimColor = color & 0x00FFFFFF;
-            Render3DUtil.drawFlatGlowDisc(matrices, (float) hit.x, ringY, (float) hit.z,
-                    radius * (1.0F + 0.2F * Math.min(2.0F, strength)),
-                    centerColor, rimColor, 64, true);
-        }
-        Render3DUtil.drawThickFlatRing(matrices, (float) hit.x, ringY, (float) hit.z,
-                radius, thickness, color, 64, true);
-        matrices.pop();
+        return hit;
     }
 
     private static void drawPlastBox(MatrixStack matrices, Vec3d cameraPos) {
@@ -240,7 +250,10 @@ public final class FTHelperRenderer {
         if (target == null || side == null) return;
         // Plast is a 5x2x5 placement plane oriented so the 2-thick axis
         // lies along the targeted face's normal, mirroring upstream.
-        float x1, y1, z1, x2, y2, z2;
+        // Keep world coordinates in double until the camera origin has
+        // been removed. A float here already loses whole-block precision
+        // at large coordinates, before the later subtraction can help.
+        double x1, y1, z1, x2, y2, z2;
         switch (side) {
             case UP -> {
                 x1 = target.getX() - 2;
@@ -275,10 +288,12 @@ public final class FTHelperRenderer {
                 z2 = target.getZ() + 3;
             }
         }
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-        Render3DUtil.drawBox(matrices, x1, y1, z1, x2, y2, z2, module.resolveBoxColor(), FILL_ALPHA_SCALE, 2.0F);
-        matrices.pop();
+        // Subtract first, then cast: absolute world floats lose block
+        // precision far away from spawn.
+        Render3DUtil.drawBox(matrices,
+                (float) (x1 - cameraPos.x), (float) (y1 - cameraPos.y), (float) (z1 - cameraPos.z),
+                (float) (x2 - cameraPos.x), (float) (y2 - cameraPos.y), (float) (z2 - cameraPos.z),
+                module.resolveBoxColor(), FILL_ALPHA_SCALE, 2.0F);
     }
 
     /**
@@ -289,7 +304,7 @@ public final class FTHelperRenderer {
      * single FT helper exposes both detection and rendering for
      * every FunTime ability in one place.
      */
-    public static void renderSnowballs(MatrixStack matrices, Vec3d cameraPos) {
+    public static void renderSnowballs(MatrixStack matrices, Vec3d cameraPos, RenderTickCounter tickCounter) {
         FTHelper module = FTHelper.getInstance();
         if (module == null || !module.isEnabled() || !module.snezhokZamorozkaEnabled.isValue()) return;
         var list = module.getTrackedSnowballs();
@@ -298,36 +313,35 @@ public final class FTHelperRenderer {
         // Scale by the snowball ring's radius (3.5) relative to the
         // CIRCLE_10 reference so all FT rings stay visually balanced.
         float thickness = scaledThickness(module, 3.5F);
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
+        float tickDelta = tickCounter.getTickDelta(false);
         for (var t : list) {
-            Vec3d p = t.getPosition();
-            float ringY = (float) p.y + 0.05F;
+            Vec3d p = t.getRenderPosition(tickDelta);
+            float ringX = (float) (p.x - cameraPos.x);
+            float ringY = (float) (p.y - cameraPos.y + 0.05F);
+            float ringZ = (float) (p.z - cameraPos.z);
             if (module.circleGlow.isValue()) {
                 float strength = module.circleGlowStrength.getValue();
                 int centerAlpha = Math.max(0, Math.min(255, Math.round(80.0F * Math.min(2.0F, strength))));
                 int centerColor = (centerAlpha << 24) | (color & 0x00FFFFFF);
                 int rimColor = color & 0x00FFFFFF;
                 Render3DUtil.drawFlatGlowDisc(matrices,
-                        (float) p.x, ringY, (float) p.z,
+                        ringX, ringY, ringZ,
                         3.5F * (1.0F + 0.2F * Math.min(2.0F, strength)),
                         centerColor, rimColor, 64, true);
             }
             Render3DUtil.drawThickFlatRing(matrices,
-                    (float) p.x, ringY, (float) p.z,
+                    ringX, ringY, ringZ,
                     3.5F, thickness, color, 64, true);
 
-            // Flight-trail polyline. Connects every recorded
-            // tick-position so the user can see exactly where the
-            // tracked snowball came from after they threw it. Camera
-            // matrix is already pushed above so we feed raw world
-            // coords into vertexLine.
+            // Flight trail stays in world coordinates, but its draw path
+            // receives the camera offset before transforming vertices.
             var trail = t.getTrail();
             if (trail != null && trail.size() >= 2) {
-                Render3DUtil.drawPolyline(matrices, trail, color, 2.0F, true);
+                Render3DUtil.drawPolylineOffset(matrices, trail,
+                        -cameraPos.x, -cameraPos.y, -cameraPos.z,
+                        color, 2.0F, true);
             }
         }
-        matrices.pop();
     }
 
     /** Public alias used by the world-render mixin. */

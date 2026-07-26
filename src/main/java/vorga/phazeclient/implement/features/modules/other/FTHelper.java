@@ -6,6 +6,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import vorga.phazeclient.api.feature.module.Module;
@@ -482,6 +483,15 @@ public final class FTHelper extends Module {
 
         public Vec3d getPosition() {
             return snowball.getPos();
+        }
+
+        /** Entity position interpolated for the current render frame. */
+        public Vec3d getRenderPosition(float tickDelta) {
+            return new Vec3d(
+                    MathHelper.lerp(tickDelta, snowball.lastRenderX, snowball.getX()),
+                    MathHelper.lerp(tickDelta, snowball.lastRenderY, snowball.getY()),
+                    MathHelper.lerp(tickDelta, snowball.lastRenderZ, snowball.getZ())
+            );
         }
 
         public BlockPos getBlockPos() {

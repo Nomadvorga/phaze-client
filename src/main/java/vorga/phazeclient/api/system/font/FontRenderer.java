@@ -1,6 +1,7 @@
 package vorga.phazeclient.api.system.font;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import it.unimi.dsi.fastutil.chars.Char2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -46,10 +47,22 @@ public class FontRenderer implements QuickImports {
 
     public static double ANIMATION_TIME = 0.0;
 
+    /** Matches a bare decimal run inside a {@code ⏏...⏏} color marker. */
+    private static final java.util.regex.Pattern DECIMAL_COLOR_PATTERN =
+            java.util.regex.Pattern.compile("\\d+");
+
     private final Object2ObjectMap<Identifier, ObjectList<DrawEntry>> GLYPH_PAGE_CACHE = new Object2ObjectOpenHashMap<>();
     private final ObjectList<GlyphMap> maps = new ObjectArrayList<>();
-    private final java.util.Map<Character, Glyph> glyphCache = new java.util.HashMap<>();
-    private static final java.util.Map<Long, Integer> COLOR_INTERP_CACHE = new java.util.HashMap<>();
+    /**
+     * Char-keyed so lookups don't box.
+     *
+     * <p>This was a {@code HashMap<Character, Glyph>}, which meant every
+     * locateGlyph() call autoboxed its argument. {@code Character.valueOf}
+     * only caches 0..127, so every Cyrillic character - i.e. most of the
+     * Russian UI - allocated a fresh Character per lookup, once per glyph
+     * per string per frame.
+     */
+    private final Char2ObjectOpenHashMap<Glyph> glyphCache = new Char2ObjectOpenHashMap<>();
     @Getter
     private Font font;
 
@@ -135,17 +148,19 @@ public class FontRenderer implements QuickImports {
     }
 
     public void drawString(MatrixStack matrix, String text, double x, double y, int color) {
-        char[] chars = text.toCharArray();
+        int length = text.length();
         float xOffset = 0;
         float yOffset = 0;
         int lineStart = 0;
-        StringBuilder stringColor = new StringBuilder();
+        // Allocated only if the string actually carries a ⏏ color marker;
+        // the overwhelming majority of draw calls never touch it.
+        StringBuilder stringColor = null;
         boolean colorFormat = false;
         boolean textColor = false;
         int clr = color;
 
-        for (int i = 0; i < chars.length; i++) {
-            char c = chars[i];
+        for (int i = 0; i < length; i++) {
+            char c = text.charAt(i);
 
             if (c == '§') {
                 colorFormat = true;
@@ -154,7 +169,8 @@ public class FontRenderer implements QuickImports {
                 colorFormat = false;
                 char c1 = Character.toUpperCase(c);
                 if (ColorUtil.colorCodes.containsKey(c1)) {
-                    clr = new Color(ColorUtil.colorCodes.get(c1)).getRGB();
+                    // new Color(rgb).getRGB() is just rgb | 0xFF000000.
+                    clr = ColorUtil.colorCodes.get(c1) | 0xFF000000;
                 } else if (c1 == 'R') {
                     clr = color;
                 }
@@ -162,11 +178,13 @@ public class FontRenderer implements QuickImports {
             }
 
             if (c == '⏏') {
-                if (textColor) {
+                if (textColor && stringColor != null) {
                     try {
                         String colorString = stringColor.toString();
-                        if (colorString.matches("\\d+")) {
-                            clr = new Color(Integer.parseInt(colorString)).getRGB();
+                        // String.matches() recompiles the pattern on every
+                        // call; this one is compiled once.
+                        if (DECIMAL_COLOR_PATTERN.matcher(colorString).matches()) {
+                            clr = Integer.parseInt(colorString) | 0xFF000000;
                         }
                     } catch (IllegalArgumentException ignored) {
                     }
@@ -175,6 +193,9 @@ public class FontRenderer implements QuickImports {
                 textColor = !textColor;
                 continue;
             } else if (textColor) {
+                if (stringColor == null) {
+                    stringColor = new StringBuilder(16);
+                }
                 stringColor.append(c);
                 continue;
             }
@@ -202,14 +223,13 @@ public class FontRenderer implements QuickImports {
     }
 
     public void drawGradientString(MatrixStack matrix, String text, double x, double y, int colorStart, int colorEnd) {
-        char[] chars = text.toCharArray();
         float xOffset = 0;
         float yOffset = 0;
         int lineStart = 0;
         int textLength = text.length();
 
-        for (int i = 0; i < chars.length; i++) {
-            char c = chars[i];
+        for (int i = 0; i < textLength; i++) {
+            char c = text.charAt(i);
             if (c == '\n') {
                 yOffset += getStringHeight(text.substring(lineStart, i)) - 2;
                 xOffset = 0;
@@ -237,14 +257,13 @@ public class FontRenderer implements QuickImports {
                                           int colorStart, int colorEnd, double waveLength, double speed) {
         ANIMATION_TIME = System.currentTimeMillis() / 1000.0;
 
-        char[] chars = text.toCharArray();
         float xOffset = 0;
         float yOffset = 0;
         int lineStart = 0;
         int textLength = text.length();
 
-        for (int i = 0; i < chars.length; i++) {
-            char c = chars[i];
+        for (int i = 0; i < textLength; i++) {
+            char c = text.charAt(i);
             if (c == '\n') {
                 yOffset += getStringHeight(text.substring(lineStart, i)) - 2;
                 xOffset = 0;
@@ -344,7 +363,8 @@ public class FontRenderer implements QuickImports {
         float maxPreviousLines = 0;
         boolean ignore = false;
 
-        for (char c : text.toCharArray()) {
+        for (int i = 0, n = text.length(); i < n; i++) {
+            char c = text.charAt(i);
             if (ignore) {
                 ignore = false;
                 continue;
@@ -372,7 +392,9 @@ public class FontRenderer implements QuickImports {
         float currentLine = 0;
         float previous = 0;
 
-        for (char c : (text.isEmpty() ? " " : text).toCharArray()) {
+        String source = text.isEmpty() ? " " : text;
+        for (int i = 0, n = source.length(); i < n; i++) {
+            char c = source.charAt(i);
             if (c == '\n') {
                 currentLine = (currentLine == 0 ? locateGlyph(' ').height() : currentLine);
                 previous += currentLine;
@@ -386,15 +408,22 @@ public class FontRenderer implements QuickImports {
         return currentLine + previous;
     }
 
+    /**
+     * Linearly blends two ARGB colors.
+     *
+     * <p>The result used to be memoized in a static {@code HashMap<Long,
+     * Integer>} capped at 10 000 entries. That cache boxed a fresh
+     * {@code Long} key on every call (the values are far outside the
+     * {@code Long.valueOf} cache range), which cost more than the two dozen
+     * arithmetic ops it was avoiding, and retained up to 10 000 boxed pairs
+     * for the process lifetime.
+     *
+     * <p>Side effect of the removal: the cache keyed on {@code t} quantized
+     * to 1/100, so gradients were stepped and the value actually returned
+     * depended on whichever {@code t} first landed in a bucket. They are now
+     * computed continuously, i.e. slightly smoother and deterministic.
+     */
     private int interpolateColor(int colorStart, int colorEnd, float t) {
-        int quantizedT = (int) (t * 100);
-        long key = ((long) colorStart << 32) | (colorEnd & 0xFFFFFFFFL) | ((long) quantizedT << 48);
-
-        Integer cached = COLOR_INTERP_CACHE.get(key);
-        if (cached != null) {
-            return cached;
-        }
-
         float startAlpha = (colorStart >> 24 & 255) / 255.0F;
         float startRed = (colorStart >> 16 & 255) / 255.0F;
         float startGreen = (colorStart >> 8 & 255) / 255.0F;
@@ -410,13 +439,7 @@ public class FontRenderer implements QuickImports {
         float green = startGreen + t * (endGreen - startGreen);
         float blue = startBlue + t * (endBlue - startBlue);
 
-        int result = ((int) (alpha * 255.0F) << 24) | ((int) (red * 255.0F) << 16) | ((int) (green * 255.0F) << 8) | (int) (blue * 255.0F);
-
-        if (COLOR_INTERP_CACHE.size() < 10000) {
-            COLOR_INTERP_CACHE.put(key, result);
-        }
-
-        return result;
+        return ((int) (alpha * 255.0F) << 24) | ((int) (red * 255.0F) << 16) | ((int) (green * 255.0F) << 8) | (int) (blue * 255.0F);
     }
 
     @Contract(value = "-> new", pure = true)

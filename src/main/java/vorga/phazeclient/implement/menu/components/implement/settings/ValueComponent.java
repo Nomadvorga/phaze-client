@@ -9,6 +9,7 @@ import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
@@ -82,10 +83,12 @@ public class ValueComponent extends AbstractSettingComponent {
 
         MatrixStack matrices = context.getMatrices();
 
-        float selectedBoxX = x + width - 100;
+        float selectedBoxX = x + width - 108.0F;
         String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) Math.max(28.0F, selectedBoxX - x - 20 - animatedTextOffset), 14);
-        float wrappedHeight = MsdfFonts.bold().getWidth(wrapped, LABEL_TEXT_SIZE) / 10;
-        height = Math.round(Math.max(26.0F, 22 + Math.max(0, (wrappedHeight - 14) / 2.0F)));
+        String[] wrappedLines = wrapped.split("\n");
+        float lineHeight = LABEL_TEXT_SIZE + 1.5F;
+        float wrappedHeight = wrappedLines.length == 0 ? LABEL_TEXT_SIZE : wrappedLines.length * lineHeight - 1.5F;
+        height = Math.round(Math.max(26.0F, 20.0F + Math.max(0.0F, wrappedHeight - LABEL_TEXT_SIZE)));
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
         computeSliderGeometry();
@@ -93,6 +96,9 @@ public class ValueComponent extends AbstractSettingComponent {
         float centerY = y + height / 2.0F;
 
         isSliderHovered = MathUtil.isHovered(mouseX, mouseY, cachedSliderStartX - 4, centerY - 6, cachedSliderWidth + 8, 12);
+        if (dragging) {
+            vorga.phazeclient.api.system.cursor.CursorManager.beginDrag(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_HRESIZE);
+        }
 
         renderSettingCard(context, 0.0f, hoverProgress);
 
@@ -183,6 +189,9 @@ public class ValueComponent extends AbstractSettingComponent {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (dragging) {
+            ScaleSnapOverlay.hide();
+        }
         dragging = false;
         return super.mouseReleased(mouseX, mouseY, button);
     }
@@ -246,6 +255,21 @@ public class ValueComponent extends AbstractSettingComponent {
                 ? rangeMin
                 : (difference / cachedSliderWidth) * (rangeMax - rangeMin) + rangeMin;
 
+        // Magnet first, step second. Snapping before the step grid
+        // means the target does not have to sit on a step boundary,
+        // and the latch survives the rounding below - doing it the
+        // other way round would let a step of 0.05 pull 1.0 back off
+        // to 0.95 the moment the grid disagreed.
+        float snapped2 = setting.applySnap(rawValue);
+        boolean magnetHolding = snapped2 != rawValue;
+        if (magnetHolding) {
+            rawValue = snapped2;
+            setting.setValue(setting.isInteger() ? (int) rawValue : rawValue);
+            previousValue = rawValue;
+            announceScale(rawValue, true);
+            return;
+        }
+
         float step = setting.getStep();
         if (step <= 0.0F) step = 0.01F;
         // Snap to the nearest step boundary: round((value - min)/step)
@@ -270,5 +294,22 @@ public class ValueComponent extends AbstractSettingComponent {
         }
 
         setting.setValue(newValue);
+        announceScale(newValue, false);
+    }
+
+    /**
+     * Feeds the centred readout while a magnet-enabled slider is being
+     * dragged. Only sliders that declared a snap get it: those are the
+     * scale sliders, and putting a giant number over the screen for
+     * every unrelated slider would be noise.
+     */
+    private void announceScale(float value, boolean snapped) {
+        if (setting.getSnapRadius() <= 0.0F) {
+            return;
+        }
+        ScaleSnapOverlay.show(
+                value,
+                snapped,
+                snapped ? Lang.t("slider.snapped_to_default") : setting.getName());
     }
 }

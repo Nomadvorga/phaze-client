@@ -253,6 +253,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.FTHelper.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.FTHelper.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HolyWorldHelper.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HolyWorldHelper.getInstance());
+        }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.TrapTimer.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.TrapTimer.getInstance());
         }

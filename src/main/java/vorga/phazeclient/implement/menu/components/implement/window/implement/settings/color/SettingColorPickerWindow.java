@@ -240,24 +240,23 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
+    private void updatePicker(double mouseX, double mouseY) {
+        saturation = clamp((float) ((mouseX - (x + PICKER_X)) / PICKER_WIDTH), 0.0F, 1.0F);
+        brightness = clamp(1.0F - (float) ((mouseY - (y + PICKER_Y)) / PICKER_HEIGHT), 0.0F, 1.0F);
+        commitColor();
+    }
+
     private void renderWindowBlur(MatrixStack matrices) {
         float blurRadius = Theme.getInstance().getMenuBlurRadius();
         if (blurRadius <= 0.0F) {
             return;
         }
-
-        Blur.INSTANCE.renderGaussian(ShapeProperties.create(matrices, x, y, width, height)
+        Blur.INSTANCE.renderGaussianOverlay(ShapeProperties.create(matrices, x, y, width, height)
                 .round(9.0F)
                 .softness(1.1F)
                 .quality(blurRadius * 2.0F)
                 .color(MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha))
                 .build());
-    }
-
-    private void updatePicker(double mouseX, double mouseY) {
-        saturation = clamp((float) ((mouseX - (x + PICKER_X)) / PICKER_WIDTH), 0.0F, 1.0F);
-        brightness = clamp(1.0F - (float) ((mouseY - (y + PICKER_Y)) / PICKER_HEIGHT), 0.0F, 1.0F);
-        commitColor();
     }
 
     private void updateHue(double mouseX) {

@@ -14,12 +14,14 @@ import net.minecraft.client.render.Fog;
 import net.minecraft.client.render.FrameGraphBuilder;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.entity.EntityRenderDispatcher;
 import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.ObjectAllocator;
+import net.minecraft.client.util.Handle;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.hit.BlockHitResult;
@@ -37,18 +39,25 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.render.Render3DUtil;
 import vorga.phazeclient.api.system.shape.implement.Blur;
+import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.other.BlockOverlay;
+import vorga.phazeclient.implement.features.modules.other.FTHelper;
 import vorga.phazeclient.implement.features.modules.other.FTHelperRenderer;
+import vorga.phazeclient.implement.features.modules.other.HolyWorldHelper;
+import vorga.phazeclient.implement.features.modules.other.HolyWorldHelperRenderer;
 import vorga.phazeclient.implement.features.modules.other.HitRange;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 import vorga.phazeclient.implement.features.modules.other.NoRender;
 import vorga.phazeclient.implement.features.modules.other.PredictionsRenderer;
+import vorga.phazeclient.implement.features.modules.other.Predictions;
 import vorga.phazeclient.implement.features.modules.other.WeatherChanger;
 import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -81,9 +90,13 @@ public abstract class WorldRendererMixin {
     // MotionBlur unique state
     // ---------------------------------------------------------------
 
-    @Unique private Matrix4f phaze$prevModelView = new Matrix4f();
-    @Unique private Matrix4f phaze$prevProjection = new Matrix4f();
-    @Unique private Vector3f phaze$prevCameraPos = new Vector3f();
+    @Unique private final Matrix4f phaze$prevModelView = new Matrix4f();
+    @Unique private final Matrix4f phaze$prevProjection = new Matrix4f();
+    @Unique private final Matrix4f phaze$currentProjection = new Matrix4f();
+    @Unique private final Vector3f phaze$prevCameraPos = new Vector3f();
+    @Unique private final Vector3f phaze$currentCameraPos = new Vector3f();
+    @Unique private boolean phaze$motionHistoryValid;
+    @Unique private static final ArrayList<RenderLayer> PHAZE_PENDING_LAYER_SCRATCH = new ArrayList<>(64);
 
     // ---------------------------------------------------------------
     // WeatherChanger: cancel weather render when Clear is forced
@@ -108,20 +121,29 @@ public abstract class WorldRendererMixin {
 
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$motionBlurSetMatrices(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, Matrix4f positionMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
-        // Prepare a single stable world snapshot for nametag blur before
-        // any entity labels are drawn this frame.
-        Blur.INSTANCE.captureWorldSpaceFrame();
-        if (!MotionBlur.getInstance().isEnabled()) return;
+        if (!MotionBlur.getInstance().isEnabled()) {
+            phaze$motionHistoryValid = false;
+            return;
+        }
         float tickDelta = tickCounter.getTickDelta(true);
         float fov = ((GameRendererAccessor) gameRenderer).invokeGetFov(camera, tickDelta, true);
+        phaze$currentProjection.set(gameRenderer.getBasicProjectionMatrix(fov));
+        Vec3d cameraPosition = camera.getPos();
+        phaze$currentCameraPos.set(
+                (float) (cameraPosition.x % 30000f),
+                (float) (cameraPosition.y % 30000f),
+                (float) (cameraPosition.z % 30000f)
+        );
+        if (!phaze$motionHistoryValid) {
+            phaze$prevModelView.set(positionMatrix);
+            phaze$prevProjection.set(phaze$currentProjection);
+            phaze$prevCameraPos.set(phaze$currentCameraPos);
+            phaze$motionHistoryValid = true;
+        }
         MotionBlur.getInstance().shader.setFrameMotionBlur(positionMatrix, phaze$prevModelView,
-                gameRenderer.getBasicProjectionMatrix(fov),
+                phaze$currentProjection,
                 phaze$prevProjection,
-                new Vector3f(
-                        (float) (camera.getPos().x % 30000f),
-                        (float) (camera.getPos().y % 30000f),
-                        (float) (camera.getPos().z % 30000f)
-                ),
+                phaze$currentCameraPos,
                 phaze$prevCameraPos
         );
     }
@@ -129,20 +151,37 @@ public abstract class WorldRendererMixin {
     @Inject(method = "render", at = @At("RETURN"))
     private void phaze$motionBlurSetOldMatrices(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, Matrix4f positionMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
         if (!MotionBlur.getInstance().isEnabled()) return;
-        phaze$prevModelView = new Matrix4f(positionMatrix);
-        float tickDelta = tickCounter.getTickDelta(true);
-        float fov = ((GameRendererAccessor) gameRenderer).invokeGetFov(camera, tickDelta, true);
-        phaze$prevProjection = new Matrix4f(gameRenderer.getBasicProjectionMatrix(fov));
-        phaze$prevCameraPos = new Vector3f(
-                (float) (camera.getPos().x % 30000f),
-                (float) (camera.getPos().y % 30000f),
-                (float) (camera.getPos().z % 30000f)
-        );
+        phaze$prevModelView.set(positionMatrix);
+        phaze$prevProjection.set(phaze$currentProjection);
+        phaze$prevCameraPos.set(phaze$currentCameraPos);
     }
 
     // ---------------------------------------------------------------
     // HitRange (self-circle) — ported from uku's hitrange mod (MIT).
     // ---------------------------------------------------------------
+
+    @Inject(method = "renderEntities", at = @At("HEAD"))
+    private void phaze$prepareNametagBlurFrame(
+            MatrixStack matrices,
+            VertexConsumerProvider.Immediate immediate,
+            Camera camera,
+            RenderTickCounter tickCounter,
+            List<Entity> entities,
+            CallbackInfo ci
+    ) {
+        NametagHud module = NametagHud.getInstance();
+        MinecraftClient client = MinecraftClient.getInstance();
+        boolean hidden = client != null
+                && client.options != null
+                && module.hideInF1.isValue()
+                && client.options.hudHidden;
+        boolean capture = !entities.isEmpty()
+                && module.isEnabled()
+                && module.background.isValue()
+                && module.backgroundBlurRadius.getValue() > 0.0f
+                && !hidden;
+        Blur.INSTANCE.beginWorldSpaceFrame(capture);
+    }
 
     @Inject(method = "renderEntities", at = @At(value = "TAIL"))
     private void phaze$drawHitRangeSelf(
@@ -193,14 +232,79 @@ public abstract class WorldRendererMixin {
             List<Entity> entities,
             CallbackInfo ci
     ) {
-        // Force-flush queued entity layers so anything we draw after
-        // is guaranteed to paint on top.
-        immediate.draw();
+        FTHelper ftHelper = FTHelper.getInstance();
+        HolyWorldHelper holyWorldHelper = HolyWorldHelper.getInstance();
+        Predictions predictions = Predictions.getInstance();
+        if (!ftHelper.isEnabled() && !holyWorldHelper.isEnabled() && !predictions.isEnabled()) {
+            return;
+        }
+        phaze$flushEntityLayersBeforeOverlays(immediate);
 
         Vec3d cameraPos = camera.getPos();
         FTHelperRenderer.renderHighlight(matrices, cameraPos, tickCounter);
-        FTHelperRenderer.renderSnowballs(matrices, cameraPos);
+        FTHelperRenderer.renderSnowballs(matrices, cameraPos, tickCounter);
+        HolyWorldHelperRenderer.render(matrices, cameraPos, tickCounter);
         PredictionsRenderer.render(matrices, cameraPos, tickCounter);
+    }
+
+    @Unique
+    private static void phaze$flushEntityLayersBeforeOverlays(VertexConsumerProvider.Immediate immediate) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.options.getGraphicsMode().getValue() != net.minecraft.client.option.GraphicsMode.FABULOUS) {
+            immediate.draw();
+            return;
+        }
+
+        VertexConsumerProviderImmediateAccessor accessor = (VertexConsumerProviderImmediateAccessor) immediate;
+        PHAZE_PENDING_LAYER_SCRATCH.clear();
+        PHAZE_PENDING_LAYER_SCRATCH.addAll(accessor.phaze$getPendingLayers().keySet());
+        for (RenderLayer layer : PHAZE_PENDING_LAYER_SCRATCH) {
+            String name = layer.toString();
+            if (phaze$containsIgnoreCase(name, "particle")
+                    || phaze$containsIgnoreCase(name, "weather")
+                    || phaze$containsIgnoreCase(name, "cloud")) {
+                continue;
+            }
+            immediate.draw(layer);
+        }
+        PHAZE_PENDING_LAYER_SCRATCH.clear();
+    }
+
+    @Unique
+    private static boolean phaze$containsIgnoreCase(String value, String needle) {
+        int limit = value.length() - needle.length();
+        for (int i = 0; i <= limit; i++) {
+            if (value.regionMatches(true, i, needle, 0, needle.length())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Redirect(
+            method = {
+                    "getEntityOutlinesFramebuffer",
+                    "getTranslucentFramebuffer",
+                    "getEntityFramebuffer",
+                    "getParticlesFramebuffer",
+                    "getWeatherFramebuffer",
+                    "getCloudsFramebuffer"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/util/Handle;get()Ljava/lang/Object;"
+            ),
+            require = 0
+    )
+    private Object phaze$safeFabulousFramebufferHandle(Handle<?> handle) {
+        try {
+            return handle.get();
+        } catch (NullPointerException ignored) {
+            // A deferred third-party buffer may outlive its FrameGraph pass.
+            // Falling back to the currently bound target is safe and matches
+            // the null-handle behavior used by vanilla's render phases.
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------
@@ -250,18 +354,19 @@ public abstract class WorldRendererMixin {
         float fillAlphaScale = ((fillColor >>> 24) & 0xFF) / 255.0F;
         int opaqueRgb = 0xFF000000 | (fillColor & 0x00FFFFFF);
 
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
+        // Match Predictions: subtract the camera while still in double
+        // precision, then emit small camera-relative float vertices.
+        // Casting absolute world coordinates first breaks the fill far
+        // from spawn.
         shape.forEachBox((minX, minY, minZ, maxX, maxY, maxZ) ->
                 Render3DUtil.drawBoxFill(matrices,
-                        (float) (pos.getX() + minX),
-                        (float) (pos.getY() + minY),
-                        (float) (pos.getZ() + minZ),
-                        (float) (pos.getX() + maxX),
-                        (float) (pos.getY() + maxY),
-                        (float) (pos.getZ() + maxZ),
+                        (float) (pos.getX() + minX - cameraPos.x),
+                        (float) (pos.getY() + minY - cameraPos.y),
+                        (float) (pos.getZ() + minZ - cameraPos.z),
+                        (float) (pos.getX() + maxX - cameraPos.x),
+                        (float) (pos.getY() + maxY - cameraPos.y),
+                        (float) (pos.getZ() + maxZ - cameraPos.z),
                         opaqueRgb, fillAlphaScale)
         );
-        matrices.pop();
     }
 }

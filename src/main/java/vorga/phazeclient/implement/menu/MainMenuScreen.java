@@ -8,6 +8,7 @@ import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.screen.option.OptionsScreen;
 import net.minecraft.client.realms.gui.screen.RealmsMainScreen;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.screen.world.SelectWorldScreen;
 import net.minecraft.client.util.Window;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -26,6 +27,7 @@ import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -49,11 +51,16 @@ public class MainMenuScreen extends TitleScreen {
     private static final Identifier ICON_LOGOUT = Identifier.of("phaze", "textures/menu/logout.png");
     private static final Identifier ICON_REALMS = Identifier.of("phaze", "textures/menu/gem_alt_filled.png");
     private static final Identifier ICON_FLASHBACK = Identifier.of("phaze", "textures/menu/flashback.png");
+    private static final Identifier ICON_REPLAY_MOD = Identifier.of("phaze", "textures/menu/replay_mod.png");
+    private static final Identifier ICON_ACCOUNT_SWITCHER = Identifier.of("phaze", "textures/menu/account_switcher.png");
     private static final Identifier ICON_PAINTBRUSH = Identifier.of("phaze", "textures/menu/paintbrush.png");
+    private static final Identifier ICON_VANILLA_MAIN_MENU = Identifier.of("phaze", "textures/menu/vanilla_main_menu.png");
     private static final Identifier ICON_CROSS = Identifier.of("phaze", "textures/menu/cross.png");
+    private static final Identifier ICON_DOWNLOAD = Identifier.of("phaze", "textures/menu/arrow_download.png");
     private static final Identifier ICON_RESET = Identifier.ofVanilla("textures/reset.png");
     private static final int TOOLTIP_TEXT_COLOR = 0xFF9EA7BB;
     private static final int ICON_TINT_COLOR = 0xFF9EA7BB;
+    private static final int ACCOUNT_SWITCHER_NAME_COLOR = 0xFFCC8888;
     private static final int THEME_MODAL_DIM_COLOR = 0x96000000;
     private static final int THEME_SETTINGS_MODAL_DIM_COLOR = 0x42000000;
     private final Rectangle rectangle = new Rectangle();
@@ -64,6 +71,9 @@ public class MainMenuScreen extends TitleScreen {
     private MainMenuButtonWidget settingsButton;
     private MainMenuButtonWidget realmsButton;
     private MainMenuButtonWidget flashbackButton;
+    private MainMenuButtonWidget replayModButton;
+    private MainMenuButtonWidget accountSwitcherButton;
+    private MainMenuButtonWidget vanillaMainMenuButton;
     private MainMenuButtonWidget themeSelectorButton;
     private double overlayScaleFactor = PREFERRED_OVERLAY_SCALE;
     private float overlayRenderScale = 1.0F;
@@ -93,10 +103,21 @@ public class MainMenuScreen extends TitleScreen {
     private String lastMenuLocale = Lang.getActive();
     private final Map<String, Float> themeCardHoverAnims = new HashMap<>();
     private final Map<String, Float> themeCardDeleteHoverAnims = new HashMap<>();
+    private final Map<String, Float> themeCardDownloadProgressAnims = new HashMap<>();
     private final Map<String, Float> themeSettingsPresetHoverAnims = new HashMap<>();
-
+    private Boolean originalIasTitleTextEnabled;
+    private Boolean originalIasTitleButtonEnabled;
+    private boolean iasMainMenuOverrideApplied;
     public MainMenuScreen() {
         super(false);
+    }
+
+    public static boolean isCustomMainMenuEnabled() {
+        return MenuUiSettings.getInstance().isCustomMainMenuEnabled();
+    }
+
+    public static void setCustomMainMenuEnabled(boolean enabled) {
+        MenuUiSettings.getInstance().setCustomMainMenuEnabled(enabled);
     }
 
     @Override
@@ -138,7 +159,13 @@ public class MainMenuScreen extends TitleScreen {
         int dockStep = size + dockGap;
         boolean modMenuLoaded = FabricLoader.getInstance().isModLoaded("modmenu");
         boolean flashbackLoaded = FabricLoader.getInstance().isModLoaded("flashback");
-        int dockButtonCount = 2 + (flashbackLoaded ? 1 : 0) + (modMenuLoaded ? 1 : 0);
+        boolean replayModLoaded = FabricLoader.getInstance().isModLoaded("replaymod");
+        boolean accountSwitcherLoaded = FabricLoader.getInstance().isModLoaded("ias");
+        int dockButtonCount = 2
+                + (flashbackLoaded ? 1 : 0)
+                + (replayModLoaded ? 1 : 0)
+                + (accountSwitcherLoaded ? 1 : 0)
+                + (modMenuLoaded ? 1 : 0);
         int dockTotalWidth = dockButtonCount * size + Math.max(0, dockButtonCount - 1) * dockGap;
         int currentDockX = overlayW / 2 - dockTotalWidth / 2;
 
@@ -177,6 +204,24 @@ public class MainMenuScreen extends TitleScreen {
             currentDockX += dockStep;
         }
 
+        replayModButton = null;
+        if (replayModLoaded) {
+            replayModButton = new MainMenuButtonWidget(
+                    currentDockX, by, size, size, Text.literal(""), ICON_REPLAY_MOD, 1.7F, b -> openReplayModViewer()
+            );
+            addDrawableChild(replayModButton);
+            currentDockX += dockStep;
+        }
+
+        accountSwitcherButton = null;
+        if (accountSwitcherLoaded) {
+            accountSwitcherButton = new MainMenuButtonWidget(
+                    currentDockX, by, size, size, Text.literal(""), ICON_ACCOUNT_SWITCHER, 2.84F, b -> openAccountSwitcher()
+            );
+            addDrawableChild(accountSwitcherButton);
+            currentDockX += dockStep;
+        }
+
         modMenuButton = null;
         if (modMenuLoaded) {
             modMenuButton = new MainMenuButtonWidget(
@@ -186,6 +231,18 @@ public class MainMenuScreen extends TitleScreen {
         }
 
         int topInset = Math.max(8, Math.round(10.0F * scale));
+        vanillaMainMenuButton = new MainMenuButtonWidget(
+                overlayW - topInset,
+                topInset,
+                size,
+                size,
+                Text.literal(""),
+                ICON_VANILLA_MAIN_MENU,
+                MainMenuButtonWidget.ButtonVisualStyle.TOP_BAR_ICON,
+                2.96F,
+                b -> switchToVanillaMainMenu()
+        );
+        addDrawableChild(vanillaMainMenuButton);
         themeSelectorButton = new MainMenuButtonWidget(
                 overlayW - topInset - size,
                 topInset,
@@ -193,6 +250,7 @@ public class MainMenuScreen extends TitleScreen {
                 size,
                 Text.literal(""),
                 ICON_PAINTBRUSH,
+                MainMenuButtonWidget.ButtonVisualStyle.TOP_BAR_ICON,
                 1.7F,
                 b -> setThemeSelectorOpen(!themeSelectorOpen)
         );
@@ -204,6 +262,8 @@ public class MainMenuScreen extends TitleScreen {
         Theme.getInstance().syncLanguage();
         refreshLocalizedMainMenuTexts();
         updateOverlayMetrics();
+        applyIasMainMenuOverrides();
+        suppressExternalMainMenuButtons();
         stabilizeMainMenuButtonLayout();
         syncDisplayedPanoramaName();
         updateThemeUiAnimationTiming();
@@ -224,10 +284,13 @@ public class MainMenuScreen extends TitleScreen {
             themeSelectorOpenAnim = 0.0F;
             themeSelectorSettingsOpenAnim = 0.0F;
             renderMainMenuWidgets(context, overlayMouseX, overlayMouseY, delta);
+            renderAccountSwitcherCurrentUser(context);
             renderFooterTexts(context, overlayW, overlayH);
             renderSettingsTooltip(context);
             renderRealmsTooltip(context);
             renderFlashbackTooltip(context);
+            renderReplayModTooltip(context);
+            renderAccountSwitcherTooltip(context);
             renderModMenuTooltip(context, overlayMouseX, overlayMouseY);
             renderThemeSelectorTooltip(context);
         }
@@ -272,7 +335,11 @@ public class MainMenuScreen extends TitleScreen {
         int dockY = overlayH - Math.round(50.0F * scale);
         int dockGap = Math.max(6, Math.round(8.0F * scale));
         int dockSize = resolveDockButtonSize();
-        int dockButtonCount = 2 + (flashbackButton != null ? 1 : 0) + (modMenuButton != null ? 1 : 0);
+        int dockButtonCount = 2
+                + (flashbackButton != null ? 1 : 0)
+                + (replayModButton != null ? 1 : 0)
+                + (accountSwitcherButton != null ? 1 : 0)
+                + (modMenuButton != null ? 1 : 0);
         int dockTotalWidth = dockButtonCount * dockSize + Math.max(0, dockButtonCount - 1) * dockGap;
         int dockX = overlayW / 2 - dockTotalWidth / 2;
 
@@ -284,15 +351,30 @@ public class MainMenuScreen extends TitleScreen {
             setButtonPosition(flashbackButton, dockX, dockY);
             dockX += dockSize + dockGap;
         }
+        if (replayModButton != null) {
+            setButtonPosition(replayModButton, dockX, dockY);
+            dockX += dockSize + dockGap;
+        }
+        if (accountSwitcherButton != null) {
+            setButtonPosition(accountSwitcherButton, dockX, dockY);
+            dockX += dockSize + dockGap;
+        }
         setButtonPosition(modMenuButton, dockX, dockY);
 
         if (themeSelectorButton != null) {
             int topInset = Math.max(8, Math.round(10.0F * scale));
             setButtonPosition(
                     themeSelectorButton,
-                    overlayW - topInset - themeSelectorButton.getWidth(),
+                    overlayW - topInset - themeSelectorButton.getWidth() * 2 - gap,
                     topInset
             );
+            if (vanillaMainMenuButton != null) {
+                setButtonPosition(
+                        vanillaMainMenuButton,
+                        overlayW - topInset - vanillaMainMenuButton.getWidth(),
+                        topInset
+                );
+            }
         }
     }
 
@@ -305,6 +387,12 @@ public class MainMenuScreen extends TitleScreen {
         }
         if (flashbackButton != null) {
             return flashbackButton.getWidth();
+        }
+        if (replayModButton != null) {
+            return replayModButton.getWidth();
+        }
+        if (accountSwitcherButton != null) {
+            return accountSwitcherButton.getWidth();
         }
         if (modMenuButton != null) {
             return modMenuButton.getWidth();
@@ -351,6 +439,10 @@ public class MainMenuScreen extends TitleScreen {
 
     private void renderMainMenuWidgets(DrawContext context, int mouseX, int mouseY, float delta) {
         for (var child : this.children()) {
+            String className = child.getClass().getName();
+            if (className.startsWith("com.replaymod.") || className.startsWith("ru.vidtu.ias.")) {
+                continue;
+            }
             if (child instanceof net.minecraft.client.gui.Drawable drawable) {
                 drawable.render(context, mouseX, mouseY, delta);
             }
@@ -373,6 +465,34 @@ public class MainMenuScreen extends TitleScreen {
                 text,
                 textSize,
                 0xFFFFFFFF,
+                context.getMatrices().peek().getPositionMatrix(),
+                x,
+                y,
+                0.0F
+        );
+    }
+
+    private void renderAccountSwitcherCurrentUser(DrawContext context) {
+        if (accountSwitcherButton == null || this.client == null || this.client.getSession() == null || quitButton == null) {
+            return;
+        }
+
+        String username = this.client.getSession().getUsername();
+        if (username == null || username.isBlank()) {
+            return;
+        }
+
+        float scale = phaze$menuScale();
+        float textSize = 10.0F * scale;
+        String accountText = "Current Account: " + username;
+        float y = quitButton.getY() + quitButton.getHeight() + 12.0F * scale;
+        float x = quitButton.getX() + (quitButton.getWidth() - MsdfFonts.medium().getWidth(accountText, textSize)) / 2.0F;
+
+        MsdfRenderer.renderText(
+                MsdfFonts.medium(),
+                accountText,
+                textSize,
+                ACCOUNT_SWITCHER_NAME_COLOR,
                 context.getMatrices().peek().getPositionMatrix(),
                 x,
                 y,
@@ -405,6 +525,15 @@ public class MainMenuScreen extends TitleScreen {
         }
     }
 
+    private void switchToVanillaMainMenu() {
+        if (this.client == null) {
+            return;
+        }
+        setThemeSelectorOpen(false);
+        setCustomMainMenuEnabled(false);
+        this.client.setScreen(new TitleScreen(false));
+    }
+
     private void openRealms() {
         if (this.client == null) return;
         this.client.setScreen(new RealmsMainScreen(this));
@@ -414,6 +543,39 @@ public class MainMenuScreen extends TitleScreen {
         if (this.client == null) return;
         try {
             Class<?> screenClass = Class.forName("com.moulberry.flashback.screen.select_replay.SelectReplayScreen");
+            Constructor<?> ctor = screenClass.getConstructor(Screen.class);
+            Screen screen = (Screen) ctor.newInstance(this);
+            this.client.setScreen(screen);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void openReplayModViewer() {
+        if (this.client == null) return;
+        try {
+            Class<?> replayClass = Class.forName("com.replaymod.replay.ReplayModReplay");
+            Object replayInstance = replayClass.getField("instance").get(null);
+            if (replayInstance == null) {
+                return;
+            }
+
+            Class<?> viewerClass = Class.forName("com.replaymod.replay.gui.screen.GuiReplayViewer");
+            Constructor<?> ctor = viewerClass.getConstructor(replayClass);
+            Object viewer = ctor.newInstance(replayInstance);
+            try {
+                viewerClass.getMethod("display").invoke(viewer);
+            } catch (Throwable displayFailed) {
+                Screen screen = (Screen) viewerClass.getMethod("toMinecraft").invoke(viewer);
+                this.client.setScreen(screen);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void openAccountSwitcher() {
+        if (this.client == null) return;
+        try {
+            Class<?> screenClass = Class.forName("ru.vidtu.ias.screen.AccountScreen");
             Constructor<?> ctor = screenClass.getConstructor(Screen.class);
             Screen screen = (Screen) ctor.newInstance(this);
             this.client.setScreen(screen);
@@ -502,14 +664,32 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderFlashbackTooltip(DrawContext context) {
-        if (flashbackButton == null || !flashbackButton.isHovered()) {
+        renderExternalIntegrationTooltip(context, flashbackButton, Lang.translate("Flashback Mod"));
+    }
+
+    private void renderReplayModTooltip(DrawContext context) {
+        renderExternalIntegrationTooltip(context, replayModButton, "Replay Mod");
+    }
+
+    private void renderAccountSwitcherTooltip(DrawContext context) {
+        renderExternalIntegrationTooltip(context, accountSwitcherButton, "In-Game Account Switcher");
+    }
+
+    private void renderExternalIntegrationTooltip(DrawContext context, MainMenuButtonWidget button, String title) {
+        if (button == null || !button.isHovered()) {
             return;
         }
         float scale = phaze$menuScale();
-        float w = 116.0F * scale;
+        float titleSize = 9.6F * scale;
+        float externalSize = 8.6F * scale;
+        float contentWidth = Math.max(
+                MsdfFonts.bold().getWidth(title, titleSize),
+                MsdfFonts.medium().getWidth(Lang.translate("External"), externalSize) + 18.0F * scale
+        );
+        float w = Math.max(116.0F * scale, contentWidth + 20.0F * scale);
         float h = 40.0F * scale;
-        float x = flashbackButton.getX() + (flashbackButton.getWidth() - w) / 2.0F;
-        float y = flashbackButton.getY() - h - (6.0F * scale);
+        float x = button.getX() + (button.getWidth() - w) / 2.0F;
+        float y = button.getY() - h - (6.0F * scale);
 
         rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, w, h)
                 .round(6.0F)
@@ -520,7 +700,7 @@ public class MainMenuScreen extends TitleScreen {
                 .build());
 
         MsdfRenderer.renderText(
-                MsdfFonts.bold(), Lang.translate("Flashback Mod"), 9.6F * scale, TOOLTIP_TEXT_COLOR,
+                MsdfFonts.bold(), title, titleSize, TOOLTIP_TEXT_COLOR,
                 context.getMatrices().peek().getPositionMatrix(),
                 x + 8.0F * scale, y + 8.0F * scale, 0.0F
         );
@@ -557,6 +737,63 @@ public class MainMenuScreen extends TitleScreen {
                 MenuStyle.centerMsdfTextY(textSize, y, h),
                 0.0F
         );
+    }
+
+    private void suppressExternalMainMenuButtons() {
+        for (var child : this.children()) {
+            if (child instanceof ClickableWidget widget) {
+                String className = child.getClass().getName();
+                String message = widget.getMessage() == null ? "" : widget.getMessage().getString();
+                boolean externalWidget = className.startsWith("com.replaymod.")
+                        || className.startsWith("ru.vidtu.ias.")
+                        || "In-Game Account Switcher".equals(message);
+                if (externalWidget) {
+                    widget.visible = false;
+                    widget.active = false;
+                }
+            }
+        }
+    }
+
+    private void applyIasMainMenuOverrides() {
+        if (iasMainMenuOverrideApplied || !FabricLoader.getInstance().isModLoaded("ias")) {
+            return;
+        }
+
+        try {
+            Class<?> configClass = Class.forName("ru.vidtu.ias.config.IASConfig");
+            Field titleTextField = configClass.getField("titleText");
+            Field titleButtonField = configClass.getField("titleButton");
+
+            originalIasTitleTextEnabled = titleTextField.getBoolean(null);
+            originalIasTitleButtonEnabled = titleButtonField.getBoolean(null);
+
+            titleTextField.setBoolean(null, false);
+            titleButtonField.setBoolean(null, false);
+            iasMainMenuOverrideApplied = true;
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void restoreIasMainMenuOverrides() {
+        if (!iasMainMenuOverrideApplied) {
+            return;
+        }
+
+        try {
+            Class<?> configClass = Class.forName("ru.vidtu.ias.config.IASConfig");
+            if (originalIasTitleTextEnabled != null) {
+                configClass.getField("titleText").setBoolean(null, originalIasTitleTextEnabled);
+            }
+            if (originalIasTitleButtonEnabled != null) {
+                configClass.getField("titleButton").setBoolean(null, originalIasTitleButtonEnabled);
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            iasMainMenuOverrideApplied = false;
+            originalIasTitleTextEnabled = null;
+            originalIasTitleButtonEnabled = null;
+        }
     }
 
     private void renderThemeSelectorModal(DrawContext context, int mouseX, int mouseY, int rawMouseX, int rawMouseY, float delta, float modalProgress) {
@@ -768,6 +1005,46 @@ public class MainMenuScreen extends TitleScreen {
                 .build());
         renderPanoramaPresetPreview(context, preset, previewX + 1.0F, previewY + 1.0F, previewW - 2.0F, alpha);
 
+        if (preset.isRemote()) {
+            // Remote cards stay visibly unavailable until their archive is installed.
+            rectangle.render(ShapeProperties.create(context.getMatrices(), previewX + 1.0F, previewY + 1.0F, previewW - 2.0F, previewH - 2.0F)
+                    .round(6.0F)
+                    .softness(1.0F)
+                    .color(scaleColorAlpha(preset.isDownloading() ? 0x3A000000 : 0x64000000, alpha))
+                    .build());
+
+            float progress = animateThemeUiValue(
+                    themeCardDownloadProgressAnims.getOrDefault(preset.getId(), 0.0F),
+                    preset.isDownloading() ? preset.downloadProgress() : 0.0F
+            );
+            themeCardDownloadProgressAnims.put(preset.getId(), progress);
+            if (preset.isDownloading()) {
+                float barX = previewX + 8.0F * layout.scale;
+                float barY = previewY + previewH - 12.0F * layout.scale;
+                float barW = previewW - 16.0F * layout.scale;
+                float barH = 3.0F * layout.scale;
+                rectangle.render(ShapeProperties.create(context.getMatrices(), barX, barY, barW, barH)
+                        .round(barH / 2.0F)
+                        .softness(1.0F)
+                        .color(scaleColorAlpha(0x7A071017, alpha))
+                        .build());
+                rectangle.render(ShapeProperties.create(context.getMatrices(), barX, barY, Math.max(1.0F, barW * progress), barH)
+                        .round(barH / 2.0F)
+                        .softness(1.0F)
+                        .color(scaleColorAlpha(0xFF28D778, alpha))
+                        .build());
+                String percent = Math.round(progress * 100.0F) + "%";
+                float textSize = 7.0F * layout.scale;
+                MsdfRenderer.renderText(MsdfFonts.bold(), percent, textSize, scaleColorAlpha(0xFFFFFFFF, alpha),
+                        context.getMatrices().peek().getPositionMatrix(), previewX + previewW - MsdfFonts.bold().getWidth(percent, textSize) - 7.0F * layout.scale,
+                        previewY + 7.0F * layout.scale, 0.0F);
+            } else {
+                float iconSize = Math.min(previewW, previewH) * 0.42F;
+                renderMenuIconPrecise(context, ICON_DOWNLOAD, previewX + (previewW - iconSize) / 2.0F,
+                        previewY + (previewH - iconSize) / 2.0F, iconSize, iconSize, scaleColorAlpha(0xFFF2FAF5, alpha));
+            }
+        }
+
         int previewHoverAlpha = Math.round(hoverAnim * 28.0F * alpha);
         if (previewHoverAlpha > 0) {
             rectangle.render(ShapeProperties.create(context.getMatrices(), previewX + 1.0F, previewY + 1.0F, previewW - 2.0F, previewH - 2.0F)
@@ -800,7 +1077,7 @@ public class MainMenuScreen extends TitleScreen {
                     customBadgeLayout.badgeX + customBadgeLayout.badgePaddingX + 0.5F,
                     MenuStyle.centerMsdfTextY(customBadgeLayout.badgeTextSize, customBadgeLayout.badgeY, customBadgeLayout.badgeH),
                     0.0F
-                );
+            );
 
             rectangle.render(ShapeProperties.create(context.getMatrices(), customBadgeLayout.deleteX, customBadgeLayout.deleteY, customBadgeLayout.deleteSize, customBadgeLayout.deleteSize)
                     .round(customBadgeLayout.cornerRound)
@@ -817,7 +1094,7 @@ public class MainMenuScreen extends TitleScreen {
                     customBadgeLayout.deleteY + (customBadgeLayout.deleteSize - deleteIconSize) / 2.0F,
                     deleteIconSize,
                     deleteIconSize,
-                    scaleColorAlpha(lerpArgb(0xFFE8B9C0, 0xFFFFFFFF, deleteHoverAnim), alpha)
+                    scaleColorAlpha(lerpArgb(0xFFE8A9B0, 0xFFFFD6D9, deleteHoverAnim), alpha)
             );
         }
 
@@ -860,8 +1137,8 @@ public class MainMenuScreen extends TitleScreen {
         float gap = 3.0F * layout.scale;
         float rightInset = 6.0F * layout.scale;
         float cornerRound = 3.3F * layout.scale;
-        float badgeY = previewY + 6.0F * layout.scale;
-        float deleteX = previewX + previewW - deleteSize - rightInset;
+        float badgeY = previewY + 5.0F * layout.scale;
+        float deleteX = previewX + previewW - deleteSize - rightInset - 1.0F * layout.scale;
         float badgeX = deleteX - gap - badgeW;
         return new ThemeCardDeleteBadgeLayout(badgeTextSize, badgePaddingX, badgeW, badgeH, badgeX, badgeY, deleteSize, deleteX, badgeY, cornerRound);
     }
@@ -870,12 +1147,21 @@ public class MainMenuScreen extends TitleScreen {
         if (this.client != null) {
             preset.getRenderer().prepareTextures(this.client);
         }
+        Identifier preview = preset.previewTexture();
+        if (!preset.hasPreviewTexture()) {
+            rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, Math.max(1.0F, size), Math.max(1.0F, size))
+                    .round(6.0F)
+                    .softness(1.0F)
+                    .color(scaleColorAlpha(0xFF18202B, alpha))
+                    .build());
+            return;
+        }
         int textureSize = preset.previewTextureSize();
         int cropInset = preset.previewCropInset();
         int cropSize = preset.previewCropSize();
         Render2DUtil.drawTexture(
                 context,
-                preset.previewTexture(),
+                preview,
                 x,
                 y,
                 Math.max(1.0F, size),
@@ -1045,9 +1331,6 @@ public class MainMenuScreen extends TitleScreen {
         );
 
         renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.VANILLA, 0, mouseX, mouseY, modalAlpha);
-        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.CHATEAU, 1, mouseX, mouseY, modalAlpha);
-        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.POST_SOVIET_NIGHT, 2, mouseX, mouseY, modalAlpha);
-        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.CASTLE, 3, mouseX, mouseY, modalAlpha);
         context.getMatrices().pop();
     }
 
@@ -1545,6 +1828,7 @@ public class MainMenuScreen extends TitleScreen {
         this.themeSelectorCardMaxScroll = 0.0F;
         this.themeCardHoverAnims.clear();
         this.themeCardDeleteHoverAnims.clear();
+        this.themeCardDownloadProgressAnims.clear();
         this.themeSettingsPresetHoverAnims.clear();
         this.panoramaSliderVisualProgress = (float) (MenuUiSettings.getInstance().getPanoramaSpeed() / 100.0D);
         this.guiFpsSliderVisualProgress = (MenuUiSettings.getInstance().getGuiFpsLimit() - MenuUiSettings.MIN_GUI_FPS_LIMIT)
@@ -1795,6 +2079,7 @@ public class MainMenuScreen extends TitleScreen {
         if (MenuPanoramaRegistry.deleteCustomPanorama(preset.getId())) {
             themeCardHoverAnims.remove(preset.getId());
             themeCardDeleteHoverAnims.remove(preset.getId());
+            themeCardDownloadProgressAnims.remove(preset.getId());
             if (wasSelected) {
                 MenuUiSettings.getInstance().setSelectedPanoramaPreset(MenuUiSettings.PanoramaPreset.VANILLA);
             }
@@ -1833,6 +2118,7 @@ public class MainMenuScreen extends TitleScreen {
 
     @Override
     public void removed() {
+        restoreIasMainMenuOverrides();
         super.removed();
     }
 
@@ -1916,6 +2202,10 @@ public class MainMenuScreen extends TitleScreen {
 
                 MenuUiSettings.PanoramaDescriptor preset = getThemeSelectorPresetAt(layout, overlayMouseX, overlayMouseY);
                 if (preset != null) {
+                    if (preset.isRemote()) {
+                        MenuPanoramaRegistry.activateRemotePanorama(preset.getId());
+                        return true;
+                    }
                     MenuUiSettings.getInstance().setSelectedPanoramaPreset(preset);
                     syncDisplayedPanoramaName();
                     return true;
@@ -1991,6 +2281,7 @@ public class MainMenuScreen extends TitleScreen {
             themeSelectorSearchQuery = "";
             themeCardHoverAnims.clear();
             themeCardDeleteHoverAnims.clear();
+            themeCardDownloadProgressAnims.clear();
             themeSelectorCardScrollTarget = Float.MAX_VALUE;
         }
     }
@@ -2095,28 +2386,43 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private static class MainMenuButtonWidget extends ButtonWidget {
+        private enum ButtonVisualStyle {
+            DEFAULT,
+            TOP_BAR_ICON
+        }
+
         private final Identifier leftIcon;
         private final boolean dangerStyle;
+        private final ButtonVisualStyle visualStyle;
         private final float iconScaleMultiplier;
         private float hoverAnim = 0.0F;
         private long lastFrameTimeNs = -1L;
 
         MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, PressAction onPress) {
-            this(x, y, width, height, message, leftIcon, false, 1.0F, onPress);
+            this(x, y, width, height, message, leftIcon, false, ButtonVisualStyle.DEFAULT, 1.0F, onPress);
         }
 
         MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, float iconScaleMultiplier, PressAction onPress) {
-            this(x, y, width, height, message, leftIcon, false, iconScaleMultiplier, onPress);
+            this(x, y, width, height, message, leftIcon, false, ButtonVisualStyle.DEFAULT, iconScaleMultiplier, onPress);
+        }
+
+        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, ButtonVisualStyle visualStyle, float iconScaleMultiplier, PressAction onPress) {
+            this(x, y, width, height, message, leftIcon, false, visualStyle, iconScaleMultiplier, onPress);
         }
 
         MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, boolean dangerStyle, PressAction onPress) {
-            this(x, y, width, height, message, leftIcon, dangerStyle, 1.0F, onPress);
+            this(x, y, width, height, message, leftIcon, dangerStyle, ButtonVisualStyle.DEFAULT, 1.0F, onPress);
         }
 
         MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, boolean dangerStyle, float iconScaleMultiplier, PressAction onPress) {
+            this(x, y, width, height, message, leftIcon, dangerStyle, ButtonVisualStyle.DEFAULT, iconScaleMultiplier, onPress);
+        }
+
+        MainMenuButtonWidget(int x, int y, int width, int height, Text message, Identifier leftIcon, boolean dangerStyle, ButtonVisualStyle visualStyle, float iconScaleMultiplier, PressAction onPress) {
             super(x, y, width, height, message, onPress, DEFAULT_NARRATION_SUPPLIER);
             this.leftIcon = leftIcon;
             this.dangerStyle = dangerStyle;
+            this.visualStyle = visualStyle;
             this.iconScaleMultiplier = iconScaleMultiplier;
         }
 
@@ -2124,7 +2430,7 @@ public class MainMenuScreen extends TitleScreen {
         protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
             boolean hovered = this.isHovered();
-            boolean flatThemeSelectorStyle = leftIcon != null && leftIcon.equals(ICON_PAINTBRUSH) && this.getMessage().getString().isEmpty();
+            boolean topBarIconStyle = visualStyle == ButtonVisualStyle.TOP_BAR_ICON && this.getMessage().getString().isEmpty();
             float target = hovered ? 1.0F : 0.0F;
             long nowNs = System.nanoTime();
             float dt = lastFrameTimeNs > 0L ? Math.min(0.05F, (nowNs - lastFrameTimeNs) / 1_000_000_000.0F) : (1.0F / 60.0F);
@@ -2135,18 +2441,18 @@ public class MainMenuScreen extends TitleScreen {
                 hoverAnim = target;
             }
 
-            int outline = flatThemeSelectorStyle
+            int outline = topBarIconStyle
                     ? lerpArgb(0xFF0A1020, 0xFF101828, hoverAnim)
                     : dangerStyle
                     ? lerpArgb(0xFF7A2A36, 0xFF8A3341, hoverAnim)
                     : 0xFF27324A;
-            int fill = flatThemeSelectorStyle
+            int fill = topBarIconStyle
                     ? lerpArgb(0xFF090F1C, 0xFF101827, hoverAnim)
                     : dangerStyle
                     ? lerpArgb(0xFF2A0C13, 0xFF351018, hoverAnim)
                     : 0xFF090F1C;
             int hoverOverlayBase = dangerStyle ? 0xC14A61 : 0xFFFFFF;
-            int hoverOverlayAlpha = dangerStyle ? (int) (hoverAnim * 14.0F) : (flatThemeSelectorStyle ? (int) (hoverAnim * 10.0F) : (int) (hoverAnim * 26.0F));
+            int hoverOverlayAlpha = dangerStyle ? (int) (hoverAnim * 14.0F) : (topBarIconStyle ? (int) (hoverAnim * 10.0F) : (int) (hoverAnim * 26.0F));
             int hoverOverlay = (hoverOverlayAlpha << 24) | hoverOverlayBase;
 
             MainMenuScreen screen = (MainMenuScreen) MinecraftClient.getInstance().currentScreen;
@@ -2160,7 +2466,7 @@ public class MainMenuScreen extends TitleScreen {
                         )
                         .round(7.0F / 1.3F)
                         .softness(1.2F)
-                        .thickness(flatThemeSelectorStyle ? 1.0F : 1.8F)
+                        .thickness(topBarIconStyle ? 1.0F : 1.8F)
                         .outlineColor(outline)
                         .color(fill)
                         .build());

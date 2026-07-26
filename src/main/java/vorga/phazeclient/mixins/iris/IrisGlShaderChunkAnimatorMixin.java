@@ -1,9 +1,14 @@
 package vorga.phazeclient.mixins.iris;
 
+import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import vorga.phazeclient.base.util.shader.ChunkAnimatorShaderPatcher;
+import vorga.phazeclient.base.util.shader.IrisEntityShaderPatcher;
+import vorga.phazeclient.base.util.shader.IrisFluidShaderPatcher;
+import vorga.phazeclient.base.util.shader.IrisSkyShaderPatcher;
+import vorga.phazeclient.base.util.shader.WorldColorChunkShaderPatcher;
 
 /**
  * Per-section ChunkAnimator support under Iris+shaders, GLSL half.
@@ -53,21 +58,31 @@ import vorga.phazeclient.base.util.shader.ChunkAnimatorShaderPatcher;
 @Mixin(targets = "net.irisshaders.iris.gl.shader.GlShader", remap = false)
 public abstract class IrisGlShaderChunkAnimatorMixin {
 
-    @ModifyArg(
+    @ModifyArgs(
             method = "<init>",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/irisshaders/iris/gl/shader/GlShader;createShader(Lnet/irisshaders/iris/gl/shader/ShaderType;Ljava/lang/String;Ljava/lang/String;)I",
                     remap = false
             ),
-            index = 2,
             remap = false
     )
-    private static String phaze$injectIrisChunkAnim(String source) {
-        // Same patcher Sodium's ShaderParser hook uses. Source
-        // sniffing inside catches non-chunk shaders and unusual
-        // pipelines, returning them unchanged - so this mixin is
-        // safe to fire on every shader Iris compiles.
-        return ChunkAnimatorShaderPatcher.patch(source);
+    private static void phaze$injectIrisShaderPatches(Args args) {
+        String name = args.get(1);
+        String source = args.get(2);
+
+        // Same chunk patcher Sodium's ShaderParser hook uses.
+        // Source sniffing inside catches non-chunk shaders and
+        // unusual pipelines, returning them unchanged.
+        String patched = WorldColorChunkShaderPatcher.patch(ChunkAnimatorShaderPatcher.patch(source));
+
+        // Separate sky-pass patcher for the majority of Iris shader
+        // packs that rebuild the sky procedurally and therefore
+        // ignore vanilla's already-tinted sky dome.
+        patched = IrisSkyShaderPatcher.patch(name, patched);
+        patched = IrisEntityShaderPatcher.patch(name, patched);
+        patched = IrisFluidShaderPatcher.patch(name, patched);
+
+        args.set(2, patched);
     }
 }

@@ -1,6 +1,10 @@
 package vorga.phazeclient.api.system.font.msdf;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import it.unimi.dsi.fastutil.ints.Int2FloatMap;
+import it.unimi.dsi.fastutil.ints.Int2FloatOpenHashMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.texture.AbstractTexture;
@@ -16,8 +20,17 @@ public final class MsdfFont {
 
     private final AbstractTexture texture;
     private final FontData.AtlasData atlas;
-    private final Map<Integer, MsdfGlyph> glyphs;
-    private final Map<Integer, Map<Integer, Float>> kernings;
+    /**
+     * Int-keyed so per-character lookups don't box.
+     *
+     * <p>These were {@code Map<Integer, ...>}, so every glyph lookup and
+     * every kerning lookup autoboxed its key, and the kerning default
+     * ({@code 0.0F}) allocated a {@code Float} as well - {@code Float} has
+     * no valueOf cache. That was up to three allocations per character per
+     * frame on the menu's text path.
+     */
+    private final Int2ObjectMap<MsdfGlyph> glyphs;
+    private final Int2ObjectMap<Int2FloatMap> kernings;
 
     /**
      * Per-(text, size) cache for {@link #getWidth(String, float)}. The
@@ -45,7 +58,7 @@ public final class MsdfFont {
      */
     private boolean filterApplied = false;
 
-    private MsdfFont(AbstractTexture texture, FontData.AtlasData atlas, Map<Integer, MsdfGlyph> glyphs, Map<Integer, Map<Integer, Float>> kernings) {
+    private MsdfFont(AbstractTexture texture, FontData.AtlasData atlas, Int2ObjectMap<MsdfGlyph> glyphs, Int2ObjectMap<Int2FloatMap> kernings) {
         this.texture = texture;
         this.atlas = atlas;
         this.glyphs = glyphs;
@@ -69,14 +82,14 @@ public final class MsdfFont {
         int previousChar = -1;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            MsdfGlyph glyph = glyphs.get((int) c);
+            MsdfGlyph glyph = glyphs.get(c);
             if (glyph == null) {
                 continue;
             }
 
-            Map<Integer, Float> kerning = kernings.get(previousChar);
+            Int2FloatMap kerning = kernings.get(previousChar);
             if (kerning != null) {
-                x += kerning.getOrDefault((int) c, 0.0F) * size;
+                x += kerning.getOrDefault(c, 0.0F) * size;
             }
 
             x += glyph.apply(matrix, consumer, size, x, y, z, color) + thickness + spacing;
@@ -102,14 +115,14 @@ public final class MsdfFont {
 
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            MsdfGlyph glyph = glyphs.get((int) c);
+            MsdfGlyph glyph = glyphs.get(c);
             if (glyph == null) {
                 continue;
             }
 
-            Map<Integer, Float> kerning = kernings.get(previousChar);
+            Int2FloatMap kerning = kernings.get(previousChar);
             if (kerning != null) {
-                width += kerning.getOrDefault((int) c, 0.0F) * size;
+                width += kerning.getOrDefault(c, 0.0F) * size;
             }
 
             width += glyph.getWidth(size);
@@ -154,14 +167,20 @@ public final class MsdfFont {
 
             float atlasWidth = data.atlas().width();
             float atlasHeight = data.atlas().height();
-            Map<Integer, MsdfGlyph> glyphs = data.glyphs().stream()
-                    .collect(Collectors.toMap(FontData.GlyphData::unicode, glyphData -> new MsdfGlyph(glyphData, atlasWidth, atlasHeight)));
+            Int2ObjectMap<MsdfGlyph> glyphs = new Int2ObjectOpenHashMap<>();
+            for (var glyphData : data.glyphs()) {
+                glyphs.put(glyphData.unicode(), new MsdfGlyph(glyphData, atlasWidth, atlasHeight));
+            }
 
-            Map<Integer, Map<Integer, Float>> kernings = new HashMap<>();
-            data.kernings().forEach(kerning -> {
-                Map<Integer, Float> map = kernings.computeIfAbsent(kerning.leftChar(), ignored -> new HashMap<>());
+            Int2ObjectMap<Int2FloatMap> kernings = new Int2ObjectOpenHashMap<>();
+            for (var kerning : data.kernings()) {
+                Int2FloatMap map = kernings.get(kerning.leftChar());
+                if (map == null) {
+                    map = new Int2FloatOpenHashMap();
+                    kernings.put(kerning.leftChar(), map);
+                }
                 map.put(kerning.rightChar(), kerning.advance());
-            });
+            }
 
             return new MsdfFont(texture, data.atlas(), glyphs, kernings);
         }

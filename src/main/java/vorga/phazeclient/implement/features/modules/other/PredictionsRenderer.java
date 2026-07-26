@@ -30,6 +30,14 @@ public final class PredictionsRenderer {
     /** Soft-falloff bloom texture used for the optional glow halo. */
     private static final net.minecraft.util.Identifier GLOW_TEXTURE =
             net.minecraft.util.Identifier.of("phaze", "textures/particles/bloom/bloom_soft.png");
+    private static final float[] MULTISHOT_YAW_OFFSETS = {-10.0F, 0.0F, 10.0F};
+    private static final java.util.ArrayList<Predictions.TrajectoryResult> TRAJECTORIES = new java.util.ArrayList<>(3);
+    private static final java.util.ArrayList<ImpactMark> IMPACT_MARKS = new java.util.ArrayList<>(3);
+    private static final SnapCache[] SNAP_CACHE = new SnapCache[4];
+    private static Object snapCacheWorld;
+    private static long snapCacheTick = Long.MIN_VALUE;
+    private static int snapCacheCount;
+    private static int snapCacheWriteIndex;
 
     private PredictionsRenderer() {
     }
@@ -126,7 +134,6 @@ public final class PredictionsRenderer {
                     if (t.smoothedImpact != null
                             && t.result != null
                             && t.result.type() != HitResult.Type.MISS) {
-                        pts = new java.util.ArrayList<>(pts);
                         pts.set(pts.size() - 1, t.smoothedImpact);
                     }
                     // Trail lines that end on a living entity get
@@ -144,9 +151,17 @@ public final class PredictionsRenderer {
                         // behind the projectile rather than ending
                         // abruptly at the head.
                         float fadeDist = module.fadeDistance.getValue();
-                        Render3DUtil.drawPolylineFaded(matrices, phaze$toCameraRelative(pts, cameraPos), lineColor, trailWidth, fadeDist, true);
+                        Render3DUtil.drawPolylineFadedOffset(
+                                matrices, pts,
+                                -cameraPos.x, -cameraPos.y, -cameraPos.z,
+                                lineColor, trailWidth, fadeDist, true
+                        );
                     } else {
-                        Render3DUtil.drawPolyline(matrices, phaze$toCameraRelative(pts, cameraPos), lineColor, trailWidth, true);
+                        Render3DUtil.drawPolylineOffset(
+                                matrices, pts,
+                                -cameraPos.x, -cameraPos.y, -cameraPos.z,
+                                lineColor, trailWidth, true
+                        );
                     }
                 }
             }
@@ -255,8 +270,10 @@ public final class PredictionsRenderer {
         // GL buffer. Mojang's BufferBuilder throws "BufferBuilder was
         // empty" if we open it and submit nothing, so we have to know
         // up-front whether ANY trajectory is going to land vertices.
-        java.util.List<Predictions.TrajectoryResult> trajectories = new java.util.ArrayList<>();
-        java.util.List<ImpactMark> marks = new java.util.ArrayList<>();
+        TRAJECTORIES.clear();
+        IMPACT_MARKS.clear();
+        java.util.List<Predictions.TrajectoryResult> trajectories = TRAJECTORIES;
+        java.util.List<ImpactMark> marks = IMPACT_MARKS;
 
         if (module.shouldPredictHeld()) {
             collectHeldHand(mc, module, tickCounter, trajectories, marks);
@@ -512,11 +529,10 @@ public final class PredictionsRenderer {
         // sees exactly where all three bolts will go.
         boolean multishot = type == Predictions.HeldType.CROSSBOW && module.hasMultishot(chosen);
         if (multishot) {
-            float[] yawOffsets = { -10.0F, 0.0F, 10.0F };
-            for (float yawOffset : yawOffsets) {
+            for (float yawOffset : MULTISHOT_YAW_OFFSETS) {
                 Vec3d fanLook = phaze$rotateLookYaw(look, yawOffset);
                 Vec3d fanMotion = fanLook.multiply(speed);
-                Predictions.TrajectoryResult r = module.predict(eye, fanMotion, gravity, trident, p);
+                Predictions.TrajectoryResult r = module.predictCached(eye, fanMotion, gravity, trident, p);
                 if (r == null || r.path() == null || r.path().size() < 2) continue;
                 Predictions.TrajectoryResult s = phaze$snapToTargetedEntity(mc, p, eye, fanLook, r, speed);
                 if (s != null) r = s;
@@ -528,7 +544,7 @@ public final class PredictionsRenderer {
             return;
         }
 
-        Predictions.TrajectoryResult result = module.predict(eye, motion, gravity, trident, p);
+        Predictions.TrajectoryResult result = module.predictCached(eye, motion, gravity, trident, p);
         if (result == null || result.path() == null || result.path().size() < 2) return;
 
         // Snap-to-target: if the player's crosshair is on a living
@@ -571,6 +587,31 @@ public final class PredictionsRenderer {
     }
 
     private static Predictions.TrajectoryResult phaze$snapToTargetedEntity(
+            MinecraftClient mc, PlayerEntity self, Vec3d eye, Vec3d look,
+            Predictions.TrajectoryResult ballistic, double speed) {
+        if (mc.world == null) return null;
+        long worldTick = mc.world.getTime();
+        if (snapCacheWorld != mc.world || snapCacheTick != worldTick) {
+            snapCacheWorld = mc.world;
+            snapCacheTick = worldTick;
+            snapCacheCount = 0;
+            snapCacheWriteIndex = 0;
+        }
+        for (int i = 0; i < snapCacheCount; i++) {
+            SnapCache cached = SNAP_CACHE[i];
+            if (cached != null && cached.matches(self, eye, look, ballistic, speed)) {
+                return cached.result;
+            }
+        }
+
+        Predictions.TrajectoryResult result = phaze$computeSnapToTargetedEntity(mc, self, eye, look, ballistic, speed);
+        SNAP_CACHE[snapCacheWriteIndex] = new SnapCache(self, eye, look, ballistic, speed, result);
+        snapCacheWriteIndex = (snapCacheWriteIndex + 1) % SNAP_CACHE.length;
+        snapCacheCount = Math.min(SNAP_CACHE.length, snapCacheCount + 1);
+        return result;
+    }
+
+    private static Predictions.TrajectoryResult phaze$computeSnapToTargetedEntity(
             MinecraftClient mc, PlayerEntity self, Vec3d eye, Vec3d look,
             Predictions.TrajectoryResult ballistic, double speed) {
         if (mc.world == null) return null;
@@ -678,19 +719,21 @@ public final class PredictionsRenderer {
         var path = result.path();
         if (path.size() < 2) return;
         for (int i = 0; i < path.size() - 1; i++) {
-            Render3DUtil.vertexLine(matrices, buffer,
-                    path.get(i).subtract(cameraPos),
-                    path.get(i + 1).subtract(cameraPos),
-                    color);
+            Vec3d start = path.get(i);
+            Vec3d end = path.get(i + 1);
+            Render3DUtil.vertexLine(
+                    matrices,
+                    buffer,
+                    start.x - cameraPos.x,
+                    start.y - cameraPos.y,
+                    start.z - cameraPos.z,
+                    end.x - cameraPos.x,
+                    end.y - cameraPos.y,
+                    end.z - cameraPos.z,
+                    color,
+                    color
+            );
         }
-    }
-
-    private static java.util.List<Vec3d> phaze$toCameraRelative(java.util.List<Vec3d> points, Vec3d cameraPos) {
-        java.util.ArrayList<Vec3d> out = new java.util.ArrayList<>(points.size());
-        for (Vec3d p : points) {
-            out.add(p.subtract(cameraPos));
-        }
-        return out;
     }
 
     private static ItemStack pickThrowable(Predictions module, ItemStack main, ItemStack off) {
@@ -701,5 +744,35 @@ public final class PredictionsRenderer {
 
     /** Marker geometry record. {@code entity} flips to true on entity-hit so the renderer can place the marker forward of the body. The {@code face} is the surface normal direction for block hits, used to orient the floor ring against walls / ceilings. */
     private record ImpactMark(Vec3d pos, boolean entity, net.minecraft.util.math.Direction face, Entity entityRef) {
+    }
+
+    private record SnapCache(
+            PlayerEntity player,
+            Vec3d eye,
+            Vec3d look,
+            Predictions.TrajectoryResult ballistic,
+            double speed,
+            Predictions.TrajectoryResult result
+    ) {
+        private boolean matches(
+                PlayerEntity player,
+                Vec3d eye,
+                Vec3d look,
+                Predictions.TrajectoryResult ballistic,
+                double speed
+        ) {
+            return this.player == player
+                    && this.ballistic == ballistic
+                    && same(this.eye, eye)
+                    && same(this.look, look)
+                    && Double.doubleToLongBits(this.speed) == Double.doubleToLongBits(speed);
+        }
+
+        private static boolean same(Vec3d first, Vec3d second) {
+            return first != null && second != null
+                    && Double.doubleToLongBits(first.x) == Double.doubleToLongBits(second.x)
+                    && Double.doubleToLongBits(first.y) == Double.doubleToLongBits(second.y)
+                    && Double.doubleToLongBits(first.z) == Double.doubleToLongBits(second.z);
+        }
     }
 }

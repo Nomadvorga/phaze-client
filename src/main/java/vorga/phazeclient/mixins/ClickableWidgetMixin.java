@@ -43,7 +43,7 @@ public abstract class ClickableWidgetMixin {
             return;
         }
         ClickableWidget self = (ClickableWidget) (Object) this;
-        if (!self.visible || !self.active) {
+        if (!self.visible) {
             return;
         }
         int x = self.getX();
@@ -52,6 +52,10 @@ public abstract class ClickableWidgetMixin {
         int h = self.getHeight();
         boolean over = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
         if (!over) {
+            return;
+        }
+        if (!self.active) {
+            CursorManager.requestNotAllowed();
             return;
         }
         if (self instanceof TextFieldWidget) {

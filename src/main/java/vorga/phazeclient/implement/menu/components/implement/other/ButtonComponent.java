@@ -32,6 +32,9 @@ public class ButtonComponent extends AbstractComponent {
         MatrixStack matrix = context.getMatrices();
         String resolved = text == null ? "" : text;
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
+        if (hovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
 
         width = measureWidth();
         height = BUTTON_HEIGHT;

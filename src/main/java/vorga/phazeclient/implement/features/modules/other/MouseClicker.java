@@ -3,6 +3,7 @@ package vorga.phazeclient.implement.features.modules.other;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.Hand;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
@@ -10,6 +11,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.base.util.ServerUtil;
+import vorga.phazeclient.mixins.MinecraftClientMouseInvoker;
 
 /**
  * Auto-click utility (a.k.a. Tape Mouse). Periodically attacks the targeted
@@ -32,6 +34,7 @@ public final class MouseClicker extends Module {
             .selected(HAND_LEFT);
 
     private int tickCounter;
+    private boolean breakingBlock;
 
     private MouseClicker() {
         super("mouseclicker", "Tape Mouse", ModuleCategory.UTILITIES);
@@ -67,23 +70,36 @@ public final class MouseClicker extends Module {
     @Override
     public void deactivate() {
         tickCounter = 0;
+        stopBlockBreaking(MinecraftClient.getInstance());
     }
 
     public void onTick() {
         if (!isEnabled()) {
             tickCounter = 0;
+            stopBlockBreaking(MinecraftClient.getInstance());
             return;
         }
 
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.world == null
                 || client.interactionManager == null || client.currentScreen != null) {
+            stopBlockBreaking(client);
             return;
         }
 
         if (!ServerUtil.isMouseClickerSupported()) {
+            stopBlockBreaking(client);
             return;
         }
+
+        if (HAND_LEFT.equalsIgnoreCase(hand.getSelected())
+                && client.crosshairTarget != null
+                && client.crosshairTarget.getType() == HitResult.Type.BLOCK) {
+            performHeldLeftClick(client);
+            return;
+        }
+
+        stopBlockBreaking(client);
 
         tickCounter++;
         int delay = Math.max(1, clickDelay.getInt());
@@ -103,17 +119,30 @@ public final class MouseClicker extends Module {
         }
 
         if (HAND_RIGHT.equalsIgnoreCase(hand.getSelected())) {
-            // Use item / interact with block
-            interaction.interactItem(player, Hand.MAIN_HAND);
+            ((MinecraftClientMouseInvoker) client).phaze$invokeDoItemUse();
             return;
         }
 
-        // Left-hand: attack the targeted entity if any, otherwise just swing.
-        if (client.crosshairTarget != null && client.targetedEntity != null) {
-            interaction.attackEntity(player, client.targetedEntity);
-            player.swingHand(Hand.MAIN_HAND);
-        } else {
-            player.swingHand(Hand.MAIN_HAND);
+        ((MinecraftClientMouseInvoker) client).phaze$invokeDoAttack();
+    }
+
+    private void performHeldLeftClick(MinecraftClient client) {
+        MinecraftClientMouseInvoker invoker = (MinecraftClientMouseInvoker) client;
+        invoker.phaze$invokeHandleBlockBreaking(true);
+        if (!breakingBlock) {
+            breakingBlock = true;
+            tickCounter = 0;
+            invoker.phaze$invokeDoAttack();
         }
+    }
+
+    private void stopBlockBreaking(MinecraftClient client) {
+        if (!breakingBlock || client == null) {
+            breakingBlock = false;
+            return;
+        }
+
+        ((MinecraftClientMouseInvoker) client).phaze$invokeHandleBlockBreaking(false);
+        breakingBlock = false;
     }
 }

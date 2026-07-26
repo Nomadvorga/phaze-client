@@ -5,6 +5,7 @@ import net.minecraft.client.render.SkyRendering;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import vorga.phazeclient.api.system.colorcorrection.WorldColorCorrectionController;
 import vorga.phazeclient.implement.features.modules.other.SkyCustomizer;
 
 /**
@@ -59,35 +60,31 @@ public abstract class WorldRendererSkyDomeTintMixin {
             )
     )
     private void phaze$tintSkyDome(float red, float green, float blue, float alpha) {
-        SkyCustomizer module = SkyCustomizer.getInstance();
-        if (module == null || !module.isEnabled()) {
-            // Module off: forward the vanilla call unchanged.
-            RenderSystem.setShaderColor(red, green, blue, alpha);
-            return;
-        }
-
-        // Pack the live RGB into ARGB so we can flow through the
-        // same blend / replace / gradient path the fog mixin uses,
-        // keeping the dome and the horizon visually consistent.
         int rr = clamp255(Math.round(red * 255.0F));
         int gg = clamp255(Math.round(green * 255.0F));
         int bb = clamp255(Math.round(blue * 255.0F));
-        int incoming = 0xFF000000 | (rr << 16) | (gg << 8) | bb;
+        int working = 0xFF000000 | (rr << 16) | (gg << 8) | bb;
 
-        // Use neutral 0.5 brightness when we can't query the world -
-        // applyToSky's twilight-window math degrades gracefully into
-        // a no-op outside the [0.15, 0.85] sun-angle band.
-        net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
-        float skyBrightness = 0.5F;
-        if (mc != null && mc.world != null) {
-            skyBrightness = mc.world.getSkyBrightness(1.0F);
+        SkyCustomizer module = SkyCustomizer.getInstance();
+        if (module != null && module.isEnabled()) {
+            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+            float skyBrightness = 0.5F;
+            if (mc != null && mc.world != null) {
+                skyBrightness = mc.world.getSkyBrightness(1.0F);
+            }
+            working = module.applyToSky(working, skyBrightness);
         }
-        int tinted = module.applyToSky(incoming, skyBrightness);
 
-        float tr = ((tinted >> 16) & 0xFF) / 255.0F;
-        float tg = ((tinted >> 8) & 0xFF) / 255.0F;
-        float tb = (tinted & 0xFF) / 255.0F;
-        RenderSystem.setShaderColor(tr, tg, tb, alpha);
+        int corrected = WorldColorCorrectionController.applyToArgb(
+                WorldColorCorrectionController.Target.SKY,
+                ((clamp255(Math.round(alpha * 255.0F)) & 0xFF) << 24) | (working & 0x00FFFFFF)
+        );
+
+        float tr = ((corrected >> 16) & 0xFF) / 255.0F;
+        float tg = ((corrected >> 8) & 0xFF) / 255.0F;
+        float tb = (corrected & 0xFF) / 255.0F;
+        float ta = ((corrected >> 24) & 0xFF) / 255.0F;
+        RenderSystem.setShaderColor(tr, tg, tb, ta);
     }
 
     private static int clamp255(int v) {

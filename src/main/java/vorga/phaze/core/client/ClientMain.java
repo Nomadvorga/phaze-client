@@ -58,6 +58,7 @@ public class ClientMain implements ClientModInitializer {
     }
 
     private void onClientTick(MinecraftClient client) {
+
         while (OPEN_MENU_KEY.wasPressed()) {
             if (client.currentScreen instanceof MenuScreen) {
                 client.setScreen(null);

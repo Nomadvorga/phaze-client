@@ -184,10 +184,14 @@ public final class ConfigManager {
             if (module instanceof RectHudModule rectHudModule) {
                 moduleData.addProperty("hud_x", rectHudModule.getHudX());
                 moduleData.addProperty("hud_y", rectHudModule.getHudY());
+                moduleData.addProperty("hud_x_ratio", rectHudModule.getHudXRatio());
+                moduleData.addProperty("hud_y_ratio", rectHudModule.getHudYRatio());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
             } else if (module instanceof ArmorHud armorHud) {
                 moduleData.addProperty("hud_x", armorHud.getHudX());
                 moduleData.addProperty("hud_y", armorHud.getHudY());
+                moduleData.addProperty("hud_x_ratio", armorHud.getHudXRatio());
+                moduleData.addProperty("hud_y_ratio", armorHud.getHudYRatio());
                 moduleData.addProperty("hud_scale", armorHud.getHudScale());
             }
 
@@ -214,6 +218,7 @@ public final class ConfigManager {
         config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
         config.addProperty("menuGuiFpsLimit", MenuUiSettings.getInstance().getGuiFpsLimit());
         config.addProperty("menuPanoramaPreset", MenuUiSettings.getInstance().getSelectedPanoramaPresetId());
+        config.addProperty("customMainMenuEnabled", MenuUiSettings.getInstance().isCustomMainMenuEnabled());
         config.addProperty("menuPanoramaSpeedScaleVersion", MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION);
 
         // Preserve the {@code imported} marker that
@@ -505,6 +510,7 @@ public final class ConfigManager {
         config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
         config.addProperty("menuGuiFpsLimit", MenuUiSettings.getInstance().getGuiFpsLimit());
         config.addProperty("menuPanoramaPreset", MenuUiSettings.getInstance().getSelectedPanoramaPresetId());
+        config.addProperty("customMainMenuEnabled", MenuUiSettings.getInstance().isCustomMainMenuEnabled());
         config.addProperty("menuPanoramaSpeedScaleVersion", MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION);
         return config;
     }
@@ -729,6 +735,13 @@ public final class ConfigManager {
                 } catch (Throwable ignored) {}
             }
 
+            boolean customMainMenuEnabled = MenuUiSettings.DEFAULT_CUSTOM_MAIN_MENU_ENABLED;
+            if (config.has("customMainMenuEnabled")) {
+                try {
+                    customMainMenuEnabled = config.get("customMainMenuEnabled").getAsBoolean();
+                } catch (Throwable ignored) {}
+            }
+
             int panoramaSpeedScaleVersion = 1;
             if (config.has("menuPanoramaSpeedScaleVersion")) {
                 try {
@@ -737,11 +750,11 @@ public final class ConfigManager {
             }
 
             if (panoramaSpeedScaleVersion >= MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION) {
-                MenuUiSettings.getInstance().applyConfig(panoramaSpeed, guiFpsLimit, panoramaPreset);
+                MenuUiSettings.getInstance().applyConfig(panoramaSpeed, guiFpsLimit, panoramaPreset, customMainMenuEnabled);
             } else if (panoramaSpeedScaleVersion == 2) {
-                MenuUiSettings.getInstance().applyLegacyScaleV2Config(panoramaSpeed, guiFpsLimit, panoramaPreset);
+                MenuUiSettings.getInstance().applyLegacyScaleV2Config(panoramaSpeed, guiFpsLimit, panoramaPreset, customMainMenuEnabled);
             } else {
-                MenuUiSettings.getInstance().applyLegacyScaleV1Config(panoramaSpeed, guiFpsLimit, panoramaPreset);
+                MenuUiSettings.getInstance().applyLegacyScaleV1Config(panoramaSpeed, guiFpsLimit, panoramaPreset, customMainMenuEnabled);
             }
         } catch (Throwable t) {
             t.printStackTrace();
@@ -917,11 +930,15 @@ public final class ConfigManager {
             } else {
                 if (moduleData.has("hud_x")) {
                     rectHudModule.setHudX(moduleData.get("hud_x").getAsFloat());
+                } else if (moduleData.has("hud_x_ratio")) {
+                    rectHudModule.setHudXRatio(moduleData.get("hud_x_ratio").getAsFloat());
                 } else {
                     rectHudModule.resetHudTransform();
                 }
                 if (moduleData.has("hud_y")) {
                     rectHudModule.setHudY(moduleData.get("hud_y").getAsFloat());
+                } else if (moduleData.has("hud_y_ratio")) {
+                    rectHudModule.setHudYRatio(moduleData.get("hud_y_ratio").getAsFloat());
                 }
                 if (moduleData.has("hud_scale")) {
                     rectHudModule.setHudScale(moduleData.get("hud_scale").getAsFloat());
@@ -933,11 +950,15 @@ public final class ConfigManager {
             } else {
                 if (moduleData.has("hud_x")) {
                     armorHud.setHudX(moduleData.get("hud_x").getAsFloat());
+                } else if (moduleData.has("hud_x_ratio")) {
+                    armorHud.setHudXRatio(moduleData.get("hud_x_ratio").getAsFloat());
                 } else {
                     armorHud.resetHudTransform();
                 }
                 if (moduleData.has("hud_y")) {
                     armorHud.setHudY(moduleData.get("hud_y").getAsFloat());
+                } else if (moduleData.has("hud_y_ratio")) {
+                    armorHud.setHudYRatio(moduleData.get("hud_y_ratio").getAsFloat());
                 }
                 if (moduleData.has("hud_scale")) {
                     armorHud.setHudScale(moduleData.get("hud_scale").getAsFloat());

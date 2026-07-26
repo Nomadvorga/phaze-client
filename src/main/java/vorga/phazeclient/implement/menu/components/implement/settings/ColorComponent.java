@@ -123,6 +123,9 @@ public class ColorComponent extends AbstractSettingComponent {
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, ROW_HEIGHT);
+        if (hovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
         float hoverProgress = animatedCardHover(hovered);
 
         height = (int) ROW_HEIGHT;

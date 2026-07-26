@@ -5,11 +5,14 @@ import vorga.phazeclient.api.feature.module.setting.implement.GroupSetting;
 import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.implement.menu.MenuScreen;
+import vorga.phazeclient.implement.menu.components.implement.other.ButtonComponent;
 import vorga.phazeclient.implement.menu.components.implement.other.CheckComponent;
 import vorga.phazeclient.implement.menu.components.implement.other.SettingComponent;
 import vorga.phazeclient.implement.menu.components.implement.window.AbstractWindow;
 import vorga.phazeclient.implement.menu.components.implement.window.implement.settings.group.GroupWindow;
+import vorga.phazeclient.implement.menu.components.implement.window.implement.settings.group.WorldColorGroupWindow;
 import net.minecraft.client.gui.DrawContext;
 
 import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
@@ -17,6 +20,7 @@ import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
 public class GroupComponent extends AbstractSettingComponent {
     private final CheckComponent checkComponent = new CheckComponent();
     private final SettingComponent settingComponent = new SettingComponent();
+    private final ButtonComponent buttonComponent = new ButtonComponent();
 
     private final GroupSetting setting;
 
@@ -31,21 +35,43 @@ public class GroupComponent extends AbstractSettingComponent {
         var labelFont = Fonts.getSize(14, INTER_BOLD);
 
         boolean isModified = setting.isModified();
-        float textOffset = animatedTextOffset(isModified);
+        boolean worldColorStyle = setting.isColorPickerStyleWindow();
+        float textOffset = worldColorStyle ? 0.0F : animatedTextOffset(isModified);
 
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 42 - textOffset), 14);
+        ButtonComponent openButton = null;
+        float openButtonWidth = 0.0F;
+        if (worldColorStyle) {
+            openButton = (ButtonComponent) buttonComponent
+                    .setText(Lang.translate("Open"))
+                    .setRunnable(() -> spawnWindow((int) x, (int) y));
+            openButton.globalAlpha = currentAlpha;
+            openButtonWidth = openButton.measureWidth();
+        }
+
+        float labelMaxWidth = worldColorStyle
+                ? Math.max(52.0F, width - openButtonWidth - 30.0F)
+                : width - 42 - textOffset;
+        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) labelMaxWidth, 14);
         float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
         height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
         float activeProgress = (isGroupWindowOpen() || (setting.isCheckbox() && setting.isValue())) ? 1.0f : 0.0f;
 
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
+        if (!worldColorStyle) {
+            resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
+        }
         renderSettingCard(context, activeProgress, hoverProgress);
 
         float textX = x + 10 + textOffset;
         labelFont.drawString(context.getMatrices(), wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
 
         boolean isWindowOpen = isGroupWindowOpen();
+
+        if (worldColorStyle) {
+            openButton.position(x + width - 9 - openButtonWidth, y + height / 2.0F - 7.0F);
+            openButton.render(context, mouseX, mouseY, delta);
+            return;
+        }
 
         if (setting.isCheckbox()) {
             ((CheckComponent) checkComponent.position(x + width - 38, y + height / 2 - 5.0F))
@@ -67,8 +93,12 @@ public class GroupComponent extends AbstractSettingComponent {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && resetIcon.isHovered(mouseX, mouseY)) {
+        if (!setting.isColorPickerStyleWindow() && button == 0 && resetIcon.isHovered(mouseX, mouseY)) {
             setting.reset();
+            return true;
+        }
+
+        if (setting.isColorPickerStyleWindow() && buttonComponent.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
 
@@ -90,21 +120,16 @@ public class GroupComponent extends AbstractSettingComponent {
     }
 
     private void spawnWindow(int mouseX, int mouseY) {
-        AbstractWindow existingWindow = null;
-
-        for (AbstractWindow window : windowManager.getWindows()) {
-            if (window instanceof GroupWindow && ((GroupWindow) window).getSetting() == setting) {
-                existingWindow = window;
-                break;
-            }
-        }
+        AbstractWindow existingWindow = findWindow(setting);
 
         if (existingWindow != null) {
             closeChildGroupWindows(setting);
             windowManager.delete(existingWindow);
         } else {
-            int windowWidth = 137;
-            int windowHeight = 200;
+            int windowWidth = Math.round(setting.isColorPickerStyleWindow() ? setting.getPopupWidth() : 137.0F);
+            int windowHeight = setting.isColorPickerStyleWindow()
+                    ? estimateWorldColorWindowHeight()
+                    : 200;
 
             int windowX = mouseX + 5;
             int windowY = mouseY + 5;
@@ -112,13 +137,32 @@ public class GroupComponent extends AbstractSettingComponent {
             windowX = MenuScreen.INSTANCE.clampOverlayX(windowX, windowWidth);
             windowY = MenuScreen.INSTANCE.clampOverlayY(windowY, windowHeight);
 
-            AbstractWindow groupWindow = new GroupWindow(setting)
+            AbstractWindow groupWindow = setting.isColorPickerStyleWindow()
+                    ? new WorldColorGroupWindow(setting)
+                    .position(windowX, windowY)
+                    .size(windowWidth, windowHeight)
+                    .draggable(false)
+                    : new GroupWindow(setting)
                     .position(windowX, windowY)
                     .size(windowWidth, 23)
                     .draggable(false);
 
             windowManager.add(groupWindow);
         }
+    }
+
+    private int estimateWorldColorWindowHeight() {
+        int visibleSettings = 0;
+        for (Setting subSetting : setting.getSubSettings()) {
+            java.util.function.Supplier<Boolean> visible = subSetting.getVisible();
+            if (visible != null && !visible.get()) {
+                continue;
+            }
+            visibleSettings++;
+        }
+
+        int estimated = 30 + visibleSettings * 26 + 4;
+        return Math.min(Math.round(setting.getPopupMaxHeight()), Math.max(52, estimated));
     }
 
     private void closeChildGroupWindows(GroupSetting parentSetting) {
@@ -128,26 +172,31 @@ public class GroupComponent extends AbstractSettingComponent {
             if (childSetting instanceof GroupSetting groupSetting) {
                 closeChildGroupWindows(groupSetting);
 
-                for (AbstractWindow window : windowsCopy) {
-                    if (window instanceof GroupWindow groupWindow) {
-                        if (groupWindow.getSetting() == groupSetting) {
-                            windowManager.delete(window);
-                            break;
-                        }
-                    }
+                AbstractWindow childWindow = findWindow(groupSetting, windowsCopy);
+                if (childWindow != null) {
+                    windowManager.delete(childWindow);
                 }
             }
         }
     }
 
     private boolean isGroupWindowOpen() {
-        for (AbstractWindow window : windowManager.getWindows()) {
-            if (window instanceof GroupWindow groupWindow) {
-                if (groupWindow.getSetting() == setting) {
-                    return true;
-                }
+        return findWindow(setting) != null;
+    }
+
+    private AbstractWindow findWindow(GroupSetting targetSetting) {
+        return findWindow(targetSetting, windowManager.getWindows());
+    }
+
+    private AbstractWindow findWindow(GroupSetting targetSetting, java.util.List<AbstractWindow> windows) {
+        for (AbstractWindow window : windows) {
+            if (window instanceof GroupWindow groupWindow && groupWindow.getSetting() == targetSetting) {
+                return window;
+            }
+            if (window instanceof WorldColorGroupWindow worldColorGroupWindow && worldColorGroupWindow.getSetting() == targetSetting) {
+                return window;
             }
         }
-        return false;
+        return null;
     }
 }

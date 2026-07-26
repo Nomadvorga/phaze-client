@@ -9,7 +9,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 import vorga.phazeclient.api.feature.module.Module;
@@ -24,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 /**
  * HolyWorld sends feature-control updates over the liteapi:feature-control
@@ -209,8 +209,12 @@ public final class HolyWorldFeatureControlService {
                 new Id<>(Identifier.of("liteapi", "feature-control"));
         public static final PacketCodec<RegistryByteBuf, HolyWorldPayload> CODEC =
                 PacketCodec.of(
-                        (value, buf) -> PacketCodecs.STRING.encode(buf, value.json()),
-                        buf -> new HolyWorldPayload(PacketCodecs.STRING.decode(buf))
+                        (value, buf) -> buf.writeBytes(value.json().getBytes(StandardCharsets.UTF_8)),
+                        buf -> {
+                            byte[] bytes = new byte[buf.readableBytes()];
+                            buf.readBytes(bytes);
+                            return new HolyWorldPayload(new String(bytes, StandardCharsets.UTF_8));
+                        }
                 );
 
         @Override

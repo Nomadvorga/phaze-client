@@ -10,8 +10,10 @@ import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 /**
  * Minimal 3D draw helpers used by the FT Helper renderer, the
@@ -45,6 +47,13 @@ import org.joml.Matrix4f;
  * drive its own palette.
  */
 public final class Render3DUtil {
+    private static final int MAX_CACHED_CIRCLE_SEGMENTS = 256;
+    private static final int MAX_CACHED_SPHERE_STACKS = 64;
+    private static final CircleLut[] CIRCLE_LUT_CACHE = new CircleLut[MAX_CACHED_CIRCLE_SEGMENTS + 1];
+    private static final SphereLatitudeLut[] SPHERE_LATITUDE_CACHE = new SphereLatitudeLut[MAX_CACHED_SPHERE_STACKS + 1];
+    private static final Vector3f BILLBOARD_RIGHT = new Vector3f();
+    private static final Vector3f BILLBOARD_UP = new Vector3f();
+
     private Render3DUtil() {
     }
 
@@ -209,6 +218,123 @@ public final class Render3DUtil {
         RenderSystem.disableBlend();
     }
 
+    public static void vertexBoxFill(MatrixStack matrices,
+                                     VertexConsumer consumer,
+                                     Box box,
+                                     int color,
+                                     float fillAlphaScale) {
+        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        float a = ((color >>> 24) & 0xFF) / 255.0F;
+        float r = ((color >>> 16) & 0xFF) / 255.0F;
+        float g = ((color >>> 8) & 0xFF) / 255.0F;
+        float b = (color & 0xFF) / 255.0F;
+        float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
+        float x1 = (float) box.minX;
+        float y1 = (float) box.minY;
+        float z1 = (float) box.minZ;
+        float x2 = (float) box.maxX;
+        float y2 = (float) box.maxY;
+        float z2 = (float) box.maxZ;
+
+        consumer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
+
+        consumer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
+
+        consumer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
+
+        consumer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
+
+        consumer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
+
+        consumer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
+        consumer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
+    }
+
+    /**
+     * Draw only the translucent faces of an axis-aligned box.
+     * Depth test can be disabled so the fill stays readable even
+     * when entity geometry sits inside the hitbox volume.
+     */
+    public static void drawSolidBox(MatrixStack matrices,
+                                    float x1, float y1, float z1,
+                                    float x2, float y2, float z2,
+                                    int color,
+                                    float fillAlphaScale,
+                                    boolean depthTest) {
+        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        float a = ((color >>> 24) & 0xFF) / 255.0F;
+        float r = ((color >>> 16) & 0xFF) / 255.0F;
+        float g = ((color >>> 8) & 0xFF) / 255.0F;
+        float b = (color & 0xFF) / 255.0F;
+        float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
+
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
+        if (depthTest) {
+            RenderSystem.enableDepthTest();
+        } else {
+            RenderSystem.disableDepthTest();
+        }
+        RenderSystem.depthMask(false);
+
+        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        // bottom
+        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
+        // top
+        buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
+        // north
+        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
+        // south
+        buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
+        // west
+        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
+        // east
+        buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
+        buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
+
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
+        RenderSystem.disableBlend();
+    }
+
     /**
      * Filled UV sphere centered at {@code (cx, cy, cz)} (camera-relative).
      * Built as a stack of latitude rings stitched into quads. Each ring
@@ -276,21 +402,19 @@ public final class Render3DUtil {
         RenderSystem.depthMask(false);
         RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
+        CircleLut circle = circleLut(segments);
+        SphereLatitudeLut latitudes = sphereLatitudeLut(stacks);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        for (int i = 0; i < stacks; i++) {
-            double phi1 = Math.PI * i / stacks - Math.PI / 2.0;
-            double phi2 = Math.PI * (i + 1) / stacks - Math.PI / 2.0;
-            float y1 = (float) (Math.sin(phi1) * radius);
-            float y2 = (float) (Math.sin(phi2) * radius);
-            float r1 = (float) (Math.cos(phi1) * radius);
-            float r2 = (float) (Math.cos(phi2) * radius);
-            for (int j = 0; j < segments; j++) {
-                double t1 = 2.0 * Math.PI * j / segments;
-                double t2 = 2.0 * Math.PI * (j + 1) / segments;
-                float c1 = (float) Math.cos(t1);
-                float s1 = (float) Math.sin(t1);
-                float c2 = (float) Math.cos(t2);
-                float s2 = (float) Math.sin(t2);
+        for (int i = 0; i < latitudes.stacks; i++) {
+            float y1 = latitudes.sin[i] * radius;
+            float y2 = latitudes.sin[i + 1] * radius;
+            float r1 = latitudes.cos[i] * radius;
+            float r2 = latitudes.cos[i + 1] * radius;
+            for (int j = 0; j < circle.segments; j++) {
+                float c1 = circle.cos[j];
+                float s1 = circle.sin[j];
+                float c2 = circle.cos[j + 1];
+                float s2 = circle.sin[j + 1];
 
                 float x11 = cx + r1 * c1, z11 = cz + r1 * s1;
                 float x12 = cx + r1 * c2, z12 = cz + r1 * s2;
@@ -367,8 +491,8 @@ public final class Render3DUtil {
         // {@code up = camera_up} both unit-length so the quad stays
         // square regardless of camera pitch / yaw.
         var camera = client.gameRenderer.getCamera();
-        org.joml.Vector3f rightV = new org.joml.Vector3f();
-        org.joml.Vector3f upV = new org.joml.Vector3f();
+        Vector3f rightV = BILLBOARD_RIGHT;
+        Vector3f upV = BILLBOARD_UP;
         org.joml.Quaternionf rotation = camera.getRotation();
         rotation.transform(1.0F, 0.0F, 0.0F, rightV);
         rotation.transform(0.0F, 1.0F, 0.0F, upV);
@@ -461,12 +585,11 @@ public final class Render3DUtil {
         RenderSystem.depthMask(false);
         RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
+        CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        for (int i = 0; i < segments; i++) {
-            double t1 = 2.0 * Math.PI * i / segments;
-            double t2 = 2.0 * Math.PI * (i + 1) / segments;
-            float c1 = (float) Math.cos(t1), s1 = (float) Math.sin(t1);
-            float c2 = (float) Math.cos(t2), s2 = (float) Math.sin(t2);
+        for (int i = 0; i < circle.segments; i++) {
+            float c1 = circle.cos[i], s1 = circle.sin[i];
+            float c2 = circle.cos[i + 1], s2 = circle.sin[i + 1];
 
             float ix1 = centerX + c1 * inner, iz1 = centerZ + s1 * inner;
             float ix2 = centerX + c2 * inner, iz2 = centerZ + s2 * inner;
@@ -531,14 +654,13 @@ public final class Render3DUtil {
         RenderSystem.depthMask(false);
         RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
+        CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
-        for (int i = 0; i < segments; i++) {
-            double t1 = 2.0 * Math.PI * i / segments;
-            double t2 = 2.0 * Math.PI * (i + 1) / segments;
-            float x1 = centerX + (float) Math.cos(t1) * radius;
-            float z1 = centerZ + (float) Math.sin(t1) * radius;
-            float x2 = centerX + (float) Math.cos(t2) * radius;
-            float z2 = centerZ + (float) Math.sin(t2) * radius;
+        for (int i = 0; i < circle.segments; i++) {
+            float x1 = centerX + circle.cos[i] * radius;
+            float z1 = centerZ + circle.sin[i] * radius;
+            float x2 = centerX + circle.cos[i + 1] * radius;
+            float z2 = centerZ + circle.sin[i + 1] * radius;
 
             buffer.vertex(matrix, centerX, centerY, centerZ).color(cr, cg, cb, ca);
             buffer.vertex(matrix, x1, centerY, z1).color(rr, rg, rb, ra);
@@ -596,15 +718,14 @@ public final class Render3DUtil {
         RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
+        CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
         float topY = centerY + height;
-        for (int i = 0; i < segments; i++) {
-            double t1 = 2.0 * Math.PI * i / segments;
-            double t2 = 2.0 * Math.PI * (i + 1) / segments;
-            float x1 = centerX + (float) (Math.cos(t1) * radius);
-            float z1 = centerZ + (float) (Math.sin(t1) * radius);
-            float x2 = centerX + (float) (Math.cos(t2) * radius);
-            float z2 = centerZ + (float) (Math.sin(t2) * radius);
+        for (int i = 0; i < circle.segments; i++) {
+            float x1 = centerX + circle.cos[i] * radius;
+            float z1 = centerZ + circle.sin[i] * radius;
+            float x2 = centerX + circle.cos[i + 1] * radius;
+            float z2 = centerZ + circle.sin[i + 1] * radius;
             buffer.vertex(matrix, x1, centerY, z1).color(r, g, b, a).normal(0, 1, 0);
             buffer.vertex(matrix, x2, centerY, z2).color(r, g, b, a).normal(0, 1, 0);
             buffer.vertex(matrix, x1, topY, z1).color(r, g, b, a).normal(0, 1, 0);
@@ -677,12 +798,11 @@ public final class Render3DUtil {
         RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
+        CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
-        for (int i = 0; i < segments; i++) {
-            double t1 = 2.0 * Math.PI * i / segments;
-            double t2 = 2.0 * Math.PI * (i + 1) / segments;
-            float c1 = (float) Math.cos(t1), s1 = (float) Math.sin(t1);
-            float c2 = (float) Math.cos(t2), s2 = (float) Math.sin(t2);
+        for (int i = 0; i < circle.segments; i++) {
+            float c1 = circle.cos[i], s1 = circle.sin[i];
+            float c2 = circle.cos[i + 1], s2 = circle.sin[i + 1];
 
             float p1x = centerX + (ux * c1 + vx * s1) * radius;
             float p1y = centerY + (uy * c1 + vy * s1) * radius;
@@ -758,12 +878,11 @@ public final class Render3DUtil {
         RenderSystem.depthMask(false);
         RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
+        CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        for (int i = 0; i < segments; i++) {
-            double t1 = 2.0 * Math.PI * i / segments;
-            double t2 = 2.0 * Math.PI * (i + 1) / segments;
-            float c1 = (float) Math.cos(t1), s1 = (float) Math.sin(t1);
-            float c2 = (float) Math.cos(t2), s2 = (float) Math.sin(t2);
+        for (int i = 0; i < circle.segments; i++) {
+            float c1 = circle.cos[i], s1 = circle.sin[i];
+            float c2 = circle.cos[i + 1], s2 = circle.sin[i + 1];
 
             float ix1 = centerX + (ux * c1 + vx * s1) * inner;
             float iy1 = centerY + (uy * c1 + vy * s1) * inner;
@@ -799,6 +918,16 @@ public final class Render3DUtil {
     public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
                                   Vec3d start, Vec3d end,
                                   int startColor, int endColor) {
+        vertexLine(matrices, buffer,
+                start.x, start.y, start.z,
+                end.x, end.y, end.z,
+                startColor, endColor);
+    }
+
+    public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
+                                  double startX, double startY, double startZ,
+                                  double endX, double endY, double endZ,
+                                  int startColor, int endColor) {
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         float a1 = ((startColor >>> 24) & 0xFF) / 255.0F;
         float r1 = ((startColor >>> 16) & 0xFF) / 255.0F;
@@ -808,9 +937,9 @@ public final class Render3DUtil {
         float r2 = ((endColor >>> 16) & 0xFF) / 255.0F;
         float g2 = ((endColor >>> 8) & 0xFF) / 255.0F;
         float b2 = (endColor & 0xFF) / 255.0F;
-        buffer.vertex(matrix, (float) start.x, (float) start.y, (float) start.z)
+        buffer.vertex(matrix, (float) startX, (float) startY, (float) startZ)
                 .color(r1, g1, b1, a1).normal(0, 1, 0);
-        buffer.vertex(matrix, (float) end.x, (float) end.y, (float) end.z)
+        buffer.vertex(matrix, (float) endX, (float) endY, (float) endZ)
                 .color(r2, g2, b2, a2).normal(0, 1, 0);
     }
 
@@ -831,9 +960,6 @@ public final class Render3DUtil {
             return;
         }
         Vec3d camera = client.gameRenderer.getCamera().getPos();
-        Vec3d s = start.subtract(camera);
-        Vec3d e = end.subtract(camera);
-
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         float a = ((color >>> 24) & 0xFF) / 255.0F;
         float r = ((color >>> 16) & 0xFF) / 255.0F;
@@ -849,8 +975,14 @@ public final class Render3DUtil {
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
-        buffer.vertex(matrix, (float) s.x, (float) s.y, (float) s.z).color(r, gC, b, a).normal(0, 1, 0);
-        buffer.vertex(matrix, (float) e.x, (float) e.y, (float) e.z).color(r, gC, b, a).normal(0, 1, 0);
+        buffer.vertex(matrix,
+                (float) (start.x - camera.x),
+                (float) (start.y - camera.y),
+                (float) (start.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0);
+        buffer.vertex(matrix,
+                (float) (end.x - camera.x),
+                (float) (end.y - camera.y),
+                (float) (end.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0);
         BufferRenderer.drawWithGlobalProgram(buffer.end());
 
         RenderSystem.depthMask(true);
@@ -874,14 +1006,21 @@ public final class Render3DUtil {
     public static void drawPolyline(MatrixStack matrices,
                                     java.util.List<Vec3d> points,
                                     int color, float lineWidth, boolean depthTest) {
-        if (points == null || points.size() < 2) return;
+        drawPolylineOffset(matrices, points, 0.0, 0.0, 0.0, color, lineWidth, depthTest);
+    }
+
+    public static void drawPolylineOffset(MatrixStack matrices,
+                                          java.util.List<Vec3d> points,
+                                          double offsetX, double offsetY, double offsetZ,
+                                          int color, float lineWidth, boolean depthTest) {
+        if (!hasRenderablePolylineSegment(points)) return;
         // Large-coordinate precision fix:
         // build vertices in a local origin near the path, not in absolute
         // world coordinates. This avoids float precision loss around
         // millions of blocks.
         Vec3d origin = points.get(0);
         matrices.push();
-        matrices.translate(origin.x, origin.y, origin.z);
+        matrices.translate(origin.x + offsetX, origin.y + offsetY, origin.z + offsetZ);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         float a = ((color >>> 24) & 0xFF) / 255.0F;
         float r = ((color >>> 16) & 0xFF) / 255.0F;
@@ -902,10 +1041,17 @@ public final class Render3DUtil {
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
         for (int i = 0; i < points.size() - 1; i++) {
-            Vec3d s = points.get(i).subtract(origin);
-            Vec3d e = points.get(i + 1).subtract(origin);
-            buffer.vertex(matrix, (float) s.x, (float) s.y, (float) s.z).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, (float) e.x, (float) e.y, (float) e.z).color(r, g, b, a).normal(0, 1, 0);
+            Vec3d start = points.get(i);
+            Vec3d end = points.get(i + 1);
+            if (!isRenderablePolylineSegment(start, end)) continue;
+            buffer.vertex(matrix,
+                    (float) (start.x - origin.x),
+                    (float) (start.y - origin.y),
+                    (float) (start.z - origin.z)).color(r, g, b, a).normal(0, 1, 0);
+            buffer.vertex(matrix,
+                    (float) (end.x - origin.x),
+                    (float) (end.y - origin.y),
+                    (float) (end.z - origin.z)).color(r, g, b, a).normal(0, 1, 0);
         }
         BufferRenderer.drawWithGlobalProgram(buffer.end());
 
@@ -947,14 +1093,23 @@ public final class Render3DUtil {
                                          int color, float lineWidth,
                                          float fadeDistance,
                                          boolean depthTest) {
-        if (points == null || points.size() < 2) return;
+        drawPolylineFadedOffset(matrices, points, 0.0, 0.0, 0.0, color, lineWidth, fadeDistance, depthTest);
+    }
+
+    public static void drawPolylineFadedOffset(MatrixStack matrices,
+                                               java.util.List<Vec3d> points,
+                                               double offsetX, double offsetY, double offsetZ,
+                                               int color, float lineWidth,
+                                               float fadeDistance,
+                                               boolean depthTest) {
+        if (!hasRenderablePolylineSegment(points)) return;
         if (fadeDistance <= 0.0F) {
-            drawPolyline(matrices, points, color, lineWidth, depthTest);
+            drawPolylineOffset(matrices, points, offsetX, offsetY, offsetZ, color, lineWidth, depthTest);
             return;
         }
         Vec3d origin = points.get(0);
         matrices.push();
-        matrices.translate(origin.x, origin.y, origin.z);
+        matrices.translate(origin.x + offsetX, origin.y + offsetY, origin.z + offsetZ);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         float maxA = ((color >>> 24) & 0xFF) / 255.0F;
         float r = ((color >>> 16) & 0xFF) / 255.0F;
@@ -982,9 +1137,19 @@ public final class Render3DUtil {
         // reads as smooth.
         double accLen = 0.0;
         for (int i = 0; i < points.size() - 1; i++) {
-            Vec3d s = points.get(i).subtract(origin);
-            Vec3d e = points.get(i + 1).subtract(origin);
-            double segLen = e.subtract(s).length();
+            Vec3d start = points.get(i);
+            Vec3d end = points.get(i + 1);
+            if (!isRenderablePolylineSegment(start, end)) continue;
+            double sx = start.x - origin.x;
+            double sy = start.y - origin.y;
+            double sz = start.z - origin.z;
+            double ex = end.x - origin.x;
+            double ey = end.y - origin.y;
+            double ez = end.z - origin.z;
+            double dx = ex - sx;
+            double dy = ey - sy;
+            double dz = ez - sz;
+            double segLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (segLen < 1e-7) continue;
 
             double startLen = accLen;
@@ -998,16 +1163,18 @@ public final class Render3DUtil {
             // visual gradient.
             if (startLen < fadeDistance && endLen > fadeDistance) {
                 double t = (fadeDistance - startLen) / segLen;
-                Vec3d mid = s.add(e.subtract(s).multiply(t));
+                double mx = sx + dx * t;
+                double my = sy + dy * t;
+                double mz = sz + dz * t;
                 // First half: ramp up to full alpha at the boundary.
-                buffer.vertex(matrix, (float) s.x, (float) s.y, (float) s.z).color(r, g, b, startAlpha).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) mid.x, (float) mid.y, (float) mid.z).color(r, g, b, maxA).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0);
                 // Second half: full alpha across the rest.
-                buffer.vertex(matrix, (float) mid.x, (float) mid.y, (float) mid.z).color(r, g, b, maxA).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) e.x, (float) e.y, (float) e.z).color(r, g, b, maxA).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, maxA).normal(0, 1, 0);
             } else {
-                buffer.vertex(matrix, (float) s.x, (float) s.y, (float) s.z).color(r, g, b, startAlpha).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) e.x, (float) e.y, (float) e.z).color(r, g, b, endAlpha).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, endAlpha).normal(0, 1, 0);
             }
 
             accLen = endLen;
@@ -1019,5 +1186,85 @@ public final class Render3DUtil {
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
         matrices.pop();
+    }
+
+    /** Prevents Tessellator#end from receiving an empty line buffer. */
+    private static boolean hasRenderablePolylineSegment(java.util.List<Vec3d> points) {
+        if (points == null || points.size() < 2) return false;
+        for (int i = 0; i < points.size() - 1; i++) {
+            if (isRenderablePolylineSegment(points.get(i), points.get(i + 1))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isRenderablePolylineSegment(Vec3d start, Vec3d end) {
+        if (start == null || end == null) return false;
+        double dx = end.x - start.x;
+        double dy = end.y - start.y;
+        double dz = end.z - start.z;
+        return Double.isFinite(dx) && Double.isFinite(dy) && Double.isFinite(dz)
+                && dx * dx + dy * dy + dz * dz >= 1.0E-14;
+    }
+
+    private static CircleLut circleLut(int requestedSegments) {
+        int segments = Math.max(3, requestedSegments);
+        if (segments > MAX_CACHED_CIRCLE_SEGMENTS) {
+            return new CircleLut(segments);
+        }
+        CircleLut cached = CIRCLE_LUT_CACHE[segments];
+        if (cached == null) {
+            cached = new CircleLut(segments);
+            CIRCLE_LUT_CACHE[segments] = cached;
+        }
+        return cached;
+    }
+
+    private static SphereLatitudeLut sphereLatitudeLut(int requestedStacks) {
+        int stacks = Math.max(2, requestedStacks);
+        if (stacks > MAX_CACHED_SPHERE_STACKS) {
+            return new SphereLatitudeLut(stacks);
+        }
+        SphereLatitudeLut cached = SPHERE_LATITUDE_CACHE[stacks];
+        if (cached == null) {
+            cached = new SphereLatitudeLut(stacks);
+            SPHERE_LATITUDE_CACHE[stacks] = cached;
+        }
+        return cached;
+    }
+
+    private static final class CircleLut {
+        private final int segments;
+        private final float[] cos;
+        private final float[] sin;
+
+        private CircleLut(int segments) {
+            this.segments = segments;
+            this.cos = new float[segments + 1];
+            this.sin = new float[segments + 1];
+            for (int i = 0; i <= segments; i++) {
+                double angle = Math.PI * 2.0 * i / segments;
+                cos[i] = (float) Math.cos(angle);
+                sin[i] = (float) Math.sin(angle);
+            }
+        }
+    }
+
+    private static final class SphereLatitudeLut {
+        private final int stacks;
+        private final float[] cos;
+        private final float[] sin;
+
+        private SphereLatitudeLut(int stacks) {
+            this.stacks = stacks;
+            this.cos = new float[stacks + 1];
+            this.sin = new float[stacks + 1];
+            for (int i = 0; i <= stacks; i++) {
+                double angle = Math.PI * i / stacks - Math.PI / 2.0;
+                cos[i] = (float) Math.cos(angle);
+                sin[i] = (float) Math.sin(angle);
+            }
+        }
     }
 }

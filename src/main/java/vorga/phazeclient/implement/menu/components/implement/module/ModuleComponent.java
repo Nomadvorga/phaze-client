@@ -163,6 +163,9 @@ public class ModuleComponent extends AbstractComponent {
             float enabledY = optionsY + OPTIONS_ROW_HEIGHT;
             boolean stateRowHovered = MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT);
             stateRowHoverAnimation.setDirection(stateRowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
+            if (stateRowHovered && module.isServerLocked()) {
+                vorga.phazeclient.api.system.cursor.CursorManager.requestNotAllowed();
+            }
         }
     }
 

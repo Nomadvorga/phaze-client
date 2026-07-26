@@ -66,6 +66,18 @@ public abstract class GameRendererZoomMixin {
         } else {
             targetZoom = 1;
         }
+        if (!Float.isFinite(targetZoom) || targetZoom < 1.0f) {
+            targetZoom = 1.0f;
+        }
+        if (!Double.isFinite(zoom$lastZoomDivisor) || zoom$lastZoomDivisor < 1.0) {
+            zoom$lastZoomDivisor = 1.0;
+        }
+        if (!Double.isFinite(zoom$animStart) || zoom$animStart < 1.0) {
+            zoom$animStart = zoom$lastZoomDivisor;
+        }
+        if (!Double.isFinite(zoom$lastTarget) || zoom$lastTarget < 1.0) {
+            zoom$lastTarget = 1.0;
+        }
 
         boolean active = Zoom.isZoomActive();
         boolean directionFlipped = false;
@@ -144,6 +156,9 @@ public abstract class GameRendererZoomMixin {
             Interpolation interp = Interpolations.getByName(curve);
             float eased = (float) interp.interpolate(t);
             zoom$lastZoomDivisor = zoom$animStart + (targetZoom - zoom$animStart) * eased;
+        }
+        if (!Double.isFinite(zoom$lastZoomDivisor) || zoom$lastZoomDivisor < 1.0) {
+            zoom$lastZoomDivisor = 1.0;
         }
 
         zoom$wasActive = active;

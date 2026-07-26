@@ -76,6 +76,9 @@ public final class AutoSwap extends Module {
      * Activate direct swap with rules
      */
     public void activateDirectSwap() {
+        if (!canActivateInGame()) {
+            return;
+        }
         if (!ServerUtil.isAutoSwapSupported()) {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player != null) {
@@ -88,6 +91,12 @@ public final class AutoSwap extends Module {
         if (target != null) {
             startSwapSequence(target);
         }
+    }
+
+    /** AutoSwap hotkeys are gameplay-only; never consume chat or GUI input. */
+    public boolean canActivateInGame() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        return client.player != null && client.world != null && client.currentScreen == null;
     }
 
     /**

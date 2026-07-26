@@ -62,6 +62,14 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
             FabricLoader.getInstance().isModLoaded("iris");
 
     /**
+     * Exordium is optional. The integration mixins target its internal cache
+     * classes and must never be prepared on installations where those classes
+     * do not exist.
+     */
+    private static final boolean EXORDIUM_LOADED =
+            FabricLoader.getInstance().isModLoaded("exordium");
+
+    /**
      * The standalone {@code screencopy} mod (ImUrX, the same project
      * Phaze's clipboard path was adapted from) hooks
      * {@code ScreenshotRecorder.saveScreenshotInner} via its own
@@ -106,9 +114,12 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
      * without it.
      */
     private static final Set<String> SODIUM_ONLY = Set.of(
+            "vorga.phazeclient.mixins.sodium.DefaultFluidRendererWorldColorMixin",
+            "vorga.phazeclient.mixins.sodium.SodiumGlProgramWorldColorMixin",
             "vorga.phazeclient.mixins.sodium.DefaultChunkRendererChunkAnimatorMixin",
             "vorga.phazeclient.mixins.sodium.ShaderParserChunkAnimatorMixin",
             "vorga.phazeclient.mixins.sodium.SodiumGlShaderChunkAnimatorMixin",
+            "vorga.phazeclient.mixins.sodium.SodiumCloudRendererWorldColorMixin",
             "vorga.phazeclient.mixins.sodium.SodiumFlatButtonCursorMixin",
             "vorga.phazeclient.mixins.sodium.SodiumControlElementCursorMixin",
             "vorga.phazeclient.mixins.sodium.SodiumSliderDragCursorMixin",
@@ -138,7 +149,14 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
     private static final Set<String> IRIS_ONLY = Set.of(
             "vorga.phazeclient.mixins.iris.IrisGlShaderChunkAnimatorMixin",
             "vorga.phazeclient.mixins.iris.IrisElementWidgetCursorMixin",
-            "vorga.phazeclient.mixins.iris.IrisSkyColorUniformMixin"
+            "vorga.phazeclient.mixins.iris.IrisSkyColorUniformMixin",
+            "vorga.phazeclient.mixins.iris.IrisProgramWorldColorMixin"
+    );
+
+    private static final Set<String> EXORDIUM_ONLY = Set.of(
+            "vorga.phazeclient.mixins.exordium.ExordiumBufferInstanceMixin",
+            "vorga.phazeclient.mixins.exordium.ExordiumBufferedComponentMixin",
+            "vorga.phazeclient.mixins.exordium.ExordiumDelayedRenderCallManagerMixin"
     );
 
     /**
@@ -174,6 +192,9 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
             return false;
         }
         if (!IRIS_LOADED && IRIS_ONLY.contains(mixinClassName)) {
+            return false;
+        }
+        if (!EXORDIUM_LOADED && EXORDIUM_ONLY.contains(mixinClassName)) {
             return false;
         }
         if (!REESES_LOADED && REESES_ONLY.contains(mixinClassName)) {

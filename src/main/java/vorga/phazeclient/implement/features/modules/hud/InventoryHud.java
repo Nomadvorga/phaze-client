@@ -21,6 +21,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
  */
 public final class InventoryHud extends RectHudModule {
     private static final InventoryHud INSTANCE = new InventoryHud();
+    private static final float MAX_INVENTORY_HUD_SCALE = 3.25F;
 
     public final SectionSetting otherSection = new SectionSetting("Other");
     public final BooleanSetting drawCounts = new BooleanSetting(
@@ -162,5 +163,10 @@ public final class InventoryHud extends RectHudModule {
     @Override
     public float getIconSize() {
         return 21.0F;
+    }
+
+    @Override
+    public float getMaxHudScale() {
+        return MAX_INVENTORY_HUD_SCALE;
     }
 }

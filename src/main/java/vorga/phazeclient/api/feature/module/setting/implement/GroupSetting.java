@@ -18,6 +18,9 @@ public class GroupSetting extends Setting {
     private Boolean defaultValue;
     private boolean checkbox = true;
     private List<Setting> subSettings = new ArrayList<>();
+    private boolean colorPickerStyleWindow = false;
+    private float popupWidth = 148.0F;
+    private float popupMaxHeight = 190.0F;
 
     public GroupSetting(String name, String description) {
         super(name, description);
@@ -38,6 +41,21 @@ public class GroupSetting extends Setting {
         return this;
     }
 
+    public GroupSetting colorPickerStyleWindow(boolean colorPickerStyleWindow) {
+        this.colorPickerStyleWindow = colorPickerStyleWindow;
+        return this;
+    }
+
+    public GroupSetting popupWidth(float popupWidth) {
+        this.popupWidth = popupWidth;
+        return this;
+    }
+
+    public GroupSetting popupMaxHeight(float popupMaxHeight) {
+        this.popupMaxHeight = popupMaxHeight;
+        return this;
+    }
+
     @Override
     public String getName() {
         return getNameKey();
@@ -50,6 +68,16 @@ public class GroupSetting extends Setting {
             return "";
         }
         return descriptionKey;
+    }
+
+    @Override
+    public String getLocalizedName() {
+        return super.getName();
+    }
+
+    @Override
+    public String getLocalizedDescription() {
+        return super.getDescription();
     }
 
     public GroupSetting setValue(boolean value) {

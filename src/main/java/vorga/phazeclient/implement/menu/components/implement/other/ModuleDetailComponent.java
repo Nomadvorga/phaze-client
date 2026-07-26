@@ -66,7 +66,9 @@ public class ModuleDetailComponent extends AbstractComponent {
         this.module = module;
         this.scroll = 0.0;
         this.smoothedScroll = 0.0;
-        openAnimation.setDirection(Direction.FORWARDS);
+        this.lastMeasuredHeight = 0.0;
+        openAnimation.setDirectionAndFinish(Direction.FORWARDS);
+        backHoverAnimation.setDirectionAndFinish(Direction.BACKWARDS);
         MenuScreen.INSTANCE.getModuleDescriptionComponent().hide();
     }
 
@@ -223,10 +225,15 @@ public class ModuleDetailComponent extends AbstractComponent {
         // dynamically when some settings are hidden, otherwise rows "jump" around.
         boolean singleColumnLayout = settingComponents.size() <= 2;
         float columnWidth = singleColumnLayout ? innerWidth : (innerWidth - COLUMN_GAP) / 2.0F;
+        float scissorTopLift = 6.0F;
+        float scissorX = innerX;
+        float scissorY = innerY - scissorTopLift;
+        float scissorWidth = innerWidth;
+        float scissorHeight = innerHeight + scissorTopLift;
 
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
-        scissorManager.push(positionMatrix, innerX, innerY, innerWidth, innerHeight);
+        scissorManager.push(positionMatrix, scissorX, scissorY, scissorWidth, scissorHeight);
 
         float[] columnOffsets = new float[]{0.0F, 0.0F};
         // Visible-band cull: any setting whose row strip falls
@@ -240,8 +247,8 @@ public class ModuleDetailComponent extends AbstractComponent {
         // Skipping render() outright AND the hover-tracking branches
         // for off-screen rows fixes both the visual leak and the
         // "invisible setting still steals my hover" interaction bug.
-        float visibleTop = innerY;
-        float visibleBottom = innerY + innerHeight;
+        float visibleTop = scissorY;
+        float visibleBottom = scissorY + scissorHeight;
         for (AbstractSettingComponent component : settingComponents) {
             if (!shouldRenderSetting(component.getSetting())) {
                 continue;
@@ -315,8 +322,8 @@ public class ModuleDetailComponent extends AbstractComponent {
      * the "click absorbed by invisible row" bug we're fixing.
      */
     private boolean isComponentVisible(AbstractSettingComponent component) {
-        float visibleTop = settingsPanelY() + 2.0F;
-        float visibleBottom = visibleTop + settingsPanelHeight() - 4.0F;
+        float visibleTop = settingsPanelY() - 4.0F;
+        float visibleBottom = visibleTop + settingsPanelHeight() + 4.0F;
         float rowTop = component.y;
         float rowBottom = component.y + component.getExpandedHeight();
         return rowBottom >= visibleTop && rowTop <= visibleBottom;

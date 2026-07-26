@@ -184,6 +184,9 @@ public final class BatchedRectangle {
     private static int scopeDepth = 0;
     private static BufferBuilder activeBuilder = null;
     private static int pendingRects = 0;
+    private static final Vector3f SCRATCH_BASE_POS = new Vector3f();
+    private static final Vector3f SCRATCH_SIZE = new Vector3f();
+    private static final Vector4f SCRATCH_RADIUS = new Vector4f();
 
     /**
      * Optional override for the framebuffer height that {@link #submit}
@@ -381,8 +384,8 @@ public final class BatchedRectangle {
         float globalAlpha = RenderSystem.getShaderColor()[3];
 
         Matrix4f matrix = shape.getMatrix().peek().getPositionMatrix();
-        Vector3f basePos = matrix.transformPosition(shape.getX(), shape.getY(), 0, new Vector3f()).mul(scale);
-        Vector3f sizeVec = matrix.getScale(new Vector3f()).mul(scale);
+        Vector3f basePos = matrix.transformPosition(shape.getX(), shape.getY(), 0, SCRATCH_BASE_POS).mul(scale);
+        Vector3f sizeVec = matrix.getScale(SCRATCH_SIZE).mul(scale);
 
         float scaledWidth = shape.getWidth() * sizeVec.x;
         float scaledHeight = shape.getHeight() * sizeVec.y;
@@ -390,7 +393,7 @@ public final class BatchedRectangle {
         float baseX = basePos.x;
         float baseY = windowHeight - scaledHeight - basePos.y;
 
-        Vector4f scaledRadius = new Vector4f(shape.getRound()).mul(sizeVec.y);
+        Vector4f scaledRadius = SCRATCH_RADIUS.set(shape.getRound()).mul(sizeVec.y);
         float softness = shape.getSoftness();
         float thickness = shape.getThickness();
 

@@ -103,6 +103,9 @@ public abstract class MinecraftClientMixin {
     @Inject(method = "tick", at = @At("HEAD"))
     private void phaze$ensureCustomMainMenuBeforeFrame(CallbackInfo ci) {
         MinecraftClient client = (MinecraftClient) (Object) this;
+        if (!MainMenuScreen.isCustomMainMenuEnabled()) {
+            return;
+        }
         if (client.getOverlay() != null) {
             return;
         }
@@ -125,6 +128,9 @@ public abstract class MinecraftClientMixin {
         }
 
         MinecraftClient client = (MinecraftClient) (Object) this;
+        if (!MainMenuScreen.isCustomMainMenuEnabled()) {
+            return;
+        }
         if (client.getOverlay() != null) {
             return;
         }

@@ -450,14 +450,14 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
         // upload is skipped - Dither stays the implicit "effect"
         // because the unpatched shader has no dither/blend logic at
         // all.
-        if (phaze$cachedFadeStyleLoc >= 0 && animator.isFadeMode()) {
+        if (phaze$cachedFadeStyleLoc >= 0 && (animator.isFadeMode() || animator.isScaleMode())) {
             int currentStyle = animator.getFadeStyleIndex();
             if (currentStyle != phaze$lastUploadedFadeStyle) {
                 GL20.glUniform1i(phaze$cachedFadeStyleLoc, currentStyle);
                 phaze$lastUploadedFadeStyle = currentStyle;
             }
         }
-        if (phaze$cachedFogMixColorLoc >= 0 && animator.isFadeMode()) {
+        if (phaze$cachedFogMixColorLoc >= 0 && (animator.isFadeMode() || animator.isScaleMode())) {
             float r = FogColorTracker.red();
             float g = FogColorTracker.green();
             float b = FogColorTracker.blue();

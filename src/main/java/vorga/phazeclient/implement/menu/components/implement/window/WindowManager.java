@@ -49,6 +49,15 @@ public class WindowManager extends AbstractComponent {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         List<AbstractWindow> toRemove = new ArrayList<>();
 
+        // Snapshot the menu with its content drawn but before any window is
+        // painted. Window backdrops blur from this, so a color picker's
+        // background continues the menu's blur instead of showing the world
+        // straight through it - and because the windows themselves are not in
+        // the snapshot, none of them can blur its own output.
+        if (!windows.isEmpty()) {
+            vorga.phazeclient.api.system.shape.implement.Blur.INSTANCE.captureMenuOverlayFrame();
+        }
+
         windows.forEach(window -> {
             window.render(context, mouseX, mouseY, delta);
 

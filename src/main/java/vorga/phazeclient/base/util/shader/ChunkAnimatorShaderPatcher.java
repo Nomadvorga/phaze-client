@@ -188,7 +188,7 @@ public final class ChunkAnimatorShaderPatcher {
     private static final String OFFSET_PATCH_TEMPLATE =
             "$1\n    vec4 phazeAnimData = phazeChunkData[int({mesh_id}) & 0xFF];\n"
           + "    if (u_PhazeChunkAnimMode == 1) { _vert_position += phazeAnimData.xyz; }\n"
-          + "    v_PhazeChunkAnimFade = (u_PhazeChunkAnimMode == 2) ? phazeAnimData.w : 1.0;\n"
+          + "    v_PhazeChunkAnimFade = ((u_PhazeChunkAnimMode == 2 || u_PhazeChunkAnimMode == 3) ? phazeAnimData.w : 1.0);\n"
           + "    if (u_PhazeChunkAnimMode == 3 && phazeAnimData.w < 1.0) {"
           + " _vert_position = mix(vec3(8.0), _vert_position, phazeAnimData.w); }";
 

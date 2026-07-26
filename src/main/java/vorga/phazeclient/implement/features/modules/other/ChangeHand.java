@@ -64,7 +64,10 @@ public final class ChangeHand extends Module {
     public final ValueSetting mainHandZ = new ValueSetting("Main Z", "Depth (forward/back) offset of the main hand item")
             .range(-2.5f, 2.5f).step(0.01f).setValue(0.0f);
     public final ValueSetting mainHandScale = new ValueSetting("Main Scale", "Size multiplier of the main hand item")
-            .range(0.1f, 2.0f).step(0.01f).setValue(1.0f);
+            .range(0.1f, 2.0f).step(0.01f).setValue(1.0f)
+            // Magnetic around 1.0 so "put it back to normal" is a
+            // rough flick rather than a hunt for one pixel of travel.
+            .snapTo(1.0f, 0.08f);
 
     // --- Off hand offset / scale -----------------------------------
     public final SectionSetting offHandSection = new SectionSetting("Off Hand");
@@ -75,7 +78,8 @@ public final class ChangeHand extends Module {
     public final ValueSetting offHandZ = new ValueSetting("Off Z", "Depth (forward/back) offset of the off hand item")
             .range(-2.5f, 2.5f).step(0.01f).setValue(0.0f);
     public final ValueSetting offHandScale = new ValueSetting("Off Scale", "Size multiplier of the off hand item")
-            .range(0.1f, 2.0f).step(0.01f).setValue(1.0f);
+            .range(0.1f, 2.0f).step(0.01f).setValue(1.0f)
+            .snapTo(1.0f, 0.08f);
 
     // --- Side switch -----------------------------------------------
     // Kept BELOW the position/scale sliders in the GUI because the

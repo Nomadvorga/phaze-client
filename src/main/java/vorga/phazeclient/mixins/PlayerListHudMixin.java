@@ -10,9 +10,12 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.MutableText;
+import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.Formatting;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
@@ -20,7 +23,9 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 import vorga.phazeclient.base.util.PhazeBadgeUtil;
+import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 import vorga.phazeclient.implement.features.modules.hud.TabHud;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
@@ -32,6 +37,9 @@ import java.util.UUID;
 
 @Mixin(PlayerListHud.class)
 public class PlayerListHudMixin {
+    @Unique
+    private boolean phaze$tabTransformPushed = false;
+
     @ModifyVariable(
             method = "render",
             at = @At("STORE"),
@@ -92,7 +100,10 @@ public class PlayerListHudMixin {
         String text = String.valueOf(ping);
         int textWidth = client.textRenderer.getWidth(text);
         int textX = x + width - textWidth - 2;
-        context.drawText(client.textRenderer, text, textX, y, color, tabHud.pingNumberShadow.isValue());
+        ExordiumAnimationBridge.recordTabElement(
+                context, textX - 1.0F, y - 1.0F, textX + textWidth + 1.0F, y + 10.0F
+        );
+        context.drawText(client.textRenderer, text, textX, y, phaze$applyTabAlpha(color), tabHud.pingNumberShadow.isValue());
         ci.cancel();
     }
 
@@ -110,71 +121,100 @@ public class PlayerListHudMixin {
      * matrix.
      */
     @Inject(method = "render", at = @At("HEAD"))
-    private void phaze$pushTabSlide(DrawContext context, int scaledWindowWidth,
-                                    net.minecraft.scoreboard.Scoreboard scoreboard,
-                                    net.minecraft.scoreboard.ScoreboardObjective objective,
-                                    CallbackInfo ci) {
+    private void phaze$resetTabAnimationState(DrawContext context, int scaledWindowWidth,
+                                              net.minecraft.scoreboard.Scoreboard scoreboard,
+                                              net.minecraft.scoreboard.ScoreboardObjective objective,
+                                              CallbackInfo ci) {
+        phaze$tabTransformPushed = false;
+    }
+
+    @Inject(method = "render", at = @At("HEAD"), cancellable = true)
+    private void phaze$skipInvisibleTabFrame(DrawContext context, int scaledWindowWidth,
+                                             net.minecraft.scoreboard.Scoreboard scoreboard,
+                                             net.minecraft.scoreboard.ScoreboardObjective objective,
+                                             CallbackInfo ci) {
         Animations module = Animations.getInstance();
         if (module == null || !module.isTabSlideEnabled()) {
             return;
         }
-        // Flush prior batches so they render with normal (1,1,1,1) shader
-        // color, not our faded one.
-        context.draw();
+        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
+            return;
+        }
 
+        float alpha = module.currentTabAlpha();
+        if (alpha <= 0.018F) {
+            ci.cancel();
+            return;
+        }
+    }
+
+    @Inject(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V",
+                    ordinal = 0
+            ),
+            locals = LocalCapture.CAPTURE_FAILHARD
+    )
+    private void phaze$pushTabSlide(DrawContext context, int scaledWindowWidth,
+                                    net.minecraft.scoreboard.Scoreboard scoreboard,
+                                    net.minecraft.scoreboard.ScoreboardObjective objective,
+                                    CallbackInfo ci,
+                                    List<PlayerListEntry> entries,
+                                    List<?> scoreEntries,
+                                    int emptyWidth,
+                                    int maxNameWidth,
+                                    int maxScoreWidth,
+                                    int totalPlayers,
+                                    int rowsPerColumn,
+                                    int columns,
+                                    boolean showSkins,
+                                    int scoreWidth,
+                                    int columnWidth,
+                                    int left,
+                                    int top,
+                                    int totalWidth,
+                                    List<?> headerLines) {
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isTabSlideEnabled() || phaze$tabTransformPushed) {
+            return;
+        }
+
+        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
+            float pivotX = scaledWindowWidth * 0.5F;
+            float pivotY = module.isTabSlideScaleStyle()
+                    ? top
+                    : top + rowsPerColumn * 9.0F * 0.5F;
+            ExordiumAnimationBridge.recordTabGeometry(pivotX, pivotY);
+            return;
+        }
+
+        context.draw();
         context.getMatrices().push();
+        phaze$tabTransformPushed = true;
 
         if (module.isTabSlideStyle()) {
-            // "Slide" style: translate the tab list vertically so it
-            // slides in from the top edge of the screen. Fade is
-            // forced on for Slide (see Animations.isTabFadeEnabled),
-            // so the alpha drop carries the final dissolve that the
-            // tight 18px slide can't reach by itself.
             float offsetY = module.currentTabSlideOffset();
             if (offsetY != 0.0F) {
                 context.getMatrices().translate(0.0F, offsetY, 0.0F);
             }
-        } else {
-            // Scale-based styles: shrink the tab list to a near-zero
-            // pivot when closed and grow it back to full size when
-            // open. Scale runs from 0.01 (effectively a 1-pixel speck
-            // for any realistic tab width) up to 1.0 so both open and
-            // close animations visually collapse into / explode out
-            // from a single point. The Math.max floor avoids the
-            // matrix collapsing to a true singular value when progress
-            // hits 0, which some GL drivers report as a degenerate
-            // transform.
-            //
-            // Pivot Y differs between the two scale styles:
-            //  - "Scale": scaledHeight/4 lands near the vertical
-            //    center of typical tab lists, so the speck appears
-            //    in the middle of where the tab would be.
-            //  - "Slide+Scale": pivotY=10 matches the top of the tab
-            //    list (vanilla starts drawing at y=10), so the speck
-            //    sits just below the top edge of the screen and the
-            //    shrink/grow visually retracts UP into / drops DOWN
-            //    from the tab's header position. Combined with fade
-            //    this reads as a slide+scale combo.
-            float progress = module.currentTabProgress();
-            float scale = Math.max(0.01F, progress);
-            float pivotX = scaledWindowWidth / 2.0F;
-            float pivotY = module.isTabSlideScaleStyle()
-                    ? 10.0F
-                    : context.getScaledWindowHeight() / 4.0F;
-            context.getMatrices().translate(pivotX, pivotY, 0.0F);
-            context.getMatrices().scale(scale, scale, 1.0F);
-            context.getMatrices().translate(-pivotX, -pivotY, 0.0F);
+            return;
         }
 
-        // Tint subsequent draws with our fade alpha. This works for both
-        // the rectangle/texture batch and the font batch because every
-        // draw layer multiplies the fragment alpha by RenderSystem's
-        // current shader color. Reset in the RETURN inject below.
-        float alpha = module.currentTabAlpha();
-        if (alpha < 1.0F) {
-            RenderSystem.enableBlend();
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
-        }
+        float progress = module.currentTabProgress();
+        float scale = Math.max(0.01F, progress);
+        // Vanilla always centers the final TAB rectangle (including a wider
+        // server header/footer) on the screen. "left" only belongs to the
+        // player grid calculated before that widening, so combining it with
+        // totalWidth shifts the animation pivot to the right on such servers.
+        float pivotX = scaledWindowWidth * 0.5F;
+        float pivotY = module.isTabSlideScaleStyle()
+                ? top
+                : top + rowsPerColumn * 9.0F * 0.5F;
+        context.getMatrices().translate(pivotX, pivotY, 0.0F);
+        context.getMatrices().scale(scale, scale, 1.0F);
+        context.getMatrices().translate(-pivotX, -pivotY, 0.0F);
     }
 
     @Inject(method = "render", at = @At("RETURN"))
@@ -183,18 +223,12 @@ public class PlayerListHudMixin {
                                    net.minecraft.scoreboard.ScoreboardObjective objective,
                                    CallbackInfo ci) {
         Animations module = Animations.getInstance();
-        if (module == null || !module.isTabSlideEnabled()) {
+        if (module == null || !module.isTabSlideEnabled() || !phaze$tabTransformPushed) {
             return;
         }
-        // Flush our (potentially translated and tinted) draws BEFORE we
-        // restore the matrix and shader color - DrawContext snapshots both
-        // at submit time, but the GL state at flush time still affects
-        // anything that pulls from it (e.g. text glyph batching that
-        // re-reads ShaderColor). Flushing first guarantees this batch goes
-        // out with the faded alpha and the next HUD element starts clean.
         context.draw();
         context.getMatrices().pop();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        phaze$tabTransformPushed = false;
     }
 
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
@@ -264,6 +298,58 @@ public class PlayerListHudMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V"
+            ),
+            require = 0
+    )
+    private void phaze$fadeTabFill(
+            DrawContext context,
+            int x1,
+            int y1,
+            int x2,
+            int y2,
+            int color,
+            Operation<Void> operation
+    ) {
+        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
+            ExordiumAnimationBridge.recordTabElement(context, x1, y1, x2, y2);
+            operation.call(context, x1, y1, x2, y2, color);
+            return;
+        }
+        operation.call(context, x1, y1, x2, y2, phaze$applyTabFillAlpha(color));
+    }
+
+    @WrapOperation(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/PlayerSkinDrawer;draw(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/util/Identifier;IIIZZI)V"
+            ),
+            require = 0
+    )
+    private void phaze$fadeTabPlayerHead(
+            DrawContext context,
+            Identifier texture,
+            int x,
+            int y,
+            int size,
+            boolean drawHat,
+            boolean upsideDown,
+            int color,
+            Operation<Void> operation
+    ) {
+        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
+            ExordiumAnimationBridge.recordTabElement(context, x, y, x + size, y + size);
+        }
+        phaze$withTabTextureAlpha(context, () ->
+                operation.call(context, texture, x, y, size, drawHat, upsideDown, phaze$applyTabAlpha(color))
+        );
+    }
+
+    @WrapOperation(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
                     target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)I"
             ),
             require = 0
@@ -278,11 +364,86 @@ public class PlayerListHudMixin {
             Operation<Integer> operation,
             @Local PlayerListEntry entry
     ) {
+        ExordiumAnimationBridge.recordTabElement(
+                context, x - 3.0F, y - 3.0F, x + renderer.getWidth(text) + 1.0F, y + 10.0F
+        );
+        int fadedColor = phaze$applyTabAlpha(color);
         if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
+            context.draw();
             float size = PhazeBadgeUtil.guiBadgeSize(renderer);
-            PhazeBadgeUtil.drawGuiBadge(context, x - 2.5F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(color));
+            PhazeBadgeUtil.drawGuiBadge(context, x - 2.5F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(fadedColor));
         }
-        return operation.call(context, renderer, text, x, y, color);
+        return operation.call(context, renderer, text, x, y, fadedColor);
+    }
+
+    @WrapOperation(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/OrderedText;III)I"
+            ),
+            require = 0
+    )
+    private int phaze$fadeTabOrderedText(
+            DrawContext context,
+            TextRenderer renderer,
+            OrderedText text,
+            int x,
+            int y,
+            int color,
+            Operation<Integer> operation
+    ) {
+        ExordiumAnimationBridge.recordTabElement(
+                context, x - 1.0F, y - 1.0F, x + renderer.getWidth(text) + 1.0F, y + 10.0F
+        );
+        return operation.call(context, renderer, text, x, y, phaze$applyTabAlpha(color));
+    }
+
+    @WrapOperation(
+            method = {"renderScoreboardObjective", "renderLatencyIcon"},
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V"
+            ),
+            require = 0
+    )
+    private void phaze$fadeTabGuiTexture(
+            DrawContext context,
+            java.util.function.Function<?, ?> layerFactory,
+            Identifier texture,
+            int x,
+            int y,
+            int width,
+            int height,
+            Operation<Void> operation
+    ) {
+        ExordiumAnimationBridge.recordTabElement(context, x, y, x + width, y + height);
+        phaze$withTabTextureAlpha(context, () ->
+                operation.call(context, layerFactory, texture, x, y, width, height)
+        );
+    }
+
+    @WrapOperation(
+            method = "renderScoreboardObjective",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)I"
+            ),
+            require = 0
+    )
+    private int phaze$fadeTabScoreText(
+            DrawContext context,
+            TextRenderer renderer,
+            Text text,
+            int x,
+            int y,
+            int color,
+            Operation<Integer> operation
+    ) {
+        ExordiumAnimationBridge.recordTabElement(
+                context, x - 1.0F, y - 1.0F, x + renderer.getWidth(text) + 1.0F, y + 10.0F
+        );
+        return operation.call(context, renderer, text, x, y, phaze$applyTabAlpha(color));
     }
 
     private static boolean phaze$needsExtraNickHiderPadding(PlayerListEntry entry) {
@@ -295,6 +456,80 @@ public class PlayerListHudMixin {
         return client != null
                 && client.player != null
                 && entry.getProfile().getId().equals(client.player.getUuid());
+    }
+
+    @Unique
+    private static int phaze$applyTabAlpha(int color) {
+        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
+            return color;
+        }
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isTabSlideEnabled()) {
+            return color;
+        }
+        float alphaMultiplier = module.currentTabAlpha();
+        if (alphaMultiplier >= 0.999F) {
+            return color;
+        }
+
+        int baseAlpha = color >>> 24;
+        if (baseAlpha == 0 && (color & 0x00FFFFFF) != 0) {
+            baseAlpha = 0xFF;
+        }
+        int scaledAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * alphaMultiplier)));
+        return (color & 0x00FFFFFF) | (scaledAlpha << 24);
+    }
+
+    @Unique
+    private static int phaze$applyTabFillAlpha(int color) {
+        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
+            return color;
+        }
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isTabSlideEnabled()) {
+            return color;
+        }
+
+        float alphaMultiplier = module.currentTabAlpha();
+        if (alphaMultiplier < 0.35F) {
+            alphaMultiplier = (alphaMultiplier * alphaMultiplier) / 0.35F;
+        }
+
+        int baseAlpha = color >>> 24;
+        if (baseAlpha == 0 && (color & 0x00FFFFFF) != 0) {
+            baseAlpha = 0xFF;
+        }
+        int scaledAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * alphaMultiplier)));
+        return (color & 0x00FFFFFF) | (scaledAlpha << 24);
+    }
+
+    @Unique
+    private static void phaze$withTabTextureAlpha(DrawContext context, Runnable draw) {
+        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
+            draw.run();
+            return;
+        }
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isTabSlideEnabled()) {
+            draw.run();
+            return;
+        }
+
+        float alphaMultiplier = module.currentTabAlpha();
+        if (alphaMultiplier >= 0.999F) {
+            draw.run();
+            return;
+        }
+
+        context.draw();
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alphaMultiplier);
+        try {
+            draw.run();
+            context.draw();
+        } finally {
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        }
     }
 
 }
