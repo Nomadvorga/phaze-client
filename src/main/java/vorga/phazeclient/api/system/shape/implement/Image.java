@@ -1,12 +1,16 @@
 package vorga.phazeclient.api.system.shape.implement;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.gl.ShaderProgramKeys;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderSetup;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
+
+import java.util.HashMap;
+import java.util.Map;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import vorga.phazeclient.api.system.shape.Shape;
@@ -23,7 +27,29 @@ import org.lwjgl.opengl.GL11;
 @Setter
 @Accessors(chain = true)
 public class Image implements Shape, QuickImports {
+    /**
+     * One {@link RenderLayer} per texture.
+     *
+     * <p>1.21.11 no longer binds textures imperatively -
+     * {@code RenderSystem.setShaderTexture} is not part of the draw any
+     * more. The sampler binding is declared on the {@link RenderSetup},
+     * so a layer is specific to the texture it samples and has to be
+     * built once per texture rather than per draw. The set of UI textures
+     * is small and fixed, so a plain map is enough; entries are created
+     * lazily on first use and live for the process.
+     */
+    private static final Map<Identifier, RenderLayer> TEXTURED_LAYERS = new HashMap<>();
+
     private String texture;
+
+    private static RenderLayer layerFor(Identifier textureId) {
+        return TEXTURED_LAYERS.computeIfAbsent(textureId, id -> RenderLayer.of(
+                "phaze_image_" + id.getNamespace() + "_" + id.getPath().replace('/', '_'),
+                RenderSetup.builder(RenderPipelines.GUI_TEXTURED)
+                        .texture("Sampler0", id)
+                        .translucent()
+                        .build()));
+    }
 
     @Override
     public void render(ShapeProperties shape) {
@@ -40,10 +66,10 @@ public class Image implements Shape, QuickImports {
         RenderSystem.defaultBlendFunc();
 
         Identifier textureId = Identifier.of(texture);
-        RenderSystem.setShaderTexture(0, textureId);
-
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        // No imperative texture bind or glTexParameteri here any more: in
+        // 1.21.11 the sampler is declared on the layer's RenderSetup, and
+        // filtering is a property of the sampler rather than of whatever
+        // texture happens to be bound to unit 0 at this moment.
 
         float width = shape.getWidth();
         float x = shape.getX() + width;
@@ -76,15 +102,12 @@ public class Image implements Shape, QuickImports {
     }
 
     private static void renderRawTexture(MatrixStack matrix, Identifier textureId, float x, float y, float width, float height, int color) {
-        RenderSystem.setShaderTexture(0, textureId);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
         Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         buffer.vertex(positionMatrix, x, y, 0.0F).texture(0.0F, 0.0F).color(color);
         buffer.vertex(positionMatrix, x, y + height, 0.0F).texture(0.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + width, y + height, 0.0F).texture(1.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + width, y, 0.0F).texture(1.0F, 0.0F).color(color);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        layerFor(textureId).draw(buffer.end());
     }
 }
