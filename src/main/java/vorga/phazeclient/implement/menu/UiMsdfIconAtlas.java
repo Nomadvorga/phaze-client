@@ -302,22 +302,8 @@ public final class UiMsdfIconAtlas {
             filterApplied = true;
         }
 
-        RenderSystem.setShaderTexture(0, ATLAS_TEXTURE_ID);
 
-        ShaderProgram shader = RenderSystem.setShader(MsdfRenderer.MSDF_FONT_SHADER_KEY);
         if (shader != null) {
-            shader.getUniform("Range").set(distanceRange);
-            shader.getUniform("Thickness").set(THICKNESS);
-            shader.getUniform("Smoothness").set(SMOOTHNESS);
-            shader.getUniform("Outline").set(0);
-            shader.getUniform("OutlineThickness").set(0.0F);
-            shader.getUniform("OutlineColor").set(0.0F, 0.0F, 0.0F, 0.0F);
-            shader.getUniform("EnableFadeout").set(0);
-            shader.getUniform("FadeoutStart").set(0.0F);
-            shader.getUniform("FadeoutEnd").set(1.0F);
-            shader.getUniform("MaxWidth").set(0.0F);
-            shader.getUniform("TextPosX").set(x1);
-            shader.getUniform("ColorModulator").set(1.0F, 1.0F, 1.0F, 1.0F);
         }
 
         BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
@@ -338,7 +324,6 @@ public final class UiMsdfIconAtlas {
             vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(ATLAS_TEXTURE_ID).draw(builtBuffer);
         }
 
-        RenderSystem.setShaderTexture(0, 0);
         return true;
     }
 

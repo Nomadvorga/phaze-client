@@ -3,6 +3,7 @@ package vorga.phazeclient.implement.menu.components.implement.settings;
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import org.joml.Matrix3x2fStack;
+import org.joml.Matrix3x2fc;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -123,6 +124,18 @@ public class ColorComponent extends AbstractSettingComponent {
     }
 
     private void renderPopupRow(DrawContext context, int mouseX, int mouseY) {
+        // 1.21.11: DrawContext.getMatrices() is a Matrix3x2fStack. Grab it once -
+        // ShapeProperties.create and ResetIconComponent.render both take the GUI
+        // pose (Matrix3x2fc) directly since the port.
+        Matrix3x2fStack matrix = context.getMatrices();
+        // FontRenderer still consumes a world-style MatrixStack, so bake the GUI
+        // pose into one promoted MatrixStack per row instead of once per glyph
+        // run. Nothing below mutates the GUI pose (ShapeProperties copies it), so
+        // the bake stays valid for the whole call - identical geometry to 1.21.4.
+        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+        MatrixStack textPose = new MatrixStack();
+        textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
+
         FontRenderer titleFont = Fonts.getSize(13, INTER_BOLD);
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
@@ -134,7 +147,7 @@ public class ColorComponent extends AbstractSettingComponent {
 
         height = (int) ROW_HEIGHT;
         renderSettingCard(context, 0.0F, hoverProgress);
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
 
         float colorX = x + width - COLOR_RIGHT - COLOR_SIZE;
         float colorY = y + ROW_HEIGHT / 2.0F - COLOR_SIZE / 2.0F;
@@ -142,11 +155,11 @@ public class ColorComponent extends AbstractSettingComponent {
         float textWidth = Math.max(12.0F, colorX - textX - 8.0F);
 
         String title = trimToWidth(titleFont, setting.getName(), textWidth);
-        titleFont.drawString(context.getMatrices(), title, textX, centeredTextY(titleFont, title, y, ROW_HEIGHT), primaryText());
+        titleFont.drawString(textPose, title, textX, centeredTextY(titleFont, title, y, ROW_HEIGHT), primaryText());
 
         int colorFill = MenuStyle.withAlpha(0xFF000000 | (setting.getColor() & 0x00FFFFFF), currentAlpha);
         int colorOutline = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.settingOutline(false), 0xFFFFFFFF, hovered ? 0.12F : 0.0F), currentAlpha);
-        rectangle.render(ShapeProperties.create(context.getMatrices(), colorX, colorY, COLOR_SIZE, COLOR_SIZE)
+        rectangle.render(ShapeProperties.create(matrix, colorX, colorY, COLOR_SIZE, COLOR_SIZE)
                 .round(3.2F)
                 .thickness(1.05F)
                 .outlineColor(colorOutline)
@@ -170,7 +183,11 @@ public class ColorComponent extends AbstractSettingComponent {
      * back to just the setting's own name so the picker is still
      * labelled, just without the module prefix.
      */
-    private void renderHeader(MatrixStack matrix) {
+    // 1.21.11: the GUI pose is org.joml.Matrix3x2f(Stack), not MatrixStack. Only
+    // read here (GuiMatrix.mat4 promotes it to the Matrix4f MsdfRenderer wants),
+    // so the read-only Matrix3x2fc interface is enough and accepts the
+    // Matrix3x2fStack that DrawContext.getMatrices() hands out.
+    private void renderHeader(Matrix3x2fc matrix) {
         String settingName = setting.getLocalizedName();
         if (settingName == null) settingName = "";
 

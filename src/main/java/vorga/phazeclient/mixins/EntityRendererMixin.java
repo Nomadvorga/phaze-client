@@ -1,11 +1,17 @@
 package vorga.phazeclient.mixins;
 
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.OutlineVertexConsumerProvider;
+import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.render.command.OrderedRenderCommandQueue;
 import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.render.entity.state.EntityRenderState;
+import net.minecraft.client.render.state.CameraRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.text.MutableText;
@@ -17,12 +23,12 @@ import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
-import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import vorga.phazeclient.base.util.PhazeBadgeUtil;
+import vorga.phazeclient.api.system.draw.PhazeDrawLayers;
 import vorga.phazeclient.api.system.shape.implement.Blur;
+import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.other.TotemTracker;
 
@@ -34,13 +40,37 @@ import java.util.Map;
  * customisation (visibility / colour / blurred backdrop / first-person
  * tag) and the {@link TotemTracker} per-player loss suffix.
  *
- * <h3>Independence</h3>
- * Both features touch {@code renderLabelIfPresent}'s {@link Text} arg
- * via {@code @ModifyVariable(argsOnly=true, ordinal=0)} and Mixin
- * stacks them in declaration order across the file. Order between
- * "append totem suffix" and "recolor own name" is irrelevant - the
- * suffix is gray/red literal, the recolor edits style on the original
- * substring; they commute.
+ * <h3>1.21.11 port note - the label pipeline moved</h3>
+ * In 1.21.4 {@code renderLabelIfPresent(state, Text, MatrixStack,
+ * VertexConsumerProvider, int)} drew the nametag itself via two
+ * {@code TextRenderer.draw(...)} calls, so Phaze could redirect those
+ * calls and inject the blur backdrop, the Phaze badge quad and the
+ * colour/shadow overrides right there.
+ *
+ * <p>1.21.11 replaced that with a deferred command queue. Verified
+ * against the merged jar:
+ * <pre>
+ * EntityRenderer.renderLabelIfPresent(S, MatrixStack, OrderedRenderCommandQueue, CameraRenderState)
+ *     -&gt; queue.submitLabel(matrices, state.nameLabelPos, 0, state.displayName,
+ *                          !state.sneaking, state.light, state.squaredDistanceToCamera, cameraState)
+ * </pre>
+ * The method no longer takes a {@link Text} argument, no longer takes a
+ * light int, and issues <b>no draw at all</b>. The billboard matrix, the
+ * centering offset, the background colour and both
+ * {@code TextRenderer.draw} calls now live in
+ * {@code net.minecraft.client.render.command.LabelCommandRenderer}
+ * ({@code Commands.add} builds the {@code LabelCommand}, {@code render}
+ * draws the SEE_THROUGH then the NORMAL list). {@code TextRenderer.draw}
+ * also returns {@code void} now, so the old {@code @Redirect}s could not
+ * have been kept even if the call site had survived.
+ *
+ * <p>What still works from here: label visibility (F1 / distance /
+ * first-person self tag) and every text transform, rebound from
+ * {@code @ModifyVariable(argsOnly)} onto {@code @ModifyArg} of
+ * {@code submitLabel}'s Text parameter.
+ *
+ * <p>What does not: everything under "DEFERRED DECORATION" at the bottom
+ * of this file. See the TODO block there.
  *
  * <h3>Caches</h3>
  * Width / colour / settings-signature LinkedHashMap caches are
@@ -98,12 +128,18 @@ public abstract class EntityRendererMixin {
         cir.setReturnValue(!firstPerson && module.thirdPersonNametag.isValue());
     }
 
+    /**
+     * 1.21.11: the descriptor lost its {@link Text} and {@code light}
+     * arguments and gained the command queue plus the camera state - the
+     * label is now submitted, not drawn. Everything this method does is
+     * still reachable because it only reads {@link EntityRenderState}.
+     */
     @Inject(
-            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/render/state/CameraRenderState;)V",
             at = @At("HEAD"),
             cancellable = true
     )
-    private void phaze$controlNametagVisibility(EntityRenderState state, Text text, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+    private void phaze$controlNametagVisibility(EntityRenderState state, MatrixStack matrices, OrderedRenderCommandQueue queue, CameraRenderState cameraState, CallbackInfo ci) {
         NametagHud module = NametagHud.getInstance();
         if (!module.isEnabled()) return;
 
@@ -126,72 +162,35 @@ public abstract class EntityRendererMixin {
         phaze$fallbackQueuedThisLabel = false;
     }
 
-    @Redirect(
-            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/Text;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
+    /**
+     * Replaces the three 1.21.4 {@code @ModifyVariable(argsOnly = true,
+     * ordinal = 0)} injectors. {@code renderLabelIfPresent} has no Text
+     * parameter any more, so the transforms move onto argument 3 of the
+     * {@code submitLabel} call (0 MatrixStack, 1 Vec3d, 2 int yOffset,
+     * <b>3 Text</b>, 4 boolean seeThrough, 5 int light, 6 double distSq,
+     * 7 CameraRenderState - verified from the invokeinterface descriptor).
+     *
+     * <p>The three transforms are chained here explicitly rather than as
+     * three stacked {@code @ModifyArg}s so the ordering stays visible and
+     * guaranteed: the self-name recolor must run before badge padding is
+     * prepended, otherwise its {@code selfName.equals(...)} test fails.
+     * (Totem suffix commutes with both - it appends literal gray/red
+     * text while the other two touch the head of the string.)
+     */
+    @ModifyArg(
+            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/render/state/CameraRenderState;)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;submitLabel(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/util/math/Vec3d;ILnet/minecraft/text/Text;ZIDLnet/minecraft/client/render/state/CameraRenderState;)V"
+            ),
+            index = 3
     )
-    private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
-        NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(
-                phaze$getCachedTextWidth(textRenderer, text),
-                matrix,
-                x,
-                y,
-                vertexConsumers,
-                layerType,
-                backgroundColor
-        );
-        phaze$drawNametagBadgeIfNeeded(matrix, vertexConsumers, x, y, layerType, light);
-        return textRenderer.draw(
-                text,
-                x,
-                y,
-                phaze$resolvedTextColor(color),
-                module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
-                matrix,
-                vertexConsumers,
-                layerType,
-                resolvedBackground,
-                light
-        );
+    private Text phaze$decorateNametagText(Text original) {
+        Text text = phaze$modifyNametagText(original);
+        text = phaze$appendTotemSuffix(text);
+        return phaze$prependBadgePadding(text);
     }
 
-    @Redirect(
-            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/OrderedText;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
-    )
-    private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
-        NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(
-                phaze$getCachedTextWidth(textRenderer, text),
-                matrix,
-                x,
-                y,
-                vertexConsumers,
-                layerType,
-                backgroundColor
-        );
-        phaze$drawNametagBadgeIfNeeded(matrix, vertexConsumers, x, y, layerType, light);
-        return textRenderer.draw(
-                text,
-                x,
-                y,
-                phaze$resolvedTextColor(color),
-                module.isEnabled() ? module.nametagTextShadow.isValue() : shadow,
-                matrix,
-                vertexConsumers,
-                layerType,
-                resolvedBackground,
-                light
-        );
-    }
-
-    @ModifyVariable(
-            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At("HEAD"),
-            argsOnly = true,
-            ordinal = 0
-    )
     private Text phaze$modifyNametagText(Text original) {
         NametagHud module = NametagHud.getInstance();
         if (!module.isEnabled() || original == null) return original;
@@ -211,19 +210,8 @@ public abstract class EntityRendererMixin {
     }
 
     /**
-     * TotemTracker per-player loss suffix. Independent
-     * {@code @ModifyVariable} on the same arg as
-     * {@link #phaze$modifyNametagText}; Mixin chains them so both
-     * contributions land on the rendered label. Order between the
-     * two doesn't matter: this one appends literal gray/red text,
-     * the other rewrites style on the original substring.
+     * TotemTracker per-player loss suffix.
      */
-    @ModifyVariable(
-            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At("HEAD"),
-            argsOnly = true,
-            ordinal = 0
-    )
     private Text phaze$appendTotemSuffix(Text original) {
         TotemTracker tracker = TotemTracker.getInstance();
         if (tracker == null || !tracker.isEnabled() || !tracker.nametagSuffix.isValue()) {
@@ -243,12 +231,6 @@ public abstract class EntityRendererMixin {
         return decorated;
     }
 
-    @ModifyVariable(
-            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At("HEAD"),
-            argsOnly = true,
-            ordinal = 0
-    )
     private Text phaze$prependBadgePadding(Text original) {
         if (original == null) {
             return null;
@@ -261,6 +243,47 @@ public abstract class EntityRendererMixin {
         return PhazeBadgeUtil.withBadgePadding(original);
     }
 
+    // ------------------------------------------------------------------
+    // DEFERRED DECORATION - currently unreachable, kept verbatim.
+    //
+    // TODO(1.21.11): re-attach the nametag backdrop / badge / colour /
+    // shadow overrides. They cannot be driven from EntityRenderer any
+    // more: renderLabelIfPresent only calls
+    // OrderedRenderCommandQueue.submitLabel and issues no draw.
+    //
+    // The new hook points, both in
+    // net.minecraft.client.render.command.LabelCommandRenderer:
+    //
+    //   Commands.add(MatrixStack, Vec3d, int, Text, boolean, int, double,
+    //                CameraRenderState)
+    //       builds the billboard matrix (translate to nameLabelPos + 0.5y,
+    //       multiply by cameraState.orientation, scale 0.025/-0.025/0.025),
+    //       computes x = -textRenderer.getWidth(text) / 2, and the
+    //       background alpha from GameOptions.getTextBackgroundOpacity.
+    //       -> the place to override the resolved background colour
+    //          (phaze$resolvedBackgroundColor) and to record the badge flag.
+    //
+    //   render(BatchingRenderCommandQueue, VertexConsumerProvider.Immediate,
+    //          TextRenderer)
+    //       iterates seethroughLabels (SEE_THROUGH) then normalLabels
+    //       (NORMAL) and calls TextRenderer.draw for each.
+    //       -> the place the two old @Redirects belong; it is also the only
+    //          point where an Immediate is in scope, which the blur input
+    //          flush (phaze$flushCurrentNametagLayer) needs.
+    //
+    // That requires a NEW mixin class + a phaze.mixins.json entry, which is
+    // out of scope for this file. Until then: nametag blur backdrop, the
+    // world Phaze badge, the nametag text-colour cache and the
+    // nametagTextShadow option do nothing. The text transforms above and
+    // the visibility control still work.
+    //
+    // Also note TextRenderer.draw now returns void, and
+    // OutlineVertexConsumerProviderAccessor targets a field named "parent"
+    // that 1.21.11 renamed to "plainDrawer" - fix that accessor before
+    // re-enabling phaze$flushCurrentNametagLayer.
+    // ------------------------------------------------------------------
+
+    @SuppressWarnings("unused")
     private static int phaze$resolvedTextColor(int originalColor) {
         Integer cached = TEXT_COLOR_CACHE.get(originalColor);
         if (cached != null) {
@@ -294,6 +317,7 @@ public abstract class EntityRendererMixin {
         return out;
     }
 
+    @SuppressWarnings("unused")
     private static void phaze$drawNametagBadgeIfNeeded(
             Matrix4f matrix,
             VertexConsumerProvider vertexConsumers,
@@ -308,6 +332,7 @@ public abstract class EntityRendererMixin {
         PhazeBadgeUtil.drawWorldBadge(matrix, vertexConsumers, layerType, x - 2.0F, y - 1.0F, 10.0F, light, 0xFFFFFFFF);
     }
 
+    @SuppressWarnings("unused")
     private static int phaze$drawBlurBackgroundIfNeeded(
             float textWidth,
             Matrix4f matrix,
@@ -459,6 +484,7 @@ public abstract class EntityRendererMixin {
         }
     }
 
+    @SuppressWarnings("unused")
     private static int phaze$getCachedTextWidth(TextRenderer textRenderer, Text text) {
         String key = text.getString();
         Integer cached = TEXT_WIDTH_CACHE.get(key);
@@ -470,6 +496,7 @@ public abstract class EntityRendererMixin {
         return width;
     }
 
+    @SuppressWarnings("unused")
     private static int phaze$getCachedTextWidth(TextRenderer textRenderer, OrderedText text) {
         String key = text.toString();
         Integer cached = TEXT_WIDTH_CACHE.get(key);
@@ -491,6 +518,20 @@ public abstract class EntityRendererMixin {
         return h;
     }
 
+    /**
+     * 1.21.11: {@code RenderSystem.setShader} /
+     * {@code BufferRenderer.drawWithGlobalProgram} and the imperative
+     * blend/depth calls are gone - blend, depth test and depth write are
+     * baked into the pipeline behind {@link PhazeDrawLayers#POSITION_COLOR}
+     * and travel with the draw.
+     *
+     * <p>Behaviour difference: the 1.21.4 version called
+     * {@code disableDepthTest()}, the shared layer uses LEQUAL. For this
+     * backdrop that is arguably more correct (it stops the rect punching
+     * through walls) but it is a change; if the through-wall look must
+     * come back, add a NO_DEPTH_TEST variant to {@code PhazeDrawLayers}
+     * rather than reintroducing imperative state.
+     */
     private static void drawSolidRect3D(Matrix4f matrix, float x, float y, float width, float height, int argb) {
         float a = ((argb >>> 24) & 0xFF) / 255.0f;
         if (a <= 0.0f || width <= 0.0f || height <= 0.0f) return;
@@ -498,22 +539,13 @@ public abstract class EntityRendererMixin {
         float g = ((argb >>> 8) & 0xFF) / 255.0f;
         float b = (argb & 0xFF) / 255.0f;
 
-        com.mojang.blaze3d.systems.RenderSystem.enableBlend();
-        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
-        com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
-        com.mojang.blaze3d.systems.RenderSystem.depthMask(false);
-        com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.gl.ShaderProgramKeys.POSITION_COLOR);
-        net.minecraft.client.render.BufferBuilder buffer = net.minecraft.client.render.Tessellator.getInstance()
-                .begin(com.mojang.blaze3d.vertex.VertexFormat.DrawMode.QUADS, net.minecraft.client.render.VertexFormats.POSITION_COLOR);
+        BufferBuilder buffer = Tessellator.getInstance()
+                .begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         buffer.vertex(matrix, x, y, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x, y + height, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x + width, y + height, 0.0f).color(r, g, b, a);
         buffer.vertex(matrix, x + width, y, 0.0f).color(r, g, b, a);
-        net.minecraft.client.render.BufferRenderer.drawWithGlobalProgram(buffer.end());
-        com.mojang.blaze3d.systems.RenderSystem.depthMask(true);
-        com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
-        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
-        com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+        PhazeDrawLayers.POSITION_COLOR.draw(buffer.end());
     }
 
     private static float phaze$snapHalfPixel(float value) {

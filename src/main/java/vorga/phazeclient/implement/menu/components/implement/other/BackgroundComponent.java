@@ -3,8 +3,8 @@ package vorga.phazeclient.implement.menu.components.implement.other;
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
 import org.joml.Matrix3x2fStack;
+import org.joml.Matrix3x2fc;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import net.minecraft.client.MinecraftClient;
@@ -14,11 +14,9 @@ import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -37,7 +35,6 @@ import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.core.Main;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Setter
@@ -449,7 +446,10 @@ public class BackgroundComponent extends AbstractComponent {
             playButtonClickSound();
             MinecraftClient client = MinecraftClient.getInstance();
             if (client != null && client.player != null && client.world != null) {
-                client.setScreen(new ChatScreen(""));
+                // 1.21.11: ChatScreen(String, boolean draft) - passing
+                // false keeps the old single-arg behaviour (no restored
+                // draft text).
+                client.setScreen(new ChatScreen("", false));
             }
             return true;
         }
@@ -763,9 +763,12 @@ public class BackgroundComponent extends AbstractComponent {
         // (chipCx - iconSize/2, chipCy - iconSize/2) so after the
         // 90° internal rotation around (x+width, y) it covers the
         // chip-centred area.
-        matrix.translate(chipCx, chipCy);
-        matrix.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(45.0F));
-        matrix.translate(-chipCx, -chipCy);
+        // 1.21.11: the GUI pose is a Matrix3x2fStack, so the old
+        // MatrixStack.multiply(RotationAxis.POSITIVE_Z.rotationDegrees)
+        // is gone. Matrix3x2f.rotateAbout(radians, cx, cy) is exactly
+        // translate(+c) * rotate * translate(-c) about the same +Z
+        // axis, so the resulting pose is identical.
+        matrix.rotateAbout((float) Math.toRadians(45.0F), chipCx, chipCy);
         image.setTexture("phaze:textures/menu/cross.png")
                 .render(ShapeProperties.create(matrix,
                         chipCx - iconSize * 0.5F, chipCy - iconSize * 0.5F,
@@ -775,7 +778,8 @@ public class BackgroundComponent extends AbstractComponent {
         matrix.popMatrix();
     }
 
-    private void renderConfigCross(MatrixStack matrix, float x, float y, float size, int color) {
+    // 1.21.11: GUI poses are org.joml.Matrix3x2fc now, not MatrixStack.
+    private void renderConfigCross(Matrix3x2fc matrix, float x, float y, float size, int color) {
         net.minecraft.util.Identifier phaze$tex = Identifier.of("phaze", "textures/menu/cross.png");
 
         Matrix4f positionMatrix = GuiMatrix.mat4(matrix);

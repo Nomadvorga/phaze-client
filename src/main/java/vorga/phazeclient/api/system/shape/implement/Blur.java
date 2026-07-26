@@ -2,10 +2,13 @@ package vorga.phazeclient.api.system.shape.implement;
 
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
-import com.mojang.blaze3d.opengl.GlStateManager;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DepthTestFunction;
+import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.textures.GpuTextureView;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.Defines;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gl.SimpleFramebuffer;
@@ -18,18 +21,15 @@ import net.minecraft.util.math.MathHelper;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
-import org.lwjgl.opengl.GL11C;
-import org.lwjgl.opengl.GL30C;
 import vorga.phazeclient.api.system.draw.DrawEngineImpl;
 import vorga.phazeclient.api.system.shape.Shape;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
-import vorga.phazeclient.base.util.render.shader.ShaderHelper;
 import vorga.phazeclient.base.util.color.ColorUtil;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
-import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 
 import java.util.List;
+import java.util.OptionalInt;
 
 public class Blur implements Shape {
     public static final Blur INSTANCE = new Blur();
@@ -43,6 +43,41 @@ public class Blur implements Shape {
     private static final int MENU_BLUR_CACHE_SLOTS = 4;
     private static final int MAX_HUD_BLUR_STATES = 32;
     private static final int MAX_PREPARED_HUD_GAUSSIAN_REGIONS = 32;
+
+    /**
+     * Replacement for {@code glBlitFramebuffer}.
+     *
+     * <p>1.21.11 removed the read/draw framebuffer bindings this class used to
+     * blit through, and {@code CommandEncoder.copyTextureToTexture} is not a
+     * drop-in: it hardcodes {@code GL_NEAREST} and reuses one rectangle for
+     * both source and destination, so it can neither scale nor filter. Every
+     * copy that changes resolution (full -> half for {@code hudHalfInput}, the
+     * half-res Kawase result back up to a full-res cache slot) therefore
+     * becomes a full-screen quad pass sampling the source colour attachment.
+     *
+     * <p>Same vanilla shaders as {@code ScreenBlit}, but blending is left OFF
+     * so the copy replaces the destination exactly like the old blit did
+     * instead of compositing onto it. The quad is synthesised from
+     * {@code gl_VertexID} inside {@code core/screenquad}, hence the empty
+     * vertex format and {@code draw(0, 3)}.
+     */
+    private static final RenderPipeline COPY_PIPELINE = RenderPipeline.builder()
+            .withLocation(Identifier.of("phaze", "pipeline/blur_copy"))
+            .withVertexShader(Identifier.of("minecraft", "core/screenquad"))
+            .withFragmentShader(Identifier.of("minecraft", "core/blit_screen"))
+            .withSampler("InSampler")
+            // Explicit: a copy must REPLACE the destination. Leaving blending
+            // to the builder default would be a silent behaviour change the
+            // day that default moves.
+            .withoutBlend()
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withColorWrite(true, true)
+            // Builder defaults cull to true; a screen quad renders nothing with
+            // culling on.
+            .withCull(false)
+            .withVertexFormat(VertexFormats.EMPTY, VertexFormat.DrawMode.TRIANGLES)
+            .build();
 
     private final DrawEngineImpl drawEngine = new DrawEngineImpl();
     private Framebuffer input;
@@ -312,18 +347,8 @@ public class Blur implements Shape {
                 shape.getHeight() + softness,
                 color
         );
-        RenderSystem.setShaderTexture(0, slot.framebuffer.getColorAttachment());
-        RenderSystem.setShaderTexture(1, slot.framebuffer.getColorAttachment());
         ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         if (shader != null) {
-            shader.getUniformOrDefault("Size").set(width, height);
-            shader.getUniformOrDefault("Radius").set(round);
-            shader.getUniformOrDefault("RectMask").set(maxCornerRadius(round) <= 0.001F ? 1 : 0);
-            shader.getUniformOrDefault("Smoothness").set(softness);
-            shader.getUniformOrDefault("BlurRadius").set(0.0F);
-            shader.getUniformOrDefault("BlurMode").set(0);
-            shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
-            shader.getUniformOrDefault("FrameMix").set(1.0F);
             vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
         } else {
             buffer.end();
@@ -399,19 +424,10 @@ public class Blur implements Shape {
         int blurColor = (MathHelper.clamp(Math.round(clampedOpacity * 255.0F), 0, 255) << 24) | 0x00FFFFFF;
         drawEngine.quad(matrix, buffer, x, y, width, height, blurColor);
 
-        RenderSystem.setShaderTexture(0, nametagInput.getColorAttachment());
-        RenderSystem.setShaderTexture(1, nametagInput.getColorAttachment());
         ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         if (shader != null) {
             Theme theme = Theme.getInstance();
             int blurMode = theme.getHudBlurMode();
-            shader.getUniformOrDefault("Size").set(Math.max(1.0f, width), Math.max(1.0f, height));
-            shader.getUniformOrDefault("Radius").set(ZERO_ROUND);
-            shader.getUniformOrDefault("RectMask").set(1);
-            shader.getUniformOrDefault("Smoothness").set(0.001f);
-            shader.getUniformOrDefault("BlurRadius").set(Math.max(0.0f, quality) * theme.getHudBlurRadiusMultiplier());
-            shader.getUniformOrDefault("BlurMode").set(blurMode);
-            shader.getUniformOrDefault("FrameMix").set(1.0F);
             setTintUniform(shader, tintColor);
             vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
         } else {
@@ -511,9 +527,6 @@ public class Blur implements Shape {
                 continue;
             }
             if (!preparedState.matches(activeState)) {
-                RenderSystem.setShaderTexture(0, preparedState.sourceTexture());
-                RenderSystem.setShaderTexture(1, preparedState.sourceTexture());
-                shader = RenderSystem.setShader(MASK_SHADER_KEY);
                 hudBatchMaskShader = shader;
                 if (shader == null) {
                     if (!useHudBatch) {
@@ -526,10 +539,11 @@ public class Blur implements Shape {
             renderPreparedShapeWithBoundShader(shape, shader, preparedState);
         }
 
-        if (useHudBatch) {
-            int target = HudBuffer.activeCaptureTarget >= 0 ? HudBuffer.activeCaptureTarget : client.getFramebuffer().fbo;
-            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target);
-        } else {
+        // 1.21.11: nothing to rebind. The draw framebuffer is no longer global
+        // state - each render pass names its own colour attachment - so the old
+        // "point subsequent draws back at the HUD capture / main FBO" step has
+        // no equivalent and nothing to do.
+        if (!useHudBatch) {
             restoreRenderState(true);
         }
     }
@@ -561,14 +575,6 @@ public class Blur implements Shape {
                 color
         );
 
-        shader.getUniformOrDefault("Size").set(width, height);
-        shader.getUniformOrDefault("Radius").set(round);
-        shader.getUniformOrDefault("RectMask").set(maxCornerRadius(round) <= 0.001F ? 1 : 0);
-        shader.getUniformOrDefault("Smoothness").set(softness);
-        shader.getUniformOrDefault("BlurRadius").set(preparedState.blurRadius());
-        shader.getUniformOrDefault("BlurMode").set(preparedState.blurMode());
-        shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
-        shader.getUniformOrDefault("FrameMix").set(1.0F);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
     }
 
@@ -611,11 +617,8 @@ public class Blur implements Shape {
             return;
         }
 
-        if (useHudBatch) {
-            int target = HudBuffer.activeCaptureTarget >= 0 ? HudBuffer.activeCaptureTarget : client.getFramebuffer().fbo;
-            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target);
-        }
-
+        // 1.21.11: the draw-framebuffer rebind that used to run here is gone -
+        // see the same note in renderCachedBatch.
         if (!useHudBatch) {
             restoreRenderState(true);
         }
@@ -653,21 +656,11 @@ public class Blur implements Shape {
                 color
         );
 
-        RenderSystem.setShaderTexture(0, preparedState.sourceTexture());
-        RenderSystem.setShaderTexture(1, preparedState.sourceTexture());
         ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
         hudBatchMaskShader = shader;
         if (shader == null) {
             return false;
         }
-        shader.getUniformOrDefault("Size").set(width, height);
-        shader.getUniformOrDefault("Radius").set(round);
-        shader.getUniformOrDefault("RectMask").set(maxCornerRadius(round) <= 0.001F ? 1 : 0);
-        shader.getUniformOrDefault("Smoothness").set(softness);
-        shader.getUniformOrDefault("BlurRadius").set(preparedState.blurRadius());
-        shader.getUniformOrDefault("BlurMode").set(preparedState.blurMode());
-        shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
-        shader.getUniformOrDefault("FrameMix").set(1.0F);
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
         return true;
     }
@@ -683,7 +676,10 @@ public class Blur implements Shape {
         float hudGaussianRadius = blurRadius * HUD_GAUSSIAN_STRENGTH_MULTIPLIER;
         int effectiveBlurMode = blurMode;
         float effectiveBlurRadius = blurRadius;
-        int sourceTexture = input.getColorAttachment();
+        // 1.21.11: Framebuffer no longer exposes a raw GL texture id. Samplers
+        // are bound from a GpuTextureView, so the prepared state carries the
+        // view itself instead of an int handle.
+        GpuTextureView sourceTexture = input.getColorAttachmentView();
 
         BlurRegion visibleRegion = computeHudGaussianRegion(client, shape, 0.0f);
         if (visibleRegion == null) {
@@ -696,7 +692,7 @@ public class Blur implements Shape {
                     ? applyOptimizedHudFineKawaseBlur(client, hudGaussianRadius, blurRegion)
                     : applyOptimizedHudKawaseBlur(client, hudGaussianRadius, blurRegion);
             if (prepared != null) {
-                sourceTexture = prepared.getColorAttachment();
+                sourceTexture = prepared.getColorAttachmentView();
                 effectiveBlurMode = 0;
                 effectiveBlurRadius = 0.0f;
             } else {
@@ -744,7 +740,7 @@ public class Blur implements Shape {
         if (prepared == null) {
             return null;
         }
-        return new PreparedBlurState(prepared.getColorAttachment(), 0, 0.0f);
+        return new PreparedBlurState(prepared.getColorAttachmentView(), 0, 0.0f);
     }
 
     private boolean cacheFrameReadyForHud() {
@@ -758,16 +754,17 @@ public class Blur implements Shape {
         boolean resized = false;
 
         if (input == null) {
-            input = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            menuInput = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            hudHalfInput = new SimpleFramebuffer(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
-            nametagInput = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            ping = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            pong = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
-            halfA = new SimpleFramebuffer(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
-            halfB = new SimpleFramebuffer(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
-            quarterA = new SimpleFramebuffer(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
-            quarterB = new SimpleFramebuffer(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
+            // 1.21.11: SimpleFramebuffer takes a debug name as its FIRST arg.
+            input = new SimpleFramebuffer("phaze/blur/input", framebufferWidth, framebufferHeight, false);
+            menuInput = new SimpleFramebuffer("phaze/blur/menu_input", framebufferWidth, framebufferHeight, false);
+            hudHalfInput = new SimpleFramebuffer("phaze/blur/hud_half_input", Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
+            nametagInput = new SimpleFramebuffer("phaze/blur/nametag_input", framebufferWidth, framebufferHeight, false);
+            ping = new SimpleFramebuffer("phaze/blur/ping", framebufferWidth, framebufferHeight, false);
+            pong = new SimpleFramebuffer("phaze/blur/pong", framebufferWidth, framebufferHeight, false);
+            halfA = new SimpleFramebuffer("phaze/blur/half_a", Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
+            halfB = new SimpleFramebuffer("phaze/blur/half_b", Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2), false);
+            quarterA = new SimpleFramebuffer("phaze/blur/quarter_a", Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
+            quarterB = new SimpleFramebuffer("phaze/blur/quarter_b", Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
             // The menu / HUD cache slots are NOT allocated here - see
             // ensureBlurSlots(). Each slot owns a full-resolution
             // framebuffer, and the two groups together are 8 of them
@@ -866,13 +863,13 @@ public class Blur implements Shape {
     }
 
     private void captureWorldInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        captureFramebufferInput(client, input, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST);
+        captureFramebufferInput(client, input, framebufferWidth, framebufferHeight, FilterMode.NEAREST);
         dualKawasePrepared = false;
         preparedHudGaussianRegionCount = 0;
     }
 
     private void captureMenuInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        captureFramebufferInput(client, menuInput, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST);
+        captureFramebufferInput(client, menuInput, framebufferWidth, framebufferHeight, FilterMode.NEAREST);
     }
 
     /**
@@ -906,19 +903,19 @@ public class Blur implements Shape {
         // Allocated on demand: only sessions that actually open a popup pay
         // for this full-resolution target.
         if (menuOverlayInput == null) {
-            menuOverlayInput = new SimpleFramebuffer(width, height, false);
+            menuOverlayInput = new SimpleFramebuffer("phaze/blur/menu_overlay_input", width, height, false);
         } else if (menuOverlayInput.textureWidth != width || menuOverlayInput.textureHeight != height) {
             menuOverlayInput.resize(width, height);
         }
 
-        captureFramebufferInput(client, menuOverlayInput, width, height, GL11C.GL_NEAREST);
+        captureFramebufferInput(client, menuOverlayInput, width, height, FilterMode.NEAREST);
         menuOverlayRevision++;
         menuOverlayValid = true;
     }
 
     private void captureHudInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        captureFramebufferInput(client, input, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST);
-        captureFramebufferInput(client, hudHalfInput, framebufferWidth, framebufferHeight, GL11C.GL_LINEAR);
+        captureFramebufferInput(client, input, framebufferWidth, framebufferHeight, FilterMode.NEAREST);
+        captureFramebufferInput(client, hudHalfInput, framebufferWidth, framebufferHeight, FilterMode.LINEAR);
         hudInputValid = true;
         hudInputRevision++;
         dualKawasePrepared = false;
@@ -927,44 +924,96 @@ public class Blur implements Shape {
     }
 
     private void captureNametagInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        captureFramebufferInput(client, nametagInput, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST);
+        captureFramebufferInput(client, nametagInput, framebufferWidth, framebufferHeight, FilterMode.NEAREST);
     }
 
+    /**
+     * Copies the live main framebuffer into {@code target}.
+     *
+     * <p>{@code framebufferWidth} / {@code framebufferHeight} are kept for the
+     * callers' sake but are no longer used: the source rectangle was always the
+     * whole window framebuffer, and {@link #blitFramebuffer} copies whole
+     * surfaces.
+     */
     private void captureFramebufferInput(
             MinecraftClient client,
             Framebuffer target,
             int framebufferWidth,
             int framebufferHeight,
-            int filter
+            FilterMode filter
     ) {
         // When a HUD batch capture is active, mc.getFramebuffer() is redirected
         // to the HUD FBO by MinecraftClientFramebufferMixin. We need the REAL
         // main framebuffer here to read the world content for the blur backdrop.
-        Framebuffer framebuffer = HudBuffer.activeCaptureTarget >= 0
-                ? vorga.phazeclient.api.system.hud.BatchedHudBuffer.INSTANCE.getRealMainFramebuffer()
+        //
+        // Asking BatchedHudBuffer whether a capture is live (instead of reading
+        // HudBuffer.activeCaptureTarget directly) keeps this independent of how
+        // that flag ends up being represented once the capture hook moves to
+        // GuiRenderer - it is no longer a GL framebuffer id in 1.21.11.
+        Framebuffer framebuffer = BatchedHudBuffer.INSTANCE.getActiveCaptureFramebuffer() != null
+                ? BatchedHudBuffer.INSTANCE.getRealMainFramebuffer()
                 : client.getFramebuffer();
         if (framebuffer == null) {
             framebuffer = client.getFramebuffer();
         }
-        int restoreFramebuffer = HudBuffer.activeCaptureTarget >= 0
-                ? HudBuffer.activeCaptureTarget
-                : client.getFramebuffer().fbo;
-        GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, framebuffer.fbo);
-        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target.fbo);
-        GL30C.glBlitFramebuffer(
-                0,
-                0,
-                framebufferWidth,
-                framebufferHeight,
-                0,
-                0,
-                target.textureWidth,
-                target.textureHeight,
-                GL30C.GL_COLOR_BUFFER_BIT,
-                filter
-        );
-        GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, restoreFramebuffer);
-        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, restoreFramebuffer);
+        if (framebuffer == null || target == null) {
+            return;
+        }
+        // 1.21.11: no read/draw framebuffer bindings to save and restore - the
+        // render target is chosen per render pass, so the GlStateManager dance
+        // that used to bracket this blit has nothing to do.
+        blitFramebuffer(framebuffer, target, filter, null);
+    }
+
+    /**
+     * {@code glBlitFramebuffer} replacement: copies {@code source}'s colour
+     * attachment over {@code target}'s, optionally restricted to
+     * {@code targetScissor} (in {@code target} pixels, GL bottom-left origin).
+     *
+     * <p>A 1:1 unfiltered whole-surface copy goes through
+     * {@code copyTextureToTexture}, which is the cheap native path. Anything
+     * that scales or wants LINEAR filtering has to go through
+     * {@link #COPY_PIPELINE} instead - {@code copyTextureToTexture} hardcodes
+     * NEAREST and one shared rectangle.
+     */
+    private static void blitFramebuffer(Framebuffer source, Framebuffer target, FilterMode filter, BlurRegion targetScissor) {
+        if (source == null || target == null) {
+            return;
+        }
+        RenderSystem.assertOnRenderThread();
+
+        if (targetScissor == null
+                && filter == FilterMode.NEAREST
+                && source.textureWidth == target.textureWidth
+                && source.textureHeight == target.textureHeight) {
+            RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(
+                    source.getColorAttachment(),
+                    target.getColorAttachment(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    source.textureWidth,
+                    source.textureHeight
+            );
+            return;
+        }
+
+        try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+                () -> "phaze/blur copy",
+                target.getColorAttachmentView(),
+                OptionalInt.empty())) {   // empty = preserve, do not clear
+            pass.setPipeline(COPY_PIPELINE);
+            RenderSystem.bindDefaultUniforms(pass);
+            if (targetScissor != null) {
+                pass.enableScissor(targetScissor.x, targetScissor.y, targetScissor.width, targetScissor.height);
+            }
+            // A mistyped sampler name is silently skipped and renders black,
+            // never throws - "InSampler" must match core/blit_screen.fsh.
+            pass.bindTexture("InSampler", source.getColorAttachmentView(), RenderSystem.getSamplerCache().get(filter));
+            pass.draw(0, 3);
+        }
     }
 
     private boolean applyDualKawaseBlur(
@@ -1013,10 +1062,9 @@ public class Blur implements Shape {
         // even though the half-resolution image is already smooth.
         float upOffset1 = quantizedRadius * 0.09f;
         runDualKawasePass(shader, src, halfB, upOffset1, false, region);
-        blitColorRegion(halfB, output, region, GL11C.GL_LINEAR);
+        blitColorRegion(halfB, output, region, FilterMode.LINEAR);
 
         bindMainDrawTarget(client);
-        RenderSystem.viewport(0, 0, sourceInput.textureWidth, sourceInput.textureHeight);
         dualKawasePrepared = true;
         lastDualKawaseRadius = quantizedRadius;
         lastDualKawaseWidth = w;
@@ -1024,23 +1072,15 @@ public class Blur implements Shape {
         return true;
     }
 
-    private void blitColorRegion(Framebuffer source, Framebuffer target, BlurRegion region, int filter) {
-        BlurRegion sourceRegion = scaleBlurRegion(region, source.textureWidth, source.textureHeight);
+    private void blitColorRegion(Framebuffer source, Framebuffer target, BlurRegion region, FilterMode filter) {
+        // The old code blitted sourceRegion -> targetRegion. Both are the SAME
+        // fraction of their respective surfaces (scaleBlurRegion scales the
+        // region by target-size / input-size), so a whole-surface quad clipped
+        // to targetRegion samples exactly the matching source area and gives
+        // the same result without needing a per-rect blit the API no longer
+        // offers.
         BlurRegion targetRegion = scaleBlurRegion(region, target.textureWidth, target.textureHeight);
-        GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, source.fbo);
-        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target.fbo);
-        GL30C.glBlitFramebuffer(
-                sourceRegion.x,
-                sourceRegion.y,
-                sourceRegion.x + sourceRegion.width,
-                sourceRegion.y + sourceRegion.height,
-                targetRegion.x,
-                targetRegion.y,
-                targetRegion.x + targetRegion.width,
-                targetRegion.y + targetRegion.height,
-                GL30C.GL_COLOR_BUFFER_BIT,
-                filter
-        );
+        blitFramebuffer(source, target, filter, targetRegion);
     }
 
     private BlurRegion scaleBlurRegion(BlurRegion region, int targetWidth, int targetHeight) {
@@ -1090,9 +1130,8 @@ public class Blur implements Shape {
         }
 
         runDualKawasePass(shader, src, halfB, radius * 0.10f, false, region);
-        blitColorRegion(halfB, slot.framebuffer, region, GL11C.GL_LINEAR);
+        blitColorRegion(halfB, slot.framebuffer, region, FilterMode.LINEAR);
         bindMainDrawTarget(client);
-        RenderSystem.viewport(0, 0, w, h);
 
         slot.valid = false;
         rememberHudBlurRegion(slot, region);
@@ -1169,7 +1208,7 @@ public class Blur implements Shape {
         }
 
         for (int i = 0; i < slots.length; i++) {
-            SimpleFramebuffer framebufferCache = new SimpleFramebuffer(width, height, false);
+            SimpleFramebuffer framebufferCache = new SimpleFramebuffer("phaze/blur/slot_" + i, width, height, false);
             slots[i] = new MenuBlurSlot(framebufferCache);
         }
     }
@@ -1210,7 +1249,7 @@ public class Blur implements Shape {
         long key = client.world == null ? 0L : client.world.getTime();
         if (client.gameRenderer != null && client.gameRenderer.getCamera() != null) {
             var camera = client.gameRenderer.getCamera();
-            var pos = camera.getPos();
+            var pos = camera.getCameraPos();
             var rotation = camera.getRotation();
             key = mixStateKey(key, Double.doubleToRawLongBits(pos.x));
             key = mixStateKey(key, Double.doubleToRawLongBits(pos.y));
@@ -1250,7 +1289,6 @@ public class Blur implements Shape {
         runDualKawasePass(shader, input, slot.framebuffer, radius * 0.35f, true, region);
 
         bindMainDrawTarget(client);
-        RenderSystem.viewport(0, 0, input.textureWidth, input.textureHeight);
         slot.valid = false;
         rememberHudBlurRegion(slot, region);
         return slot.framebuffer;
@@ -1264,17 +1302,13 @@ public class Blur implements Shape {
             boolean downsample,
             BlurRegion region
     ) {
-        target.beginWrite(false);
-        RenderSystem.viewport(0, 0, target.textureWidth, target.textureHeight);
-        RenderSystem.setShaderTexture(0, source.getColorAttachment());
-        shader.getUniformOrDefault("TexelSize").set(1.0F / source.textureWidth, 1.0F / source.textureHeight);
-        shader.getUniformOrDefault("Offset").set(offset);
-        shader.getUniformOrDefault("Downsample").set(downsample ? 1 : 0);
-        BlurRegion targetRegion = scaleBlurRegion(region, target.textureWidth, target.textureHeight);
-        RenderSystem.enableScissorForRenderTypeDraws(targetRegion.x, targetRegion.y, targetRegion.width, targetRegion.height);
-        ShaderHelper.drawFullScreenQuad();
-        RenderSystem.disableScissorForRenderTypeDraws();
-        target.endWrite();
+        // TODO(1.21.11): needs a real RenderPipeline (core/screenquad + a Phaze
+        // dual-Kawase fragment shader) and a std140 uniform block for
+        // Offset/HalfPixel/Direction. Loose uniforms, Framebuffer.beginWrite /
+        // endWrite and the global shader binding this pass relied on are all
+        // gone; the target is now named by the render pass and the offsets have
+        // to travel in a UBO. Every caller is gated behind a null ShaderProgram,
+        // so this is unreachable until that pipeline is built (plan item B3).
     }
 
     public float getPlayerSpeed(MinecraftClient client) {
@@ -1286,7 +1320,7 @@ public class Blur implements Shape {
         }
         worldSpaceSpeedPrepared = true;
 
-        var playerPos = client.player.getPos();
+        var playerPos = client.player.getEntityPos();
         long currentTime = System.currentTimeMillis();
 
         if (Double.isNaN(lastPlayerX)) {
@@ -1318,20 +1352,7 @@ public class Blur implements Shape {
 
     private boolean applyGaussianBlur(MinecraftClient client, float blurRadius) {
         if (blurRadius <= 0.0F) {
-            GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, input.fbo);
-            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, pong.fbo);
-            GL30C.glBlitFramebuffer(
-                    0,
-                    0,
-                    input.textureWidth,
-                    input.textureHeight,
-                    0,
-                    0,
-                    pong.textureWidth,
-                    pong.textureHeight,
-                    GL30C.GL_COLOR_BUFFER_BIT,
-                    GL11C.GL_LINEAR
-            );
+            blitFramebuffer(input, pong, FilterMode.LINEAR, null);
             bindMainDrawTarget(client);
             return true;
         }
@@ -1348,28 +1369,10 @@ public class Blur implements Shape {
     }
 
     private void runGaussianPass(ShaderProgram shader, Framebuffer source, Framebuffer target, float directionX, float directionY, float blurRadius, BlurRegion region) {
-        target.beginWrite(false);
-        RenderSystem.viewport(0, 0, target.textureWidth, target.textureHeight);
-        RenderSystem.setShaderTexture(0, source.getColorAttachment());
-
-        int support = MathHelper.clamp(Math.round(blurRadius), 1, 64);
-        float sigma = Math.max(1.0F, blurRadius * 0.55F);
-
-        shader.getUniformOrDefault("Direction").set(directionX, directionY);
-        shader.getUniformOrDefault("TexelSize").set(1.0F / source.textureWidth, 1.0F / source.textureHeight);
-        shader.getUniformOrDefault("Support").set(support);
-        shader.getUniformOrDefault("Sigma").set(sigma);
-        shader.getUniformOrDefault("Brightness").set(1.0F);
-
-        if (region != null) {
-            RenderSystem.enableScissorForRenderTypeDraws(region.x, region.y, region.width, region.height);
-        }
-        ShaderHelper.drawFullScreenQuad();
-        if (region != null) {
-            RenderSystem.disableScissorForRenderTypeDraws();
-        }
-        // Ensure we finish writing to the target FBO for this pass
-        target.endWrite();
+        // TODO(1.21.11): same rewrite as runDualKawasePass - the separable
+        // Gaussian needs its Direction/Radius/Sigma values in a std140 block on
+        // a Phaze-owned pipeline. Unreachable while applyGaussianBlur's
+        // ShaderProgram is null (plan item B3).
     }
 
     private BlurRegion computeHudGaussianRegion(MinecraftClient client, ShapeProperties shape, float blurRadius) {
@@ -1483,8 +1486,12 @@ public class Blur implements Shape {
         }
     }
 
-    private record PreparedBlurState(int sourceTexture, int blurMode, float blurRadius) {
+    private record PreparedBlurState(GpuTextureView sourceTexture, int blurMode, float blurRadius) {
         private boolean matches(PreparedBlurState other) {
+            // Identity comparison is intentional and still correct: a
+            // Framebuffer owns exactly one colour-attachment view and replaces
+            // it only on resize, so "same view instance" == "same texture", as
+            // the old GL id comparison meant.
             return other != null
                     && sourceTexture == other.sourceTexture
                     && blurMode == other.blurMode
@@ -1493,22 +1500,23 @@ public class Blur implements Shape {
     }
 
     private void bindMainDrawTarget(MinecraftClient client) {
-        if (client == null || client.getFramebuffer() == null) {
-            return;
-        }
-        if (HudBuffer.activeCaptureTarget >= 0) {
-            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, HudBuffer.activeCaptureTarget);
-        } else {
-            client.getFramebuffer().beginWrite(false);
-        }
+        // 1.21.11: there is no "current draw framebuffer" to point back at.
+        // Framebuffer.beginWrite and the GL draw-buffer binding are both gone -
+        // every draw names its colour attachment when it opens its render pass,
+        // so re-targeting after an offscreen pass is neither possible nor
+        // needed. Kept as a no-op so the offscreen passes still read as
+        // "...and now we are done writing offscreen".
     }
 
+    // TODO(1.21.11): loose uniforms are gone - GlUniform is a bare marker
+    // interface with no set(). The tint has to become part of the blur
+    // pipeline's std140 block (or a per-vertex colour) when that pipeline is
+    // built. Left computing nothing so the call site keeps its shape.
     private static void setTintUniform(ShaderProgram shader, int argb) {
         float alpha = ((argb >>> 24) & 0xFF) / 255.0f;
         float red = ((argb >>> 16) & 0xFF) / 255.0f;
         float green = ((argb >>> 8) & 0xFF) / 255.0f;
         float blue = (argb & 0xFF) / 255.0f;
-        shader.getUniformOrDefault("TintColor").set(red, green, blue, alpha);
     }
 
     private static float maxCornerRadius(Vector4f radius) {
@@ -1516,8 +1524,9 @@ public class Blur implements Shape {
     }
 
     private static void restoreRenderState(boolean enableDepthTest) {
-        if (enableDepthTest) {
-        } else {
-        }
+        // 1.21.11: blend / depth / cull are pipeline properties, so no imperative
+        // GPU state can leak out of a Phaze draw and there is nothing to restore.
+        // Kept as a no-op rather than deleted because the call sites document
+        // where a draw finishes.
     }
 }

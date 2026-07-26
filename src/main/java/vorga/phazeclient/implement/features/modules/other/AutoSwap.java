@@ -135,7 +135,9 @@ public final class AutoSwap extends Module {
 
         int syncId = client.player.playerScreenHandler.syncId;
         int offhandSlot = 45;
-        boolean hasOffhandItem = !client.player.getInventory().offHand.get(0).isEmpty();
+        // 1.21.11: PlayerInventory.offHand is gone (offhand lives in EntityEquipment now);
+        // LivingEntity.getOffHandStack() is the public accessor for the same stack.
+        boolean hasOffhandItem = !client.player.getOffHandStack().isEmpty();
 
         Thread worker = new Thread(() -> {
             runSwapClick(client, syncId, targetSlot);
@@ -197,20 +199,21 @@ public final class AutoSwap extends Module {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return null;
 
-        var inventory = client.player.getInventory();
-        for (int i = 0; i < inventory.main.size(); i++) {
-            ItemStack stack = inventory.main.get(i);
+        // 1.21.11: PlayerInventory.main is private; getMainStacks() returns the same DefaultedList.
+        var mainStacks = client.player.getInventory().getMainStacks();
+        for (int i = 0; i < mainStacks.size(); i++) {
+            ItemStack stack = mainStacks.get(i);
             if (!stack.isEmpty() && stack.getName().getString().equals(itemName)) {
                 return stack;
             }
         }
-        
+
         // Check offhand
-        ItemStack offhand = inventory.offHand.get(0);
+        ItemStack offhand = client.player.getOffHandStack();
         if (!offhand.isEmpty() && offhand.getName().getString().equals(itemName)) {
             return offhand;
         }
-        
+
         return null;
     }
 
@@ -221,7 +224,7 @@ public final class AutoSwap extends Module {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return null;
 
-        ItemStack offhandStack = client.player.getInventory().offHand.get(0);
+        ItemStack offhandStack = client.player.getOffHandStack();
         String currentOffhandItem = offhandStack.isEmpty() ? null : offhandStack.getName().getString();
 
         return applySwapRules(currentOffhandItem);
@@ -319,9 +322,9 @@ public final class AutoSwap extends Module {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return null;
 
-        var inventory = client.player.getInventory();
-        for (int i = 0; i < inventory.main.size(); i++) {
-            ItemStack stack = inventory.main.get(i);
+        var mainStacks = client.player.getInventory().getMainStacks();
+        for (int i = 0; i < mainStacks.size(); i++) {
+            ItemStack stack = mainStacks.get(i);
             if (!stack.isEmpty() && stack.isOf(Items.TOTEM_OF_UNDYING)) {
                 return new SwapTarget(stack.getName().getString(), i < 9 ? i + 36 : i);
             }
@@ -336,9 +339,9 @@ public final class AutoSwap extends Module {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return null;
 
-        var inventory = client.player.getInventory();
-        for (int i = 0; i < inventory.main.size(); i++) {
-            ItemStack stack = inventory.main.get(i);
+        var mainStacks = client.player.getInventory().getMainStacks();
+        for (int i = 0; i < mainStacks.size(); i++) {
+            ItemStack stack = mainStacks.get(i);
             if (!stack.isEmpty()) {
                 String stackName = stack.getName().getString();
                 if (stackName.toLowerCase().contains(searchText)) {
@@ -365,9 +368,9 @@ public final class AutoSwap extends Module {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return -1;
 
-        var inventory = client.player.getInventory();
-        for (int i = 0; i < inventory.main.size(); i++) {
-            ItemStack stack = inventory.main.get(i);
+        var mainStacks = client.player.getInventory().getMainStacks();
+        for (int i = 0; i < mainStacks.size(); i++) {
+            ItemStack stack = mainStacks.get(i);
             if (!stack.isEmpty() && stack.getName().getString().equals(itemName)) {
                 return i < 9 ? i + 36 : i;
             }

@@ -65,8 +65,10 @@ public final class TimeChanger extends Module {
             ServerWorld world = client.getServer().getWorld(client.world.getRegistryKey());
             if (world != null) {
                 originalTime = world.getTimeOfDay();
-                originalDaylightCycle = world.getGameRules().get(GameRules.DO_DAYLIGHT_CYCLE).get();
-                world.getGameRules().get(GameRules.DO_DAYLIGHT_CYCLE).set(false, client.getServer());
+                // 1.21.11: GameRules.DO_DAYLIGHT_CYCLE -> GameRules.ADVANCE_TIME (registry id "advance_time"),
+                // and the GameRules.get(rule).get()/.set(v, server) rule-holder API became getValue/setValue.
+                originalDaylightCycle = world.getGameRules().getValue(GameRules.ADVANCE_TIME);
+                world.getGameRules().setValue(GameRules.ADVANCE_TIME, false, client.getServer());
             }
         }
     }
@@ -83,7 +85,8 @@ public final class TimeChanger extends Module {
                     world.setTimeOfDay(originalTime);
                     originalTime = -1;
                 }
-                world.getGameRules().get(GameRules.DO_DAYLIGHT_CYCLE).set(originalDaylightCycle, client.getServer());
+                // 1.21.11: see activate() - DO_DAYLIGHT_CYCLE -> ADVANCE_TIME, setValue replaces get(rule).set(...)
+                world.getGameRules().setValue(GameRules.ADVANCE_TIME, originalDaylightCycle, client.getServer());
             }
         }
     }

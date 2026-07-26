@@ -2,13 +2,10 @@ package vorga.phazeclient.api.system.hud;
 
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
-import com.mojang.blaze3d.opengl.GlStateManager;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.GlUniform;
-import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
@@ -23,7 +20,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -73,6 +69,8 @@ public final class ExordiumAnimationBridge {
     private static Method exordiumGetTextureCountUniformMethod;
     private static Method exordiumGetModelMethod;
     private static Method exordiumModelDrawMethod;
+    private static Method exordiumTextureCountSetMethod;
+    private static boolean textureCountSetUnavailable;
     private static Object exordiumShaderManager;
     private static boolean reflectionFailed;
 
@@ -348,7 +346,6 @@ public final class ExordiumAnimationBridge {
             }
         } finally {
             DEFERRED.clear();
-            RenderSystem.setShaderTexture(0, 0);
             // This hook runs immediately before Exordium's own
             // MultiStateHolder#apply. Let that captured state restore
             // blend/depth exactly as they were before the delayed HUD pass.
@@ -358,15 +355,18 @@ public final class ExordiumAnimationBridge {
         }
     }
 
+    // 1.21.11: DrawContext.drawGuiTexture takes a RenderPipeline; the
+    // Function<Identifier, RenderLayer> overload is gone, so the captured
+    // selector now carries the pipeline InGameHud used for that sprite.
     public static void recordHotbarSelection(
-            Function<Identifier, RenderLayer> layerFactory,
+            RenderPipeline pipeline,
             Identifier texture,
             int x,
             int y,
             int width,
             int height
     ) {
-        if (!isCapturingHotbar() || layerFactory == null || texture == null) {
+        if (!isCapturingHotbar() || pipeline == null || texture == null) {
             return;
         }
         MinecraftClient client = MinecraftClient.getInstance();
@@ -390,7 +390,7 @@ public final class ExordiumAnimationBridge {
         // wrong direction. The slot-zero origin stays valid across selection
         // changes, so only Phaze's display-FPS animation position is added.
         int baseX = x - Math.round(hotbarTargetSlotX);
-        hotbarSelector = new HotbarSelector(layerFactory, texture, baseX, y, width, height, component, clip);
+        hotbarSelector = new HotbarSelector(pipeline, texture, baseX, y, width, height, component, clip);
     }
 
     public static void recordTabGeometry(float pivotX, float pivotY) {
@@ -449,7 +449,7 @@ public final class ExordiumAnimationBridge {
                 Math.round(selector.clipBounds.bottom)
         );
         context.drawGuiTexture(
-                selector.layerFactory,
+                selector.pipeline,
                 selector.texture,
                 drawX,
                 selector.y,
@@ -458,7 +458,7 @@ public final class ExordiumAnimationBridge {
         );
         if (hotbarMirror) {
             context.drawGuiTexture(
-                    selector.layerFactory,
+                    selector.pipeline,
                     selector.texture,
                     drawX + hotbarMirrorOffset,
                     selector.y,
@@ -553,7 +553,6 @@ public final class ExordiumAnimationBridge {
             renderPlayerList(context, texture);
             return true;
         } finally {
-            RenderSystem.setShaderTexture(0, 0);
             // Player-list close can run outside Exordium's delayed pass.
             // Leave GUI blending enabled for subsequent HUD captures instead
             // of leaking a disabled blend state into the next frame.
@@ -611,6 +610,10 @@ public final class ExordiumAnimationBridge {
         if (clip == null || clip.isEmpty() || alpha <= 0.001F) {
             return;
         }
+        // 1.21.11: DrawContext.enableScissor now transforms its rect by the
+        // context pose. These clip rects are already in screen space (they came
+        // out of transformRect), so this stays correct only while the pose is
+        // identity - which it is at Exordium's delayed-batch hook.
         context.enableScissor(
                 (int) Math.floor(clip.left),
                 (int) Math.floor(clip.top),
@@ -633,20 +636,39 @@ public final class ExordiumAnimationBridge {
             Object model = exordiumGetModelMethod.invoke(null);
             Object shaderObject = exordiumGetMultiTextureShaderMethod.invoke(exordiumShaderManager);
             Object uniformObject = exordiumGetTextureCountUniformMethod.invoke(exordiumShaderManager);
-            if (!(shaderObject instanceof ShaderProgram shader)
-                    || !(uniformObject instanceof GlUniform textureCount)
-                    || model == null) {
+            if (model == null || shaderObject == null) {
                 return;
             }
 
-            RenderSystem.setShader(shader);
-            textureCount.set(1);
-            RenderSystem.setShaderTexture(0, texture);
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, clamp01(alpha));
+            // TODO(1.21.11): loose shader uniforms were removed. The objects are
+            // no longer typed as ShaderProgram/GlUniform here because
+            // net.minecraft.client.gl.GlUniform is now a bare marker interface
+            // with no set(...) - per-draw values live in a std140 block owned by
+            // the RenderPipeline. Exordium's own texture-count handle is still
+            // poked reflectively when its 1.21.11 build exposes a set(int); when
+            // it does not, the draw runs with whatever count the shader manager
+            // already had bound (Exordium binds 1 for a single cached component).
+            setExordiumTextureCount(uniformObject, 1);
             exordiumModelDrawMethod.invoke(model, matrix);
         } catch (Throwable ignored) {
             reflectionFailed = true;
-        } finally {
+        }
+    }
+
+    private static void setExordiumTextureCount(Object uniform, int count) {
+        if (uniform == null || textureCountSetUnavailable) {
+            return;
+        }
+        try {
+            if (exordiumTextureCountSetMethod == null) {
+                exordiumTextureCountSetMethod = uniform.getClass().getMethod("set", int.class);
+            }
+            exordiumTextureCountSetMethod.invoke(uniform, count);
+        } catch (Throwable ignored) {
+            // Non-fatal: only the texture count is missing, the cached draw is
+            // still valid. Latch so the lookup is not retried every frame, and
+            // deliberately do NOT set reflectionFailed.
+            textureCountSetUnavailable = true;
         }
     }
 
@@ -778,7 +800,7 @@ public final class ExordiumAnimationBridge {
     }
 
     private record HotbarSelector(
-            Function<Identifier, RenderLayer> layerFactory,
+            RenderPipeline pipeline,
             Identifier texture,
             int baseX,
             int y,

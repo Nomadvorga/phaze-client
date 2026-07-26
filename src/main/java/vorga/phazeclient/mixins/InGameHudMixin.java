@@ -2,22 +2,20 @@ package vorga.phazeclient.mixins;
 
 import net.minecraft.client.gl.RenderPipelines;
 
-import org.joml.Matrix3x2fStack;
-
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.InGameHud;
 import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.texture.Sprite;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffectCategory;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.item.Item;
@@ -37,7 +35,10 @@ import net.minecraft.registry.Registry;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.client.gui.hud.PlayerListHud;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
+import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.entity.EntityRenderManager;
+import net.minecraft.client.render.entity.EntityRenderer;
+import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.Perspective;
 import net.minecraft.entity.player.HungerManager;
@@ -47,6 +48,7 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardDisplaySlot;
 import net.minecraft.scoreboard.ScoreboardObjective;
+import org.joml.Matrix3x2f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
@@ -127,7 +129,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.Vector;
-import java.util.function.Function;
 import java.util.function.Supplier;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -138,10 +139,21 @@ public class InGameHudMixin {
     private static final float BASE_HEIGHT = 20.0f;
     private static final int HUD_TEXT_COLOR = 0xFFFFFFFF;
     private static final float HUD_TEXT_SIZE = 8.0f;
+    // 1.21.11: GUI depth is gone - every GUI pipeline is NO_DEPTH_TEST and
+    // Matrix3x2f has no Z component, so the old HUD_RENDER_Z / HANDLE_RENDER_Z /
+    // HUD_TEXT_RENDER_Z tiers cannot be expressed as a translate any more.
+    // They are no longer needed either: GuiRenderState promotes an element into a
+    // new sub-layer whenever its bounds intersect something already submitted
+    // (findAndGoToLayerIntersecting), so "submitted later" == "drawn on top",
+    // which is exactly what the three tiers encoded. The constants are kept as
+    // documentation of the original ordering for the visual-parity pass.
+    @SuppressWarnings("unused")
     private static final float HUD_TEXT_RENDER_Z = 1000.0f;
     private static final int HANDLE_COLOR = 0xFF72F7D4;
     private static final float BASE_HOVER_OUTLINE_THICKNESS = 1.0f;
+    @SuppressWarnings("unused")
     private static final float HUD_RENDER_Z = 400.0f;
+    @SuppressWarnings("unused")
     private static final float HANDLE_RENDER_Z = 450.0f;
     private static final float GUIDE_SNAP_RADIUS = 3.0f;
     private static final float HUD_TO_HUD_SNAP_RADIUS = 4.0f;
@@ -149,6 +161,15 @@ public class InGameHudMixin {
     private static final int GUIDE_MAX_ALPHA = 140;
     private static final long HUD_TEXT_THROTTLE_MS = 50L;
     private static final Identifier DIRECTION_TRIANGLE_TEXTURE = Identifier.of("phaze", "textures/down_triangle.png");
+    /**
+     * 1.21.11 removed {@code PlayerInventory.getArmorStack(int)} - armour is
+     * held by {@code EntityEquipment} and read through
+     * {@code LivingEntity.getEquippedStack(EquipmentSlot)}. This is the same
+     * visual order the old index walk (slot 3 down to 0) produced.
+     */
+    private static final EquipmentSlot[] PHAZE_ARMOR_SLOTS = {
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+    };
 
     private static final int HUD_FPS = 0;
     private static final int HUD_CPS = 1;
@@ -371,7 +392,8 @@ public class InGameHudMixin {
         }
     }
 
-    @Inject(method = "renderBossBar", at = @At("HEAD"), cancellable = true, require = 0)
+    // 1.21.11: InGameHud.renderBossBar was renamed renderBossBarHud.
+    @Inject(method = "renderBossBarHud", at = @At("HEAD"), cancellable = true, require = 0)
     private void phaze$suppressVanillaBossBar(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         NoRender noRender = NoRender.getInstance();
         if (noRender != null && noRender.isEnabled() && noRender.bossBar.isValue()) {
@@ -713,12 +735,14 @@ public class InGameHudMixin {
             MovementSpeedHud module = MovementSpeedHud.getInstance();
             
             // Calculate speed using distance between current and previous position (like soup)
-            double speed = Math.sqrt(client.player.squaredDistanceTo(new Vec3d(client.player.prevX, client.player.prevY, client.player.prevZ))) * 20.0;
-            
+            // 1.21.11: Entity.prevX/prevY/prevZ were renamed lastX/lastY/lastZ
+            // (same fields, same meaning - previous-tick position).
+            double speed = Math.sqrt(client.player.squaredDistanceTo(new Vec3d(client.player.lastX, client.player.lastY, client.player.lastZ))) * 20.0;
+
             // If using ground speed only, calculate horizontal component
             if (module.onlyUseGroundSpeed.isValue()) {
-                double dx = client.player.getX() - client.player.prevX;
-                double dz = client.player.getZ() - client.player.prevZ;
+                double dx = client.player.getX() - client.player.lastX;
+                double dz = client.player.getZ() - client.player.lastZ;
                 speed = Math.sqrt(dx * dx + dz * dz) * 20.0;
             }
             
@@ -1144,11 +1168,11 @@ public class InGameHudMixin {
         int hoverOutlineThickness = Math.max(1, Math.round(BASE_HOVER_OUTLINE_THICKNESS / Math.max(1.0f, scale)));
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(x, y, HUD_RENDER_Z);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(scale, scale);
 
         if (module.background.isValue() && hudIndex != HUD_KEYSTROKES) {
             float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
@@ -1233,7 +1257,10 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(0.0f, 0.0f, HANDLE_RENDER_Z);
+            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
+            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
+            // because GuiRenderState promotes an intersecting element into a new
+            // sub-layer, and the handle is submitted after the panel it sits on.
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -1278,9 +1305,8 @@ public class InGameHudMixin {
         List<ItemStack> updatedStacks = new ArrayList<>();
         List<String> updatedDurabilityTexts = new ArrayList<>();
 
-        var inventory = client.player.getInventory();
-        for (int slot = 3; slot >= 0; slot--) {
-            ItemStack stack = inventory.getArmorStack(slot);
+        for (EquipmentSlot armorSlot : PHAZE_ARMOR_SLOTS) {
+            ItemStack stack = client.player.getEquippedStack(armorSlot);
             if (stack.isEmpty()) {
                 continue;
             }
@@ -1469,10 +1495,10 @@ public class InGameHudMixin {
         int hoverOutlineThickness = Math.max(1, Math.round(2.0f / Math.max(1.0f, scale)));
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(x, y, HUD_RENDER_Z);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(scale, scale);
 
         if (module.background.isValue()) {
             float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
@@ -1576,7 +1602,10 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (armorResizing || hoveredHandle || hovered || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(0.0f, 0.0f, HANDLE_RENDER_Z);
+            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
+            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
+            // because GuiRenderState promotes an intersecting element into a new
+            // sub-layer, and the handle is submitted after the panel it sits on.
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = armorResizing ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -1753,10 +1782,10 @@ public class InGameHudMixin {
         int hoverOutlineThickness = Math.max(1, Math.round(2.0f / Math.max(1.0f, scale)));
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(x, y, HUD_RENDER_Z);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(scale, scale);
 
         if (module.background.isValue()) {
             float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
@@ -1827,7 +1856,10 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hovered || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(0.0f, 0.0f, HANDLE_RENDER_Z);
+            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
+            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
+            // because GuiRenderState promotes an intersecting element into a new
+            // sub-layer, and the handle is submitted after the panel it sits on.
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -1935,7 +1967,7 @@ public class InGameHudMixin {
         float y = module.getHudY();
         float scale = module.getHudScale();
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
         // Vertically centre the text block inside the rect. For the
         // normal multi-row layout {@code (baseHeight - textBlockHeight)
@@ -2066,7 +2098,7 @@ public class InGameHudMixin {
         float textY = (BASE_HEIGHT - 8.0f) / 2.0f;
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         renderScaledHudText(context, client, fullText, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue());
         float labelWidth = getHudTextWidth(client, label, HUD_TEXT_SIZE);
         int pingColor;
@@ -2141,10 +2173,10 @@ public class InGameHudMixin {
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, BASE_HEIGHT);
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0F);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(x, y, HUD_RENDER_Z + 25.0F);
-        context.getMatrices().scale(scale, scale, 1.0F);
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(scale, scale);
         float textX = 7.0F;
         float textY = (BASE_HEIGHT - 9.0F) * 0.5F;
         context.drawText(client.textRenderer, text, Math.round(textX), Math.round(textY), resolveHudTextColor(), module.textShadow.isValue());
@@ -2180,10 +2212,10 @@ public class InGameHudMixin {
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight);
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(x, y, HUD_RENDER_Z + 25.0f);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(scale, scale);
         float textX = (baseWidth - textWidth) * 0.5f;
         float textY = (baseHeight - 9.0f) * 0.5f;
         context.drawText(client.textRenderer, text, Math.round(textX), Math.round(textY), resolveHudTextColor(), module.textShadow.isValue());
@@ -2347,13 +2379,13 @@ public class InGameHudMixin {
 
         // Push matrices and use local coordinates like renderRectHud
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z);
-        context.getMatrices().scale(hudScale, hudScale, 1.0f);
+        context.getMatrices().translate(hudX, hudY);
+        context.getMatrices().scale(hudScale, hudScale);
         // Keep all drawable pixels inside RectHud bounds so selection/resize
         // area always matches, including the title strip.
-        context.getMatrices().translate(0.0f, topInset, 0.0f);
+        context.getMatrices().translate(0.0f, topInset);
 
         // Render blur and background
         if (module.background.isValue()) {
@@ -2519,7 +2551,7 @@ public class InGameHudMixin {
         float baselineY = 28.0f;
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.fill(Math.round(x + leftPadding), Math.round(y + baselineY), Math.round(x + baseWidth - rightPadding), Math.round(y + baselineY + 1.0f), withAlpha(0xFFFFFF, 30));
 
         // Pass 1: ticks only on fixed world marks.
@@ -2609,8 +2641,8 @@ public class InGameHudMixin {
             float scale
     ) {
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(hudX, hudY);
+        context.getMatrices().scale(scale, scale);
         context.drawTexture(RenderPipelines.GUI_TEXTURED, DIRECTION_TRIANGLE_TEXTURE, Math.round(localX), Math.round(localY), 0.0f, 0.0f, width, height, width, height);
         context.getMatrices().popMatrix();
     }
@@ -2647,10 +2679,10 @@ public class InGameHudMixin {
                 : 0x00000000;
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(x, y, HUD_RENDER_Z + 20.0f);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(scale, scale);
         renderKeystrokeButtonBlur(context, module, scale);
         float cachedProgressScale = inBatchPass ? 0.0f : 1.0f;
         renderKeyButton(context, 20, 0, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale);
@@ -2749,7 +2781,7 @@ public class InGameHudMixin {
         // outside this matrix scope so it stays at its original Y.
         float baseHeight = paddingY * 2.0f + rows * rowHeight;
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(0.0f, 1.0f, 0.0f);
+        context.getMatrices().translate(0.0f, 1.0f);
         renderRectHud(context, client, module, "", HUD_POTION, chatEditing, mouseX, mouseY, mouseDown,
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, baseHeight - 4.0f);
         context.getMatrices().popMatrix();
@@ -2758,18 +2790,22 @@ public class InGameHudMixin {
         float y = module.getHudY();
         float scale = module.getHudScale();
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
         for (int i = 0; i < rows; i++) {
             float rowY = paddingY + i * rowHeight;
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(x, y, HUD_RENDER_Z + 25.0f);
-            context.getMatrices().scale(scale, scale, 1.0f);
+            context.getMatrices().translate(x, y);
+            context.getMatrices().scale(scale, scale);
             if (sample) {
                 context.drawItem(new ItemStack(Items.POTION), Math.round(paddingX), Math.round(rowY + 2.0f));
             } else {
-                Sprite sprite = client.getStatusEffectSpriteManager().getSprite(effects.get(i).getEffectType());
-                context.drawSpriteStretched(RenderPipelines.GUI_TEXTURED, sprite, Math.round(paddingX), Math.round(rowY + 2.0f), Math.round(iconSize), Math.round(iconSize));
+                // 1.21.11: MinecraftClient.getStatusEffectSpriteManager() is gone.
+                // Effect icons are ordinary GUI sprites now, addressed by
+                // Identifier through InGameHud.getEffectTexture - this is exactly
+                // what vanilla's StatusEffectsDisplay does.
+                Identifier effectTexture = InGameHud.getEffectTexture(effects.get(i).getEffectType());
+                context.drawGuiTexture(RenderPipelines.GUI_TEXTURED, effectTexture, Math.round(paddingX), Math.round(rowY + 2.0f), Math.round(iconSize), Math.round(iconSize));
             }
             context.getMatrices().popMatrix();
         }
@@ -3133,10 +3169,10 @@ public class InGameHudMixin {
         float scale = module.getHudScale();
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(x, y, HUD_RENDER_Z + 20.0f);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(scale, scale);
         renderLiveKeystrokeButton(context, 20, 0, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_W]);
         renderLiveKeystrokeButton(context, 0, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A]);
         renderLiveKeystrokeButton(context, 19, 19, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_S]);
@@ -3208,14 +3244,21 @@ public class InGameHudMixin {
         long blurStateKey = makeHudBlurStateKey(normalizedBlurRadius, safeScale, 0.0f, 0.0f, 54.0f, 63.0f);
         Blur.INSTANCE.registerHudBlurState(HUD_KEYSTROKES, blurStateKey);
         for (ShapeProperties shape : KEYSTROKE_BLUR_RECTS) {
-            shape.setMatrix(context.getMatrices());
+            // 1.21.11: ShapeProperties owns a Matrix3x2f COPY of the pose.
+            // Storing the live Matrix3x2fStack here would let the deferred blur
+            // batch read the pose after the caller popped it, so copy in place
+            // (no allocation - the shapes are long-lived singletons).
+            shape.getMatrix().set(context.getMatrices());
             shape.setQuality(blurQuality);
         }
         Blur.INSTANCE.renderCachedBatch(KEYSTROKE_BLUR_RECTS);
     }
 
     private static ShapeProperties createKeystrokeBlurRect(float x, float y, float width, float height) {
-        return ShapeProperties.create(null, x, y, width, height)
+        // 1.21.11: ShapeProperties.create copies the pose eagerly
+        // (new Matrix3x2f(matrix)), so the old `null` placeholder would NPE.
+        // Seed with identity - renderKeystrokesHud overwrites it every frame.
+        return ShapeProperties.create(new Matrix3x2f(), x, y, width, height)
                 .round(0.0f)
                 .softness(0.0f)
                 .color(0xFFFFFFFF)
@@ -3253,8 +3296,8 @@ public class InGameHudMixin {
         float lx = keyX + (keyWidth - lineWidth) * 0.5f;
         float ly = keyY + 2.0f;
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(hudX, hudY);
+        context.getMatrices().scale(scale, scale);
         context.fill(Math.round(lx), Math.round(ly), Math.round(lx + lineWidth), Math.round(ly + lineThickness), lineColor);
         context.getMatrices().popMatrix();
     }
@@ -3386,8 +3429,8 @@ public class InGameHudMixin {
             boolean shadow
     ) {
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(hudX, hudY);
+        context.getMatrices().scale(scale, scale);
         renderHudText(context, client, text, textX, textY, textSize, shadow);
         context.getMatrices().popMatrix();
     }
@@ -3406,8 +3449,8 @@ public class InGameHudMixin {
             int alpha
     ) {
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(hudX, hudY);
+        context.getMatrices().scale(scale, scale);
         renderHudTextWithAlpha(context, client, text, textX, textY, textSize, shadow, alpha);
         context.getMatrices().popMatrix();
     }
@@ -3426,8 +3469,8 @@ public class InGameHudMixin {
             int rgbColor
     ) {
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(hudX, hudY, HUD_RENDER_Z + 25.0f);
-        context.getMatrices().scale(scale, scale, 1.0f);
+        context.getMatrices().translate(hudX, hudY);
+        context.getMatrices().scale(scale, scale);
         renderHudTextColored(context, client, text, textX, textY, textSize, shadow, rgbColor);
         context.getMatrices().popMatrix();
     }
@@ -3522,7 +3565,7 @@ public class InGameHudMixin {
 
     private static void renderHudGuides(DrawContext context, float screenWidth, float screenHeight, float inverseGuiScale) {
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
         if (verticalGuideProgress > 0.01f) {
             int alpha = MathHelper.clamp(Math.round(GUIDE_MAX_ALPHA * verticalGuideProgress), 0, 255);
@@ -4204,7 +4247,7 @@ public class InGameHudMixin {
         boolean liftTop = !noTarget;
         if (liftTop) {
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(0.0F, -4.0F, 0.0F);
+            context.getMatrices().translate(0.0F, -4.0F);
         }
 
         // renderRectHud handles scaling internally, pass base dimensions
@@ -4216,7 +4259,7 @@ public class InGameHudMixin {
         float y = module.getHudY();
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
         // Horizontal nudge of the icon by +4 px in HUD-local space, in
         // both the "no target" and "targeting" states - shifts the icon
@@ -4233,11 +4276,11 @@ public class InGameHudMixin {
         if (icon != null) {
             float iconLocalY = (baseHeight - effectiveIconSize) * 0.5f;
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(x, y, HUD_RENDER_Z + 50.0f);
-            context.getMatrices().scale(scale, scale, 1.0f);
-            context.getMatrices().translate(iconLocalX, iconLocalY, 0.0f);
+            context.getMatrices().translate(x, y);
+            context.getMatrices().scale(scale, scale);
+            context.getMatrices().translate(iconLocalX, iconLocalY);
             float iconDrawScale = effectiveIconSize / 16.0f;
-            context.getMatrices().scale(iconDrawScale, iconDrawScale, 1.0f);
+            context.getMatrices().scale(iconDrawScale, iconDrawScale);
             // Disable blend to prevent blur from affecting icon
             context.drawItem(icon, 0, 0);
             // Re-enable blend so subsequent HUD elements (hotbar selection,
@@ -4354,7 +4397,10 @@ public class InGameHudMixin {
     @Unique private int phaze$hotbarLastWidth;
     @Unique private int phaze$hotbarLastHeight;
     @Unique private Identifier phaze$hotbarLastTexture;
-    @Unique private Function<Identifier, ?> phaze$hotbarLastSpriteFn;
+    // 1.21.11: DrawContext.drawGuiTexture takes a RenderPipeline where 1.21.4
+    // took a Function<Identifier, RenderLayer>. The captured value is the
+    // pipeline vanilla used for the selection sprite.
+    @Unique private RenderPipeline phaze$hotbarLastPipeline;
     @Unique private boolean phaze$hotbarScissorOn = false;
 
     // ---------- TabSlide state ----------
@@ -4407,7 +4453,7 @@ public class InGameHudMixin {
                                           CallbackInfo ci) {
         if (phaze$shouldLiftBubbles()) {
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(0.0F, -PHAZE_BUBBLE_LIFT_PX, 0.0F);
+            context.getMatrices().translate(0.0F, -PHAZE_BUBBLE_LIFT_PX);
             phaze$bubblesLifted = true;
         }
     }
@@ -4572,23 +4618,12 @@ public class InGameHudMixin {
         // text already draws AFTER the item glyph in z-order - no
         // extra translate is needed for it to read as "on top".
         int drawY = y + 1;
-        // Push the matrix forward in Z so the digits land in front of
-        // the held item glyph. {@code DrawContext.drawText} batches
-        // text under its own draw layer that vanilla normally sorts
-        // BEHIND the 3D item model (the item runs through
-        // {@code ItemRenderer} which has its own depth contribution).
-        // Translating +200 in Z is the same trick vanilla uses for
-        // the stack-count label inside {@code drawItem}, so we copy
-        // it here to stay above the icon without touching depth
-        // state globally.
-        net.minecraft.client.util.math.Matrix3x2fStack matrices = context.getMatrices();
-        matrices.pushMatrix();
-        matrices.translate(0.0F, 0.0F, 200.0F);
+        // 1.21.11: GUI depth is gone (every GUI pipeline is NO_DEPTH_TEST) so the
+        // old "+200 in Z" trick has no equivalent - and no longer needs one.
+        // GuiRenderState auto-promotes an element into a new sub-layer whenever
+        // its bounds intersect something already submitted, so the count text
+        // lands above the item glyph purely from being submitted after it.
         context.drawText(mc.textRenderer, text, drawX, drawY, color, module.textShadow.isValue());
-        // Flush any pending text batches under this z so the pop
-        // doesn't leave the digits stuck behind subsequent
-        // post-hotbar overlays.
-        matrices.popMatrix();
     }
 
     // ====================================================================
@@ -4617,7 +4652,8 @@ public class InGameHudMixin {
             return;
         }
 
-        int selected = mc.player.getInventory().selectedSlot;
+        // 1.21.11: PlayerInventory.selectedSlot is private; getSelectedSlot() is the accessor.
+        int selected = mc.player.getInventory().getSelectedSlot();
         float target = selected * PHAZE_HOTBAR_SLOT_PX;
 
         if (module.isHotbarRolloverEnabled() && phaze$hotbarLastSelected >= 0) {
@@ -4659,10 +4695,14 @@ public class InGameHudMixin {
         );
     }
 
+    // 1.21.11 descriptor change: DrawContext.drawGuiTexture's first parameter is
+    // com/mojang/blaze3d/pipeline/RenderPipeline, not java/util/function/Function.
+    // Ordinal 1 inside renderHotbar is still HOTBAR_SELECTION_TEXTURE (verified
+    // against the 1.21.11 InGameHud bytecode).
     @Inject(
             method = "renderHotbar",
             at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/util/Identifier;IIII)V",
                     ordinal = 1, shift = At.Shift.BEFORE)
     )
     private void phaze$openMirrorScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
@@ -4677,7 +4717,7 @@ public class InGameHudMixin {
     @ModifyArgs(
             method = "renderHotbar",
             at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/util/Identifier;IIII)V",
                     ordinal = 1)
     )
     private void phaze$slideSelectionX(Args args) {
@@ -4687,11 +4727,8 @@ public class InGameHudMixin {
         if (mc == null || mc.player == null) return;
 
         if (ExordiumAnimationBridge.isCapturingHotbar()) {
-            @SuppressWarnings("unchecked")
-            Function<Identifier, RenderLayer> layerFactory =
-                    (Function<Identifier, RenderLayer>) args.<Function<Identifier, ?>>get(0);
             ExordiumAnimationBridge.recordHotbarSelection(
-                    layerFactory,
+                    args.<RenderPipeline>get(0),
                     args.<Identifier>get(1),
                     args.<Integer>get(2),
                     args.<Integer>get(3),
@@ -4706,7 +4743,7 @@ public class InGameHudMixin {
             return;
         }
 
-        int selectedSlot = mc.player.getInventory().selectedSlot;
+        int selectedSlot = mc.player.getInventory().getSelectedSlot();
         int origX = args.<Integer>get(2);
         int baseX = origX - selectedSlot * PHAZE_HOTBAR_SLOT_PX;
         int newX = baseX + Math.round(phaze$hotbarCurrentSlotX);
@@ -4718,19 +4755,18 @@ public class InGameHudMixin {
             phaze$hotbarLastWidth = args.<Integer>get(4);
             phaze$hotbarLastHeight = args.<Integer>get(5);
             phaze$hotbarLastTexture = args.<Identifier>get(1);
-            phaze$hotbarLastSpriteFn = args.<Function<Identifier, ?>>get(0);
+            phaze$hotbarLastPipeline = args.<RenderPipeline>get(0);
         }
     }
 
-    @SuppressWarnings("unchecked")
     @Inject(
             method = "renderHotbar",
             at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/util/Identifier;IIII)V",
                     ordinal = 1, shift = At.Shift.AFTER)
     )
     private void phaze$drawMirrorAndCloseScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        if (!phaze$hotbarShouldDrawMirror || phaze$hotbarLastTexture == null || phaze$hotbarLastSpriteFn == null) {
+        if (!phaze$hotbarShouldDrawMirror || phaze$hotbarLastTexture == null || phaze$hotbarLastPipeline == null) {
             if (phaze$hotbarScissorOn) {
                 context.disableScissor();
                 phaze$hotbarScissorOn = false;
@@ -4739,7 +4775,7 @@ public class InGameHudMixin {
         }
         int mirrorX = phaze$hotbarLastDrawX + phaze$hotbarMirrorOffsetX;
         context.drawGuiTexture(
-                (Function<Identifier, RenderLayer>) phaze$hotbarLastSpriteFn,
+                phaze$hotbarLastPipeline,
                 phaze$hotbarLastTexture, mirrorX, phaze$hotbarLastDrawY,
                 phaze$hotbarLastWidth, phaze$hotbarLastHeight);
         if (phaze$hotbarScissorOn) {
@@ -4779,7 +4815,8 @@ public class InGameHudMixin {
     @ModifyArg(
             method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
             at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawText(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;IIIZ)I")
+                    // 1.21.11: DrawContext.drawText returns void (was int).
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawText(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;IIIZ)V")
     )
     private Text phaze$hideOwnNickInSidebar(Text original) {
         NickHider hider = NickHider.getInstance();
@@ -4890,7 +4927,8 @@ public class InGameHudMixin {
 
 
         for (int n = 0; n < 9; n++) {
-            ItemStack stack = player.getInventory().main.get(n);
+            // 1.21.11: PlayerInventory.main is private; getMainStacks() exposes the same list.
+            ItemStack stack = player.getInventory().getMainStacks().get(n);
             int itemX = centerX - 90 + n * 20 + 2;
             if (mace != null) {
                 phaze$fillHotbarOverlay(context, itemX, itemY, mace.colorForStack(stack));
@@ -5093,9 +5131,18 @@ public class InGameHudMixin {
         }
 
         float centerX = panelX + panelW * 0.5F;
-        float centerY = panelY + panelH;
 
-        Vector3f translation = new Vector3f();
+        // 1.21.11: the (x, y, size, translation, bodyRot, headRot) overload of
+        // InventoryScreen.drawEntity is gone. The surviving primitive is
+        // DrawContext.addEntity(state, size, translation, bodyRot, headRot,
+        // x1, y1, x2, y2): the entity origin sits at the CENTRE of the rect and
+        // `translation` is applied in entity units (1 unit == `size` gui pixels).
+        // The old call put the feet at panelY + panelH, i.e. panelH/2
+        // below the rect centre; panelH == 2 * size, so that is exactly +1.0
+        // entity unit downwards. Verified against SpecialGuiElementRenderer
+        // (origin = rect centre, matrices.scale(guiScale * scale)) and
+        // EntityGuiElementRenderer (translate -> multiply(rotation)).
+        Vector3f translation = new Vector3f(0.0F, 1.0F, 0.0F);
         Quaternionf bodyRotation;
         Quaternionf headRotation = null;
 
@@ -5119,13 +5166,27 @@ public class InGameHudMixin {
         }
 
         EntityPose previousPose = player.getPose();
+        EntityRenderState renderState;
         try {
+            // The pose override has to wrap the render-state capture now, not the
+            // draw: getAndUpdateRenderState() is what snapshots the pose, and the
+            // actual draw is deferred until GuiRenderer prepares special elements.
             player.setPose(EntityPose.STANDING);
-            InventoryScreen.drawEntity(context, centerX, centerY, baseSize * scale,
-                    translation, bodyRotation, headRotation, player);
+            renderState = phaze$captureEntityRenderState(player);
         } finally {
             player.setPose(previousPose);
         }
+        context.addEntity(
+                renderState,
+                baseSize * scale,
+                translation,
+                bodyRotation,
+                headRotation,
+                Math.round(panelX),
+                Math.round(panelY),
+                Math.round(panelX + panelW),
+                Math.round(panelY + panelH)
+        );
 
         if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05F) {
             int outlineColor = withAlpha(0xFFFFFF, (int) (165.0F * RECT_HOVER_PROGRESS[hudIndex]));
@@ -5135,7 +5196,10 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(0.0F, 0.0F, HANDLE_RENDER_Z);
+            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
+            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
+            // because GuiRenderState promotes an intersecting element into a new
+            // sub-layer, and the handle is submitted after the panel it sits on.
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -5145,6 +5209,23 @@ public class InGameHudMixin {
             }
             context.getMatrices().popMatrix();
         }
+    }
+
+    /**
+     * 1.21.11 stand-in for {@code InventoryScreen.drawEntity(LivingEntity)}, which
+     * is private. Same body as vanilla: grab the renderer's reusable render state,
+     * force it full-bright, drop the shadow pieces and clear the outline.
+     */
+    @Unique
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static EntityRenderState phaze$captureEntityRenderState(LivingEntity entity) {
+        EntityRenderManager dispatcher = MinecraftClient.getInstance().getEntityRenderDispatcher();
+        EntityRenderer renderer = dispatcher.getRenderer(entity);
+        EntityRenderState state = renderer.getAndUpdateRenderState(entity, 1.0F);
+        state.light = LightmapTextureManager.MAX_LIGHT_COORDINATE;
+        state.shadowPieces.clear();
+        state.outlineColor = EntityRenderState.NO_OUTLINE;
+        return state;
     }
 
     // ====================================================================
@@ -5351,10 +5432,10 @@ public class InGameHudMixin {
         int hoverOutlineThickness = Math.max(1, Math.round(BASE_HOVER_OUTLINE_THICKNESS / Math.max(1.0F, scale)));
 
         context.getMatrices().pushMatrix();
-        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0F);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(panelX, panelY, HUD_RENDER_Z);
-        context.getMatrices().scale(scale, scale, 1.0F);
+        context.getMatrices().translate(panelX, panelY);
+        context.getMatrices().scale(scale, scale);
 
         context.drawGuiTexture(
                 RenderPipelines.GUI_TEXTURED,
@@ -5391,7 +5472,10 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            context.getMatrices().translate(0.0F, 0.0F, HANDLE_RENDER_Z);
+            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
+            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
+            // because GuiRenderState promotes an intersecting element into a new
+            // sub-layer, and the handle is submitted after the panel it sits on.
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;

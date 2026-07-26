@@ -19,6 +19,5 @@ public abstract class DrawContextItemRenderStateMixin {
     @Inject(method = "drawItem(Lnet/minecraft/item/ItemStack;II)V", at = @At("HEAD"))
     private void phaze$resetStateBeforeDrawItem(ItemStack stack, int x, int y, CallbackInfo ci) {
         float alpha = vorga.phazeclient.api.system.draw.PhazeAlpha.get();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
     }
 }

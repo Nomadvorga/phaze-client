@@ -4,7 +4,6 @@ import org.joml.Matrix3x2fStack;
 
 import lombok.RequiredArgsConstructor;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.util.math.MatrixStack;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.api.system.localization.LocalizationManager;
@@ -87,7 +86,11 @@ public abstract class AbstractBindWindow extends AbstractWindow {
     }
 
 
-    private void drawKeyButton(MatrixStack matrix) {
+    // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack, not MatrixStack.
+    // Kept as the concrete stack type (not Matrix3x2fc) so the value stays
+    // assignable to both ShapeProperties.create(Matrix3x2fc) and the font
+    // renderer's pose parameter.
+    private void drawKeyButton(Matrix3x2fStack matrix) {
         float stringWidth = Fonts.getSize(14).getStringWidth(StringUtil.getBindName(getKey()));
 
         rectangle.render(ShapeProperties.create(matrix, x + width - stringWidth - 15, y + 18.8F, stringWidth + 10, 13)
@@ -99,7 +102,7 @@ public abstract class AbstractBindWindow extends AbstractWindow {
         Fonts.getSize(14).drawString(matrix, LocalizationManager.getInstance().get("ui.key"), (int) (x + 5), (int) (y + 24.3), ColorUtil.getText());
     }
 
-    private void drawTypeButton(MatrixStack matrix) {
+    private void drawTypeButton(Matrix3x2fStack matrix) {
         rectangle.render(ShapeProperties.create(matrix, x + width - 57, y + 37F, 52, 13)
                 .round(2).thickness(2).softness(1).outlineColor(ColorUtil.getOutline(0.8F,1)).color(ColorUtil.getOutline(0.1F,1)).build());
 

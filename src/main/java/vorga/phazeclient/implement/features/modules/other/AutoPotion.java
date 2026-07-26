@@ -164,7 +164,8 @@ public final class AutoPotion extends Module {
 
     private void startDrinking(PotionType potionType, PotionSlot potionSlot, long now) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        originalSelectedSlot = mc.player.getInventory().selectedSlot;
+        // 1.21.11: PlayerInventory.selectedSlot is private, use getSelectedSlot()/setSelectedSlot().
+        originalSelectedSlot = mc.player.getInventory().getSelectedSlot();
         activeHotbarSlot = potionSlot.hotbarSlot() ? potionSlot.hotbarIndex() : originalSelectedSlot;
         sourceScreenSlot = potionSlot.hotbarSlot() ? -1 : potionSlot.screenSlotId();
         activePotionType = potionType;
@@ -233,7 +234,7 @@ public final class AutoPotion extends Module {
             return;
         }
 
-        if (mc.player.getInventory().selectedSlot != activeHotbarSlot) {
+        if (mc.player.getInventory().getSelectedSlot() != activeHotbarSlot) {
             selectHotbarSlot(activeHotbarSlot);
         }
     }
@@ -244,7 +245,7 @@ public final class AutoPotion extends Module {
             return;
         }
 
-        mc.player.getInventory().selectedSlot = slot;
+        mc.player.getInventory().setSelectedSlot(slot);
         if (mc.getNetworkHandler() != null) {
             mc.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(slot));
         }

@@ -1,6 +1,5 @@
 package vorga.phazeclient.implement.features.modules.other;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.RenderTickCounter;
@@ -22,6 +21,8 @@ import java.util.Set;
 public final class HolyWorldHelperRenderer {
     private static final float TRAP_RADIUS = 3.5F;
     private static final float TRAP_SHELL_THICKNESS = 1.0F;
+    /** Was the global {@code RenderSystem.lineWidth(2.0F)}; per-vertex since 1.21.11. */
+    private static final float OUTLINE_LINE_WIDTH = 2.0F;
     private static final boolean[][][] TRAP_SHELL = createTrapShell();
     private static final boolean[][][] UNDERGROUND_TRAP = createUndergroundTrap();
     private static final Face[] FACES = Face.values();
@@ -242,19 +243,28 @@ public final class HolyWorldHelperRenderer {
 
 
         if (fillAlpha > 0.0F) {
-            RenderSystem.polygonOffset(-1.0F, -1.0F);
-            RenderSystem.enablePolygonOffset();
+            // 1.21.11: RenderSystem.polygonOffset / enablePolygonOffset /
+            // disablePolygonOffset are gone - depth bias moved onto the
+            // RenderPipeline (.withDepthBias(factor, units)). The -1/-1
+            // bias that kept this fill from z-fighting with the coplanar
+            // world blocks it traces has to be baked into the layer this
+            // buffer is submitted through, so it can no longer leak into
+            // later draws either.
+            // TODO(1.21.11): when PhazeWorldDrawStub is replaced, give
+            //  this fill a layer built with .withDepthBias(-1.0F, -1.0F).
             BufferBuilder fill = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             for (FaceBox face : geometry.faces) {
                 addFace(fill, matrix, face, offsetX, offsetY, offsetZ, red, green, blue, fillAlpha);
             }
             vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(fill.end());
-            RenderSystem.disablePolygonOffset();
         }
-        RenderSystem.lineWidth(2.0F);
-        BufferBuilder outline = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
+        // 1.21.11: RenderSystem.lineWidth is gone and VertexFormats.LINES was
+        // replaced by POSITION_COLOR_NORMAL_LINE_WIDTH - the width is a
+        // per-vertex attribute now, so the old global 2.0 travels with each
+        // vertex instead (same width, same look).
+        BufferBuilder outline = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
         for (Edge edge : geometry.edges) {
-            addLine(outline, matrix, edge, offsetX, offsetY, offsetZ, red, green, blue, alpha);
+            addLine(outline, matrix, edge, offsetX, offsetY, offsetZ, red, green, blue, alpha, OUTLINE_LINE_WIDTH);
         }
         vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(outline.end());
 
@@ -319,11 +329,11 @@ public final class HolyWorldHelperRenderer {
 
     private static void addLine(BufferBuilder buffer, Matrix4f matrix, Edge edge,
                                 float offsetX, float offsetY, float offsetZ,
-                                float r, float g, float b, float a) {
+                                float r, float g, float b, float a, float lineWidth) {
         buffer.vertex(matrix, edge.startX + offsetX, edge.startY + offsetY, edge.startZ + offsetZ)
-                .color(r, g, b, a).normal(edge.normalX, edge.normalY, edge.normalZ);
+                .color(r, g, b, a).normal(edge.normalX, edge.normalY, edge.normalZ).lineWidth(lineWidth);
         buffer.vertex(matrix, edge.endX + offsetX, edge.endY + offsetY, edge.endZ + offsetZ)
-                .color(r, g, b, a).normal(edge.normalX, edge.normalY, edge.normalZ);
+                .color(r, g, b, a).normal(edge.normalX, edge.normalY, edge.normalZ).lineWidth(lineWidth);
     }
 
     private record Geometry(FaceBox[] faces, Edge[] edges) {

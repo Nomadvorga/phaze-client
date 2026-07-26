@@ -1,24 +1,23 @@
 package vorga.phazeclient.base.util.render;
 
-import vorga.phazeclient.base.util.render.GuiMatrix;
-
-import org.joml.Matrix3x2fStack;
-
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.*;
+import net.minecraft.client.texture.Sprite;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.Identifier;
+import org.joml.Matrix3x2fStack;
+import org.joml.Matrix3x2fc;
+import org.joml.Matrix4f;
+import vorga.phazeclient.api.system.draw.PhazeAlpha;
+import vorga.phazeclient.api.system.draw.PhazeDrawLayers;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.color.ColorUtil;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.*;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Identifier;
-import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL40C;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +32,7 @@ public class Render2DUtil implements QuickImports {
         if (!QUAD.isEmpty()) {
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             QUAD.forEach(quad -> drawEngine.quad(matrix4f, buffer, quad.x, quad.y, quad.width, quad.height, quad.color));
-            vorga.phazeclient.api.system.draw.PhazeDrawLayers.POSITION_COLOR.draw(buffer.end());
+            PhazeDrawLayers.POSITION_COLOR.draw(buffer.end());
             QUAD.clear();
         }
     }
@@ -46,7 +45,7 @@ public class Render2DUtil implements QuickImports {
         matrix.translate(x + 1, y + 1);
         matrix.scale(scale, scale);
         context.drawItem(stack, 0, 0);
-        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        MinecraftClient client = MinecraftClient.getInstance();
         if (drawItemInSlot && client != null) context.drawStackOverlay(client.textRenderer, stack, 0, 0);
         matrix.popMatrix();
     }
@@ -80,11 +79,13 @@ public class Render2DUtil implements QuickImports {
             matrix.translate(x, y);
             matrix.scale(size, size);
 
-            net.minecraft.util.Identifier phaze$tex = id;
-
-            GL40C.glTexParameteri(GL40C.GL_TEXTURE_2D, GL40C.GL_TEXTURE_MIN_FILTER, GL40C.GL_NEAREST);
-            GL40C.glTexParameteri(GL40C.GL_TEXTURE_2D, GL40C.GL_TEXTURE_MAG_FILTER, GL40C.GL_NEAREST);
-
+            // 1.21.11: the two GL40C.glTexParameteri(GL_TEXTURE_2D, ..., GL_NEAREST) calls that
+            // used to sit here are gone. Filtering is no longer per-bound-texture GL state; it is
+            // a GpuSampler chosen when the draw's RenderSetup binds the texture, and no texture is
+            // bound at this point any more (RenderLayer.draw binds it). Poking raw GL here would
+            // also desync GlCommandEncoder's cached state. The skin texture's own sampler applies.
+            // TODO(1.21.11): if heads come out filtered, give PhazeDrawLayers a NEAREST variant via
+            // RenderSetup.Builder.texture(name, id, () -> RenderSystem.getSamplerCache().get(FilterMode.NEAREST)).
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
             Matrix4f matrix4f = GuiMatrix.mat4(matrix);
 
@@ -108,45 +109,48 @@ public class Render2DUtil implements QuickImports {
             buffer.vertex(matrix4f, 1, 1, 0).texture(u2_overlay, v2_overlay).color(color);
             buffer.vertex(matrix4f, 1, 0, 0).texture(u2_overlay, v1_overlay).color(color);
 
-            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
-
+            PhazeDrawLayers.positionTexColor(id).draw(buffer.end());
 
             matrix.translate(-x, -y);
             matrix.popMatrix();
         }
     }
 
-    public void drawSprite(@NonNull MatrixStack matrix, @NonNull Sprite sprite, float x, float y, float width, int height) {
+    // 1.21.11: these four used to take a MatrixStack, which is what DrawContext.getMatrices()
+    // returned. The GUI pose is an org.joml.Matrix3x2fStack now, so they take Matrix3x2fc - the
+    // read-only view every 2D pose (including Matrix3x2fStack) satisfies. Callers that pass
+    // context.getMatrices() compile unchanged; world-space MatrixStack never reached these.
+    public void drawSprite(@NonNull Matrix3x2fc matrix, @NonNull Sprite sprite, float x, float y, float width, int height) {
         drawSprite(matrix, sprite, x, y, width, height, -1);
     }
 
-    public void drawSprite(@NonNull MatrixStack matrix, @NonNull Sprite sprite, float x, float y, float width, int height, int color) {
+    public void drawSprite(@NonNull Matrix3x2fc matrix, @NonNull Sprite sprite, float x, float y, float width, int height, int color) {
         if (width != 0 && height != 0) {
             drawTexturedQuad(matrix, sprite.getAtlasId(), x, x + width, y, y + height, sprite.getMinU(), sprite.getMaxU(), sprite.getMinV(), sprite.getMaxV(), color);
         }
     }
 
-    public void drawTexture(@NonNull MatrixStack matrix, @NonNull Identifier texture, int x, int y, float width, float height, float u, float v, int regionWidth, int regionHeight, int textureWidth, int textureHeight, int color) {
+    public void drawTexture(@NonNull Matrix3x2fc matrix, @NonNull Identifier texture, int x, int y, float width, float height, float u, float v, int regionWidth, int regionHeight, int textureWidth, int textureHeight, int color) {
         drawTexture(matrix, texture, x, x + width, y, y + height, 0, regionWidth, regionHeight, u, v, textureWidth, textureHeight, color);
     }
 
-    public void drawTexture(@NonNull MatrixStack matrix, @NonNull Identifier texture, float x1, float x2, float y1, float y2, float z, int regionWidth, int regionHeight, float u, float v, int textureWidth, int textureHeight, int color) {
+    public void drawTexture(@NonNull Matrix3x2fc matrix, @NonNull Identifier texture, float x1, float x2, float y1, float y2, float z, int regionWidth, int regionHeight, float u, float v, int textureWidth, int textureHeight, int color) {
         drawTexturedQuad(matrix, texture, x1, x2, y1, y2, (u + 0.0F) / (float) textureWidth, (u + (float) regionWidth) / (float) textureWidth, (v + 0.0F) / (float) textureHeight, (v + (float) regionHeight) / (float) textureHeight, color);
     }
 
-    public void drawTexturedQuad(@NonNull MatrixStack matrix, @NonNull Identifier texture, float x1, float x2, float y1, float y2, float u1, float u2, float v1, float v2, int color) {
-        net.minecraft.util.Identifier phaze$tex = texture;
+    public void drawTexturedQuad(@NonNull Matrix3x2fc matrix, @NonNull Identifier texture, float x1, float x2, float y1, float y2, float u1, float u2, float v1, float v2, int color) {
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         Matrix4f matrix4f = GuiMatrix.mat4(matrix);
         buffer.vertex(matrix4f, x1, y1, 0).texture(u1, v1).color(color);
         buffer.vertex(matrix4f, x1, y2, 0).texture(u1, v2).color(color);
         buffer.vertex(matrix4f, x2, y2, 0).texture(u2, v2).color(color);
         buffer.vertex(matrix4f, x2, y1, 0).texture(u2, v1).color(color);
-        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
+        PhazeDrawLayers.positionTexColor(texture).draw(buffer.end());
     }
 
     public void drawQuad(float x, float y, float width, float height, int color) {
-        QUAD.add(new Quad(x, y, width, height, ColorUtil.multAlpha(color, vorga.phazeclient.api.system.draw.PhazeAlpha.get())));
+        // 1.21.11: RenderSystem.getShaderColor() is gone; the global alpha lives in PhazeAlpha now.
+        QUAD.add(new Quad(x, y, width, height, ColorUtil.multAlpha(color, PhazeAlpha.get())));
     }
 
     public record Quad(float x, float y, float width, float height, int color) {

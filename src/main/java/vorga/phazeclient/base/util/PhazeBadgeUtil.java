@@ -3,6 +3,7 @@ package vorga.phazeclient.base.util;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.RenderLayers;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.text.OrderedText;
@@ -132,9 +133,11 @@ public final class PhazeBadgeUtil {
 
     public static void drawChatBadgeAsText(DrawContext context, TextRenderer renderer, float x, float y, int color) {
         float scale = 1.0F / 1.1F;
+        // 1.21.11: DrawContext.getMatrices() is a 2D Matrix3x2fStack - the Z argument of
+        // translate/scale is gone. Both were no-ops here (z == 0 / z == 1), so behaviour is identical.
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(Math.round(x), Math.round(y + 1.0F), 0.0F);
-        context.getMatrices().scale(scale, scale, 1.0F);
+        context.getMatrices().translate((float) Math.round(x), (float) Math.round(y + 1.0F));
+        context.getMatrices().scale(scale, scale);
         context.drawText(renderer, CHAT_BADGE_TEXT, 0, 0, color, false);
         context.getMatrices().popMatrix();
     }
@@ -211,10 +214,12 @@ public final class PhazeBadgeUtil {
     }
 
     private static RenderLayer resolveTextRenderLayer(TextRenderer.TextLayerType layerType) {
+        // 1.21.11: the RenderLayer static factories moved to net.minecraft.client.render.RenderLayers
+        // (getTextX -> textX). Same memoized instances, same blend/depth semantics.
         return switch (layerType) {
-            case SEE_THROUGH -> RenderLayer.getTextSeeThrough(BADGE_ICON);
-            case POLYGON_OFFSET -> RenderLayer.getTextPolygonOffset(BADGE_ICON);
-            case NORMAL -> RenderLayer.getText(BADGE_ICON);
+            case SEE_THROUGH -> RenderLayers.textSeeThrough(BADGE_ICON);
+            case POLYGON_OFFSET -> RenderLayers.textPolygonOffset(BADGE_ICON);
+            case NORMAL -> RenderLayers.text(BADGE_ICON);
         };
     }
 }

@@ -224,7 +224,6 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         matrices.scale(iconScale, iconScale);
         matrices.translate(-center, -center);
 
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, currentAlpha);
         context.drawItem(stack, 0, 0);
 
         matrices.popMatrix();

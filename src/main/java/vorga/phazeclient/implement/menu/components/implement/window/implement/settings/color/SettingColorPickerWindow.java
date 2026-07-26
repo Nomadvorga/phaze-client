@@ -2,19 +2,17 @@ package vorga.phazeclient.implement.menu.components.implement.window.implement.s
 
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
+import org.joml.Matrix3x2fc;
 import org.joml.Matrix3x2fStack;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Getter;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
@@ -248,7 +246,10 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         commitColor();
     }
 
-    private void renderWindowBlur(MatrixStack matrices) {
+    // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack, not MatrixStack. These helpers only
+    // forward the pose into ShapeProperties.create / GuiMatrix, so they take the read-only
+    // Matrix3x2fc view - it accepts the live stack and documents that nothing here mutates it.
+    private void renderWindowBlur(Matrix3x2fc matrices) {
         float blurRadius = Theme.getInstance().getMenuBlurRadius();
         if (blurRadius <= 0.0F) {
             return;
@@ -289,7 +290,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         alpha = ((color >> 24) & 0xFF) / 255.0F;
     }
 
-    private void renderHueStrip(MatrixStack matrices, float x, float y, float width, float height, int outlineColor) {
+    private void renderHueStrip(Matrix3x2fc matrices, float x, float y, float width, float height, int outlineColor) {
         float radius = 2.35F;
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
                 .round(radius)
@@ -323,7 +324,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
                 .build());
     }
 
-    private void renderAlphaStrip(MatrixStack matrices, float x, float y, float width, float height, int outlineColor, int opaqueColor) {
+    private void renderAlphaStrip(Matrix3x2fc matrices, float x, float y, float width, float height, int outlineColor, int opaqueColor) {
         float radius = 2.35F;
         int whiteBase = MenuStyle.withAlpha(0xFFFFFFFF, globalAlpha);
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
@@ -352,7 +353,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
                 .build());
     }
 
-    private static void renderHorizontalHueTexture(MatrixStack matrices, float x, float y, float width, float height, int color) {
+    private static void renderHorizontalHueTexture(Matrix3x2fc matrices, float x, float y, float width, float height, int color) {
         BatchedRectangle.flushIfBatching();
 
         net.minecraft.util.Identifier phaze$tex = HUE_TEXTURE;

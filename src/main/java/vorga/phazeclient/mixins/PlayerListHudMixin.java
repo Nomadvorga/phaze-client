@@ -3,7 +3,7 @@ package vorga.phazeclient.mixins;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
@@ -59,7 +59,8 @@ public class PlayerListHudMixin {
         UUID selfUuid = client.player.getUuid();
         int selfIndex = -1;
         for (int i = 0; i < original.size(); i++) {
-            if (original.get(i).getProfile().getId().equals(selfUuid)) {
+            // 1.21.11: authlib 9 made GameProfile a record - getId()/getName() are now id()/name().
+            if (original.get(i).getProfile().id().equals(selfUuid)) {
                 selfIndex = i;
                 break;
             }
@@ -196,7 +197,9 @@ public class PlayerListHudMixin {
         if (module.isTabSlideStyle()) {
             float offsetY = module.currentTabSlideOffset();
             if (offsetY != 0.0F) {
-                context.getMatrices().translate(0.0F, offsetY, 0.0F);
+                // 1.21.11: the GUI pose is a Matrix3x2fStack - translate/scale are 2D only.
+                // The old Z argument was always 0 here, so nothing is lost.
+                context.getMatrices().translate(0.0F, offsetY);
             }
             return;
         }
@@ -211,9 +214,13 @@ public class PlayerListHudMixin {
         float pivotY = module.isTabSlideScaleStyle()
                 ? top
                 : top + rowsPerColumn * 9.0F * 0.5F;
-        context.getMatrices().translate(pivotX, pivotY, 0.0F);
-        context.getMatrices().scale(scale, scale, 1.0F);
-        context.getMatrices().translate(-pivotX, -pivotY, 0.0F);
+        // 1.21.11: Matrix3x2fStack - 2D translate/scale. All three Z/depth arguments were
+        // identity (0 / 0 / 1) so this is the same transform, just without the unused axis.
+        // NOTE: do NOT collapse this into scaleAround(scale, scale, 1.0F) - that binds to
+        // scaleAround(factor, originX, originY) and silently means something else.
+        context.getMatrices().translate(pivotX, pivotY);
+        context.getMatrices().scale(scale, scale);
+        context.getMatrices().translate(-pivotX, -pivotY);
     }
 
     @Inject(method = "render", at = @At("RETURN"))
@@ -240,7 +247,7 @@ public class PlayerListHudMixin {
         if (client == null || client.player == null) {
             return;
         }
-        if (!entry.getProfile().getId().equals(client.player.getUuid())) {
+        if (!entry.getProfile().id().equals(client.player.getUuid())) {
             return;
         }
 
@@ -281,7 +288,7 @@ public class PlayerListHudMixin {
 
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
     private void phaze$badgeTabName(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
-        if (entry == null || !PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
+        if (entry == null || !PhazeBadgeUtil.isPhazeUser(entry.getProfile().name())) {
             return;
         }
 
@@ -339,74 +346,78 @@ public class PlayerListHudMixin {
         if (ExordiumAnimationBridge.isCapturingPlayerList()) {
             ExordiumAnimationBridge.recordTabElement(context, x, y, x + size, y + size);
         }
-        phaze$withTabTextureAlpha(context, () ->
-                operation.call(context, texture, x, y, size, drawHat, upsideDown, phaze$applyTabAlpha(color))
-        );
+        // 1.21.11: the RenderSystem.setShaderColor wrapper this used to sit inside is gone.
+        // PlayerSkinDrawer.draw already takes an ARGB tint, which phaze$applyTabAlpha fades.
+        operation.call(context, texture, x, y, size, drawHat, upsideDown, phaze$applyTabAlpha(color));
     }
 
     @WrapOperation(
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)I"
+                    // 1.21.11: DrawContext.drawTextWithShadow now returns void (was int).
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)V"
             ),
             require = 0
     )
-    private int phaze$drawTabBadge(
+    private void phaze$drawTabBadge(
             DrawContext context,
             TextRenderer renderer,
             Text text,
             int x,
             int y,
             int color,
-            Operation<Integer> operation,
+            Operation<Void> operation,
             @Local PlayerListEntry entry
     ) {
         ExordiumAnimationBridge.recordTabElement(
                 context, x - 3.0F, y - 3.0F, x + renderer.getWidth(text) + 1.0F, y + 10.0F
         );
         int fadedColor = phaze$applyTabAlpha(color);
-        if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
+        if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().name())) {
             float size = PhazeBadgeUtil.guiBadgeSize(renderer);
             PhazeBadgeUtil.drawGuiBadge(context, x - 2.5F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(fadedColor));
         }
-        return operation.call(context, renderer, text, x, y, fadedColor);
+        operation.call(context, renderer, text, x, y, fadedColor);
     }
 
     @WrapOperation(
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/OrderedText;III)I"
+                    // 1.21.11: DrawContext.drawTextWithShadow now returns void (was int).
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/OrderedText;III)V"
             ),
             require = 0
     )
-    private int phaze$fadeTabOrderedText(
+    private void phaze$fadeTabOrderedText(
             DrawContext context,
             TextRenderer renderer,
             OrderedText text,
             int x,
             int y,
             int color,
-            Operation<Integer> operation
+            Operation<Void> operation
     ) {
         ExordiumAnimationBridge.recordTabElement(
                 context, x - 1.0F, y - 1.0F, x + renderer.getWidth(text) + 1.0F, y + 10.0F
         );
-        return operation.call(context, renderer, text, x, y, phaze$applyTabAlpha(color));
+        operation.call(context, renderer, text, x, y, phaze$applyTabAlpha(color));
     }
 
     @WrapOperation(
             method = {"renderScoreboardObjective", "renderLatencyIcon"},
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V"
+                    // 1.21.11: drawGuiTexture's first argument is a RenderPipeline value, not a
+                    // Function<Identifier, RenderLayer> factory.
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/util/Identifier;IIII)V"
             ),
             require = 0
     )
     private void phaze$fadeTabGuiTexture(
             DrawContext context,
-            java.util.function.Function<?, ?> layerFactory,
+            RenderPipeline pipeline,
             Identifier texture,
             int x,
             int y,
@@ -415,32 +426,39 @@ public class PlayerListHudMixin {
             Operation<Void> operation
     ) {
         ExordiumAnimationBridge.recordTabElement(context, x, y, x + width, y + height);
-        phaze$withTabTextureAlpha(context, () ->
-                operation.call(context, layerFactory, texture, x, y, width, height)
-        );
+        // Was RenderSystem.setShaderColor(1,1,1,alpha) around the draw. There is no global
+        // shader colour in 1.21.11, so the fade now rides the ARGB-tint overload of
+        // drawGuiTexture (the 6-arg form vanilla calls just forwards -1 as that tint).
+        int tint = phaze$applyTabAlpha(0xFFFFFFFF);
+        if (tint == 0xFFFFFFFF) {
+            operation.call(context, pipeline, texture, x, y, width, height);
+        } else {
+            context.drawGuiTexture(pipeline, texture, x, y, width, height, tint);
+        }
     }
 
     @WrapOperation(
             method = "renderScoreboardObjective",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)I"
+                    // 1.21.11: DrawContext.drawTextWithShadow now returns void (was int).
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)V"
             ),
             require = 0
     )
-    private int phaze$fadeTabScoreText(
+    private void phaze$fadeTabScoreText(
             DrawContext context,
             TextRenderer renderer,
             Text text,
             int x,
             int y,
             int color,
-            Operation<Integer> operation
+            Operation<Void> operation
     ) {
         ExordiumAnimationBridge.recordTabElement(
                 context, x - 1.0F, y - 1.0F, x + renderer.getWidth(text) + 1.0F, y + 10.0F
         );
-        return operation.call(context, renderer, text, x, y, phaze$applyTabAlpha(color));
+        operation.call(context, renderer, text, x, y, phaze$applyTabAlpha(color));
     }
 
     private static boolean phaze$needsExtraNickHiderPadding(PlayerListEntry entry) {
@@ -452,7 +470,7 @@ public class PlayerListHudMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         return client != null
                 && client.player != null
-                && entry.getProfile().getId().equals(client.player.getUuid());
+                && entry.getProfile().id().equals(client.player.getUuid());
     }
 
     @Unique
@@ -498,31 +516,6 @@ public class PlayerListHudMixin {
         }
         int scaledAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * alphaMultiplier)));
         return (color & 0x00FFFFFF) | (scaledAlpha << 24);
-    }
-
-    @Unique
-    private static void phaze$withTabTextureAlpha(DrawContext context, Runnable draw) {
-        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
-            draw.run();
-            return;
-        }
-        Animations module = Animations.getInstance();
-        if (module == null || !module.isTabSlideEnabled()) {
-            draw.run();
-            return;
-        }
-
-        float alphaMultiplier = module.currentTabAlpha();
-        if (alphaMultiplier >= 0.999F) {
-            draw.run();
-            return;
-        }
-
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alphaMultiplier);
-        try {
-            draw.run();
-        } finally {
-        }
     }
 
 }
