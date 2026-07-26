@@ -3,7 +3,7 @@ package vorga.phazeclient.implement.features.modules.other;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.PickaxeItem;
+import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.MutableText;
@@ -143,8 +143,16 @@ public final class PickaxeNotifier extends Module {
         sendLowDurabilityMessage(mc, remaining, switched);
     }
 
+    /**
+     * 1.21.11 folded the per-tool item classes away, so there is no
+     * {@code PickaxeItem} to test against any more. The equivalent check
+     * is the {@code #minecraft:pickaxes} item tag, which covers exactly
+     * the same set (wooden through netherite, plus any modded pickaxe
+     * that tags itself correctly - a superset of the old behaviour, in
+     * the direction the notifier wants).
+     */
     private boolean isTrackedPickaxe(ItemStack stack) {
-        return stack != null && !stack.isEmpty() && stack.isDamageable() && stack.getItem() instanceof PickaxeItem;
+        return stack != null && !stack.isEmpty() && stack.isDamageable() && stack.isIn(ItemTags.PICKAXES);
     }
 
     private boolean switchToConfiguredSlot(MinecraftClient mc) {
