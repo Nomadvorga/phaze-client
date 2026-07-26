@@ -10,6 +10,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.api.system.cursor.HudCursorRelay;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 
@@ -117,6 +118,13 @@ public abstract class ChatScreenInputFieldMixin {
     private void phaze$onRemoved(CallbackInfo ci) {
         // Reset so the next open re-triggers the slide.
         phaze$wasOpenedLastFrame = false;
+    }
+
+    @Inject(method = "render", at = @At("TAIL"))
+    private void phaze$applyHudEditorCursor(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        if (Animations.getInstance().isDynamicCursorEnabled()) {
+            HudCursorRelay.apply();
+        }
     }
 
     /**

@@ -6,6 +6,7 @@ import net.minecraft.client.world.ClientWorld;
 import org.joml.Vector3d;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import vorga.phazeclient.api.system.colorcorrection.WorldColorCorrectionController;
 import vorga.phazeclient.implement.features.modules.other.SkyCustomizer;
 
 /**
@@ -54,8 +55,7 @@ public abstract class IrisSkyColorUniformMixin {
 
     @ModifyReturnValue(method = "getSkyColor", at = @At("RETURN"), remap = false)
     private static Vector3d phaze$tintIrisSkyColor(Vector3d vanilla) {
-        SkyCustomizer module = SkyCustomizer.getInstance();
-        if (module == null || !module.isEnabled() || vanilla == null) {
+        if (vanilla == null) {
             return vanilla;
         }
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -68,13 +68,22 @@ public abstract class IrisSkyColorUniformMixin {
         int b = clamp255((int) Math.round(vanilla.z * 255.0));
         int incoming = 0xFF000000 | (r << 16) | (g << 8) | b;
 
-        float brightness = world.getSkyBrightness(1.0F);
-        int tinted = module.applyToSky(incoming, brightness);
+        int working = incoming;
+        SkyCustomizer module = SkyCustomizer.getInstance();
+        if (module != null && module.isEnabled()) {
+            float brightness = world.getSkyBrightness(1.0F);
+            working = module.applyToSky(incoming, brightness);
+        }
+
+        int corrected = WorldColorCorrectionController.applyToArgb(
+                WorldColorCorrectionController.Target.SKY,
+                0xFF000000 | (working & 0x00FFFFFF)
+        );
 
         return new Vector3d(
-                ((tinted >> 16) & 0xFF) / 255.0,
-                ((tinted >> 8) & 0xFF) / 255.0,
-                (tinted & 0xFF) / 255.0
+                ((corrected >> 16) & 0xFF) / 255.0,
+                ((corrected >> 8) & 0xFF) / 255.0,
+                (corrected & 0xFF) / 255.0
         );
     }
 

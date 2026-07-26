@@ -79,6 +79,8 @@ public abstract class RectHudModule extends Module {
     private float hudX = DEFAULT_HUD_X;
     private float hudY = DEFAULT_HUD_Y;
     private float hudScale = DEFAULT_HUD_SCALE;
+    private float hudXRatio = Float.NaN;
+    private float hudYRatio = Float.NaN;
 
     protected RectHudModule(String name, String visibleName) {
         this(name, visibleName, DEFAULT_HUD_X, DEFAULT_HUD_Y, DEFAULT_HUD_SCALE);
@@ -123,6 +125,7 @@ public abstract class RectHudModule extends Module {
 
     public void setHudX(float hudX) {
         this.hudX = hudX;
+        syncStoredHudRatios();
     }
 
     public float getHudY() {
@@ -131,6 +134,7 @@ public abstract class RectHudModule extends Module {
 
     public void setHudY(float hudY) {
         this.hudY = hudY;
+        syncStoredHudRatios();
     }
 
     public float getHudScale() {
@@ -139,6 +143,7 @@ public abstract class RectHudModule extends Module {
 
     public void setHudScale(float hudScale) {
         this.hudScale = MathHelper.clamp(hudScale, getMinHudScale(), getMaxHudScale());
+        syncStoredHudRatios();
     }
 
     public float getMinHudScale() {
@@ -174,15 +179,49 @@ public abstract class RectHudModule extends Module {
         this.hudX = defaultHudX;
         this.hudY = defaultHudY;
         this.hudScale = defaultHudScale;
+        syncStoredHudRatios();
+    }
+
+    public float getHudXRatio() {
+        if (!Float.isNaN(hudXRatio)) {
+            return hudXRatio;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return 0.0f;
+        }
+        return MathHelper.clamp(hudX / Math.max(1.0f, client.getWindow().getScaledWidth()), 0.0f, 1.0f);
+    }
+
+    public float getHudYRatio() {
+        if (!Float.isNaN(hudYRatio)) {
+            return hudYRatio;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return 0.0f;
+        }
+        return MathHelper.clamp(hudY / Math.max(1.0f, client.getWindow().getScaledHeight()), 0.0f, 1.0f);
+    }
+
+    public void setHudXRatio(float ratio) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        this.hudXRatio = MathHelper.clamp(ratio, 0.0f, 1.0f);
+        if (client != null && client.getWindow() != null) {
+            this.hudX = this.hudXRatio * Math.max(1, client.getWindow().getScaledWidth());
+        }
+    }
+
+    public void setHudYRatio(float ratio) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        this.hudYRatio = MathHelper.clamp(ratio, 0.0f, 1.0f);
+        if (client != null && client.getWindow() != null) {
+            this.hudY = this.hudYRatio * Math.max(1, client.getWindow().getScaledHeight());
+        }
     }
 
     public int getResolvedBackgroundColor(MinecraftClient client) {
         if (isVanillaPreset()) {
-            // Vanilla preset opacity raised from 40% to 50% so the Vanilla
-            // look matches the new default of the custom-preset opacity
-            // slider. Users were getting a darker / more opaque rect when
-            // switching presets, which was jarring; unifying the default
-            // means both code paths render with the same visual weight.
             return client.options.getTextBackgroundColor(0.5F);
         }
         var palette = MenuPalettes.byName(backgroundPreset.getSelected());
@@ -200,5 +239,16 @@ public abstract class RectHudModule extends Module {
         int g = MathHelper.clamp(Math.round(((color >>> 8) & 0xFF) * multiplier), 0, 255);
         int b = MathHelper.clamp(Math.round((color & 0xFF) * multiplier), 0, 255);
         return (r << 16) | (g << 8) | b;
+    }
+
+    private void syncStoredHudRatios() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return;
+        }
+        float screenWidth = Math.max(1.0f, client.getWindow().getScaledWidth());
+        float screenHeight = Math.max(1.0f, client.getWindow().getScaledHeight());
+        this.hudXRatio = MathHelper.clamp(this.hudX / screenWidth, 0.0f, 1.0f);
+        this.hudYRatio = MathHelper.clamp(this.hudY / screenHeight, 0.0f, 1.0f);
     }
 }

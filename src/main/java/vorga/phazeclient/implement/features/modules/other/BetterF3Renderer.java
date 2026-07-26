@@ -10,6 +10,7 @@ import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.LightType;
 import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 
@@ -111,10 +112,10 @@ public final class BetterF3Renderer {
             }
         }
         if (module.showFacing.isValue()) {
-            rows.add(line("Facing",
+                rows.add(line("Facing",
                     facingFor(player) + " ("
                             + String.format("yaw=%.1f, pitch=%.1f",
-                                    player.getYaw(), player.getPitch()) + ")",
+                                    normalizedYaw(player.getYaw()), player.getPitch()) + ")",
                     VALUE_DEFAULT));
         }
         if (module.showBiome.isValue()) {
@@ -265,11 +266,16 @@ public final class BetterF3Renderer {
 
     /** Cardinal direction string for the player's yaw. */
     private static String facingFor(Entity entity) {
-        float yaw = ((entity.getYaw() % 360.0F) + 360.0F) % 360.0F;
+        float yaw = normalizedYaw(entity.getYaw());
         if (yaw >= 315 || yaw < 45) return "South (+Z)";
         if (yaw < 135) return "West (-X)";
         if (yaw < 225) return "North (-Z)";
         return "East (+X)";
+    }
+
+    /** Match vanilla F3's signed yaw display range. */
+    private static float normalizedYaw(float yaw) {
+        return MathHelper.wrapDegrees(yaw);
     }
 
     /** FPS tier color: green &gt;= 60, yellow 30..59, red &lt; 30. */

@@ -16,6 +16,22 @@ import java.util.function.Function;
  */
 public final class PhazeRenderLayers {
 
+    private static final RenderLayer HITBOX_FILL = RenderLayer.of(
+            "phaze_hitbox_fill",
+            VertexFormats.POSITION_COLOR,
+            VertexFormat.DrawMode.QUADS,
+            1536,
+            RenderLayer.MultiPhaseParameters.builder()
+                    .program(RenderPhase.POSITION_COLOR_PROGRAM)
+                    .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
+                    .transparency(RenderPhase.TRANSLUCENT_TRANSPARENCY)
+                    .target(RenderPhase.ITEM_ENTITY_TARGET)
+                    .writeMaskState(RenderPhase.COLOR_MASK)
+                    .depthTest(RenderPhase.LEQUAL_DEPTH_TEST)
+                    .cull(RenderPhase.DISABLE_CULLING)
+                    .build(false)
+    );
+
     private static final Function<Float, RenderLayer> THICK_LINES = Util.memoize(
             (Function<Float, RenderLayer>) (width -> RenderLayer.of(
                     "phaze_thick_lines_" + width,
@@ -35,6 +51,10 @@ public final class PhazeRenderLayers {
     );
 
     private PhazeRenderLayers() {}
+
+    public static RenderLayer getHitboxFill() {
+        return HITBOX_FILL;
+    }
 
     public static RenderLayer getThickLines(float width) {
         return THICK_LINES.apply(width);

@@ -64,7 +64,6 @@ public final class ItemHighlighter extends Module {
     private final Map<Item, List<CompiledEntry>> compiledEntriesByItem = new IdentityHashMap<>();
     private final Map<ItemStack, Integer> preparedColorCache = new IdentityHashMap<>();
     private final Map<ResultCacheKey, Integer> resolvedColorCache = new LinkedHashMap<>(128, 0.75F, true);
-    private long compiledEntriesTick = Long.MIN_VALUE;
     private int compiledStateMask = Integer.MIN_VALUE;
     private int compiledEntriesFingerprint = Integer.MIN_VALUE;
     private int compiledAlpha = 0;
@@ -221,11 +220,21 @@ public final class ItemHighlighter extends Module {
     }
 
     private boolean hasActiveCustomItem() {
-        return customItems.stream().anyMatch(ItemPickerSetting::isActive);
+        for (ItemPickerSetting customItem : customItems) {
+            if (customItem.isActive()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean hasInactiveCustomItem() {
-        return customItems.stream().anyMatch(customItem -> !customItem.isActive());
+        for (ItemPickerSetting customItem : customItems) {
+            if (!customItem.isActive()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean customItemVisible(int index) {
@@ -249,17 +258,13 @@ public final class ItemHighlighter extends Module {
         for (ItemPickerSetting customItem : customItems) {
             if (!customItem.isActive()) {
                 customItem.setActive(true);
-                compiledEntriesTick = Long.MIN_VALUE;
+                compiledEntriesFingerprint = Integer.MIN_VALUE;
                 break;
             }
         }
     }
 
     private void refreshCompiledEntries() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        long tickKey = client != null && client.world != null
-                ? client.world.getTime()
-                : System.nanoTime() / 50_000_000L;
         int contextMask = (isSingleplayerContext() ? 1 : 0)
                 | (ServerUtil.isFunTimeServer() ? 1 << 1 : 0)
                 | (ServerUtil.isHolyWorldServer() ? 1 << 2 : 0)
@@ -269,17 +274,13 @@ public final class ItemHighlighter extends Module {
         boolean cacheStateChanged = contextMask != compiledStateMask
                 || entriesFingerprint != compiledEntriesFingerprint;
 
-        if (tickKey == compiledEntriesTick
-                && !cacheStateChanged) {
+        if (!cacheStateChanged) {
             return;
         }
 
-        compiledEntriesTick = tickKey;
         compiledStateMask = contextMask;
         compiledEntriesFingerprint = entriesFingerprint;
-        if (cacheStateChanged) {
-            resolvedColorCache.clear();
-        }
+        resolvedColorCache.clear();
         compiledEntriesByItem.clear();
         compiledAlpha = 0;
 

@@ -59,6 +59,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
+import vorga.phazeclient.api.system.cursor.HudCursorRelay;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
 import vorga.phazeclient.implement.features.modules.hud.CoordinatesHud;
@@ -73,6 +74,7 @@ import vorga.phazeclient.implement.features.modules.hud.PotionHud;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
 import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
+import vorga.phazeclient.implement.features.modules.hud.ScoreboardSidebarEntry;
 import vorga.phazeclient.implement.features.modules.hud.SessionTimeHud;
 import vorga.phazeclient.implement.features.modules.hud.SprintHud;
 import vorga.phazeclient.implement.features.modules.hud.MemoryHud;
@@ -86,7 +88,10 @@ import vorga.phazeclient.implement.features.modules.hud.TpsHud;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
+import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
+import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
+import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.hud.Cooldowns;
 import vorga.phazeclient.implement.features.modules.other.Crosshair;
@@ -135,6 +140,7 @@ public class InGameHudMixin {
     private static final float HUD_RENDER_Z = 400.0f;
     private static final float HANDLE_RENDER_Z = 450.0f;
     private static final float GUIDE_SNAP_RADIUS = 3.0f;
+    private static final float HUD_TO_HUD_SNAP_RADIUS = 4.0f;
     private static final float GUIDE_FADE_SPEED = 14.0f;
     private static final int GUIDE_MAX_ALPHA = 140;
     private static final long HUD_TEXT_THROTTLE_MS = 50L;
@@ -166,8 +172,11 @@ public class InGameHudMixin {
     private static final int HUD_TPS = 23;
     private static final int HUD_PLAYER_MODEL = 24;
     private static final int HUD_TRAP_TIMER = 25;
-    private static final int RECT_HUD_COUNT = 26;
-    private static final int HUD_ARMOR_BLUR_SLOT = 15;
+    private static final int HUD_INVENTORY = 26;
+    private static final int RECT_HUD_COUNT = 27;
+    private static final int HUD_ARMOR_BLUR_SLOT = 27;
+    private static final int HUD_SNAP_ARMOR = RECT_HUD_COUNT;
+    private static final int HUD_SNAP_COUNT = RECT_HUD_COUNT + 1;
     private static final int KEYSTROKE_W = 0;
     private static final int KEYSTROKE_A = 1;
     private static final int KEYSTROKE_S = 2;
@@ -175,6 +184,15 @@ public class InGameHudMixin {
     private static final int KEYSTROKE_LMB = 4;
     private static final int KEYSTROKE_RMB = 5;
     private static final int KEYSTROKE_SPACE = 6;
+    private static final List<ShapeProperties> KEYSTROKE_BLUR_RECTS = List.of(
+            createKeystrokeBlurRect(20.0f, 0.0f, 16.0f, 18.0f),
+            createKeystrokeBlurRect(0.0f, 19.0f, 18.0f, 18.0f),
+            createKeystrokeBlurRect(19.0f, 19.0f, 16.0f, 18.0f),
+            createKeystrokeBlurRect(36.0f, 19.0f, 18.0f, 18.0f),
+            createKeystrokeBlurRect(0.0f, 38.0f, 54.0f, 8.0f),
+            createKeystrokeBlurRect(0.0f, 47.0f, 26.0f, 16.0f),
+            createKeystrokeBlurRect(28.0f, 47.0f, 26.0f, 16.0f)
+    );
 
     private static final boolean[] RECT_DRAGGING = new boolean[RECT_HUD_COUNT];
     private static final boolean[] RECT_RESIZING = new boolean[RECT_HUD_COUNT];
@@ -184,8 +202,19 @@ public class InGameHudMixin {
     private static final float[] RECT_RESIZE_START_MOUSE_X = new float[RECT_HUD_COUNT];
     private static final float[] RECT_RESIZE_START_MOUSE_Y = new float[RECT_HUD_COUNT];
     private static final float[] RECT_HOVER_PROGRESS = new float[RECT_HUD_COUNT];
+    private static final float[] RECT_POSITION_RATIO_X = new float[RECT_HUD_COUNT];
+    private static final float[] RECT_POSITION_RATIO_Y = new float[RECT_HUD_COUNT];
+    private static final int[] RECT_LAST_SCREEN_WIDTH = new int[RECT_HUD_COUNT];
+    private static final int[] RECT_LAST_SCREEN_HEIGHT = new int[RECT_HUD_COUNT];
+    private static final boolean[] RECT_LAYOUT_INITIALIZED = new boolean[RECT_HUD_COUNT];
     private static final int[] RECT_BG_ANIMATED_COLOR = new int[RECT_HUD_COUNT];
     private static final boolean[] RECT_BG_COLOR_INITIALIZED = new boolean[RECT_HUD_COUNT];
+    private static final float[] HUD_SNAP_X = new float[HUD_SNAP_COUNT];
+    private static final float[] HUD_SNAP_Y = new float[HUD_SNAP_COUNT];
+    private static final float[] HUD_SNAP_WIDTH = new float[HUD_SNAP_COUNT];
+    private static final float[] HUD_SNAP_HEIGHT = new float[HUD_SNAP_COUNT];
+    private static final Module[] HUD_SNAP_OWNER = new Module[HUD_SNAP_COUNT];
+    private static final boolean[] HUD_SNAP_VALID = new boolean[HUD_SNAP_COUNT];
     private static final float[] KEYSTROKE_PROGRESS = new float[7];
     private static final String[] HUD_TEXT_CACHE = new String[RECT_HUD_COUNT];
     private static final long[] HUD_TEXT_CACHE_TIME_MS = new long[RECT_HUD_COUNT];
@@ -218,6 +247,11 @@ public class InGameHudMixin {
     private static float armorResizeStartMouseX = 0.0f;
     private static float armorResizeStartMouseY = 0.0f;
     private static float armorHoverProgress = 0.0f;
+    private static float armorPositionRatioX = 0.0f;
+    private static float armorPositionRatioY = 0.0f;
+    private static int armorLastScreenWidth = -1;
+    private static int armorLastScreenHeight = -1;
+    private static boolean armorLayoutInitialized = false;
     private static int armorAnimatedBackgroundColor = 0;
     private static boolean armorBackgroundColorInitialized = false;
     private static int scoreboardAnimatedTitleColor = 0;
@@ -236,10 +270,21 @@ public class InGameHudMixin {
     private static float horizontalGuideProgress = 0.0f;
     private static boolean showVerticalGuideThisFrame = false;
     private static boolean showHorizontalGuideThisFrame = false;
+    private static float hudVerticalGuideProgress = 0.0f;
+    private static float hudHorizontalGuideProgress = 0.0f;
+    private static boolean showHudVerticalGuideThisFrame = false;
+    private static boolean showHudHorizontalGuideThisFrame = false;
+    private static float hudVerticalGuideX = 0.0f;
+    private static float hudVerticalGuideTop = 0.0f;
+    private static float hudVerticalGuideBottom = 0.0f;
+    private static float hudHorizontalGuideY = 0.0f;
+    private static float hudHorizontalGuideLeft = 0.0f;
+    private static float hudHorizontalGuideRight = 0.0f;
     /** When true, blur HUDs are skipped in the current renderHudInternal call (batch FBO pass). */
     private static boolean inBatchPass = false;
-    /** When true, only blur HUDs are rendered in the current renderHudInternal call (direct main-FB pass). */
-    private static boolean inBlurPass = false;
+    /** Cached pass includes blur HUDs; the follow-up pass updates input state only. */
+    private static boolean batchIncludesBlur = false;
+    private static boolean inLogicOnlyPass = false;
     /**
      * Last observed {@link RectHudModule#hasActiveBackgroundBlur()} value per
      * HUD instance. Used to detect the exact frame a HUD migrates between the
@@ -281,11 +326,24 @@ public class InGameHudMixin {
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
-
     @Inject(method = "render", at = @At("HEAD"))
     private void beginHudFrame(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         renderedThisFrame = false;
+        inBatchPass = false;
+        batchIncludesBlur = false;
+        inLogicOnlyPass = false;
+        HudCursorRelay.reset();
         Blur.INSTANCE.beginCachedFrame();
+
+        // Animation clocks must advance at the display FPS, even when
+        // Exordium serves renderHotbar/ChatHud from a cached framebuffer and
+        // therefore skips those vanilla methods for this frame.
+        ExordiumAnimationBridge.beginHudFrame(context);
+        phaze$advanceHotbarSlide();
+        if (this.client != null && this.client.inGameHud != null
+                && this.client.inGameHud.getChatHud() instanceof ChatAnimationFrameAccess access) {
+            access.phaze$tickAnimationFrame();
+        }
     }
 
     /**
@@ -328,6 +386,16 @@ public class InGameHudMixin {
         boolean hudHidden = client == null || client.options == null || client.options.hudHidden;
 
         if (!renderedThisFrame) {
+            // Capture the clean world/vanilla-HUD framebuffer at the one safe
+            // point shared by normal gameplay and open GUIs. Doing this before
+            // any Phaze FBO capture prevents live HUD blur from sampling the
+            // cleared/intermediate framebuffer used during Screen rendering.
+            boolean hasLiveBlurHud = !hudHidden && phaze$prescanBlurStateFlips();
+            if (hasLiveBlurHud) {
+                context.draw();
+                Blur.INSTANCE.captureBaseFrameForBlur();
+            }
+
             if (hudHidden) {
                 BatchedHudBuffer.INSTANCE.invalidate();
             } else if (!HudOptimizer.getInstance().isEnabled()) {
@@ -342,9 +410,6 @@ public class InGameHudMixin {
                 BatchedHudBuffer.INSTANCE.invalidate();
                 renderHudInternal(context);
             } else {
-                BatchedHudBuffer.INSTANCE.setTargetFps(HudOptimizer.getInstance().refreshRate.getInt());
-                boolean chatEditing = client.currentScreen instanceof ChatScreen;
-
                 // Pre-scan EVERY HUD's blur state BEFORE we decide whether
                 // Pass 1 needs to refresh. The per-renderBufferedHud
                 // trackBlurStateChange that lives inside Pass 1 / Pass 2
@@ -360,7 +425,13 @@ public class InGameHudMixin {
                 // BatchedHudBuffer to dirty BEFORE shouldRefresh is
                 // sampled, so the cache is rebuilt on this frame and
                 // blit shows fresh content matching what Pass 2 draws.
-                phaze$prescanBlurStateFlips();
+                int configuredRefreshRate = HudOptimizer.getInstance().refreshRate.getInt();
+                boolean smoothGuiBackdrop = client.currentScreen instanceof MenuScreen;
+                int effectiveRefreshRate = hasLiveBlurHud || smoothGuiBackdrop
+                        ? Math.max(60, configuredRefreshRate)
+                        : configuredRefreshRate;
+                BatchedHudBuffer.INSTANCE.setTargetFps(effectiveRefreshRate);
+                boolean chatEditing = client.currentScreen instanceof ChatScreen;
 
                 boolean shouldRefresh = chatEditing || BatchedHudBuffer.INSTANCE.shouldRefresh(false);
 
@@ -390,22 +461,22 @@ public class InGameHudMixin {
                     // FBO ends up containing ONLY our own HUD widgets.
                     context.draw();
                     inBatchPass = true;
+                    batchIncludesBlur = true;
                     BatchedHudBuffer.INSTANCE.beginCapture();
                     renderHudInternal(context);
                     // Flush deferred DrawContext draws into the FBO before unbinding,
                     // otherwise vanilla flushes them later into the main framebuffer.
                     context.draw();
                     BatchedHudBuffer.INSTANCE.endCapture();
+                    batchIncludesBlur = false;
                     inBatchPass = false;
                 }
                 BatchedHudBuffer.INSTANCE.blit();
 
-                // Pass 2 — every frame: render BLUR HUDs directly to the main
-                // framebuffer so the blur tracks the moving world without
-                // throttling, while non-blur HUDs stay batched.
-                inBlurPass = true;
+                // Keep click/drag state live without redrawing any HUD content.
+                inLogicOnlyPass = true;
                 renderHudInternal(context);
-                inBlurPass = false;
+                inLogicOnlyPass = false;
             }
         }
         Blur.INSTANCE.endCachedFrame();
@@ -489,8 +560,28 @@ public class InGameHudMixin {
         boolean gameplayInput = client.currentScreen == null && client.player != null && client.world != null;
         if (firstCallThisFrame) {
             updateClicksPerSecond(mouseDown, rightMouseDown, gameplayInput);
+            updateKeystrokeAnimations(client, mouseDown, rightMouseDown, deltaSeconds);
             showVerticalGuideThisFrame = false;
             showHorizontalGuideThisFrame = false;
+            showHudVerticalGuideThisFrame = false;
+            showHudHorizontalGuideThisFrame = false;
+        }
+        if (inLogicOnlyPass) {
+            renderLiveKeystrokeAnimation(context, client, inverseGuiScale);
+            if (chatEditing) {
+                verticalGuideProgress = approachExp(verticalGuideProgress, showVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
+                horizontalGuideProgress = approachExp(horizontalGuideProgress, showHorizontalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
+                hudVerticalGuideProgress = approachExp(hudVerticalGuideProgress, showHudVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
+                hudHorizontalGuideProgress = approachExp(hudHorizontalGuideProgress, showHudHorizontalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
+                renderHudGuides(context, screenWidth, screenHeight, inverseGuiScale);
+            } else {
+                verticalGuideProgress = 0.0f;
+                horizontalGuideProgress = 0.0f;
+                hudVerticalGuideProgress = 0.0f;
+                hudHorizontalGuideProgress = 0.0f;
+            }
+            wasMouseDown = mouseDown;
+            return;
         }
 
         String fpsText = getCachedHudText(FpsHud.getInstance(), HUD_FPS, chatEditing, () -> {
@@ -549,7 +640,9 @@ public class InGameHudMixin {
         // machine, and the icon pass (drawItem x 27 + overlay
         // submit) is exactly what the cache is meant to absorb.
         renderBufferedHud(context, InventoryHud.getInstance(), chatEditing, () ->
-                phaze$drawInventoryHudGuts(context));
+                renderInventoryHud(context, client, InventoryHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
+                        getHudDelta(InventoryHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale,
+                        screenWidth, screenHeight, screenCenterX, screenCenterY));
         String sprintText = getCachedHudText(SprintHud.getInstance(), HUD_SPRINT, chatEditing, () -> getSprintHudText(client));
         final String sprintTextWrapped = wrapTextWithBrackets(sprintText, SprintHud.getInstance());
         renderBufferedHud(context, SprintHud.getInstance(), chatEditing, () ->
@@ -719,10 +812,14 @@ public class InGameHudMixin {
             if (chatEditing) {
                 verticalGuideProgress = approachExp(verticalGuideProgress, showVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
                 horizontalGuideProgress = approachExp(horizontalGuideProgress, showHorizontalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
+                hudVerticalGuideProgress = approachExp(hudVerticalGuideProgress, showHudVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
+                hudHorizontalGuideProgress = approachExp(hudHorizontalGuideProgress, showHudHorizontalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
                 renderHudGuides(context, screenWidth, screenHeight, inverseGuiScale);
             } else {
                 verticalGuideProgress = 0.0f;
                 horizontalGuideProgress = 0.0f;
+                hudVerticalGuideProgress = 0.0f;
+                hudHorizontalGuideProgress = 0.0f;
             }
             wasMouseDown = mouseDown;
         }
@@ -780,15 +877,16 @@ public class InGameHudMixin {
      * {@code Animations}) don't participate in the Pass split, so
      * skipping them costs nothing and keeps the per-frame walk cheap.
      */
-    private static void phaze$prescanBlurStateFlips() {
+    private static boolean phaze$prescanBlurStateFlips() {
         Main main = Main.getInstance();
         if (main == null) {
-            return;
+            return false;
         }
         var provider = main.getModuleProvider();
         if (provider == null) {
-            return;
+            return false;
         }
+        boolean anyActiveBlur = false;
         for (Module module : provider.getModules()) {
             boolean current;
             if (module instanceof RectHudModule rectModule) {
@@ -798,11 +896,13 @@ public class InGameHudMixin {
             } else {
                 continue;
             }
+            anyActiveBlur |= module.isEnabled() && current;
             Boolean prev = PHAZE_LAST_BLUR_STATE.put(module, current);
             if (prev != null && prev != current) {
                 BatchedHudBuffer.INSTANCE.invalidate();
             }
         }
+        return anyActiveBlur;
     }
 
     private void renderBufferedHud(DrawContext context, ArmorHud module, boolean chatEditing, Runnable renderLogic) {
@@ -817,8 +917,8 @@ public class InGameHudMixin {
      * normal (un-batched) path both passes are inactive and all HUDs render.
      */
     private static boolean shouldSkipForCurrentPass(boolean hasBlur) {
-        if (inBatchPass && hasBlur) return true;
-        if (inBlurPass && !hasBlur) return true;
+        if (inLogicOnlyPass) return true;
+        if (inBatchPass && hasBlur && !batchIncludesBlur) return true;
         return false;
     }
 
@@ -901,10 +1001,26 @@ public class InGameHudMixin {
         float hudHeight = baseHeight * scale;
         float maxX = Math.max(0.0f, screenWidth - hudWidth);
         float maxY = Math.max(0.0f, screenHeight - hudHeight);
-        float x = MathHelper.clamp(module.getHudX(), 0.0f, maxX);
-        float y = MathHelper.clamp(module.getHudY(), 0.0f, maxY);
+        int currentScreenWidth = Math.round(screenWidth);
+        int currentScreenHeight = Math.round(screenHeight);
+        float x = module.getHudX();
+        float y = module.getHudY();
+        boolean resized = RECT_LAYOUT_INITIALIZED[hudIndex]
+                && (RECT_LAST_SCREEN_WIDTH[hudIndex] != currentScreenWidth
+                || RECT_LAST_SCREEN_HEIGHT[hudIndex] != currentScreenHeight);
+        if (resized && !RECT_DRAGGING[hudIndex] && !RECT_RESIZING[hudIndex]) {
+            x = maxX <= 0.0f ? 0.0f : RECT_POSITION_RATIO_X[hudIndex] * maxX;
+            y = maxY <= 0.0f ? 0.0f : RECT_POSITION_RATIO_Y[hudIndex] * maxY;
+        }
+        x = MathHelper.clamp(x, 0.0f, maxX);
+        y = MathHelper.clamp(y, 0.0f, maxY);
         module.setHudX(x);
         module.setHudY(y);
+        RECT_POSITION_RATIO_X[hudIndex] = maxX <= 0.0f ? 0.0f : x / maxX;
+        RECT_POSITION_RATIO_Y[hudIndex] = maxY <= 0.0f ? 0.0f : y / maxY;
+        RECT_LAST_SCREEN_WIDTH[hudIndex] = currentScreenWidth;
+        RECT_LAST_SCREEN_HEIGHT[hudIndex] = currentScreenHeight;
+        RECT_LAYOUT_INITIALIZED[hudIndex] = true;
 
         int handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
         // Place resize handle diagonally on the bottom-right corner:
@@ -946,20 +1062,32 @@ public class InGameHudMixin {
                     float newY = MathHelper.clamp((float) mouseY - RECT_DRAG_OFFSET_Y[hudIndex], 0.0f, maxY);
                     float centerX = newX + hudWidth * 0.5f;
                     float centerY = newY + hudHeight * 0.5f;
+                    boolean snappedToScreenX = false;
+                    boolean snappedToScreenY = false;
 
                     if (Math.abs(centerX - screenCenterX) <= GUIDE_SNAP_RADIUS) {
                         newX = MathHelper.clamp(screenCenterX - hudWidth * 0.5f, 0.0f, maxX);
                         showVerticalGuideThisFrame = true;
+                        snappedToScreenX = true;
                     }
                     if (Math.abs(centerY - screenCenterY) <= GUIDE_SNAP_RADIUS) {
                         newY = MathHelper.clamp(screenCenterY - hudHeight * 0.5f, 0.0f, maxY);
                         showHorizontalGuideThisFrame = true;
+                        snappedToScreenY = true;
+                    }
+                    if (!snappedToScreenX) {
+                        newX = snapHudAlignmentX(hudIndex, newX, newY, hudWidth, hudHeight, maxX, 1.0f);
+                    }
+                    if (!snappedToScreenY) {
+                        newY = snapHudAlignmentY(hudIndex, newX, newY, hudWidth, hudHeight, maxY, 1.0f);
                     }
 
                     module.setHudX(newX);
                     module.setHudY(newY);
                     x = newX;
                     y = newY;
+                    RECT_POSITION_RATIO_X[hudIndex] = maxX <= 0.0f ? 0.0f : x / maxX;
+                    RECT_POSITION_RATIO_Y[hudIndex] = maxY <= 0.0f ? 0.0f : y / maxY;
                     handleX = x + hudWidth - handleSize / 2.0f;
                     handleY = y + hudHeight - handleSize / 2.0f;
                 } else if (RECT_RESIZING[hudIndex]) {
@@ -982,6 +1110,8 @@ public class InGameHudMixin {
                     y = MathHelper.clamp(module.getHudY(), 0.0f, maxY);
                     module.setHudX(x);
                     module.setHudY(y);
+                    RECT_POSITION_RATIO_X[hudIndex] = maxX <= 0.0f ? 0.0f : x / maxX;
+                    RECT_POSITION_RATIO_Y[hudIndex] = maxY <= 0.0f ? 0.0f : y / maxY;
                     handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
                     handleX = x + hudWidth - handleSize / 2.0f;
                     handleY = y + hudHeight - handleSize / 2.0f;
@@ -1000,6 +1130,16 @@ public class InGameHudMixin {
             }
 
             RECT_HOVER_PROGRESS[hudIndex] = approachExp(RECT_HOVER_PROGRESS[hudIndex], hoveredHud ? 1.0f : 0.0f, 10.0f, deltaSeconds);
+        }
+
+        rememberHudSnapBounds(hudIndex, module, x, y, hudWidth, hudHeight);
+
+        if (chatEditing) {
+            if (RECT_RESIZING[hudIndex]) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_HRESIZE, 4);
+            } else if (RECT_DRAGGING[hudIndex]) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_MOVE, 3);
+            }
         }
 
         float textWidth = getHudTextWidth(client, text, HUD_TEXT_SIZE);
@@ -1196,10 +1336,25 @@ public class InGameHudMixin {
 
         float maxX = Math.max(0.0f, screenWidth - hudWidth);
         float maxY = Math.max(0.0f, screenHeight - hudHeight);
-        float x = MathHelper.clamp(module.getHudX(), 0.0f, maxX);
-        float y = MathHelper.clamp(module.getHudY(), 0.0f, maxY);
+        float x = module.getHudX();
+        float y = module.getHudY();
+        int currentScreenWidth = Math.round(screenWidth);
+        int currentScreenHeight = Math.round(screenHeight);
+        boolean resized = armorLayoutInitialized
+                && (armorLastScreenWidth != currentScreenWidth || armorLastScreenHeight != currentScreenHeight);
+        if (resized && !armorDragging && !armorResizing) {
+            x = maxX <= 0.0f ? 0.0f : armorPositionRatioX * maxX;
+            y = maxY <= 0.0f ? 0.0f : armorPositionRatioY * maxY;
+        }
+        x = MathHelper.clamp(x, 0.0f, maxX);
+        y = MathHelper.clamp(y, 0.0f, maxY);
         module.setHudX(x);
         module.setHudY(y);
+        armorPositionRatioX = maxX <= 0.0f ? 0.0f : x / maxX;
+        armorPositionRatioY = maxY <= 0.0f ? 0.0f : y / maxY;
+        armorLastScreenWidth = currentScreenWidth;
+        armorLastScreenHeight = currentScreenHeight;
+        armorLayoutInitialized = true;
 
         int handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
         float handleX = x + hudWidth - handleSize / 2.0f;
@@ -1238,20 +1393,32 @@ public class InGameHudMixin {
                     float newY = MathHelper.clamp((float) mouseY - armorDragOffsetY, 0.0f, maxY);
                     float centerX = newX + hudWidth * 0.5f;
                     float centerY = newY + hudHeight * 0.5f;
+                    boolean snappedToScreenX = false;
+                    boolean snappedToScreenY = false;
 
                     if (Math.abs(centerX - screenCenterX) <= GUIDE_SNAP_RADIUS) {
                         newX = MathHelper.clamp(screenCenterX - hudWidth * 0.5f, 0.0f, maxX);
                         showVerticalGuideThisFrame = true;
+                        snappedToScreenX = true;
                     }
                     if (Math.abs(centerY - screenCenterY) <= GUIDE_SNAP_RADIUS) {
                         newY = MathHelper.clamp(screenCenterY - hudHeight * 0.5f, 0.0f, maxY);
                         showHorizontalGuideThisFrame = true;
+                        snappedToScreenY = true;
+                    }
+                    if (!snappedToScreenX) {
+                        newX = snapHudAlignmentX(HUD_SNAP_ARMOR, newX, newY, hudWidth, hudHeight, maxX, 1.0f);
+                    }
+                    if (!snappedToScreenY) {
+                        newY = snapHudAlignmentY(HUD_SNAP_ARMOR, newX, newY, hudWidth, hudHeight, maxY, 1.0f);
                     }
 
                     module.setHudX(newX);
                     module.setHudY(newY);
                     x = newX;
                     y = newY;
+                    armorPositionRatioX = maxX <= 0.0f ? 0.0f : x / maxX;
+                    armorPositionRatioY = maxY <= 0.0f ? 0.0f : y / maxY;
                     handleX = x + hudWidth - handleSize / 2.0f;
                     handleY = y + hudHeight - handleSize / 2.0f;
                 } else if (armorResizing) {
@@ -1271,6 +1438,8 @@ public class InGameHudMixin {
                     y = MathHelper.clamp(module.getHudY(), 0.0f, maxY);
                     module.setHudX(x);
                     module.setHudY(y);
+                    armorPositionRatioX = maxX <= 0.0f ? 0.0f : x / maxX;
+                    armorPositionRatioY = maxY <= 0.0f ? 0.0f : y / maxY;
                     handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
                     handleX = x + hudWidth - handleSize / 2.0f;
                     handleY = y + hudHeight - handleSize / 2.0f;
@@ -1289,6 +1458,16 @@ public class InGameHudMixin {
             }
 
             armorHoverProgress = approachExp(armorHoverProgress, hovered ? 1.0f : 0.0f, 10.0f, deltaSeconds);
+        }
+
+        rememberHudSnapBounds(HUD_SNAP_ARMOR, module, x, y, hudWidth, hudHeight);
+
+        if (chatEditing) {
+            if (armorResizing) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_HRESIZE, 4);
+            } else if (armorDragging) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_MOVE, 3);
+            }
         }
 
         boolean textOnLeft = x > screenWidth * 0.5f;
@@ -1507,13 +1686,23 @@ public class InGameHudMixin {
                     float newY = MathHelper.clamp((float) mouseY - RECT_DRAG_OFFSET_Y[hudIndex], 0.0f, maxY);
                     float centerX = newX + hudWidth * 0.5f;
                     float centerY = newY + hudHeight * 0.5f;
+                    boolean snappedToScreenX = false;
+                    boolean snappedToScreenY = false;
                     if (Math.abs(centerX - screenCenterX) <= GUIDE_SNAP_RADIUS) {
                         newX = MathHelper.clamp(screenCenterX - hudWidth * 0.5f, 0.0f, maxX);
                         showVerticalGuideThisFrame = true;
+                        snappedToScreenX = true;
                     }
                     if (Math.abs(centerY - screenCenterY) <= GUIDE_SNAP_RADIUS) {
                         newY = MathHelper.clamp(screenCenterY - hudHeight * 0.5f, 0.0f, maxY);
                         showHorizontalGuideThisFrame = true;
+                        snappedToScreenY = true;
+                    }
+                    if (!snappedToScreenX) {
+                        newX = snapHudAlignmentX(hudIndex, newX, newY, hudWidth, hudHeight, maxX, 1.0f);
+                    }
+                    if (!snappedToScreenY) {
+                        newY = snapHudAlignmentY(hudIndex, newX, newY, hudWidth, hudHeight, maxY, 1.0f);
                     }
                     module.setHudX(newX);
                     module.setHudY(newY);
@@ -1555,6 +1744,16 @@ public class InGameHudMixin {
             }
 
             RECT_HOVER_PROGRESS[hudIndex] = approachExp(RECT_HOVER_PROGRESS[hudIndex], hovered ? 1.0f : 0.0f, 10.0f, deltaSeconds);
+        }
+
+        rememberHudSnapBounds(hudIndex, module, x, y, hudWidth, hudHeight);
+
+        if (chatEditing) {
+            if (RECT_RESIZING[hudIndex]) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_HRESIZE, 4);
+            } else if (RECT_DRAGGING[hudIndex]) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_MOVE, 3);
+            }
         }
 
         int hoverOutlineThickness = Math.max(1, Math.round(2.0f / Math.max(1.0f, scale)));
@@ -2044,15 +2243,7 @@ public class InGameHudMixin {
         NickHider nickHider = NickHider.getInstance();
         boolean shouldHideNick = nickHider != null && nickHider.isEnabled();
 
-        // Create sidebar entries
-        interface SidebarEntry {
-            net.minecraft.text.Text name();
-            net.minecraft.text.Text score();
-            boolean hasScore();
-            int scoreWidth();
-        }
-
-        var sidebarEntries = new java.util.ArrayList<SidebarEntry>();
+        var sidebarEntries = new java.util.ArrayList<ScoreboardSidebarEntry>();
         for (var entry : filteredEntries) {
             var team = scoreboard.getScoreHolderTeam(entry.owner());
             var name = entry.name();
@@ -2073,21 +2264,7 @@ public class InGameHudMixin {
             }
             int scoreWidth = hasScore ? (int)getHudTextWidth(client, formattedScore.getString(), HUD_TEXT_SIZE) : 0;
 
-            final var finalDecoratedName = decoratedName;
-            final var finalFormattedScore = formattedScore;
-            final var finalHasScore = hasScore;
-            final var finalScoreWidth = scoreWidth;
-
-            sidebarEntries.add(new SidebarEntry() {
-                @Override
-                public net.minecraft.text.Text name() { return finalDecoratedName; }
-                @Override
-                public net.minecraft.text.Text score() { return finalFormattedScore; }
-                @Override
-                public boolean hasScore() { return finalHasScore; }
-                @Override
-                public int scoreWidth() { return finalScoreWidth; }
-            });
+            sidebarEntries.add(new ScoreboardSidebarEntry(decoratedName, formattedScore, hasScore, scoreWidth));
         }
 
         // Calculate dimensions
@@ -2192,12 +2369,30 @@ public class InGameHudMixin {
             int backgroundTopLocal = -topInset;
             int backgroundBottomLocal = verticalPosLocal;
 
-            if (module.backgroundBlurRadius.getValue() > 0) {
-                float blurQuality = getOptimizedHudBlurQuality(module.backgroundBlurRadius.getValue());
+            float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
+            if (blurRadius > 0.0f) {
+                // Match the shared RectHud blur path exactly. The old
+                // scoreboard-only path fed the raw radius through a scaled
+                // matrix, so enlarging the scoreboard also multiplied its
+                // apparent blur strength.
+                float safeScale = Math.max(hudScale, 1.0f);
+                float normalizedBlurRadius = blurRadius / safeScale;
+                float blurQuality = getOptimizedHudBlurQuality(normalizedBlurRadius);
+                float blurWidth = rightEdgeLocal;
+                float blurHeight = backgroundBottomLocal - backgroundTopLocal;
+                long blurStateKey = makeHudBlurStateKey(
+                        normalizedBlurRadius,
+                        safeScale,
+                        0.0f,
+                        backgroundTopLocal,
+                        blurWidth,
+                        blurHeight
+                );
+                Blur.INSTANCE.registerHudBlurState(HUD_SCOREBOARD, blurStateKey);
                 context.draw();
-                if (blurQuality > 0.0f) {
+                if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(),
-                                    0, backgroundTopLocal, rightEdgeLocal, backgroundBottomLocal - backgroundTopLocal)
+                                    0.0f, backgroundTopLocal, blurWidth, blurHeight)
                             .round(0.0f)
                             .softness(0.0f)
                             .quality(blurQuality)
@@ -2252,7 +2447,8 @@ public class InGameHudMixin {
         return client != null
                 && client.world != null
                 && client.currentScreen != null
-                && !(client.currentScreen instanceof ChatScreen);
+                && !(client.currentScreen instanceof ChatScreen)
+                && !(client.currentScreen instanceof MenuScreen);
     }
 
     @Unique
@@ -2449,15 +2645,6 @@ public class InGameHudMixin {
             return;
         }
 
-        updateKeystroke(KEYSTROKE_W, client.options.forwardKey.isPressed(), deltaSeconds);
-        updateKeystroke(KEYSTROKE_A, client.options.leftKey.isPressed(), deltaSeconds);
-        updateKeystroke(KEYSTROKE_S, client.options.backKey.isPressed(), deltaSeconds);
-        updateKeystroke(KEYSTROKE_D, client.options.rightKey.isPressed(), deltaSeconds);
-        updateKeystroke(KEYSTROKE_LMB, mouseDown && client.currentScreen == null, deltaSeconds);
-        boolean rightMouseDown = GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
-        updateKeystroke(KEYSTROKE_RMB, rightMouseDown && client.currentScreen == null, deltaSeconds);
-        updateKeystroke(KEYSTROKE_SPACE, client.options.jumpKey.isPressed(), deltaSeconds);
-
         float baseWidth = 54.0f;
         float baseHeight = 63.0f;
         renderRectHud(context, client, module, "", HUD_KEYSTROKES, chatEditing, mouseX, mouseY, mouseDown,
@@ -2476,23 +2663,24 @@ public class InGameHudMixin {
         context.getMatrices().translate(x, y, HUD_RENDER_Z + 20.0f);
         context.getMatrices().scale(scale, scale, 1.0f);
         renderKeystrokeButtonBlur(context, module, scale);
-        renderKeyButton(context, 20, 0, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W]);
-        renderKeyButton(context, 0, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_A]);
-        renderKeyButton(context, 19, 19, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_S]);
-        renderKeyButton(context, 36, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_D]);
-        renderKeyButton(context, 0, 38, 54, 8, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE]);
-        renderKeyButton(context, 0, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_LMB]);
-        renderKeyButton(context, 28, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB]);
+        float cachedProgressScale = inBatchPass ? 0.0f : 1.0f;
+        renderKeyButton(context, 20, 0, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale);
+        renderKeyButton(context, 0, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale);
+        renderKeyButton(context, 19, 19, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale);
+        renderKeyButton(context, 36, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale);
+        renderKeyButton(context, 0, 38, 54, 8, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale);
+        renderKeyButton(context, 0, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale);
+        renderKeyButton(context, 28, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale);
         context.draw();
         context.getMatrices().pop();
 
-        renderKeyLabel(context, client, "W", x, y, 20, 4, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W], scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "A", x, y, 0, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A], scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "S", x, y, 19, 23, 16, KEYSTROKE_PROGRESS[KEYSTROKE_S], scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "D", x, y, 36, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D], scale, module.textShadow.isValue());
-        renderSpacebarLabel(context, x, y, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE], scale);
-        renderKeyLabel(context, client, "LMB", x, y, 0, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_LMB], scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "RMB", x, y, 28, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_RMB], scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "W", x, y, 20, 4, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "A", x, y, 0, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "S", x, y, 19, 23, 16, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "D", x, y, 36, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderSpacebarLabel(context, x, y, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale, scale);
+        renderKeyLabel(context, client, "LMB", x, y, 0, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "RMB", x, y, 28, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale, scale, module.textShadow.isValue());
         context.getMatrices().pop();
     }
 
@@ -2904,8 +3092,117 @@ public class InGameHudMixin {
         return entry == null ? 0 : Math.max(0, entry.getLatency());
     }
 
+    private static void updateKeystrokeAnimations(
+            MinecraftClient client,
+            boolean leftMouseDown,
+            boolean rightMouseDown,
+            float deltaSeconds
+    ) {
+        if (client == null || client.options == null) {
+            return;
+        }
+        updateKeystroke(KEYSTROKE_W, client.options.forwardKey.isPressed(), deltaSeconds);
+        updateKeystroke(KEYSTROKE_A, client.options.leftKey.isPressed(), deltaSeconds);
+        updateKeystroke(KEYSTROKE_S, client.options.backKey.isPressed(), deltaSeconds);
+        updateKeystroke(KEYSTROKE_D, client.options.rightKey.isPressed(), deltaSeconds);
+        updateKeystroke(KEYSTROKE_LMB, leftMouseDown && client.currentScreen == null, deltaSeconds);
+        updateKeystroke(KEYSTROKE_RMB, rightMouseDown && client.currentScreen == null, deltaSeconds);
+        updateKeystroke(KEYSTROKE_SPACE, client.options.jumpKey.isPressed(), deltaSeconds);
+    }
+
     private static void updateKeystroke(int index, boolean pressed, float deltaSeconds) {
         KEYSTROKE_PROGRESS[index] = approachExp(KEYSTROKE_PROGRESS[index], pressed ? 1.0f : 0.0f, 16.0f, deltaSeconds);
+    }
+
+    /**
+     * Draws only the input-dependent white press layer over the cached
+     * Keystrokes HUD. The backdrop, button idle colors, labels and blur stay
+     * inside BatchedHudBuffer and therefore keep obeying HudOptimizer's FPS
+     * limit; this tiny overlay is the only part submitted every display frame.
+     */
+    private static void renderLiveKeystrokeAnimation(
+            DrawContext context,
+            MinecraftClient client,
+            float inverseGuiScale
+    ) {
+        KeystrokesHud module = KeystrokesHud.getInstance();
+        if (context == null || client == null || module == null || !module.isEnabled()) {
+            return;
+        }
+
+        boolean hasVisibleProgress = false;
+        for (float progress : KEYSTROKE_PROGRESS) {
+            if (progress > 0.001f) {
+                hasVisibleProgress = true;
+                break;
+            }
+        }
+        if (!hasVisibleProgress) {
+            return;
+        }
+
+        float x = module.getHudX();
+        float y = module.getHudY();
+        float scale = module.getHudScale();
+
+        context.getMatrices().push();
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+        context.getMatrices().push();
+        context.getMatrices().translate(x, y, HUD_RENDER_Z + 20.0f);
+        context.getMatrices().scale(scale, scale, 1.0f);
+        renderLiveKeystrokeButton(context, 20, 0, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_W]);
+        renderLiveKeystrokeButton(context, 0, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A]);
+        renderLiveKeystrokeButton(context, 19, 19, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_S]);
+        renderLiveKeystrokeButton(context, 36, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D]);
+        renderLiveKeystrokeButton(context, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE]);
+        renderLiveKeystrokeButton(context, 0, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_LMB]);
+        renderLiveKeystrokeButton(context, 28, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_RMB]);
+        context.draw();
+        context.getMatrices().pop();
+
+        boolean shadow = module.textShadow.isValue();
+        renderLiveKeystrokeLabel(context, client, "W", x, y, 20, 4, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "A", x, y, 0, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "S", x, y, 19, 23, 16, KEYSTROKE_PROGRESS[KEYSTROKE_S], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "D", x, y, 36, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D], scale, shadow);
+        if (KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] > 0.45f) {
+            renderSpacebarLabel(context, x, y, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE], scale);
+        }
+        renderLiveKeystrokeLabel(context, client, "LMB", x, y, 0, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_LMB], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "RMB", x, y, 28, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_RMB], scale, shadow);
+        context.getMatrices().pop();
+    }
+
+    private static void renderLiveKeystrokeButton(
+            DrawContext context,
+            int x,
+            int y,
+            int width,
+            int height,
+            float progress
+    ) {
+        int alpha = MathHelper.clamp(Math.round(185.0f * progress), 0, 185);
+        if (alpha > 0) {
+            context.fill(x, y, x + width, y + height, withAlpha(0xFFFFFF, alpha));
+        }
+    }
+
+    private static void renderLiveKeystrokeLabel(
+            DrawContext context,
+            MinecraftClient client,
+            String label,
+            float hudX,
+            float hudY,
+            float keyX,
+            float keyY,
+            float keyWidth,
+            float progress,
+            float scale,
+            boolean shadow
+    ) {
+        if (progress > 0.45f) {
+            renderKeyLabel(context, client, label, hudX, hudY, keyX, keyY, keyWidth, progress, scale, shadow);
+        }
     }
 
     private static void renderKeystrokeButtonBlur(DrawContext context, KeystrokesHud module, float scale) {
@@ -2924,22 +3221,17 @@ public class InGameHudMixin {
         }
         long blurStateKey = makeHudBlurStateKey(normalizedBlurRadius, safeScale, 0.0f, 0.0f, 54.0f, 63.0f);
         Blur.INSTANCE.registerHudBlurState(HUD_KEYSTROKES, blurStateKey);
-        List<ShapeProperties> blurRects = new ArrayList<>(7);
-        blurRects.add(createKeystrokeBlurRect(context, 18.0f, 0.0f, 16.0f, 18.0f, blurQuality));  // W
-        blurRects.add(createKeystrokeBlurRect(context, 0.0f, 19.0f, 16.0f, 18.0f, blurQuality));  // A
-        blurRects.add(createKeystrokeBlurRect(context, 18.0f, 19.0f, 16.0f, 18.0f, blurQuality)); // S
-        blurRects.add(createKeystrokeBlurRect(context, 36.0f, 19.0f, 18.0f, 18.0f, blurQuality)); // D
-        blurRects.add(createKeystrokeBlurRect(context, 0.0f, 38.0f, 54.0f, 8.0f, blurQuality));   // Space
-        blurRects.add(createKeystrokeBlurRect(context, 0.0f, 47.0f, 27.0f, 16.0f, blurQuality));  // LMB
-        blurRects.add(createKeystrokeBlurRect(context, 27.0f, 47.0f, 27.0f, 16.0f, blurQuality)); // RMB
-        Blur.INSTANCE.renderCachedBatch(blurRects);
+        for (ShapeProperties shape : KEYSTROKE_BLUR_RECTS) {
+            shape.setMatrix(context.getMatrices());
+            shape.setQuality(blurQuality);
+        }
+        Blur.INSTANCE.renderCachedBatch(KEYSTROKE_BLUR_RECTS);
     }
 
-    private static ShapeProperties createKeystrokeBlurRect(DrawContext context, float x, float y, float width, float height, float blurQuality) {
-        return ShapeProperties.create(context.getMatrices(), x, y, width, height)
+    private static ShapeProperties createKeystrokeBlurRect(float x, float y, float width, float height) {
+        return ShapeProperties.create(null, x, y, width, height)
                 .round(0.0f)
                 .softness(0.0f)
-                .quality(blurQuality)
                 .color(0xFFFFFFFF)
                 .build();
     }
@@ -3259,7 +3551,177 @@ public class InGameHudMixin {
             context.fill(0, y, Math.round(screenWidth), y + 1, withAlpha(0xFFFFFF, alpha));
         }
 
+        if (hudVerticalGuideProgress > 0.01f && hudVerticalGuideBottom > hudVerticalGuideTop) {
+            int alpha = MathHelper.clamp(Math.round(GUIDE_MAX_ALPHA * hudVerticalGuideProgress), 0, 255);
+            int x = Math.round(hudVerticalGuideX);
+            int top = MathHelper.floor(hudVerticalGuideTop);
+            int bottom = MathHelper.ceil(hudVerticalGuideBottom);
+            context.fill(x, top, x + 1, bottom, withAlpha(0xFFFFFF, alpha));
+        }
+
+        if (hudHorizontalGuideProgress > 0.01f && hudHorizontalGuideRight > hudHorizontalGuideLeft) {
+            int alpha = MathHelper.clamp(Math.round(GUIDE_MAX_ALPHA * hudHorizontalGuideProgress), 0, 255);
+            int y = Math.round(hudHorizontalGuideY);
+            int left = MathHelper.floor(hudHorizontalGuideLeft);
+            int right = MathHelper.ceil(hudHorizontalGuideRight);
+            context.fill(left, y, right, y + 1, withAlpha(0xFFFFFF, alpha));
+        }
+
         context.getMatrices().pop();
+    }
+
+    private static void rememberHudSnapBounds(
+            int hudIndex,
+            Module owner,
+            float x,
+            float y,
+            float width,
+            float height
+    ) {
+        if (hudIndex < 0 || hudIndex >= HUD_SNAP_COUNT || owner == null || width <= 0.0f || height <= 0.0f) {
+            return;
+        }
+        HUD_SNAP_X[hudIndex] = x;
+        HUD_SNAP_Y[hudIndex] = y;
+        HUD_SNAP_WIDTH[hudIndex] = width;
+        HUD_SNAP_HEIGHT[hudIndex] = height;
+        HUD_SNAP_OWNER[hudIndex] = owner;
+        HUD_SNAP_VALID[hudIndex] = true;
+    }
+
+    private static float snapHudAlignmentX(
+            int movingIndex,
+            float x,
+            float y,
+            float width,
+            float height,
+            float maxX,
+            float coordinateScale
+    ) {
+        float safeCoordinateScale = Math.max(0.001f, coordinateScale);
+        float bestDistance = Float.MAX_VALUE;
+        int bestIndex = -1;
+        float bestTargetAnchor = 0.0f;
+        float bestMovingAnchorOffset = 0.0f;
+
+        for (int index = 0; index < HUD_SNAP_COUNT; index++) {
+            Module owner = HUD_SNAP_OWNER[index];
+            if (index == movingIndex || !HUD_SNAP_VALID[index] || owner == null || !owner.isEnabled()) {
+                continue;
+            }
+            float targetLeft = HUD_SNAP_X[index] / safeCoordinateScale;
+            float targetCenterX = (HUD_SNAP_X[index] + HUD_SNAP_WIDTH[index] * 0.5f) / safeCoordinateScale;
+            float targetRight = (HUD_SNAP_X[index] + HUD_SNAP_WIDTH[index]) / safeCoordinateScale;
+
+            // Center wins equal-distance ties, then matching outer edges.
+            float distance = Math.abs((x + width * 0.5f) - targetCenterX);
+            if (distance <= HUD_TO_HUD_SNAP_RADIUS && distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = index;
+                bestTargetAnchor = targetCenterX;
+                bestMovingAnchorOffset = width * 0.5f;
+            }
+
+            distance = Math.abs(x - targetLeft);
+            if (distance <= HUD_TO_HUD_SNAP_RADIUS && distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = index;
+                bestTargetAnchor = targetLeft;
+                bestMovingAnchorOffset = 0.0f;
+            }
+
+            distance = Math.abs((x + width) - targetRight);
+            if (distance <= HUD_TO_HUD_SNAP_RADIUS && distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = index;
+                bestTargetAnchor = targetRight;
+                bestMovingAnchorOffset = width;
+            }
+        }
+
+        if (bestIndex < 0) {
+            return x;
+        }
+
+        float snappedX = MathHelper.clamp(bestTargetAnchor - bestMovingAnchorOffset, 0.0f, maxX);
+        if (Math.abs((snappedX + bestMovingAnchorOffset) - bestTargetAnchor) > 0.01f) {
+            return x;
+        }
+        showHudVerticalGuideThisFrame = true;
+        hudVerticalGuideX = bestTargetAnchor * safeCoordinateScale;
+        hudVerticalGuideTop = Math.min(y * safeCoordinateScale, HUD_SNAP_Y[bestIndex]);
+        hudVerticalGuideBottom = Math.max(
+                (y + height) * safeCoordinateScale,
+                HUD_SNAP_Y[bestIndex] + HUD_SNAP_HEIGHT[bestIndex]
+        );
+        return snappedX;
+    }
+
+    private static float snapHudAlignmentY(
+            int movingIndex,
+            float x,
+            float y,
+            float width,
+            float height,
+            float maxY,
+            float coordinateScale
+    ) {
+        float safeCoordinateScale = Math.max(0.001f, coordinateScale);
+        float bestDistance = Float.MAX_VALUE;
+        int bestIndex = -1;
+        float bestTargetAnchor = 0.0f;
+        float bestMovingAnchorOffset = 0.0f;
+
+        for (int index = 0; index < HUD_SNAP_COUNT; index++) {
+            Module owner = HUD_SNAP_OWNER[index];
+            if (index == movingIndex || !HUD_SNAP_VALID[index] || owner == null || !owner.isEnabled()) {
+                continue;
+            }
+            float targetTop = HUD_SNAP_Y[index] / safeCoordinateScale;
+            float targetCenterY = (HUD_SNAP_Y[index] + HUD_SNAP_HEIGHT[index] * 0.5f) / safeCoordinateScale;
+            float targetBottom = (HUD_SNAP_Y[index] + HUD_SNAP_HEIGHT[index]) / safeCoordinateScale;
+
+            float distance = Math.abs((y + height * 0.5f) - targetCenterY);
+            if (distance <= HUD_TO_HUD_SNAP_RADIUS && distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = index;
+                bestTargetAnchor = targetCenterY;
+                bestMovingAnchorOffset = height * 0.5f;
+            }
+
+            distance = Math.abs(y - targetTop);
+            if (distance <= HUD_TO_HUD_SNAP_RADIUS && distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = index;
+                bestTargetAnchor = targetTop;
+                bestMovingAnchorOffset = 0.0f;
+            }
+
+            distance = Math.abs((y + height) - targetBottom);
+            if (distance <= HUD_TO_HUD_SNAP_RADIUS && distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = index;
+                bestTargetAnchor = targetBottom;
+                bestMovingAnchorOffset = height;
+            }
+        }
+
+        if (bestIndex < 0) {
+            return y;
+        }
+
+        float snappedY = MathHelper.clamp(bestTargetAnchor - bestMovingAnchorOffset, 0.0f, maxY);
+        if (Math.abs((snappedY + bestMovingAnchorOffset) - bestTargetAnchor) > 0.01f) {
+            return y;
+        }
+        showHudHorizontalGuideThisFrame = true;
+        hudHorizontalGuideY = bestTargetAnchor * safeCoordinateScale;
+        hudHorizontalGuideLeft = Math.min(x * safeCoordinateScale, HUD_SNAP_X[bestIndex]);
+        hudHorizontalGuideRight = Math.max(
+                (x + width) * safeCoordinateScale,
+                HUD_SNAP_X[bestIndex] + HUD_SNAP_WIDTH[bestIndex]
+        );
+        return snappedY;
     }
 
     private static boolean isHovered(double mouseX, double mouseY, float x, float y, float width, float height) {
@@ -3848,9 +4310,7 @@ public class InGameHudMixin {
             return;
         }
 
-        float currentZoom = Zoom.getInstance().getCurrentZoomLevel();
-        String zoomText = String.format("%.1f", currentZoom);
-        String displayText = zoomText + "x";
+        String displayText = Zoom.getInstance().getFormattedZoomLevel();
 
         float textWidth = client.textRenderer.getWidth(displayText);
         float x = (screenWidth - textWidth) / 2.0f;
@@ -3924,11 +4384,9 @@ public class InGameHudMixin {
     // ---------- InventoryHud drag state ----------
     @Unique private static final int PHAZE_INV_SLOT = 18;
     @Unique private static final int PHAZE_INV_ICON = 16;
-    @Unique private static final int PHAZE_INV_PADDING = 1;
-    @Unique private static boolean phaze$invDragging = false;
-    @Unique private static float phaze$invDragOffsetX = 0.0F;
-    @Unique private static float phaze$invDragOffsetY = 0.0F;
-    @Unique private static boolean phaze$invWasMouseDown = false;
+    @Unique private static final int PHAZE_INV_BORDER = 7;
+    @Unique private static final int PHAZE_INV_SLOT_OFFSET = 8;
+    @Unique private static final Identifier PHAZE_INV_PANEL_SPRITE = Identifier.of("phaze", "shulker_box_tooltip");
 
     // ====================================================================
     // 1) Saturation: renderStatusBars TAIL + renderAirBubbles HEAD/RETURN
@@ -4157,18 +4615,26 @@ public class InGameHudMixin {
     // ====================================================================
 
     @Inject(method = "renderHotbar", at = @At("HEAD"))
-    private void phaze$tickHotbarSlide(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        phaze$hotbarShouldDrawMirror = false;
+    private void phaze$prepareHotbarSlideDraw(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         phaze$hotbarScissorOn = false;
+    }
 
+    @Unique
+    private void phaze$advanceHotbarSlide() {
+        phaze$hotbarShouldDrawMirror = false;
+        phaze$hotbarMirrorOffsetX = 0;
         Animations module = Animations.getInstance();
         if (module == null || !module.isHotbarSlideEnabled()) {
             phaze$hotbarLastSelected = -1;
             phaze$hotbarLastFrameNanos = 0L;
+            ExordiumAnimationBridge.updateHotbarAnimation(0.0F, 0.0F, false, 0);
             return;
         }
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.player == null) return;
+        if (mc == null || mc.player == null) {
+            ExordiumAnimationBridge.updateHotbarAnimation(0.0F, 0.0F, false, 0);
+            return;
+        }
 
         int selected = mc.player.getInventory().selectedSlot;
         float target = selected * PHAZE_HOTBAR_SLOT_PX;
@@ -4204,6 +4670,12 @@ public class InGameHudMixin {
                 phaze$hotbarMirrorOffsetX = -PHAZE_HOTBAR_PIXEL_W;
             }
         }
+        ExordiumAnimationBridge.updateHotbarAnimation(
+                phaze$hotbarCurrentSlotX,
+                target,
+                phaze$hotbarShouldDrawMirror,
+                phaze$hotbarMirrorOffsetX
+        );
     }
 
     @Inject(
@@ -4213,6 +4685,7 @@ public class InGameHudMixin {
                     ordinal = 1, shift = At.Shift.BEFORE)
     )
     private void phaze$openMirrorScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        if (ExordiumAnimationBridge.isCapturingHotbar()) return;
         if (!phaze$hotbarShouldDrawMirror) return;
         context.draw();
         int hotbarLeft = context.getScaledWindowWidth() / 2 - PHAZE_HOTBAR_BG_W / 2;
@@ -4232,6 +4705,26 @@ public class InGameHudMixin {
         if (module == null || !module.isHotbarSlideEnabled()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null) return;
+
+        if (ExordiumAnimationBridge.isCapturingHotbar()) {
+            @SuppressWarnings("unchecked")
+            Function<Identifier, RenderLayer> layerFactory =
+                    (Function<Identifier, RenderLayer>) args.<Function<Identifier, ?>>get(0);
+            ExordiumAnimationBridge.recordHotbarSelection(
+                    layerFactory,
+                    args.<Identifier>get(1),
+                    args.<Integer>get(2),
+                    args.<Integer>get(3),
+                    args.<Integer>get(4),
+                    args.<Integer>get(5)
+            );
+            // The cached layer deliberately contains the expensive hotbar
+            // background/items but not the selection frame. The frame is one
+            // cheap live sprite, so it can move at display FPS over the cache.
+            args.set(2, -10_000);
+            phaze$hotbarShouldDrawMirror = false;
+            return;
+        }
 
         int selectedSlot = mc.player.getInventory().selectedSlot;
         int origX = args.<Integer>get(2);
@@ -4279,14 +4772,26 @@ public class InGameHudMixin {
     }
 
     // ====================================================================
-    // 4) MaceIndicator: renderHotbar TAIL — uses shared paint helper below
+    // 4) Utility slot overlays: one state scope, original layer order
     // ====================================================================
 
     @Inject(method = "renderHotbar", at = @At("TAIL"))
-    private void phaze$drawHotbarMaceHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        MaceIndicator module = MaceIndicator.getInstance();
-        if (module == null || !module.isEnabled()) return;
-        phaze$paintHotbarFills(context, module::colorForStack);
+    private void phaze$drawHotbarUtilityHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        MaceIndicator mace = MaceIndicator.getInstance();
+        ItemHighlighter highlighter = ItemHighlighter.getInstance();
+        HealingHelper healing = HealingHelper.getInstance();
+        boolean maceEnabled = mace != null && mace.isEnabled();
+        boolean highlighterEnabled = highlighter != null && highlighter.isEnabled();
+        boolean healingEnabled = healing != null && healing.isEnabled();
+        if (!maceEnabled && !highlighterEnabled && !healingEnabled) return;
+        if (highlighterEnabled) highlighter.beginRenderPass();
+        if (healingEnabled) healing.beginRenderPass();
+        phaze$paintHotbarUtilityFills(
+                context,
+                maceEnabled ? mace : null,
+                highlighterEnabled ? highlighter : null,
+                healingEnabled ? healing : null
+        );
     }
 
     // ====================================================================
@@ -4308,7 +4813,7 @@ public class InGameHudMixin {
     // 6) TabSlide: render TAIL drives the slide animation when key released
     // ====================================================================
 
-    @Inject(method = "render", at = @At("TAIL"))
+    @Inject(method = "render", at = @At("HEAD"))
     private void phaze$tabSlideTick(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         Animations module = Animations.getInstance();
         if (module == null || !module.isTabSlideEnabled()) {
@@ -4330,6 +4835,23 @@ public class InGameHudMixin {
 
         if (keyPressed) {
             if (phaze$vanillaTabListWouldRender()) phaze$tabWasOpenedThisCycle = true;
+        }
+    }
+
+    @Inject(method = "render", at = @At("TAIL"))
+    private void phaze$tabSlideRenderTail(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        Animations module = Animations.getInstance();
+        if (module == null || !module.isTabSlideEnabled()) {
+            phaze$tabWasOpenedThisCycle = false;
+            return;
+        }
+        if (this.client == null || this.client.options == null || this.client.options.hudHidden) {
+            phaze$tabWasOpenedThisCycle = false;
+            return;
+        }
+
+        boolean keyPressed = this.client.options.playerListKey.isPressed();
+        if (keyPressed) {
             return;
         }
         if (!module.isTabSlideRendering(false)) {
@@ -4338,11 +4860,19 @@ public class InGameHudMixin {
         }
         if (!phaze$tabWasOpenedThisCycle) return;
 
+        if (ExordiumAnimationBridge.renderClosingPlayerListFromCache()) {
+            return;
+        }
+
+        // Exordium is optional. When it is absent or has not completed its
+        // first player-list capture yet, preserve the original full-render
+        // close path as a correctness fallback.
         this.playerListHud.setVisible(true);
         Scoreboard scoreboard = this.client.world == null ? null : this.client.world.getScoreboard();
         ScoreboardObjective objective = scoreboard == null ? null
                 : scoreboard.getObjectiveForSlot(ScoreboardDisplaySlot.LIST);
         this.playerListHud.render(context, context.getScaledWindowWidth(), scoreboard, objective);
+        this.playerListHud.setVisible(false);
     }
 
     @Unique
@@ -4359,37 +4889,18 @@ public class InGameHudMixin {
         return false;
     }
 
-    // ====================================================================
-    // 7) ItemHighlighter: renderHotbar TAIL — shared paint helper
-    // ====================================================================
-
-    @Inject(method = "renderHotbar", at = @At("TAIL"))
-    private void phaze$drawHotbarItemHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        ItemHighlighter module = ItemHighlighter.getInstance();
-        if (module == null || !module.isEnabled()) return;
-        module.beginRenderPass();
-        phaze$paintHotbarFills(context, module::colorForPreparedStack);
-    }
-
-    // ====================================================================
-    // 10) HealingHelper: renderHotbar TAIL — shared paint helper
-    // ====================================================================
-
-    @Inject(method = "renderHotbar", at = @At("TAIL"))
-    private void phaze$drawHotbarHealingHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        HealingHelper module = HealingHelper.getInstance();
-        if (module == null || !module.isEnabled()) return;
-        phaze$paintHotbarFills(context, module::colorForStack);
-    }
-
     /**
      * Shared 9-slot hotbar fill helper for HealingHelper, ItemHighlighter
      * and MaceIndicator. Walks the player's hotbar, calls the per-stack
      * colour function, and fills the slot when alpha is non-zero.
      */
     @Unique
-    private void phaze$paintHotbarFills(DrawContext context,
-                                        java.util.function.ToIntFunction<ItemStack> colorFn) {
+    private void phaze$paintHotbarUtilityFills(
+            DrawContext context,
+            MaceIndicator mace,
+            ItemHighlighter highlighter,
+            HealingHelper healing
+    ) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null) return;
         PlayerEntity player = mc.player;
@@ -4407,14 +4918,27 @@ public class InGameHudMixin {
 
         for (int n = 0; n < 9; n++) {
             ItemStack stack = player.getInventory().main.get(n);
-            int color = colorFn.applyAsInt(stack);
-            if ((color & 0xFF000000) == 0) continue;
             int itemX = centerX - 90 + n * 20 + 2;
-            context.fill(itemX, itemY, itemX + 16, itemY + 16, color);
+            if (mace != null) {
+                phaze$fillHotbarOverlay(context, itemX, itemY, mace.colorForStack(stack));
+            }
+            if (highlighter != null) {
+                phaze$fillHotbarOverlay(context, itemX, itemY, highlighter.colorForPreparedStack(stack));
+            }
+            if (healing != null) {
+                phaze$fillHotbarOverlay(context, itemX, itemY, healing.colorForPreparedStack(stack));
+            }
         }
         context.draw();
         RenderSystem.depthMask(true);
         phaze$resetGuiRenderState();
+    }
+
+    @Unique
+    private static void phaze$fillHotbarOverlay(DrawContext context, int x, int y, int color) {
+        if ((color & 0xFF000000) != 0) {
+            context.fill(x, y, x + 16, y + 16, color);
+        }
     }
 
     // ====================================================================
@@ -4502,14 +5026,28 @@ public class InGameHudMixin {
                     float newY = MathHelper.clamp(mouseY - RECT_DRAG_OFFSET_Y[hudIndex], 0.0F, maxY);
                     float dragCenterX = newX + panelW * 0.5F;
                     float dragCenterY = newY + panelH * 0.5F;
+                    boolean snappedToScreenX = false;
+                    boolean snappedToScreenY = false;
 
                     if (Math.abs(dragCenterX - scaledScreenW * 0.5F) <= GUIDE_SNAP_RADIUS) {
                         newX = MathHelper.clamp(scaledScreenW * 0.5F - panelW * 0.5F, 0.0F, maxX);
                         showVerticalGuideThisFrame = true;
+                        snappedToScreenX = true;
                     }
                     if (Math.abs(dragCenterY - scaledScreenH * 0.5F) <= GUIDE_SNAP_RADIUS) {
                         newY = MathHelper.clamp(scaledScreenH * 0.5F - panelH * 0.5F, 0.0F, maxY);
                         showHorizontalGuideThisFrame = true;
+                        snappedToScreenY = true;
+                    }
+                    if (!snappedToScreenX) {
+                        newX = snapHudAlignmentX(
+                                hudIndex, newX, newY, panelW, panelH, maxX, (float) scaleFactor
+                        );
+                    }
+                    if (!snappedToScreenY) {
+                        newY = snapHudAlignmentY(
+                                hudIndex, newX, newY, panelW, panelH, maxY, (float) scaleFactor
+                        );
                     }
 
                     panelX = newX;
@@ -4566,6 +5104,23 @@ public class InGameHudMixin {
                 getHudDelta(module, chatEditing, tickCounter.getTickDelta(false))
         );
         phaze$pmWasMouseDown = mouseDown;
+
+        rememberHudSnapBounds(
+                hudIndex,
+                module,
+                panelX * (float) scaleFactor,
+                panelY * (float) scaleFactor,
+                panelW * (float) scaleFactor,
+                panelH * (float) scaleFactor
+        );
+
+        if (chatEditing) {
+            if (RECT_RESIZING[hudIndex]) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_HRESIZE, 4);
+            } else if (RECT_DRAGGING[hudIndex]) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_MOVE, 3);
+            }
+        }
 
         float centerX = panelX + panelW * 0.5F;
         float centerY = panelY + panelH;
@@ -4640,12 +5195,27 @@ public class InGameHudMixin {
      * {@code renderBufferedHud} call site doesn't need to thread
      * any extra context.
      */
-    private void phaze$drawInventoryHudGuts(DrawContext context) {
-        InventoryHud module = InventoryHud.getInstance();
-        if (module == null || !module.isEnabled()) return;
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.player == null || mc.options == null) return;
-        if (mc.options.hudHidden) return;
+    private void renderInventoryHud(
+            DrawContext context,
+            MinecraftClient client,
+            InventoryHud module,
+            boolean chatEditing,
+            double mouseX,
+            double mouseY,
+            boolean mouseDown,
+            float deltaSeconds,
+            float inverseGuiScale,
+            float screenWidth,
+            float screenHeight,
+            float screenCenterX,
+            float screenCenterY
+    ) {
+        if (module == null || !module.isEnabled() || client == null || client.player == null || client.options == null) {
+            return;
+        }
+        if (client.options.hudHidden) {
+            return;
+        }
 
         // Snapshot the live inventory at most once per game tick.
         // The 27 storage slots are a server-driven state - they
@@ -4654,88 +5224,215 @@ public class InGameHudMixin {
         // wasted work at modern HUD rates. Refresh is a no-op when
         // the tick counter hasn't advanced, so calling it every
         // frame is essentially free on the hot path.
-        InventoryHud.refreshSnapshotIfStale(mc);
+        InventoryHud.refreshSnapshotIfStale(client);
         ItemStack[] snapshot = InventoryHud.getSnapshotStacks();
         boolean[] overlayFlags = InventoryHud.getSnapshotOverlayFlags();
 
-        float scale = module.getHudScale();
-        int innerW = PHAZE_INV_SLOT * 9;
-        int innerH = PHAZE_INV_SLOT * 3;
-        int panelW = innerW + PHAZE_INV_PADDING * 2;
-        int panelH = innerH + PHAZE_INV_PADDING * 2;
+        final int hudIndex = HUD_INVENTORY;
+        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
+        module.setHudScale(scale);
 
-        boolean chatEditing = mc.currentScreen instanceof ChatScreen;
-        boolean mouseDown = chatEditing && GLFW.glfwGetMouseButton(
-                mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
-        double scaleFactor = mc.getWindow().getScaleFactor();
-        if (scaleFactor <= 0.0) scaleFactor = 1.0;
-        float mouseX = (float) (mc.mouse.getX() / scaleFactor);
-        float mouseY = (float) (mc.mouse.getY() / scaleFactor);
+        float baseWidth = PHAZE_INV_BORDER * 2.0F + PHAZE_INV_SLOT * 9.0F;
+        float baseHeight = PHAZE_INV_BORDER * 2.0F + PHAZE_INV_SLOT * 3.0F;
+        float hudWidth = baseWidth * scale;
+        float hudHeight = baseHeight * scale;
+        float maxX = Math.max(0.0F, screenWidth - hudWidth);
+        float maxY = Math.max(0.0F, screenHeight - hudHeight);
+        int currentScreenWidth = Math.round(screenWidth);
+        int currentScreenHeight = Math.round(screenHeight);
+        float panelX = module.getHudX();
+        float panelY = module.getHudY();
+        boolean resized = RECT_LAYOUT_INITIALIZED[hudIndex]
+                && (RECT_LAST_SCREEN_WIDTH[hudIndex] != currentScreenWidth
+                || RECT_LAST_SCREEN_HEIGHT[hudIndex] != currentScreenHeight);
+        if (resized && !RECT_DRAGGING[hudIndex] && !RECT_RESIZING[hudIndex]) {
+            panelX = maxX <= 0.0F ? 0.0F : RECT_POSITION_RATIO_X[hudIndex] * maxX;
+            panelY = maxY <= 0.0F ? 0.0F : RECT_POSITION_RATIO_Y[hudIndex] * maxY;
+        }
 
-        float scaledW = panelW * scale;
-        float scaledH = panelH * scale;
-        int scaledScreenW = mc.getWindow().getScaledWidth();
-        int scaledScreenH = mc.getWindow().getScaledHeight();
-        float maxX = Math.max(0.0F, scaledScreenW - scaledW);
-        float maxY = Math.max(0.0F, scaledScreenH - scaledH);
-
-        float panelX = MathHelper.clamp(module.getHudX(), 0.0F, maxX);
-        float panelY = MathHelper.clamp(module.getHudY(), 0.0F, maxY);
+        panelX = MathHelper.clamp(panelX, 0.0F, maxX);
+        panelY = MathHelper.clamp(panelY, 0.0F, maxY);
         module.setHudX(panelX);
         module.setHudY(panelY);
+        RECT_POSITION_RATIO_X[hudIndex] = maxX <= 0.0F ? 0.0F : panelX / maxX;
+        RECT_POSITION_RATIO_Y[hudIndex] = maxY <= 0.0F ? 0.0F : panelY / maxY;
+        RECT_LAST_SCREEN_WIDTH[hudIndex] = currentScreenWidth;
+        RECT_LAST_SCREEN_HEIGHT[hudIndex] = currentScreenHeight;
+        RECT_LAYOUT_INITIALIZED[hudIndex] = true;
+
+        int handleSize = Math.max(4, Math.min(10, Math.round(5.0F * scale)));
+        float handleX = panelX + hudWidth - handleSize / 2.0F;
+        float handleY = panelY + hudHeight - handleSize / 2.0F;
+        boolean hoveredHud = false;
+        boolean hoveredHandle = false;
+        boolean nearHud = false;
+
+        if (!chatEditing) {
+            RECT_DRAGGING[hudIndex] = false;
+            RECT_RESIZING[hudIndex] = false;
+            RECT_HOVER_PROGRESS[hudIndex] = approachExp(RECT_HOVER_PROGRESS[hudIndex], 0.0F, 10.0F, deltaSeconds);
+        } else {
+            hoveredHud = isHovered(mouseX, mouseY, panelX, panelY, hudWidth, hudHeight);
+            hoveredHandle = isHovered(mouseX, mouseY, handleX, handleY, handleSize, handleSize);
+            nearHud = isNearRect(mouseX, mouseY, panelX, panelY, hudWidth, hudHeight, Math.max(14.0F, 12.0F * scale));
+
+            if (!mouseDown) {
+                RECT_DRAGGING[hudIndex] = false;
+                RECT_RESIZING[hudIndex] = false;
+            } else if (!wasMouseDown && !isAnyHudInteractionActive()) {
+                if (hoveredHandle) {
+                    RECT_RESIZING[hudIndex] = true;
+                    RECT_RESIZE_START_WIDTH[hudIndex] = hudWidth;
+                    RECT_RESIZE_START_MOUSE_X[hudIndex] = (float) mouseX;
+                    RECT_RESIZE_START_MOUSE_Y[hudIndex] = (float) mouseY;
+                } else if (hoveredHud) {
+                    RECT_DRAGGING[hudIndex] = true;
+                    RECT_DRAG_OFFSET_X[hudIndex] = (float) mouseX - panelX;
+                    RECT_DRAG_OFFSET_Y[hudIndex] = (float) mouseY - panelY;
+                }
+            }
+
+            if (mouseDown) {
+                if (RECT_DRAGGING[hudIndex]) {
+                    float newX = MathHelper.clamp((float) mouseX - RECT_DRAG_OFFSET_X[hudIndex], 0.0F, maxX);
+                    float newY = MathHelper.clamp((float) mouseY - RECT_DRAG_OFFSET_Y[hudIndex], 0.0F, maxY);
+                    float centerX = newX + hudWidth * 0.5F;
+                    float centerY = newY + hudHeight * 0.5F;
+                    boolean snappedToScreenX = false;
+                    boolean snappedToScreenY = false;
+
+                    if (Math.abs(centerX - screenCenterX) <= GUIDE_SNAP_RADIUS) {
+                        newX = MathHelper.clamp(screenCenterX - hudWidth * 0.5F, 0.0F, maxX);
+                        showVerticalGuideThisFrame = true;
+                        snappedToScreenX = true;
+                    }
+                    if (Math.abs(centerY - screenCenterY) <= GUIDE_SNAP_RADIUS) {
+                        newY = MathHelper.clamp(screenCenterY - hudHeight * 0.5F, 0.0F, maxY);
+                        showHorizontalGuideThisFrame = true;
+                        snappedToScreenY = true;
+                    }
+                    if (!snappedToScreenX) {
+                        newX = snapHudAlignmentX(hudIndex, newX, newY, hudWidth, hudHeight, maxX, 1.0F);
+                    }
+                    if (!snappedToScreenY) {
+                        newY = snapHudAlignmentY(hudIndex, newX, newY, hudWidth, hudHeight, maxY, 1.0F);
+                    }
+
+                    panelX = newX;
+                    panelY = newY;
+                    module.setHudX(panelX);
+                    module.setHudY(panelY);
+                    RECT_POSITION_RATIO_X[hudIndex] = maxX <= 0.0F ? 0.0F : panelX / maxX;
+                    RECT_POSITION_RATIO_Y[hudIndex] = maxY <= 0.0F ? 0.0F : panelY / maxY;
+                    handleX = panelX + hudWidth - handleSize / 2.0F;
+                    handleY = panelY + hudHeight - handleSize / 2.0F;
+                } else if (RECT_RESIZING[hudIndex]) {
+                    float deltaX = (float) mouseX - RECT_RESIZE_START_MOUSE_X[hudIndex];
+                    float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
+                    float delta = (deltaX + deltaY) * 0.5F;
+
+                    float minWidth = baseWidth * module.getMinHudScale();
+                    float maxWidth = baseWidth * module.getMaxHudScale();
+                    float newWidth = MathHelper.clamp(RECT_RESIZE_START_WIDTH[hudIndex] + delta * 0.9F, minWidth, maxWidth);
+                    float newScale = newWidth / baseWidth;
+
+                    module.setHudScale(newScale);
+                    scale = newScale;
+                    hudWidth = baseWidth * scale;
+                    hudHeight = baseHeight * scale;
+                    maxX = Math.max(0.0F, screenWidth - hudWidth);
+                    maxY = Math.max(0.0F, screenHeight - hudHeight);
+                    panelX = MathHelper.clamp(module.getHudX(), 0.0F, maxX);
+                    panelY = MathHelper.clamp(module.getHudY(), 0.0F, maxY);
+                    module.setHudX(panelX);
+                    module.setHudY(panelY);
+                    RECT_POSITION_RATIO_X[hudIndex] = maxX <= 0.0F ? 0.0F : panelX / maxX;
+                    RECT_POSITION_RATIO_Y[hudIndex] = maxY <= 0.0F ? 0.0F : panelY / maxY;
+                    handleSize = Math.max(4, Math.min(10, Math.round(5.0F * scale)));
+                    handleX = panelX + hudWidth - handleSize / 2.0F;
+                    handleY = panelY + hudHeight - handleSize / 2.0F;
+                }
+            }
+
+            if (RECT_DRAGGING[hudIndex]) {
+                float centerX = panelX + hudWidth * 0.5F;
+                float centerY = panelY + hudHeight * 0.5F;
+                if (Math.abs(centerX - screenCenterX) <= GUIDE_SNAP_RADIUS) {
+                    showVerticalGuideThisFrame = true;
+                }
+                if (Math.abs(centerY - screenCenterY) <= GUIDE_SNAP_RADIUS) {
+                    showHorizontalGuideThisFrame = true;
+                }
+            }
+
+            RECT_HOVER_PROGRESS[hudIndex] = approachExp(RECT_HOVER_PROGRESS[hudIndex], hoveredHud ? 1.0F : 0.0F, 10.0F, deltaSeconds);
+        }
+
+        rememberHudSnapBounds(hudIndex, module, panelX, panelY, hudWidth, hudHeight);
 
         if (chatEditing) {
-            boolean inside = mouseX >= panelX && mouseX <= panelX + scaledW
-                    && mouseY >= panelY && mouseY <= panelY + scaledH;
-            if (mouseDown && !phaze$invWasMouseDown && inside) {
-                phaze$invDragging = true;
-                phaze$invDragOffsetX = mouseX - panelX;
-                phaze$invDragOffsetY = mouseY - panelY;
+            if (RECT_RESIZING[hudIndex]) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_HRESIZE, 4);
+            } else if (RECT_DRAGGING[hudIndex]) {
+                HudCursorRelay.defer(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_MOVE, 3);
             }
-            if (!mouseDown) phaze$invDragging = false;
-            if (phaze$invDragging) {
-                panelX = MathHelper.clamp(mouseX - phaze$invDragOffsetX, 0.0F, maxX);
-                panelY = MathHelper.clamp(mouseY - phaze$invDragOffsetY, 0.0F, maxY);
-                module.setHudX(panelX);
-                module.setHudY(panelY);
-            }
-        } else {
-            phaze$invDragging = false;
         }
-        phaze$invWasMouseDown = mouseDown;
+
+        int hoverOutlineThickness = Math.max(1, Math.round(BASE_HOVER_OUTLINE_THICKNESS / Math.max(1.0F, scale)));
 
         context.getMatrices().push();
-        context.getMatrices().translate(panelX, panelY, 0);
+        context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0F);
+        context.getMatrices().push();
+        context.getMatrices().translate(panelX, panelY, HUD_RENDER_Z);
         context.getMatrices().scale(scale, scale, 1.0F);
 
-        // Backdrop + 27 slot-bg fills are cheap (one BufferBuilder
-        // batch flushed at the end of the frame). drawItem on the
-        // other hand binds a texture and submits a freshly-baked
-        // model per slot, so we keep the slot loop tight: read
-        // stacks + overlay flags from the per-tick snapshot, skip
-        // empty slots, skip the stack-count overlay when the
-        // pre-evaluated flag says it would draw nothing.
-        context.fill(0, 0, panelW, panelH, 0x90000000);
+        context.drawGuiTexture(
+                RenderLayer::getGuiTextured,
+                PHAZE_INV_PANEL_SPRITE,
+                0,
+                0,
+                (int) baseWidth,
+                (int) baseHeight,
+                0xFFFFFFFF
+        );
         boolean drawCounts = module.drawCounts.isValue();
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
-                int sx = PHAZE_INV_PADDING + col * PHAZE_INV_SLOT + 1;
-                int sy = PHAZE_INV_PADDING + row * PHAZE_INV_SLOT + 1;
-                context.fill(sx, sy, sx + PHAZE_INV_ICON, sy + PHAZE_INV_ICON, 0x55_8B8B8B);
+                int sx = PHAZE_INV_SLOT_OFFSET + col * PHAZE_INV_SLOT;
+                int sy = PHAZE_INV_SLOT_OFFSET + row * PHAZE_INV_SLOT;
                 int idx = row * 9 + col;
                 ItemStack stack = snapshot[idx];
-                if (stack == null || stack.isEmpty()) continue;
+                if (stack == null || stack.isEmpty()) {
+                    continue;
+                }
                 context.drawItem(stack, sx, sy);
                 if (drawCounts && overlayFlags[idx]) {
-                    context.drawStackOverlay(mc.textRenderer, stack, sx, sy);
+                    context.drawStackOverlay(client.textRenderer, stack, sx, sy);
                 }
             }
         }
-        // Single flush at the end of the HUD pass: drawItem queues
-        // its sprites into the global immediate buffer, and without
-        // an explicit flush the next HUD module reading from the
-        // framebuffer (e.g. blur) would see uncomposited geometry.
         context.draw();
+        context.getMatrices().pop();
+
+        if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05F) {
+            int outlineColor = withAlpha(0xFFFFFF, (int) (175.0F * RECT_HOVER_PROGRESS[hudIndex]));
+            drawOuterOutline(context, panelX, panelY, hudWidth, hudHeight, hoverOutlineThickness, outlineColor);
+        }
+
+        boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
+        if (showResizeHandle) {
+            context.getMatrices().push();
+            context.getMatrices().translate(0.0F, 0.0F, HANDLE_RENDER_Z);
+            int hX = Math.round(handleX);
+            int hY = Math.round(handleY);
+            int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
+            context.fill(hX, hY, hX + handleSize, hY + handleSize, handleColor);
+            if (hoveredHandle || RECT_RESIZING[hudIndex]) {
+                drawOutlineNoOverlap(context, hX - 1, hY - 1, handleSize + 2, handleSize + 2, withAlpha(0xFFFFFF, 220));
+            }
+            context.getMatrices().pop();
+        }
+
         context.getMatrices().pop();
     }
 

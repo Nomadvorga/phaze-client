@@ -19,6 +19,12 @@ public final class HitboxCustomizer extends Module {
     public final ColorSetting hitboxColor = new ColorSetting("Hitbox Color", "Color of all entity hitboxes")
             .setColor(0xFFFFFFFF)
             .popupRow();
+    public final BooleanSetting fill = new BooleanSetting("Fill", "Fill the hitbox faces in addition to the outline")
+            .setValue(false);
+    public final ValueSetting fillOpacity = new ValueSetting("Opacity", "Opacity of the hitbox fill")
+            .range(0.0f, 1.0f)
+            .step(0.01f)
+            .setValue(0.3f);
     public final ColorSetting reachColor = new ColorSetting("Reach Color", "Color used when looking at an entity in attack range")
             .setColor(0xFFFF3030)
             .popupRow();
@@ -35,13 +41,16 @@ public final class HitboxCustomizer extends Module {
         super("hitboxcustomizer", "Hitbox Customizer", ModuleCategory.OTHER);
 
         hitboxColor.setFullWidth(true);
+        fill.setFullWidth(true);
+        fillOpacity.setFullWidth(true);
         reachColor.setFullWidth(true);
         outlineThickness.setFullWidth(true);
         showLookLine.setFullWidth(true);
         redInReach.setFullWidth(true);
+        fillOpacity.visible(fill::isValue);
         reachColor.setVisible(redInReach::isValue);
 
-        setup(generalSection, hitboxColor, showLookLine, redInReach, outlineThickness, reachColor);
+        setup(generalSection, hitboxColor, fill, fillOpacity, showLookLine, redInReach, outlineThickness, reachColor);
     }
 
     public static HitboxCustomizer getInstance() {
@@ -65,5 +74,13 @@ public final class HitboxCustomizer extends Module {
 
     public int getHitboxColor() {
         return hitboxColor.getColor();
+    }
+
+    public boolean isFillEnabled() {
+        return fill.isValue();
+    }
+
+    public float getFillOpacity() {
+        return fillOpacity.getValue();
     }
 }

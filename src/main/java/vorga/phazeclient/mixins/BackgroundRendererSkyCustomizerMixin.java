@@ -9,6 +9,7 @@ import net.minecraft.entity.effect.StatusEffects;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import vorga.phazeclient.api.system.colorcorrection.WorldColorCorrectionController;
 import vorga.phazeclient.implement.features.modules.other.SkyCustomizer;
 
 /**
@@ -63,8 +64,7 @@ public abstract class BackgroundRendererSkyCustomizerMixin {
     @ModifyReturnValue(method = "getFogColor", at = @At("RETURN"))
     private static Vector4f phaze$tintFogColor(Vector4f vanilla, Camera camera, float tickDelta, ClientWorld world,
                                                int viewDistance, float skyDarkness) {
-        SkyCustomizer module = SkyCustomizer.getInstance();
-        if (module == null || !module.isEnabled() || vanilla == null) {
+        if (vanilla == null) {
             return vanilla;
         }
         if (camera != null) {
@@ -88,12 +88,22 @@ public abstract class BackgroundRendererSkyCustomizerMixin {
         int b = clamp255(Math.round(vanilla.z * 255.0F));
         int incoming = 0xFF000000 | (r << 16) | (g << 8) | b;
 
-        float brightness = world != null ? world.getSkyBrightness(tickDelta) : 0.5F;
-        int tinted = module.applyToSky(incoming, brightness);
+        int working = incoming;
+        SkyCustomizer module = SkyCustomizer.getInstance();
+        if (module != null && module.isEnabled()) {
+            float brightness = world != null ? world.getSkyBrightness(tickDelta) : 0.5F;
+            working = module.applyToSky(incoming, brightness);
+        }
 
-        vanilla.x = ((tinted >> 16) & 0xFF) / 255.0F;
-        vanilla.y = ((tinted >> 8) & 0xFF) / 255.0F;
-        vanilla.z = (tinted & 0xFF) / 255.0F;
+        int corrected = WorldColorCorrectionController.applyToArgb(
+                WorldColorCorrectionController.Target.SKY,
+                ((clamp255(Math.round(vanilla.w * 255.0F)) & 0xFF) << 24) | (working & 0x00FFFFFF)
+        );
+
+        vanilla.x = ((corrected >> 16) & 0xFF) / 255.0F;
+        vanilla.y = ((corrected >> 8) & 0xFF) / 255.0F;
+        vanilla.z = (corrected & 0xFF) / 255.0F;
+        vanilla.w = ((corrected >> 24) & 0xFF) / 255.0F;
         return vanilla;
     }
 

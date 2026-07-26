@@ -81,6 +81,15 @@ Full text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
 
 ---
 
+## Custom Glint (Cutebow)
+
+The Custom Glint runtime implementation, bloom shaders, and bundled glint
+textures are authored by Cutebow. They are included with the author's explicit
+permission to use, copy, modify, and publish the materials on Modrinth,
+provided to the Phaze project on 2026-07-13.
+
+---
+
 ## No Hand Sway (O3kar/no-hand-sway)
 
 The No Hand Sway feature inside
@@ -105,3 +114,48 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
+
+---
+
+## Menu panorama packs
+
+The panoramas offered in the client's theme selector are third-party
+resource packs, mirrored from Modrinth to this project's GitHub
+releases so the in-game downloader has a stable URL. They are
+redistributed **unmodified**: the only processing applied is repacking
+the six panorama faces into the flat `panorama_0..5.png` layout the
+loader expects. No pack has been edited, recoloured or recompressed,
+and none of them is bundled inside the mod jar - each is downloaded on
+demand only if the user picks it.
+
+### ItsMemed - CC BY-NC-SA 4.0
+
+<https://modrinth.com/user/ItsMemed>
+
+Legacy, 1.13, 1.15, 1.16, 1.17, 1.18, 1.19, 1.19 Night,
+1.20 Trails & Tales, 1.21, 1.21.6 Chase the Skies, 1.21.9,
+and 1.21.11 Mounts of Mayhem "Panorama with Shaders" packs.
+
+Licensed under the Creative Commons Attribution-NonCommercial-ShareAlike
+4.0 International License: <https://creativecommons.org/licenses/by-nc-sa/4.0/>
+
+Phaze Client is distributed free of charge, satisfying the
+NonCommercial term. The packs are passed through unchanged, so the
+ShareAlike term is met by keeping them under the same license.
+
+### GAMING_SHORTS(RAMA)
+
+- **Classic panorama with shaders** - CC BY 4.0 -
+  <https://modrinth.com/resourcepack/classic-panorama-with-shaders>
+  <https://creativecommons.org/licenses/by/4.0/>
+- **1.20 panorama with shaders (night)** - BSD-2-Clause -
+  <https://modrinth.com/resourcepack/1.20-panorama-with-shaders-(night)>
+
+### Lrbs_
+
+- **Shader Panorama For 1.21.5: Spring to Life** - CC BY-ND 4.0 -
+  <https://modrinth.com/resourcepack/shaderpanorama1215>
+  <https://creativecommons.org/licenses/by-nd/4.0/>
+
+The NoDerivatives term is why this pack, like the others, is mirrored
+byte-for-byte rather than adapted.

@@ -839,16 +839,14 @@ public final class Animations extends Module {
             // actually disappear instead of stopping abruptly at the
             // 18-px stop.
             float alpha = 1.0F + tabCurrentOffset / TAB_SLIDE_TRAVEL;
-            if (alpha < 0.0F) return 0.0F;
-            if (alpha > 1.0F) return 1.0F;
-            return alpha;
+            return smoothTabFade(alpha);
         }
         // Scale / Slide+Scale styles
         float progress = currentTabProgress();
         if (tabFade.isValue()) {
             // Full-length fade: alpha tracks the curve, identical to
             // the previous behaviour.
-            return progress;
+            return smoothTabFade(progress);
         }
         // Tail fade: keep alpha at 1 for the main animation, only
         // fade inside the tail window so the speck at progress=0
@@ -858,9 +856,16 @@ public final class Animations extends Module {
         // intentional, since a popping-in speck reads as visual noise
         // even when the user wants no main-animation fade.
         if (progress < TAB_TAIL_FADE_THRESHOLD) {
-            return progress / TAB_TAIL_FADE_THRESHOLD;
+            return smoothTabFade(progress / TAB_TAIL_FADE_THRESHOLD);
         }
         return 1.0F;
+    }
+
+    private static float smoothTabFade(float alpha) {
+        float clamped = alpha;
+        if (clamped < 0.0F) clamped = 0.0F;
+        if (clamped > 1.0F) clamped = 1.0F;
+        return clamped * clamped * (3.0F - 2.0F * clamped);
     }
 
     /**

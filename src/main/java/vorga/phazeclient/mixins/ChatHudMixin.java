@@ -23,6 +23,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.base.util.animation.Interpolation;
+import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
+import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 import vorga.phazeclient.helpers.ChatScrollState;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.other.ChatHelper;
@@ -47,7 +49,7 @@ import java.util.Set;
  * interfaces with class-form mixins.
  */
 @Mixin(ChatHud.class)
-public abstract class ChatHudMixin {
+public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
 
     // ---------------------------------------------------------------
     // ChatHudMessageSlideMixin: shadows + unique state
@@ -169,6 +171,11 @@ public abstract class ChatHudMixin {
         if (module == null || !module.isChatFadeEnabled()) {
             return;
         }
+        // Exordium's source texture must contain the final full-opacity row.
+        // The cached row receives a smooth per-display-frame alpha later.
+        if (ExordiumAnimationBridge.isCapturingChat()) {
+            return;
+        }
         float fadeIn = module.computeChatFadeInMultiplier(messageAge);
         if (fadeIn >= 1.0F) {
             return;
@@ -217,64 +224,72 @@ public abstract class ChatHudMixin {
             phaze$rememberBadgedChatTick(line.creationTick());
         }
         phaze$pendingBadgeForNextLine = false;
+        // Do not wait for Exordium's component FPS cooldown: the next HUD
+        // frame captures the new row once, then the animation uses that cache.
+        ExordiumAnimationBridge.requestImmediateCapture(ExordiumAnimationBridge.CHAT);
     }
 
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$prepareFrame(DrawContext context, int currentTick, int mouseX, int mouseY,
                                     boolean focused, CallbackInfo ci) {
+        phaze$drawnBadgeTicksThisFrame.clear();
+        phaze$tickAnimationFrame();
+    }
+
+    @Override
+    public void phaze$tickAnimationFrame() {
         phaze$frameActive = false;
         phaze$frameDx = 0.0F;
         phaze$frameDy = 0.0F;
-        phaze$drawnBadgeTicksThisFrame.clear();
 
         Animations module = Animations.getInstance();
-        if (module == null || !module.isChatSmoothScrollEnabled()) {
-            return;
-        }
-        if (ChatScrollState.suppressSlide) {
-            return;
-        }
-        if (scrolledLines != 0) {
-            return;
-        }
-        if (phaze$lastMessageNanos == 0L) {
-            return;
-        }
-
-        boolean left = module.isChatMessageSlideLeft();
-        float fadeMs = left ? module.chatLeftSlideFadeMs() : module.chatSlideFadeMs();
-        if (fadeMs <= 0.0F) {
+        if (module == null || phaze$lastMessageNanos == 0L) {
+            ExordiumAnimationBridge.updateChatAnimation(0.0F, 0.0F, 1.0F, false);
             return;
         }
 
         float lifetimeMs = (System.nanoTime() - phaze$lastMessageNanos) / 1_000_000.0F;
-        if (lifetimeMs >= fadeMs) {
-            return;
+
+        // Vanilla-facing Chat Fade uses four 20 TPS steps. The cached row is
+        // instead multiplied continuously between the same endpoints, keeping
+        // the same ~200 ms duration without visible 20/30 FPS stepping.
+        float cachedRowAlpha = 1.0F;
+        if (module.isChatFadeEnabled() && lifetimeMs < 200.0F) {
+            cachedRowAlpha = Math.max(0.0F, Math.min(1.0F, (lifetimeMs + 50.0F) / 200.0F));
         }
 
-        float alpha = lifetimeMs / fadeMs;
-        if (alpha < 0.0F) alpha = 0.0F;
-        if (alpha > 1.0F) alpha = 1.0F;
+        if (module.isChatSmoothScrollEnabled()
+                && !ChatScrollState.suppressSlide
+                && scrolledLines == 0) {
+            boolean left = module.isChatMessageSlideLeft();
+            float fadeMs = left ? module.chatLeftSlideFadeMs() : module.chatSlideFadeMs();
+            if (fadeMs > 0.0F && lifetimeMs < fadeMs) {
+                float alpha = lifetimeMs / fadeMs;
+                if (alpha < 0.0F) alpha = 0.0F;
+                if (alpha > 1.0F) alpha = 1.0F;
 
-        if (left) {
-            float maxLeft = getWidth() * LEFT_DISPLACEMENT_SCALE;
-            Interpolation interp = module.getChatLeftInterpolation();
-            float shaped = (float) interp.interpolate(alpha);
-            phaze$frameDx = -maxLeft * (1.0F - shaped);
-            phaze$frameDy = 0.0F;
-            if (Math.abs(phaze$frameDx) < 1.0F) {
-                return;
-            }
-        } else {
-            float maxUp = getLineHeight() * UP_DISPLACEMENT_SCALE;
-            phaze$frameDx = 0.0F;
-            phaze$frameDy = Math.round(maxUp * (1.0F - alpha));
-            if (phaze$frameDy < 1.0F) {
-                return;
+                if (left) {
+                    float maxLeft = getWidth() * LEFT_DISPLACEMENT_SCALE;
+                    Interpolation interp = module.getChatLeftInterpolation();
+                    float shaped = (float) interp.interpolate(alpha);
+                    phaze$frameDx = -maxLeft * (1.0F - shaped);
+                    phaze$frameDy = 0.0F;
+                    phaze$frameActive = Math.abs(phaze$frameDx) >= 1.0F;
+                } else {
+                    float maxUp = getLineHeight() * UP_DISPLACEMENT_SCALE;
+                    phaze$frameDx = 0.0F;
+                    phaze$frameDy = Math.round(maxUp * (1.0F - alpha));
+                    phaze$frameActive = phaze$frameDy >= 1.0F;
+                }
             }
         }
 
-        phaze$frameActive = true;
+        ExordiumAnimationBridge.updateChatAnimation(
+                phaze$frameDx,
+                phaze$frameDy,
+                cachedRowAlpha,
+                phaze$frameActive
+        );
     }
 
     @Unique
@@ -293,6 +308,14 @@ public abstract class ChatHudMixin {
     private void phaze$shiftFill(DrawContext ctx, int x1, int y1, int x2, int y2, int color,
                                  Operation<Void> op,
                                  @Local ChatHudLine.Visible visible) {
+        if (ExordiumAnimationBridge.isCapturingChat()) {
+            ExordiumAnimationBridge.recordChatElement(
+                    ctx, x1, y1, x2, y2,
+                    visible != null && visible.addedTime() == phaze$latestAddedTick
+            );
+            op.call(ctx, x1, y1, x2, y2, color);
+            return;
+        }
         if (phaze$shouldShift(visible)) {
             int dx = Math.round(phaze$frameDx);
             int dy = Math.round(phaze$frameDy);
@@ -312,6 +335,23 @@ public abstract class ChatHudMixin {
                                 int x, int y, int color,
                                 Operation<Integer> op,
                                 @Local ChatHudLine.Visible visible) {
+        if (ExordiumAnimationBridge.isCapturingChat()) {
+            ExordiumAnimationBridge.recordChatElement(
+                    ctx,
+                    x - 1.0F,
+                    y - 1.0F,
+                    x + renderer.getWidth(text) + 2.0F,
+                    y + 10.0F,
+                    visible != null && visible.addedTime() == phaze$latestAddedTick
+            );
+            if (phaze$shouldDrawChatBadge(visible)) {
+                PhazeBadgeUtil.drawChatBadgeAsText(
+                        ctx, renderer, x - 1.0F, y - 1.0F, PhazeBadgeUtil.alphaWhite(color)
+                );
+            }
+            return op.call(ctx, renderer, text, x, y, color);
+        }
+
         int drawX = x;
         int drawY = y;
         if (phaze$shouldShift(visible)) {

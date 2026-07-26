@@ -9,6 +9,12 @@ import net.minecraft.util.Identifier;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
+import java.io.OutputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -20,6 +26,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -37,12 +45,38 @@ public final class MenuPanoramaRegistry {
     private static final long RESCAN_INTERVAL_MS = 1000L;
 
     private static final Map<String, CustomPanoramaDescriptor> CUSTOM_PANORAMAS = new LinkedHashMap<>();
+    private static final Map<String, RemotePanoramaDescriptor> REMOTE_PANORAMAS = new LinkedHashMap<>();
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
 
     private static volatile boolean loaded = false;
     private static volatile long lastFolderSignature = Long.MIN_VALUE;
     private static volatile long lastRefreshCheckMs = 0L;
 
     private MenuPanoramaRegistry() {
+    }
+
+    static {
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:chateau",
+                "Chateau",
+                "chateau.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/chateau.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/chateau-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:castle",
+                "Castle",
+                "castle.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/castle.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/castle-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:post_soviet_night",
+                "Post-Soviet Night",
+                "post-soviet-night.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/post-soviet-night.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/post-soviet-night-preview.png"
+        ));
     }
 
     public static synchronized void ensureDirectoryExists() {
@@ -61,6 +95,11 @@ public final class MenuPanoramaRegistry {
         maybeRefresh();
         List<MenuUiSettings.PanoramaDescriptor> presets = new ArrayList<>();
         presets.addAll(Arrays.asList(MenuUiSettings.PanoramaPreset.values()));
+        for (RemotePanoramaDescriptor remote : REMOTE_PANORAMAS.values()) {
+            if (!remote.isDownloaded()) {
+                presets.add(remote);
+            }
+        }
         presets.addAll(CUSTOM_PANORAMAS.values());
         return presets;
     }
@@ -77,8 +116,143 @@ public final class MenuPanoramaRegistry {
             if (custom != null) {
                 return custom;
             }
+            RemotePanoramaDescriptor remote = REMOTE_PANORAMAS.get(id.toLowerCase(Locale.ROOT));
+            if (remote != null) {
+                return remote;
+            }
         }
         return MenuUiSettings.PanoramaPreset.VANILLA;
+    }
+
+    public static boolean isRemotePanorama(String id) {
+        return id != null && REMOTE_PANORAMAS.containsKey(id.toLowerCase(Locale.ROOT));
+    }
+
+    public static void activateRemotePanorama(String id) {
+        if (id == null) return;
+        RemotePanoramaDescriptor remote = REMOTE_PANORAMAS.get(id.toLowerCase(Locale.ROOT));
+        if (remote != null) remote.activate();
+
+        // --- Minecraft version panoramas ---------------------------
+        // Mirrored from Modrinth under their original licenses; see
+        // THIRD_PARTY_LICENSES.md for authors and terms. Ordered
+        // oldest-first so the picker reads as a timeline.
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:legacy",
+                "Legacy",
+                "legacy-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/legacy-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/legacy-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:classic",
+                "Classic",
+                "classic-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/classic-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/classic-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_13",
+                "1.13",
+                "1-13-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-13-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-13-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_15",
+                "1.15",
+                "1-15-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-15-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-15-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_16",
+                "1.16",
+                "1-16-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-16-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-16-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_17",
+                "1.17",
+                "1-17-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-17-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-17-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_18",
+                "1.18",
+                "1-18-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-18-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-18-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_19",
+                "1.19",
+                "1-19-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-19-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-19-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_19_night",
+                "1.19 Night",
+                "1-19-night-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-19-night-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-19-night-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_20",
+                "1.20 Trails & Tales",
+                "1-20-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-20-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-20-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_20_night",
+                "1.20 Night",
+                "1-20-night-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-20-night-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-20-night-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_21",
+                "1.21",
+                "1-21-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_21_5",
+                "1.21.5 Spring to Life",
+                "1-21-5-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-5-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-5-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_21_6",
+                "1.21.6 Chase the Skies",
+                "1-21-6-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-6-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-6-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_21_9",
+                "1.21.9",
+                "1-21-9-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-9-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-9-panorama-preview.png"
+        ));
+        registerRemote(new RemotePanoramaDescriptor(
+                "remote:mc_1_21_11",
+                "1.21.11 Mounts of Mayhem",
+                "1-21-11-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-11-panorama.zip",
+                "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/1-21-11-panorama-preview.png"
+        ));
+    }
+
+    private static void registerRemote(RemotePanoramaDescriptor panorama) {
+        REMOTE_PANORAMAS.put(panorama.getId().toLowerCase(Locale.ROOT), panorama);
     }
 
     public static synchronized List<MenuUiSettings.PanoramaDescriptor> importArchives(List<Path> paths) {
@@ -405,6 +579,11 @@ public final class MenuPanoramaRegistry {
             return true;
         }
 
+        @Override
+        public boolean hasPreviewTexture() {
+            return previewTexture != null;
+        }
+
         void reloadClientTextures(MinecraftClient client) {
             boolean reloadFaces = facesLoaded || renderer != null;
             close(client);
@@ -455,9 +634,15 @@ public final class MenuPanoramaRegistry {
             }
             try (ZipFile zip = new ZipFile(archivePath.toFile())) {
                 ZipEntry previewEntry = findEntryIgnoreCase(zip, "icon.png");
-                if (previewEntry == null) {
-                    previewEntry = findEntryIgnoreCase(zip, "panorama_0.png");
+                boolean usePanoramaFace = previewEntry == null;
+                if (!usePanoramaFace) {
+                    try (InputStream input = zip.getInputStream(previewEntry)) {
+                        NativeImage icon = NativeImage.read(input);
+                        usePanoramaFace = icon.getWidth() <= 1 || icon.getHeight() <= 1;
+                        icon.close();
+                    }
                 }
+                if (usePanoramaFace) previewEntry = findEntryIgnoreCase(zip, "panorama_0.png");
                 if (previewEntry == null) {
                     throw new IOException("missing icon.png and panorama_0.png");
                 }
@@ -511,6 +696,129 @@ public final class MenuPanoramaRegistry {
                 }
                 System.err.println("[Phaze] failed to load panorama faces " + archivePath.getFileName() + ": " + t);
             }
+        }
+    }
+
+    private static final class RemotePanoramaDescriptor implements MenuUiSettings.PanoramaDescriptor {
+        private final String id;
+        private final String displayName;
+        private final String archiveName;
+        private final URI downloadUri;
+        private final URI previewUri;
+        private final Identifier previewTextureId;
+        private final AtomicBoolean downloading = new AtomicBoolean(false);
+        private final AtomicBoolean previewLoading = new AtomicBoolean(false);
+        private final AtomicLong downloadedBytes = new AtomicLong();
+        private volatile long totalBytes = -1L;
+        private NativeImageBackedTexture previewTexture;
+
+        private RemotePanoramaDescriptor(String id, String displayName, String archiveName, String downloadUrl, String previewUrl) {
+            this.id = id;
+            this.displayName = displayName;
+            this.archiveName = archiveName;
+            this.downloadUri = URI.create(downloadUrl);
+            this.previewUri = URI.create(previewUrl);
+            this.previewTextureId = Identifier.of("phaze", "dynamic/remote-panoramas/" + sanitizeTextureToken(id) + "/preview");
+        }
+
+        @Override public String getId() { return id; }
+        @Override public String displayName() { return displayName; }
+        @Override public Identifier previewTexture() { ensurePreview(); return previewTextureId; }
+        @Override public int previewTextureSize() { return 1; }
+        @Override public int previewCropInset() { return 0; }
+        @Override public int previewCropSize() { return 1; }
+        @Override public MenuPanoramaRenderer getRenderer() { return MenuUiSettings.PanoramaPreset.VANILLA.getRenderer(); }
+        @Override public boolean isRemote() { return true; }
+        @Override public boolean isDownloading() { return downloading.get(); }
+        @Override public boolean hasPreviewTexture() { return previewTexture != null; }
+        @Override public float downloadProgress() {
+            long total = totalBytes;
+            return total > 0L ? Math.min(1.0F, downloadedBytes.get() / (float) total) : 0.0F;
+        }
+
+        private boolean isDownloaded() {
+            return Files.isRegularFile(getPanoramasDirectory().resolve(archiveName));
+        }
+
+        private void ensurePreview() {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (previewTexture != null || client == null || !previewLoading.compareAndSet(false, true)) return;
+            HttpRequest request = HttpRequest.newBuilder(previewUri).GET().build();
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+                    .thenAccept(response -> {
+                        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                            previewLoading.set(false);
+                            return;
+                        }
+                        client.execute(() -> {
+                            try {
+                                NativeImage image = NativeImage.read(new ByteArrayInputStream(response.body()));
+                                previewTexture = new NativeImageBackedTexture(image);
+                                client.getTextureManager().registerTexture(previewTextureId, previewTexture);
+                            } catch (Throwable error) {
+                                System.err.println("[Phaze] remote panorama preview failed: " + error);
+                            } finally {
+                                previewLoading.set(false);
+                            }
+                        });
+                    })
+                    .exceptionally(error -> { previewLoading.set(false); return null; });
+        }
+
+        private void activate() {
+            Path target = getPanoramasDirectory().resolve(archiveName);
+            if (Files.isRegularFile(target)) {
+                selectDownloaded();
+                return;
+            }
+            if (!downloading.compareAndSet(false, true)) return;
+            ensureDirectoryExists();
+            downloadedBytes.set(0L);
+            totalBytes = -1L;
+            Path temporary = target.resolveSibling(archiveName + ".tmp");
+            HttpRequest request = HttpRequest.newBuilder(downloadUri).GET().build();
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
+                    .thenAcceptAsync(response -> {
+                        try {
+                            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                                throw new IOException("HTTP " + response.statusCode());
+                            }
+                            totalBytes = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+                            try (InputStream input = response.body(); OutputStream output = Files.newOutputStream(temporary)) {
+                                byte[] buffer = new byte[64 * 1024];
+                                int read;
+                                while ((read = input.read(buffer)) >= 0) {
+                                    output.write(buffer, 0, read);
+                                    downloadedBytes.addAndGet(read);
+                                }
+                            }
+                            try (ZipFile ignored = new ZipFile(temporary.toFile())) {
+                                // Validate before making the panorama visible.
+                            }
+                            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                            selectDownloaded();
+                        } catch (Throwable error) {
+                            try { Files.deleteIfExists(temporary); } catch (IOException ignored) { }
+                            System.err.println("[Phaze] remote panorama download failed: " + error);
+                        } finally {
+                            downloading.set(false);
+                        }
+                    })
+                    .exceptionally(error -> {
+                        try { Files.deleteIfExists(temporary); } catch (IOException ignored) { }
+                        downloading.set(false);
+                        System.err.println("[Phaze] remote panorama download failed: " + error);
+                        return null;
+                    });
+        }
+
+        private void selectDownloaded() {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null) return;
+            client.execute(() -> {
+                reload();
+                MenuUiSettings.getInstance().setSelectedPanoramaPreset(customIdForArchiveName(archiveName));
+            });
         }
     }
 }

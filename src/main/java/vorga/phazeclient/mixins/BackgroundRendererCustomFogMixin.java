@@ -1,7 +1,5 @@
 package vorga.phazeclient.mixins;
 
-import com.llamalad7.mixinextras.injector.ModifyReturnValue;
-import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.block.enums.CameraSubmersionType;
 import net.minecraft.client.render.BackgroundRenderer;
 import net.minecraft.client.render.Camera;
@@ -14,15 +12,18 @@ import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.other.CustomFog;
 
 /**
- * Custom fog colour + distance override. Both hooks run as
- * {@code @ModifyReturnValue} so vanilla's full pipeline executes
- * first and we just override the final value. Submersion fog
- * (water / lava / powder snow) and blindness / darkness status
- * effects are skipped so gameplay-critical visibility cues are
- * preserved.
+ * Custom fog colour + distance override. We rebuild the final
+ * fog state from Phaze's module settings instead of inheriting any
+ * distances, alpha, or enable-state semantics from vanilla. That
+ * keeps Custom Fog visually active even when Mojang's fog path is
+ * effectively disabled. Submersion fog (water / lava / powder snow)
+ * and blindness / darkness status effects are still skipped so
+ * gameplay-critical visibility cues are preserved.
  */
 @Mixin(BackgroundRenderer.class)
 public class BackgroundRendererCustomFogMixin {
@@ -50,29 +51,54 @@ public class BackgroundRendererCustomFogMixin {
         return false;
     }
 
-    @ModifyReturnValue(method = "getFogColor", at = @At("RETURN"))
-    private static Vector4f phaze$getFogColor(Vector4f vanilla, @Local(argsOnly = true) Camera camera) {
+    @Inject(method = "getFogColor", at = @At("RETURN"), cancellable = true)
+    private static void phaze$getFogColor(Camera camera,
+                                          float tickDelta,
+                                          net.minecraft.client.world.ClientWorld world,
+                                          int viewDistance,
+                                          float skyDarkness,
+                                          CallbackInfoReturnable<Vector4f> cir) {
+        Vector4f vanilla = cir.getReturnValue();
         if (phaze$shouldntApplyCustomFog(camera, BackgroundRenderer.FogType.FOG_TERRAIN)) {
-            return vanilla;
+            return;
         }
         CustomFog module = CustomFog.getInstance();
         int rgb = module.getResolvedRgb();
         float r = ((rgb >> 16) & 0xFF) / 255.0F;
         float g = ((rgb >> 8) & 0xFF) / 255.0F;
         float b = (rgb & 0xFF) / 255.0F;
-        return new Vector4f(r, g, b, 1.0F);
+        cir.setReturnValue(new Vector4f(r, g, b, 1.0F));
     }
 
-    @ModifyReturnValue(method = "applyFog", at = @At("RETURN"))
-    private static Fog phaze$applyFog(Fog vanillaFog,
-                                      @Local(argsOnly = true) Camera camera,
-                                      @Local(argsOnly = true) BackgroundRenderer.FogType fogType) {
+    @Inject(method = "applyFog", at = @At("HEAD"), cancellable = true)
+    private static void phaze$applyFog(Camera camera,
+                                       BackgroundRenderer.FogType fogType,
+                                       Vector4f color,
+                                       float viewDistance,
+                                       boolean thickFog,
+                                       float tickProgress,
+                                       CallbackInfoReturnable<Fog> cir) {
         if (phaze$shouldntApplyCustomFog(camera, fogType)) {
-            return vanillaFog;
+            return;
         }
-        CustomFog module = CustomFog.getInstance();
+        // Short-circuit the entire vanilla path so global fogEnabled,
+        // render-distance based fog ramps, thick-fog branches, and
+        // renderer-specific wrappers (e.g. Sodium's terrain shader
+        // fog variant) all receive our own fog packet instead.
+        cir.setReturnValue(phaze$buildCustomFog());
+    }
 
-        float distance = module.getDistance();
+    @Unique
+    private static float clamp01(float v) {
+        if (v < 0.0F) return 0.0F;
+        if (v > 1.0F) return 1.0F;
+        return v;
+    }
+
+    @Unique
+    private static Fog phaze$buildCustomFog() {
+        CustomFog module = CustomFog.getInstance();
+        float distance = Math.max(2.0F, module.getDistance());
         float density = clamp01(module.getDensity());
         float start = distance * (1.0F - density);
         float end = distance;
@@ -82,15 +108,8 @@ public class BackgroundRendererCustomFogMixin {
         float g = ((rgb >> 8) & 0xFF) / 255.0F;
         float b = (rgb & 0xFF) / 255.0F;
 
-        // CYLINDER keeps the fog edge horizontally consistent
-        // regardless of pitch.
+        // Always emit a fully-specified fog packet from module
+        // settings so vanilla's own fog-enabled toggle cannot mute it.
         return new Fog(start, end, FogShape.CYLINDER, r, g, b, 1.0F);
-    }
-
-    @Unique
-    private static float clamp01(float v) {
-        if (v < 0.0F) return 0.0F;
-        if (v > 1.0F) return 1.0F;
-        return v;
     }
 }

@@ -4,6 +4,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import vorga.phazeclient.base.util.shader.ChunkAnimatorShaderPatcher;
+import vorga.phazeclient.base.util.shader.WorldColorChunkShaderPatcher;
 
 /**
  * Per-section ChunkAnimator support at Sodium's lowest shader
@@ -45,6 +46,6 @@ public abstract class SodiumGlShaderChunkAnimatorMixin {
         if (source == null) {
             return null;
         }
-        return ChunkAnimatorShaderPatcher.patch(source.toString());
+        return WorldColorChunkShaderPatcher.patch(ChunkAnimatorShaderPatcher.patch(source.toString()));
     }
 }

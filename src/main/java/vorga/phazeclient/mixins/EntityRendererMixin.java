@@ -2,6 +2,7 @@ package vorga.phazeclient.mixins;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.render.OutlineVertexConsumerProvider;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.render.entity.state.EntityRenderState;
@@ -52,6 +53,9 @@ import java.util.Map;
 public abstract class EntityRendererMixin {
     private static boolean phaze$backgroundDrawnThisLabel = false;
     private static boolean phaze$drawBadgeThisLabel = false;
+    private static boolean phaze$depthPreparedThisLabel = false;
+    private static boolean phaze$fallbackQueuedThisLabel = false;
+    private static float phaze$currentLabelDistance = 0.0f;
     private static final int NAMETAG_CACHE_MAX = 256;
     private static final Map<String, Integer> TEXT_WIDTH_CACHE = new LinkedHashMap<>(NAMETAG_CACHE_MAX, 0.75f, true) {
         @Override
@@ -85,12 +89,13 @@ public abstract class EntityRendererMixin {
         boolean isSelf = entity == client.getCameraEntity() || entity == client.player;
         if (!isSelf) return;
 
-        if (!module.thirdPersonNametag.isValue() && !client.options.getPerspective().isFirstPerson()) {
-            cir.setReturnValue(false);
-            return;
-        }
-
-        cir.setReturnValue(true);
+        // Never render the camera entity's label in first person. Its
+        // billboard sits on the near plane, so even a tiny 10px backdrop is
+        // projected into a giant rounded-looking shape over most of the
+        // screen. The option controls the useful case only: the local label
+        // while the player model is visible in third person.
+        boolean firstPerson = client.options.getPerspective().isFirstPerson();
+        cir.setReturnValue(!firstPerson && module.thirdPersonNametag.isValue());
     }
 
     @Inject(
@@ -102,6 +107,7 @@ public abstract class EntityRendererMixin {
         NametagHud module = NametagHud.getInstance();
         if (!module.isEnabled()) return;
 
+        phaze$currentLabelDistance = (float) Math.sqrt(Math.max(0.0, state.squaredDistanceToCamera));
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.options == null) return;
 
@@ -110,15 +116,14 @@ public abstract class EntityRendererMixin {
             return;
         }
 
-        if (client.cameraEntity != null && client.player != null) {
-            double distance = client.cameraEntity.squaredDistanceTo(client.player);
-            if (distance > 4096.0) {
-                ci.cancel();
-                return;
-            }
+        if (state.squaredDistanceToCamera > 4096.0) {
+            ci.cancel();
+            return;
         }
         phaze$backgroundDrawnThisLabel = false;
         phaze$drawBadgeThisLabel = false;
+        phaze$depthPreparedThisLabel = false;
+        phaze$fallbackQueuedThisLabel = false;
     }
 
     @Redirect(
@@ -127,7 +132,15 @@ public abstract class EntityRendererMixin {
     )
     private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(
+                phaze$getCachedTextWidth(textRenderer, text),
+                matrix,
+                x,
+                y,
+                vertexConsumers,
+                layerType,
+                backgroundColor
+        );
         phaze$drawNametagBadgeIfNeeded(matrix, vertexConsumers, x, y, layerType, light);
         return textRenderer.draw(
                 text,
@@ -149,7 +162,15 @@ public abstract class EntityRendererMixin {
     )
     private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
         NametagHud module = NametagHud.getInstance();
-        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(phaze$getCachedTextWidth(textRenderer, text), matrix, x, y, layerType, backgroundColor);
+        int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(
+                phaze$getCachedTextWidth(textRenderer, text),
+                matrix,
+                x,
+                y,
+                vertexConsumers,
+                layerType,
+                backgroundColor
+        );
         phaze$drawNametagBadgeIfNeeded(matrix, vertexConsumers, x, y, layerType, light);
         return textRenderer.draw(
                 text,
@@ -287,20 +308,42 @@ public abstract class EntityRendererMixin {
         PhazeBadgeUtil.drawWorldBadge(matrix, vertexConsumers, layerType, x - 2.0F, y - 1.0F, 10.0F, light, 0xFFFFFFFF);
     }
 
-    private static int phaze$drawBlurBackgroundIfNeeded(float textWidth, Matrix4f matrix, float x, float y, TextRenderer.TextLayerType layerType, int vanillaBackgroundColor) {
+    private static int phaze$drawBlurBackgroundIfNeeded(
+            float textWidth,
+            Matrix4f matrix,
+            float x,
+            float y,
+            VertexConsumerProvider vertexConsumers,
+            TextRenderer.TextLayerType layerType,
+            int vanillaBackgroundColor
+    ) {
         NametagHud module = NametagHud.getInstance();
         if (!module.isEnabled() || !module.background.isValue()) {
             return phaze$resolvedBackgroundColor(vanillaBackgroundColor);
         }
-        // Draw nametag blur backdrop only on the primary text pass.
-        // Rendering backdrop on auxiliary passes can cause frame-to-frame
-        // intensity oscillation (visible flicker) due to multi-pass blend.
+        float blurRadius = module.backgroundBlurRadius.getValue();
+        int background = phaze$resolvedBackgroundColor(vanillaBackgroundColor);
+
+        // Draw the blur itself only on the primary text pass. The auxiliary
+        // pass contributes just the cheap selected-color fallback.
         if (layerType != TextRenderer.TextLayerType.NORMAL) {
+            // Vanilla already submits the through-wall background in this
+            // SEE_THROUGH text pass. Reuse that rectangle as our selected-color
+            // fallback instead of issuing a separate solid draw for every
+            // normal (non-sneaking) nametag.
+            if (phaze$shouldDrawDepthAwareBlur(textWidth, blurRadius)) {
+                // Flush the current entity before its SEE_THROUGH text is
+                // queued. This puts the player model into the depth buffer
+                // while keeping the label itself out of its blur snapshot.
+                phaze$prepareDepthAwareBlur(vertexConsumers);
+            }
+            if (blurRadius > 0.0f) {
+                phaze$fallbackQueuedThisLabel = true;
+                return background;
+            }
             return 0;
         }
 
-        float blurRadius = module.backgroundBlurRadius.getValue();
-        int background = phaze$resolvedBackgroundColor(vanillaBackgroundColor);
         if (blurRadius <= 0.0f || phaze$backgroundDrawnThisLabel) {
             return background;
         }
@@ -319,44 +362,101 @@ public abstract class EntityRendererMixin {
         height = phaze$snapHalfPixel(Math.max(0.0f, height));
 
         if (width * height < 50.0f) {
-            drawSolidRect3D(matrix, left, top, width, height, background);
+            if (!phaze$fallbackQueuedThisLabel) {
+                drawSolidRect3D(matrix, left, top, width, height, background);
+            }
             phaze$backgroundDrawnThisLabel = true;
             return 0;
         }
 
         float quality = MathHelper.clamp(0.35f + blurRadius * 0.10f, 0.35f, 4.2f);
         MinecraftClient client = MinecraftClient.getInstance();
-        float distance = 0.0f;
-        if (client != null && client.player != null && client.cameraEntity != null) {
-            distance = (float) client.cameraEntity.getPos().distanceTo(client.player.getPos());
-        }
+        float distance = phaze$currentLabelDistance;
+        float distanceFactor = phaze$blurDistanceFactor(distance);
         float playerSpeed = Blur.INSTANCE.getPlayerSpeed(client);
 
-        if (distance > 50.0f) {
-            drawSolidRect3D(matrix, left, top, width, height, background);
+        if (distanceFactor <= 0.001f) {
+            if (!phaze$fallbackQueuedThisLabel) {
+                drawSolidRect3D(matrix, left, top, width, height, background);
+            }
             phaze$backgroundDrawnThisLabel = true;
             return 0;
-        } else if (distance > 30.0f) {
-            quality *= 0.25f;
-            blurRadius *= 0.3f;
-        } else if (distance > 20.0f) {
-            quality *= 0.4f;
-            blurRadius *= 0.5f;
-        } else if (distance > 10.0f) {
-            quality *= 0.7f;
-            blurRadius *= 0.8f;
         }
+        quality *= distanceFactor;
 
         if (playerSpeed > 20.0f) {
             float speedFactor = MathHelper.clamp(20.0f / playerSpeed, 0.3f, 1.0f);
-            blurRadius *= speedFactor;
             quality *= speedFactor;
         }
 
-        Blur.INSTANCE.renderWorldRect(matrix, left, top, width, height, quality, 0xFFFFFFFF);
-        drawSolidRect3D(matrix, left, top, width, height, background);
+        // Sneaking labels have no SEE_THROUGH pass, so prepare their depth and
+        // clean blur input here. Normal labels have already done this before
+        // queuing their auxiliary text pass.
+        if (phaze$fallbackQueuedThisLabel) {
+            // Commit the fallback + dim through-wall text before the immediate
+            // blur draw. TextRenderer would flush this layer on the following
+            // NORMAL request anyway; only the timing moves forward.
+            phaze$flushCurrentNametagLayer(vertexConsumers);
+        }
+        phaze$prepareDepthAwareBlur(vertexConsumers);
+        Blur.INSTANCE.renderWorldRect(
+                matrix,
+                left,
+                top,
+                width,
+                height,
+                quality,
+                background,
+                !phaze$fallbackQueuedThisLabel,
+                distanceFactor
+        );
         phaze$backgroundDrawnThisLabel = true;
         return 0;
+    }
+
+    private static boolean phaze$shouldDrawDepthAwareBlur(float textWidth, float blurRadius) {
+        float width = phaze$snapHalfPixel(Math.max(0.0f, textWidth + 1.0f));
+        return blurRadius > 0.0f
+                && width * 10.0f >= 50.0f
+                && phaze$blurDistanceFactor(phaze$currentLabelDistance) > 0.001f;
+    }
+
+    private static float phaze$blurDistanceFactor(float distance) {
+        if (distance <= 24.0f) {
+            return 1.0f;
+        }
+        if (distance >= 30.0f) {
+            return 0.0f;
+        }
+        float t = MathHelper.clamp((distance - 24.0f) / 6.0f, 0.0f, 1.0f);
+        float smoothstep = t * t * (3.0f - 2.0f * t);
+        return 1.0f - smoothstep;
+    }
+
+    private static void phaze$prepareDepthAwareBlur(VertexConsumerProvider vertexConsumers) {
+        if (phaze$depthPreparedThisLabel) {
+            return;
+        }
+
+        phaze$flushCurrentNametagLayer(vertexConsumers);
+        Blur.INSTANCE.prepareWorldRectInput();
+        phaze$depthPreparedThisLabel = true;
+    }
+
+    private static void phaze$flushCurrentNametagLayer(VertexConsumerProvider vertexConsumers) {
+        VertexConsumerProvider.Immediate immediate = null;
+        if (vertexConsumers instanceof VertexConsumerProvider.Immediate direct) {
+            immediate = direct;
+        } else if (vertexConsumers instanceof OutlineVertexConsumerProvider outline) {
+            immediate = ((OutlineVertexConsumerProviderAccessor) outline).phaze$getParent();
+        }
+        if (immediate != null) {
+            // The current dynamic entity layer would be flushed immediately
+            // afterward when TextRenderer requests its own layer anyway.
+            // Move only that flush forward instead of draining every fixed
+            // entity buffer for every nametag.
+            immediate.drawCurrentLayer();
+        }
     }
 
     private static int phaze$getCachedTextWidth(TextRenderer textRenderer, Text text) {
@@ -411,6 +511,8 @@ public abstract class EntityRendererMixin {
         buffer.vertex(matrix, x + width, y, 0.0f).color(r, g, b, a);
         net.minecraft.client.render.BufferRenderer.drawWithGlobalProgram(buffer.end());
         com.mojang.blaze3d.systems.RenderSystem.depthMask(true);
+        com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
         com.mojang.blaze3d.systems.RenderSystem.disableBlend();
     }
 

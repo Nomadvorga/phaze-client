@@ -141,6 +141,9 @@ public class SelectComponent extends AbstractSettingComponent {
                 .build());
 
         boolean leftHovered = MathUtil.isHovered(mouseX, mouseY, boxX, boxY, ARROW_HIT_WIDTH, SELECT_BOX_HEIGHT);
+        if (leftHovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
         leftHoverAnimation.setDirection(leftHovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float leftProgress = leftHoverAnimation.getOutputFloat();
         float leftAlpha = (0.7F + 0.3F * leftProgress) * currentAlpha;
@@ -157,6 +160,9 @@ public class SelectComponent extends AbstractSettingComponent {
         );
 
         boolean rightHovered = MathUtil.isHovered(mouseX, mouseY, boxX + boxWidth - ARROW_HIT_WIDTH, boxY, ARROW_HIT_WIDTH, SELECT_BOX_HEIGHT);
+        if (rightHovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
         rightHoverAnimation.setDirection(rightHovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float rightProgress = rightHoverAnimation.getOutputFloat();
         float rightAlpha = (0.7F + 0.3F * rightProgress) * currentAlpha;

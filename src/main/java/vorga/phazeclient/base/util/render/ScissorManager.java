@@ -7,11 +7,15 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import vorga.phazeclient.base.QuickImports;
 
-import java.util.Stack;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ScissorManager implements QuickImports {
-    Stack<Scissor> scissorStack = new Stack<>();
+    Deque<Scissor> scissorStack = new ArrayDeque<>();
+    Deque<Scissor> freeScissors = new ArrayDeque<>();
+    Vector3f scratchPosition = new Vector3f();
+    Vector3f scratchSize = new Vector3f();
 
     public void push(Matrix4f matrix4f, float x, float y, float width, float height) {
         // Drain any pending batched rectangles BEFORE the scissor box
@@ -25,10 +29,13 @@ public class ScissorManager implements QuickImports {
         // that invariant under the deferred batched path.
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
 
-        Vector3f pos = matrix4f.transformPosition(x,y,0, new Vector3f());
-        Vector3f size = matrix4f.getScale(new Vector3f()).mul(width, height, 0);
+        Vector3f pos = matrix4f.transformPosition(x, y, 0, scratchPosition);
+        Vector3f size = matrix4f.getScale(scratchSize).mul(width, height, 0);
 
-        Scissor newScissor = new Scissor();
+        Scissor newScissor = freeScissors.pollFirst();
+        if (newScissor == null) {
+            newScissor = new Scissor();
+        }
 
         if (!scissorStack.isEmpty()) {
             Scissor prevScissor = scissorStack.peek();
@@ -53,7 +60,7 @@ public class ScissorManager implements QuickImports {
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
 
         if (!scissorStack.isEmpty()) {
-            scissorStack.pop();
+            freeScissors.addFirst(scissorStack.pop());
             if (scissorStack.isEmpty()) {
                 RenderSystem.disableScissor();
             } else {

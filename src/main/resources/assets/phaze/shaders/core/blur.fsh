@@ -6,11 +6,15 @@ in vec2 FragCoord;
 in vec4 FragColor;
 
 uniform sampler2D Sampler0;
+uniform sampler2D Sampler1;
 uniform vec2 Size;
 uniform vec4 Radius;
+uniform int RectMask;
 uniform float Smoothness;
 uniform float BlurRadius;
 uniform int BlurMode;
+uniform vec4 TintColor;
+uniform float FrameMix;
 
 out vec4 fragColor;
 
@@ -221,8 +225,21 @@ vec3 sampleBlur() {
 }
 
 void main() {
-    vec4 color = vec4(sampleBlur(), 1.0) * FragColor;
-    color.a *= ralpha(Size, FragCoord, Radius, Smoothness);
+    vec3 blurred = sampleBlur();
+    if (FrameMix < 0.999) {
+        vec2 texCoord = gl_FragCoord.xy / vec2(textureSize(Sampler0, 0));
+        blurred = mix(texture(Sampler1, texCoord).rgb, blurred, clamp(FrameMix, 0.0, 1.0));
+    }
+    vec3 tinted = mix(blurred, TintColor.rgb, clamp(TintColor.a, 0.0, 1.0));
+    vec4 color = vec4(tinted, 1.0) * FragColor;
+    // Rectangular consumers (especially world-space nametags) bypass the
+    // rounded SDF explicitly. Inferring this from Radius alone is unsafe
+    // when the same shader program is reused by menu and world draws:
+    // deferred uniform uploads can otherwise expose the previous rounded
+    // menu radius for one draw and clip a nametag's corners.
+    if (RectMask == 0) {
+        color.a *= ralpha(Size, FragCoord, Radius, Smoothness);
+    }
 
     if (color.a == 0.0) {
         discard;
@@ -230,4 +247,3 @@ void main() {
 
     fragColor = color;
 }
-

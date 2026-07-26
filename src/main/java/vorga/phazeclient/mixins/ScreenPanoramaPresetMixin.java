@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.implement.menu.MainMenuScreen;
 import vorga.phazeclient.implement.menu.MenuUiSettings;
 
 @Mixin(Screen.class)
@@ -18,7 +19,7 @@ public abstract class ScreenPanoramaPresetMixin {
     @Inject(method = "renderPanoramaBackground", at = @At("HEAD"), cancellable = true)
     private void phaze$renderCustomPanorama(DrawContext context, float delta, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) {
+        if (client == null || !MainMenuScreen.isCustomMainMenuEnabled()) {
             return;
         }
         MenuUiSettings.getInstance().getSelectedPanoramaPreset().getRenderer().render(context, this.width, this.height, 1.0F);

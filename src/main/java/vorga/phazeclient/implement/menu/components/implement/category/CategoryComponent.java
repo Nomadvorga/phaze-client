@@ -90,10 +90,6 @@ public class CategoryComponent extends AbstractComponent {
         modules.sort((a, b) -> a.getVisibleName().compareToIgnoreCase(b.getVisibleName()));
 
         for (Module module : modules) {
-            if (!module.isVisible()) {
-                continue;
-            }
-
             moduleComponents.add(new ModuleComponent(module));
         }
     }
@@ -391,18 +387,20 @@ public class CategoryComponent extends AbstractComponent {
     }
 
     private void refreshVisibleCache(ModuleCategory currentCategory, String currentSearchText) {
-        if (!visibleCacheDirty
-                && currentCategory == lastCategory
-                && Objects.equals(currentSearchText, lastSearchText)) {
+        List<ModuleComponent> nextVisible = new ArrayList<>();
+        for (ModuleComponent moduleComponent : moduleComponents) {
+            if (shouldRenderComponent(moduleComponent)) {
+                nextVisible.add(moduleComponent);
+            }
+        }
+
+        if (Objects.equals(nextVisible, visibleComponents)) {
+            visibleCacheDirty = false;
             return;
         }
 
         visibleComponents.clear();
-        for (ModuleComponent moduleComponent : moduleComponents) {
-            if (shouldRenderComponent(moduleComponent)) {
-                visibleComponents.add(moduleComponent);
-            }
-        }
+        visibleComponents.addAll(nextVisible);
         visibleCacheDirty = true;
     }
 

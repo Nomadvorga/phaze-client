@@ -14,6 +14,9 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
+import java.util.IdentityHashMap;
+import java.util.Map;
+
 /**
  * Combat helper that draws a pulsing colored overlay on inventory and hotbar
  * slots whenever the player is in a state that calls for a healing item.
@@ -83,6 +86,11 @@ public final class HealingHelper extends Module {
     private int prevEgappleUseTime = -1;
     /** Wall-clock time (ms) of the last detected enchanted-gapple consumption. 0 = never. */
     private long lastEgappleEatenMs = 0L;
+    private final Map<ItemStack, Integer> preparedColorCache = new IdentityHashMap<>();
+    private boolean snapshotPrepared;
+    private int healingPotionColor;
+    private int enchantedGappleColor;
+    private int regularGappleColor;
 
     private HealingHelper() {
         super("healing_helper", "Healing Helper", ModuleCategory.UTILITIES);
@@ -91,7 +99,7 @@ public final class HealingHelper extends Module {
         saturationThreshold.setFullWidth(true);
         setup(generalSection, hpThreshold, gappleCooldownSec, saturationThreshold);
 
-        ClientTickEvents.END_CLIENT_TICK.register(client -> tick());
+        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }
 
     public static HealingHelper getInstance() {
@@ -120,8 +128,7 @@ public final class HealingHelper extends Module {
      * mean the user enables the module right after eating and the cooldown
      * is already partially elapsed, which is a fine UX.
      */
-    private void tick() {
-        MinecraftClient mc = MinecraftClient.getInstance();
+    private void tick(MinecraftClient mc) {
         if (mc == null) {
             return;
         }
@@ -131,9 +138,8 @@ public final class HealingHelper extends Module {
             return;
         }
 
-        boolean usingEgappleNow = p.isUsingItem()
-                && p.getActiveItem() != null
-                && p.getActiveItem().isOf(Items.ENCHANTED_GOLDEN_APPLE);
+        ItemStack activeItem = p.getActiveItem();
+        boolean usingEgappleNow = p.isUsingItem() && activeItem.isOf(Items.ENCHANTED_GOLDEN_APPLE);
 
         if (prevEgappleUseTime >= CONSUMABLE_FINISH_TICKS - FINISH_TOLERANCE && !usingEgappleNow) {
             // Last tick we were within the consumption window, this tick the
@@ -158,16 +164,46 @@ public final class HealingHelper extends Module {
      * pure black so the check is unambiguous.
      */
     public int colorForStack(ItemStack stack) {
+        prepareSnapshot();
+        return resolvePreparedColor(stack);
+    }
+
+    public void beginRenderPass() {
+        prepareSnapshot();
+        preparedColorCache.clear();
+    }
+
+    public int colorForPreparedStack(ItemStack stack) {
+        if (!snapshotPrepared) {
+            beginRenderPass();
+        }
         if (!isEnabled() || stack == null || stack.isEmpty()) {
             return 0;
         }
+        Integer cached = preparedColorCache.get(stack);
+        if (cached != null) {
+            return cached;
+        }
+        int color = resolvePreparedColor(stack);
+        preparedColorCache.put(stack, color);
+        return color;
+    }
+
+    private void prepareSnapshot() {
+        snapshotPrepared = true;
+        healingPotionColor = 0;
+        enchantedGappleColor = 0;
+        regularGappleColor = 0;
+        if (!isEnabled()) {
+            return;
+        }
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null) {
-            return 0;
+            return;
         }
         PlayerEntity p = mc.player;
         if (p == null) {
-            return 0;
+            return;
         }
 
         float health = p.getHealth();
@@ -176,33 +212,33 @@ public final class HealingHelper extends Module {
         int satThr = saturationThreshold.getInt();
         boolean lowHp = health <= hpThr;
         boolean lowSat = saturation <= satThr;
+        long now = System.currentTimeMillis();
+        float alpha = MAX_ALPHA * pulseAlpha(now);
 
-        int rgb = 0;
-
-        if (isHealingPotion(stack)) {
-            if (lowHp) {
-                // Per the May follow-up: green when slider 3 (saturation
-                // rule) is ALSO firing, signaling "you can fix both with
-                // a heal potion + a future eat", and yellow when only the
-                // HP rule fires (heal but watch your food next).
-                rgb = lowSat ? RGB_GREEN : RGB_YELLOW;
-            }
-        } else if (stack.isOf(Items.ENCHANTED_GOLDEN_APPLE)) {
-            long since = System.currentTimeMillis() - lastEgappleEatenMs;
-            long cooldownMs = (long) gappleCooldownSec.getValue() * 1000L;
-            if (lastEgappleEatenMs == 0L || since >= cooldownMs) {
-                rgb = RGB_RED;
-            }
-        } else if (stack.isOf(Items.GOLDEN_APPLE)) {
-            if (lowSat) {
-                rgb = RGB_ORANGE;
-            }
+        if (lowHp) {
+            healingPotionColor = packArgb(lowSat ? RGB_GREEN : RGB_YELLOW, alpha);
         }
+        long cooldownMs = (long) gappleCooldownSec.getValue() * 1000L;
+        if (lastEgappleEatenMs == 0L || now - lastEgappleEatenMs >= cooldownMs) {
+            enchantedGappleColor = packArgb(RGB_RED, alpha);
+        }
+        if (lowSat) {
+            regularGappleColor = packArgb(RGB_ORANGE, alpha);
+        }
+    }
 
-        if (rgb == 0) {
+    private int resolvePreparedColor(ItemStack stack) {
+        if (!isEnabled() || stack == null || stack.isEmpty()) {
             return 0;
         }
-        return packArgb(rgb, MAX_ALPHA * pulseAlpha());
+        if (isHealingPotion(stack)) {
+            return healingPotionColor;
+        } else if (stack.isOf(Items.ENCHANTED_GOLDEN_APPLE)) {
+            return enchantedGappleColor;
+        } else if (stack.isOf(Items.GOLDEN_APPLE)) {
+            return regularGappleColor;
+        }
+        return 0;
     }
 
     /**
@@ -211,8 +247,8 @@ public final class HealingHelper extends Module {
      * started flashing. Reading the system clock instead of incrementing
      * a counter keeps it framerate-independent.
      */
-    private static float pulseAlpha() {
-        long t = System.currentTimeMillis() % PULSE_PERIOD_MS;
+    private static float pulseAlpha(long nowMs) {
+        long t = nowMs % PULSE_PERIOD_MS;
         return (float) Math.sin(Math.PI * t / (double) PULSE_PERIOD_MS);
     }
 

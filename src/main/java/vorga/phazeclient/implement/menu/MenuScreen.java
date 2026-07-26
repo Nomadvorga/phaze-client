@@ -91,13 +91,13 @@ public class MenuScreen extends Screen implements QuickImports {
 
     public static void preload() {
         INSTANCE.updateOverlayMetrics();
-        INSTANCE.categoryContainerComponent.initializeCategoryComponents();
+        INSTANCE.categoryContainerComponent.ensureCategoryComponentsInitialized();
         INSTANCE.prewarmUiIconAtlas();
     }
 
     public void initialize() {
         animation.setDirection(FORWARDS);
-        categoryContainerComponent.initializeCategoryComponents();
+        categoryContainerComponent.ensureCategoryComponentsInitialized();
 
         backgroundComponent.setSearchComponent(searchComponent);
 
@@ -175,17 +175,20 @@ public class MenuScreen extends Screen implements QuickImports {
             MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> {
                 boolean moduleDetailOpen = moduleDetailComponent.isOpen();
                 boolean configsViewOpen = configsView.isOpen();
+                boolean mouseOverWindow = windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
+                int routedMouseX = mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseX;
+                int routedMouseY = mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseY;
                 for (AbstractComponent component : components) {
                     if ((moduleDetailOpen || configsViewOpen) && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
                         continue;
                     }
                     component.globalAlpha = alphaAnimation;
-                    component.render(context, overlayMouseX, overlayMouseY, delta);
+                    component.render(context, routedMouseX, routedMouseY, delta);
                 }
                 if (configsViewOpen) {
                     configsView.position(x, y).size(width, height);
                     configsView.globalAlpha = alphaAnimation;
-                    configsView.render(context, overlayMouseX, overlayMouseY, delta);
+                    configsView.render(context, routedMouseX, routedMouseY, delta);
                 }
                 windowManager.render(context, overlayMouseX, overlayMouseY, delta);
                 // ConfigShare modal renders LAST so it floats above
@@ -202,6 +205,11 @@ public class MenuScreen extends Screen implements QuickImports {
             vorga.phazeclient.api.system.shape.batched.BatchedRectangle.endScope();
         }
         context.getMatrices().pop();
+
+        // Outside the menu transform on purpose: the scale readout is
+        // positioned against the window, not the menu panel, and it
+        // must not inherit the menu's scaling or clipping.
+        vorga.phazeclient.implement.menu.components.implement.settings.ScaleSnapOverlay.render(context);
     }
 
     private void renderGuiRegionBlur(DrawContext context) {
@@ -268,7 +276,7 @@ public class MenuScreen extends Screen implements QuickImports {
     public void openGui() {
         updateOverlayMetrics();
         animation.setDirection(Direction.FORWARDS);
-        categoryContainerComponent.initializeCategoryComponents();
+        categoryContainerComponent.ensureCategoryComponentsInitialized();
         prewarmUiIconAtlas();
         closeModuleDetail();
         // Reset to MODS / ALL on every open. Without this, closing the
@@ -315,6 +323,10 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     public void openModuleDetail(vorga.phazeclient.api.feature.module.Module module) {
+        windowManager.closeAll();
+        SelectComponent.closeAllDropdowns();
+        MultiSelectComponent.closeAllDropdowns();
+        moduleDescriptionComponent.hide();
         moduleDetailComponent.open(module);
     }
 
@@ -383,6 +395,11 @@ public class MenuScreen extends Screen implements QuickImports {
         double overlayMouseX = toOverlayCoordinate(mouseX);
         double overlayMouseY = toOverlayCoordinate(mouseY);
         boolean insideMenu = MathUtil.isHovered(overlayMouseX, overlayMouseY, x, y, width, height);
+        boolean clickInsideWindow = windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
+
+        if (!clickInsideWindow) {
+            windowManager.closeAll();
+        }
 
         if (shouldStartMenuDrag(overlayMouseX, overlayMouseY, button, insideMenu)) {
             startMenuDrag(mouseX, mouseY);
@@ -418,7 +435,7 @@ public class MenuScreen extends Screen implements QuickImports {
         }
 
         if (moduleDetailComponent.isOpen()) {
-            boolean windowHandled = windowManager.mouseClicked(overlayMouseX, overlayMouseY, button);
+            boolean windowHandled = clickInsideWindow && windowManager.mouseClicked(overlayMouseX, overlayMouseY, button);
             boolean detailHandled = false;
             boolean backgroundHandled = false;
 
@@ -438,7 +455,7 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
-        if (!windowManager.mouseClicked(overlayMouseX, overlayMouseY, button)) {
+        if (!clickInsideWindow || !windowManager.mouseClicked(overlayMouseX, overlayMouseY, button)) {
             for (AbstractComponent component : components) {
                 if (component.mouseClicked(overlayMouseX, overlayMouseY, button)) {
                     return true;
@@ -721,9 +738,24 @@ public class MenuScreen extends Screen implements QuickImports {
         if (configShareModal.isOpen() || configsView.isPopupOpen()) {
             return false;
         }
-        return button == 0
-                && insideMenu
-                && !isPointerOverInteractiveElement(overlayMouseX, overlayMouseY);
+        if (button != 0 || !insideMenu) {
+            return false;
+        }
+
+        boolean inHeaderDragZone = MathUtil.isHovered(
+                overlayMouseX,
+                overlayMouseY,
+                x,
+                y,
+                width,
+                HEADER_DRAG_HEIGHT
+        );
+        if (inHeaderDragZone) {
+            return !backgroundComponent.isInteractiveHover(overlayMouseX, overlayMouseY)
+                    && !windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
+        }
+
+        return !isPointerOverInteractiveElement(overlayMouseX, overlayMouseY);
     }
 
     private boolean isPointerOverInteractiveElement(double overlayMouseX, double overlayMouseY) {

@@ -184,6 +184,10 @@ public class MultiSelectComponent extends AbstractSettingComponent {
 
     private void renderChip(MatrixStack matrices, Matrix4f positionMatrix, ChipEntry entry, int mouseX, int mouseY) {
         boolean selected = setting.getSelected().contains(entry.name);
+        boolean hovered = MathUtil.isHovered(mouseX, mouseY, entry.x, entry.y, entry.width, CHIP_HEIGHT);
+        if (hovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
 
         ChipAnimations anim = chipAnimations.computeIfAbsent(entry.name, n -> new ChipAnimations());
         // First-render seeding: a chip should land already in its

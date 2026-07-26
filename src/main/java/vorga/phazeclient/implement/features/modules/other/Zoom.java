@@ -18,6 +18,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
 
 public final class Zoom extends Module {
     private static final Zoom INSTANCE = new Zoom();
+    private static final float MIN_ZOOM_LEVEL = 2.0f;
+    private static final float SAFE_MAX_ZOOM_LEVEL = 1.0e30f;
+    private static final int SCIENTIFIC_ZOOM_ZERO_THRESHOLD = 15;
     
     private static boolean zoomActive = false;
     private static float currentZoomLevel = 7.5f;
@@ -97,11 +100,12 @@ public final class Zoom extends Module {
 
     // Settings getters
     public float getCurrentZoomLevel() {
+        currentZoomLevel = sanitizeZoomLevel(currentZoomLevel);
         return currentZoomLevel;
     }
     
     public void setCurrentZoomLevel(float level) {
-        currentZoomLevel = level;
+        currentZoomLevel = sanitizeZoomLevel(level);
     }
     
     public boolean isHold() {
@@ -155,6 +159,38 @@ public final class Zoom extends Module {
     public int getMaxZoom() {
         return maxZoom.getInt();
     }
+
+    public float getSafeMaxZoomLevel() {
+        if (!isEnableLimits()) {
+            return SAFE_MAX_ZOOM_LEVEL;
+        }
+        return Math.min(getMaxZoom(), SAFE_MAX_ZOOM_LEVEL);
+    }
+
+    public String getFormattedZoomLevel() {
+        float zoom = getCurrentZoomLevel();
+        if (!Float.isFinite(zoom)) {
+            return "0x";
+        }
+
+        int zeros = (int) Math.max(0, Math.floor(Math.log10(zoom)));
+        if (zeros >= SCIENTIFIC_ZOOM_ZERO_THRESHOLD) {
+            return "1e+" + zeros + "x";
+        }
+
+        if (Math.abs(zoom - Math.round(zoom)) < 0.05f) {
+            return Math.round(zoom) + "x";
+        }
+
+        return String.format(java.util.Locale.ROOT, "%.1fx", zoom);
+    }
+
+    public static float sanitizeZoomLevel(float level) {
+        if (!Float.isFinite(level) || level < MIN_ZOOM_LEVEL) {
+            return MIN_ZOOM_LEVEL;
+        }
+        return Math.min(level, SAFE_MAX_ZOOM_LEVEL);
+    }
     
     public static boolean isZoomActive() {
         return zoomActive;
@@ -166,13 +202,15 @@ public final class Zoom extends Module {
         // Resume Zoom logic
         if (!active && Zoom.getInstance().isResumeZoom()) {
             // Save zoom level when disabling
-            savedZoomLevel = currentZoomLevel;
+            savedZoomLevel = sanitizeZoomLevel(currentZoomLevel);
         } else if (active && Zoom.getInstance().isResumeZoom()) {
             // Restore zoom level when enabling
-            currentZoomLevel = savedZoomLevel;
+            currentZoomLevel = sanitizeZoomLevel(savedZoomLevel);
         } else if (active && !Zoom.getInstance().isResumeZoom()) {
             // Reset to default zoom when enabling without Resume Zoom
-            currentZoomLevel = Zoom.getInstance().getDefaultZoom();
+            currentZoomLevel = sanitizeZoomLevel(Zoom.getInstance().getDefaultZoom());
+        } else if (!active) {
+            currentZoomLevel = sanitizeZoomLevel(currentZoomLevel);
         }
     }
 }

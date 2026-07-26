@@ -68,14 +68,7 @@ public final class AutoReissue extends Module {
 
     @Override
     public boolean isServerAllowed() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) {
-            return false;
-        }
-        if (mc.isInSingleplayer()) {
-            return true;
-        }
-        return ServerUtil.isFunTimeServer();
+        return ServerUtil.isAutoReissueSupported();
     }
 
     @Override

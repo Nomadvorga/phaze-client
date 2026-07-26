@@ -12,12 +12,14 @@ public final class MenuUiSettings {
     public static final int MIN_GUI_FPS_LIMIT = 10;
     public static final int MAX_GUI_FPS_LIMIT = 260;
     public static final String DEFAULT_PANORAMA_PRESET_ID = "vanilla";
+    public static final boolean DEFAULT_CUSTOM_MAIN_MENU_ENABLED = true;
 
     private static final MenuUiSettings INSTANCE = new MenuUiSettings();
 
     private double panoramaSpeed = DEFAULT_PANORAMA_SPEED;
     private int guiFpsLimit = DEFAULT_GUI_FPS_LIMIT;
     private String selectedPanoramaPresetId = DEFAULT_PANORAMA_PRESET_ID;
+    private boolean customMainMenuEnabled = DEFAULT_CUSTOM_MAIN_MENU_ENABLED;
 
     private MenuUiSettings() {
     }
@@ -43,6 +45,10 @@ public final class MenuUiSettings {
         return selected == null ? DEFAULT_PANORAMA_PRESET_ID : selected.getId();
     }
 
+    public boolean isCustomMainMenuEnabled() {
+        return customMainMenuEnabled;
+    }
+
     public void setPanoramaSpeed(double panoramaSpeed) {
         setPanoramaSpeedInternal(panoramaSpeed, true);
     }
@@ -63,26 +69,33 @@ public final class MenuUiSettings {
         setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), true);
     }
 
-    public void applyConfig(double panoramaSpeed, int guiFpsLimit, String presetId) {
+    public void setCustomMainMenuEnabled(boolean enabled) {
+        setCustomMainMenuEnabledInternal(enabled, true);
+    }
+
+    public void applyConfig(double panoramaSpeed, int guiFpsLimit, String presetId, boolean customMainMenuEnabled) {
         setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), false);
         setPanoramaSpeedInternal(panoramaSpeed, false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
+        setCustomMainMenuEnabledInternal(customMainMenuEnabled, false);
     }
 
-    public void applyLegacyScaleV2Config(double panoramaSpeed, int guiFpsLimit, String presetId) {
+    public void applyLegacyScaleV2Config(double panoramaSpeed, int guiFpsLimit, String presetId, boolean customMainMenuEnabled) {
         setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), false);
         setPanoramaSpeedInternal(Math.min(100.0D, panoramaSpeed * 2.0D), false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
+        setCustomMainMenuEnabledInternal(customMainMenuEnabled, false);
     }
 
-    public void applyLegacyScaleV1Config(double panoramaSpeed, int guiFpsLimit, String presetId) {
+    public void applyLegacyScaleV1Config(double panoramaSpeed, int guiFpsLimit, String presetId, boolean customMainMenuEnabled) {
         setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), false);
         setPanoramaSpeedInternal(Math.min(100.0D, panoramaSpeed * 10.0D), false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
+        setCustomMainMenuEnabledInternal(customMainMenuEnabled, false);
     }
 
     public void resetToDefaults() {
-        applyConfig(DEFAULT_PANORAMA_SPEED, DEFAULT_GUI_FPS_LIMIT, DEFAULT_PANORAMA_PRESET_ID);
+        applyConfig(DEFAULT_PANORAMA_SPEED, DEFAULT_GUI_FPS_LIMIT, DEFAULT_PANORAMA_PRESET_ID, DEFAULT_CUSTOM_MAIN_MENU_ENABLED);
     }
 
     private void setPanoramaSpeedInternal(double panoramaSpeed, boolean markDirty) {
@@ -106,6 +119,13 @@ public final class MenuUiSettings {
     private void setSelectedPanoramaPresetInternal(PanoramaDescriptor preset, boolean markDirty) {
         PanoramaDescriptor resolved = preset == null ? PanoramaPreset.VANILLA : preset;
         this.selectedPanoramaPresetId = resolved.getId();
+        if (markDirty) {
+            ConfigManager.getInstance().markDirty();
+        }
+    }
+
+    private void setCustomMainMenuEnabledInternal(boolean enabled, boolean markDirty) {
+        this.customMainMenuEnabled = enabled;
         if (markDirty) {
             ConfigManager.getInstance().markDirty();
         }
@@ -137,6 +157,22 @@ public final class MenuUiSettings {
         default boolean isCustom() {
             return false;
         }
+
+        default boolean isRemote() {
+            return false;
+        }
+
+        default boolean isDownloading() {
+            return false;
+        }
+
+        default float downloadProgress() {
+            return 0.0F;
+        }
+
+        default boolean hasPreviewTexture() {
+            return true;
+        }
     }
 
     public enum PanoramaPreset implements PanoramaDescriptor {
@@ -144,21 +180,6 @@ public final class MenuUiSettings {
                 "vanilla",
                 "Vanilla",
                 Identifier.ofVanilla("textures/gui/title/background/panorama")
-        ),
-        CHATEAU(
-                "chateau",
-                "Chateau",
-                Identifier.of("phaze", "textures/menu/panoramas/chateau/panorama")
-        ),
-        POST_SOVIET_NIGHT(
-                "post_soviet_night",
-                "Post-Soviet Night",
-                Identifier.of("phaze", "textures/menu/panoramas/post_soviet_night/panorama")
-        ),
-        CASTLE(
-                "castle",
-                "Castle",
-                Identifier.of("phaze", "textures/menu/panoramas/castle/panorama")
         );
 
         private final String id;

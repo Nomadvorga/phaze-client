@@ -52,6 +52,10 @@ public class AlphaComponent extends AbstractComponent {
         Y = y + 10.5F;
         W = 6;
         H = 50;
+        boolean hoveredStrip = MathUtil.isHovered(mouseX, mouseY, X, Y, W, H);
+        if (alphaDragging || hoveredStrip) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestVerticalResize();
+        }
 
         // Underlying checker pattern that visualizes transparency.
         // Same UV-rotation trick as SaturationComponent: stretch the

@@ -54,6 +54,9 @@ public class MultiColorComponent extends AbstractSettingComponent {
             if (colorSetting != null) {
                 float colorX = x + width - 15.5f - ((colorCount - 1 - i) * 9);
                 float colorY = y + height / 2 - 3.5f;
+                if (MathUtil.isHovered(mouseX, mouseY, colorX, colorY, 7, 7)) {
+                    vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+                }
 
                 // Single SDF rect carries fill + outline: the shader
                 // paints a 1.2 px BORDER_LIGHT ring AND the swatch's

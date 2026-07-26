@@ -72,7 +72,7 @@ public abstract class KeyboardMixin {
      *  doesn't double-fire its normal binding. */
     @Inject(method = "onKey", at = @At("HEAD"), cancellable = true)
     private void phaze$onKeyAutoSwap(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
-        if (!AutoSwap.getInstance().isEnabled()) {
+        if (!AutoSwap.getInstance().isEnabled() || !AutoSwap.getInstance().canActivateInGame()) {
             return;
         }
         int bindKey = AutoSwap.getInstance().keybind.getKey();

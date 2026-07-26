@@ -15,10 +15,6 @@ import java.util.regex.Pattern;
 @Getter
 @UtilityClass
 public class ColorUtil {
-    private final long CACHE_EXPIRATION_TIME = 60 * 1000;
-    private final ConcurrentHashMap<ColorKey, CacheEntry> colorCache = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService cacheCleaner = Executors.newScheduledThreadPool(1);
-    private final DelayQueue<CacheEntry> cleanupQueue = new DelayQueue<>();
     public static final Pattern FORMATTING_CODE_PATTERN = Pattern.compile("(?i)§[0-9a-f-or]");
     public Char2IntArrayMap colorCodes = new Char2IntArrayMap() {{
         put('0', 0x000000);
@@ -38,18 +34,6 @@ public class ColorUtil {
         put('E', 0xFFFF55);
         put('F', 0xFFFFFF);
     }};
-
-    static {
-        cacheCleaner.scheduleWithFixedDelay(() -> {
-            CacheEntry entry = cleanupQueue.poll();
-            while (entry != null) {
-                if (entry.isExpired()) {
-                    colorCache.remove(entry.key());
-                }
-                entry = cleanupQueue.poll();
-            }
-        }, 0, 1, TimeUnit.SECONDS);
-    }
 
     public final int RED = getColor(255, 0, 0);
     public final int GREEN = getColor(0, 255, 0);
@@ -284,14 +268,23 @@ public class ColorUtil {
                 ColorUtil.multAlpha(ColorUtil.multiColorFade(180), alpha), ColorUtil.multAlpha(ColorUtil.multiColorFade(90), alpha));
     }
 
+    /**
+     * Packs four channels into an ARGB int.
+     *
+     * <p>This used to memoize the result in a {@code ConcurrentHashMap}
+     * fronted by a {@code DelayQueue} and a once-a-second cleaner thread.
+     * The cached computation is four clamps and three shifts - on the order
+     * of nanoseconds - while the cache around it allocated a {@code ColorKey}
+     * on <em>every</em> call, hashed it, and on a miss additionally allocated
+     * a {@code CacheEntry} and took the DelayQueue lock. The cache cost more
+     * than the work it was avoiding and produced garbage on a path the whole
+     * HUD and GUI renderer runs through (Rectangle, Arc, Image,
+     * BatchedRectangle, FontRenderer, Blur, InGameHudMixin, ...).
+     *
+     * <p>Return value is bit-identical to the cached version.
+     */
     public int getColor(int red, int green, int blue, int alpha) {
-        ColorKey key = new ColorKey(red, green, blue, alpha);
-        CacheEntry cacheEntry = colorCache.computeIfAbsent(key, k -> {
-            CacheEntry newEntry = new CacheEntry(k, computeColor(red, green, blue, alpha), CACHE_EXPIRATION_TIME);
-            cleanupQueue.offer(newEntry);
-            return newEntry;
-        });
-        return cacheEntry.color();
+        return computeColor(red, green, blue, alpha);
     }
 
     public int getColor(int red, int green, int blue) {
@@ -305,15 +298,8 @@ public class ColorUtil {
                 MathHelper.clamp(blue, 0, 255));
     }
 
-    private String generateKey(int red, int green, int blue, int alpha) {
-        return red + "," + green + "," + blue + "," + alpha;
-    }
-
     public String formatting(int color) {
         return "⏏" + color + "⏏";
-    }
-
-    private record ColorKey(int red, int green, int blue, int alpha) {
     }
 
     public static int lighter(int hex) {
@@ -352,33 +338,6 @@ public class ColorUtil {
         }
 
         return (a << 24) | (r << 16) | (g << 8) | b;
-    }
-
-    private record CacheEntry(ColorKey key, int color, long expirationTime) implements Delayed {
-        private CacheEntry(ColorKey key, int color, long expirationTime) {
-            this.key = key;
-            this.color = color;
-            this.expirationTime = System.currentTimeMillis() + expirationTime;
-        }
-
-        @Override
-        public long getDelay(TimeUnit unit) {
-            long delay = expirationTime - System.currentTimeMillis();
-            return unit.convert(delay, TimeUnit.MILLISECONDS);
-        }
-
-        @Override
-        public int compareTo(@NotNull Delayed other) {
-            if (other instanceof CacheEntry) {
-                return Long.compare(this.expirationTime, ((CacheEntry) other).expirationTime);
-            }
-            return 0;
-        }
-
-        public boolean isExpired() {
-            return System.currentTimeMillis() > expirationTime;
-        }
-
     }
 
     public String removeFormatting(String text) {

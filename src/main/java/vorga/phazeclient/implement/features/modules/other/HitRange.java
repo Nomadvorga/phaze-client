@@ -97,7 +97,7 @@ public final class HitRange extends Module {
     public final SectionSetting colorsSection = new SectionSetting("Colors");
     public final ColorSetting color = new ColorSetting(
             "Color",
-            "Base color of the circle when no other modifier applies."
+            "Base color of the circle. In Filled mode, this alpha controls fill opacity."
     ).value(0x80FF0000)
             .popupRow();
     public final ColorSetting inRangeColor = new ColorSetting(
@@ -105,6 +105,10 @@ public final class HitRange extends Module {
             "Color when the target entity is inside the configured radius."
     ).value(0x8000FF00)
             .popupRow();
+    public final ValueSetting outlineOpacity = new ValueSetting(
+            "Outline Opacity",
+            "Controls outline opacity in Filled mode without affecting fill opacity."
+    ).range(0.0f, 1.0f).step(0.01f).setValue(0.5f);
     public final BooleanSetting colorWhenInRange = new BooleanSetting(
             "Color When In Range",
             "Switch to In Range Color when the target is inside the radius."
@@ -152,6 +156,8 @@ public final class HitRange extends Module {
         // In Range Color is only consulted when Color When In Range is
         // on AND Random Colors is off.
         inRangeColor.visible(() -> colorWhenInRange.isValue() && !randomColors.isValue());
+        outlineOpacity.setFullWidth(true);
+        outlineOpacity.visible(() -> mode() == Mode.FILLED);
         randomColors.setFullWidth(true);
         colorWhenInRange.setFullWidth(true);
         colorWhenInRange.visible(() -> !randomColors.isValue());
@@ -174,7 +180,7 @@ public final class HitRange extends Module {
         setup(
                 appearanceSection, radius, renderMode, thickness, height,
                 targetingSection, nearestOnly, showSelf, maxSearchDistance, maxDistance,
-                colorsSection, color, inRangeColor, colorWhenInRange, randomColors,
+                colorsSection, color, inRangeColor, outlineOpacity, colorWhenInRange, randomColors,
                 advancedSection, circleSegments
         );
     }

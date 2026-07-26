@@ -5,6 +5,7 @@ import net.caffeinemc.mods.sodium.client.gl.shader.ShaderParser;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import vorga.phazeclient.base.util.shader.ChunkAnimatorShaderPatcher;
+import vorga.phazeclient.base.util.shader.WorldColorChunkShaderPatcher;
 
 /**
  * Per-section ChunkAnimator support under Sodium - GLSL half.
@@ -66,9 +67,6 @@ public abstract class ShaderParserChunkAnimatorMixin {
             remap = false
     )
     private static String phaze$injectChunkAnim(String original) {
-        // Delegate to the shared patcher - the same code path the
-        // Iris-side mixin uses, so any tweak (marker change, regex
-        // refinement, etc.) lands in both places at once.
-        return ChunkAnimatorShaderPatcher.patch(original);
+        return WorldColorChunkShaderPatcher.patch(ChunkAnimatorShaderPatcher.patch(original));
     }
 }

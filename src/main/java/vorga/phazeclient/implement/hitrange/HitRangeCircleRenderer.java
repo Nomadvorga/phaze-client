@@ -62,6 +62,7 @@ import java.util.Locale;
  * segment count, with no per-vertex trig.
  */
 public final class HitRangeCircleRenderer {
+    private static final float FILLED_OUTLINE_Y_EPSILON = 0.0015F;
     private static final RenderLayer.MultiPhase DEBUG_LINES = makeLayer(VertexFormat.DrawMode.DEBUG_LINES);
     private static final RenderLayer.MultiPhase DEBUG_QUADS = makeLayer(VertexFormat.DrawMode.QUADS);
     private static final RenderLayer.MultiPhase TRIANGLES = makeLayer(VertexFormat.DrawMode.TRIANGLES);
@@ -109,21 +110,33 @@ public final class HitRangeCircleRenderer {
         float dy = (state.sneaking ? 0.125f : 0.0f) + config.height.getValue();
 
         HitRange.Mode mode = config.mode();
-        RenderLayer layer = switch (mode) {
-            case LINE -> DEBUG_LINES;
-            case THICK -> DEBUG_QUADS;
-            case FILLED -> TRIANGLES;
-        };
-
-        VertexConsumer vertices = vertexConsumers.getBuffer(layer);
+        ResolvedCircleColors resolvedColors = resolveColors(config, mode, color);
 
         matrices.push();
         switch (mode) {
-            case LINE -> drawCircleLines(matrices, vertices, dy, color);
-            case THICK -> drawCircleQuad(matrices, vertices, dy, color);
-            case FILLED -> drawCircleTriangles(matrices, vertices, dy, color);
+            case LINE -> drawCircleLines(matrices, vertexConsumers.getBuffer(DEBUG_LINES), dy, resolvedColors.outlineArgb());
+            case THICK -> drawCircleQuad(matrices, vertexConsumers.getBuffer(DEBUG_QUADS), dy, resolvedColors.outlineArgb());
+            case FILLED -> {
+                if (((resolvedColors.fillArgb() >>> 24) & 0xFF) > 0) {
+                    drawCircleTriangles(matrices, vertexConsumers.getBuffer(TRIANGLES), dy, resolvedColors.fillArgb());
+                }
+                if (((resolvedColors.outlineArgb() >>> 24) & 0xFF) > 0) {
+                    drawCircleLines(matrices, vertexConsumers.getBuffer(DEBUG_LINES), dy + FILLED_OUTLINE_Y_EPSILON, resolvedColors.outlineArgb());
+                }
+            }
         }
         matrices.pop();
+    }
+
+    private static ResolvedCircleColors resolveColors(HitRange config, HitRange.Mode mode, int color) {
+        if (mode != HitRange.Mode.FILLED) {
+            return new ResolvedCircleColors(color, color);
+        }
+
+        int rgb = color & 0x00FFFFFF;
+        int fillAlpha = (color >>> 24) & 0xFF;
+        int outlineAlpha = MathHelper.clamp(Math.round(config.outlineOpacity.getValue() * 255.0F), 0, 255);
+        return new ResolvedCircleColors((fillAlpha << 24) | rgb, (outlineAlpha << 24) | rgb);
     }
 
     private static void drawCircleLines(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
@@ -236,7 +249,7 @@ public final class HitRangeCircleRenderer {
                 RenderLayer.MultiPhaseParameters.builder()
                         .program(RenderPhase.POSITION_COLOR_PROGRAM)
                         .transparency(RenderPhase.TRANSLUCENT_TRANSPARENCY)
-                        .cull(RenderPhase.ENABLE_CULLING)
+                        .cull(RenderPhase.DISABLE_CULLING)
                         .lightmap(RenderPhase.ENABLE_LIGHTMAP)
                         .overlay(RenderPhase.ENABLE_OVERLAY_COLOR)
                         .writeMaskState(RenderPhase.COLOR_MASK)
@@ -255,5 +268,8 @@ public final class HitRangeCircleRenderer {
         Angle(float dx, float dz) {
             this(dx, dz, 0.0f, 0.0f);
         }
+    }
+
+    private record ResolvedCircleColors(int fillArgb, int outlineArgb) {
     }
 }

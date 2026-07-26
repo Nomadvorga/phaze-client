@@ -67,6 +67,12 @@ public final class Predictions extends Module {
     private static final Predictions INSTANCE = new Predictions();
     /** Hard cap on simulation ticks - matches the upstream cap, ~15s of flight at 20Hz. */
     private static final int MAX_TICKS = 300;
+    private static final int HELD_PREDICTION_CACHE_SIZE = 4;
+    private final CachedPrediction[] heldPredictionCache = new CachedPrediction[HELD_PREDICTION_CACHE_SIZE];
+    private Object heldPredictionWorld;
+    private long heldPredictionTick = Long.MIN_VALUE;
+    private int heldPredictionCacheCount;
+    private int heldPredictionCacheWriteIndex;
 
     // ---- Trajectory ---------------------------------------------------
     // Everything that controls the line itself: should we draw it,
@@ -455,20 +461,58 @@ public final class Predictions extends Module {
      * the projectile flies past {@link #MAX_TICKS} without hitting
      * anything.
      */
+    public TrajectoryResult predictCached(Vec3d startPos, Vec3d startMotion, double gravity, boolean trident, Entity owner) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.world == null) return null;
+        long worldTick = mc.world.getTime();
+        if (heldPredictionWorld != mc.world || heldPredictionTick != worldTick) {
+            heldPredictionWorld = mc.world;
+            heldPredictionTick = worldTick;
+            heldPredictionCacheCount = 0;
+            heldPredictionCacheWriteIndex = 0;
+        }
+        for (int i = 0; i < heldPredictionCacheCount; i++) {
+            CachedPrediction cached = heldPredictionCache[i];
+            if (cached != null && cached.matches(startPos, startMotion, gravity, trident, owner)) {
+                return cached.result;
+            }
+        }
+
+        TrajectoryResult result = predict(startPos, startMotion, gravity, trident, owner);
+        heldPredictionCache[heldPredictionCacheWriteIndex] = new CachedPrediction(
+                startPos, startMotion, gravity, trident, owner, result
+        );
+        heldPredictionCacheWriteIndex = (heldPredictionCacheWriteIndex + 1) % HELD_PREDICTION_CACHE_SIZE;
+        heldPredictionCacheCount = Math.min(HELD_PREDICTION_CACHE_SIZE, heldPredictionCacheCount + 1);
+        return result;
+    }
+
     public TrajectoryResult predict(Vec3d startPos, Vec3d startMotion, double gravity, boolean trident, Entity owner) {
+        return predictInto(startPos, startMotion, gravity, trident, owner, new ArrayList<>(64));
+    }
+
+    private TrajectoryResult predictInto(
+            Vec3d startPos,
+            Vec3d startMotion,
+            double gravity,
+            boolean trident,
+            Entity owner,
+            List<Vec3d> path
+    ) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.world == null) return null;
         Vec3d pos = startPos;
         Vec3d motion = startMotion;
-        java.util.List<Vec3d> path = new java.util.ArrayList<>();
+        path.clear();
         path.add(pos);
+        BlockPos.Mutable fluidPos = new BlockPos.Mutable();
         for (int i = 0; i < MAX_TICKS; i++) {
             Vec3d prev = pos;
             pos = pos.add(motion);
             // Drag selection: trident always 0.99, persistent in water
             // 0.6, throwables in water 0.8, otherwise 0.99.
-            BlockPos bp = BlockPos.ofFloored(prev);
-            boolean inWater = mc.world.getBlockState(bp).getFluidState().isIn(FluidTags.WATER);
+            fluidPos.set(MathHelper.floor(prev.x), MathHelper.floor(prev.y), MathHelper.floor(prev.z));
+            boolean inWater = mc.world.getBlockState(fluidPos).getFluidState().isIn(FluidTags.WATER);
             float drag = trident ? 0.99F : (inWater ? 0.8F : 0.99F);
             motion = motion.multiply(drag).add(0.0, -gravity, 0.0);
 
@@ -645,7 +689,7 @@ public final class Predictions extends Module {
                     trident = true;
                 }
             }
-            TrajectoryResult fresh = predict(startPos, startMotion, gravity, trident, owner);
+            TrajectoryResult fresh = predictInto(startPos, startMotion, gravity, trident, owner, t.simulationPath);
             if (fresh != null && fresh.path() != null && fresh.path().size() >= 2) {
                 t.result = fresh;
             }
@@ -683,10 +727,23 @@ public final class Predictions extends Module {
          *  "no previous frame" so the first paint snaps directly to
          *  the live impact. */
         public long lastSmoothNanos = 0L;
+        private final List<Vec3d> simulationPath = new ArrayList<>(64);
+        private final List<Vec3d> remainingPath = new ArrayList<>(64);
 
         ProjectileTrail(ProjectileEntity entity, TrajectoryResult result) {
             this.entity = entity;
-            this.result = result;
+            if (result != null && result.path() != null) {
+                simulationPath.addAll(result.path());
+                this.result = new TrajectoryResult(
+                        simulationPath,
+                        result.impact(),
+                        result.type(),
+                        result.face(),
+                        result.entity()
+                );
+            } else {
+                this.result = result;
+            }
             this.smoothedImpact = result != null ? result.impact() : null;
         }
 
@@ -729,14 +786,21 @@ public final class Predictions extends Module {
             for (int i = 0; i < path.size() - 1; i++) {
                 Vec3d a = path.get(i);
                 Vec3d b = path.get(i + 1);
-                Vec3d ab = b.subtract(a);
-                double abLen2 = ab.lengthSquared();
+                double abX = b.x - a.x;
+                double abY = b.y - a.y;
+                double abZ = b.z - a.z;
+                double abLen2 = abX * abX + abY * abY + abZ * abZ;
                 if (abLen2 < 1e-9) continue;
-                double t = cur.subtract(a).dotProduct(ab) / abLen2;
+                double t = ((cur.x - a.x) * abX + (cur.y - a.y) * abY + (cur.z - a.z) * abZ) / abLen2;
                 if (t < 0.0) t = 0.0;
                 else if (t > 1.0) t = 1.0;
-                Vec3d proj = a.add(ab.multiply(t));
-                double d = proj.squaredDistanceTo(cur);
+                double projX = a.x + abX * t;
+                double projY = a.y + abY * t;
+                double projZ = a.z + abZ * t;
+                double dx = projX - cur.x;
+                double dy = projY - cur.y;
+                double dz = projZ - cur.z;
+                double d = dx * dx + dy * dy + dz * dz;
                 if (d < bestDist) {
                     bestDist = d;
                     bestSegIdx = i;
@@ -749,12 +813,12 @@ public final class Predictions extends Module {
             // along the segment [bestSegIdx, bestSegIdx+1], so
             // joining (cur) directly to (bestSegIdx+1) avoids any
             // backtrack, and the rest of the path continues forward.
-            List<Vec3d> remaining = new ArrayList<>(path.size() - bestSegIdx);
-            remaining.add(cur);
+            remainingPath.clear();
+            remainingPath.add(cur);
             for (int i = bestSegIdx + 1; i < path.size(); i++) {
-                remaining.add(path.get(i));
+                remainingPath.add(path.get(i));
             }
-            return remaining;
+            return remainingPath;
         }
 
         /** No-arg overload uses the entity's tick-boundary position.
@@ -767,5 +831,29 @@ public final class Predictions extends Module {
     /** Path + impact info returned by {@link #predict}. */
     public record TrajectoryResult(java.util.List<Vec3d> path, Vec3d impact, HitResult.Type type,
                                     net.minecraft.util.math.Direction face, Entity entity) {
+    }
+
+    private record CachedPrediction(
+            Vec3d startPos,
+            Vec3d startMotion,
+            double gravity,
+            boolean trident,
+            Entity owner,
+            TrajectoryResult result
+    ) {
+        private boolean matches(Vec3d start, Vec3d motion, double gravity, boolean trident, Entity owner) {
+            return same(startPos, start)
+                    && same(startMotion, motion)
+                    && Double.doubleToLongBits(this.gravity) == Double.doubleToLongBits(gravity)
+                    && this.trident == trident
+                    && this.owner == owner;
+        }
+
+        private static boolean same(Vec3d first, Vec3d second) {
+            return first != null && second != null
+                    && Double.doubleToLongBits(first.x) == Double.doubleToLongBits(second.x)
+                    && Double.doubleToLongBits(first.y) == Double.doubleToLongBits(second.y)
+                    && Double.doubleToLongBits(first.z) == Double.doubleToLongBits(second.z);
+        }
     }
 }

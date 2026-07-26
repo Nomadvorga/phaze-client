@@ -79,10 +79,11 @@ public class MouseZoomMixin {
             newZoom = 2.0f;
         }
 
-        if (Zoom.getInstance().isEnableLimits()) {
-            newZoom = Math.max(2.0f, Math.min(newZoom, Zoom.getInstance().getMaxZoom()));
+        if (!Double.isFinite(newZoom)) {
+            newZoom = Zoom.getInstance().getSafeMaxZoomLevel();
         }
 
+        newZoom = Math.max(2.0f, Math.min(newZoom, Zoom.getInstance().getSafeMaxZoomLevel()));
         Zoom.getInstance().setCurrentZoomLevel((float) newZoom);
         ci.cancel();
     }

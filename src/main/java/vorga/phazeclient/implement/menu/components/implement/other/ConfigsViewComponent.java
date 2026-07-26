@@ -114,7 +114,12 @@ public class ConfigsViewComponent extends AbstractComponent {
     private boolean open = false;
 
     private final Map<String, String> timestampCache = new LinkedHashMap<>();
+    private final Map<String, String> sizeCache = new LinkedHashMap<>();
+    private final Map<String, Long> modifiedTimeCache = new LinkedHashMap<>();
+    private final Map<String, String> relativeModifiedCache = new LinkedHashMap<>();
+    private final Map<String, Boolean> importedCache = new LinkedHashMap<>();
     private final SimpleDateFormat tsFormat = new SimpleDateFormat("dd.MM HH:mm", Locale.ROOT);
+    private long nextRelativeRefreshMs = 0L;
 
     private float scrollOffset = 0.0F;
     private float maxScrollOffset = 0.0F;
@@ -125,7 +130,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         if (this.popup != null) this.popup.close();
         this.popup = null;
         this.scrollOffset = 0.0F;
-        refreshTimestamps();
+        refreshMetadataCaches();
     }
 
     public void close() {
@@ -138,24 +143,46 @@ public class ConfigsViewComponent extends AbstractComponent {
         return open || openAnim.getOutputFloat() > 0.001F;
     }
 
-    private void refreshTimestamps() {
+    private void refreshMetadataCaches() {
         timestampCache.clear();
+        sizeCache.clear();
+        modifiedTimeCache.clear();
+        relativeModifiedCache.clear();
+        importedCache.clear();
         ConfigManager mgr = ConfigManager.getInstance();
+        long now = System.currentTimeMillis();
         for (String name : mgr.getConfigList()) {
             File file = mgr.getConfigFile(name);
-            long mtime = file.exists() ? file.lastModified() : 0L;
+            boolean exists = file.exists();
+            long mtime = exists ? file.lastModified() : 0L;
             timestampCache.put(name, mtime > 0 ? tsFormat.format(new Date(mtime)) : "—");
+            sizeCache.put(name, exists ? humanReadableSize(file.length()) : "—");
+            modifiedTimeCache.put(name, mtime);
+            relativeModifiedCache.put(name, humanReadableModified(now, mtime));
+            importedCache.put(name, mgr.isImportedConfig(name));
         }
+        nextRelativeRefreshMs = now + 1000L;
+    }
+
+    private void refreshRelativeModifiedCache() {
+        long now = System.currentTimeMillis();
+        if (now < nextRelativeRefreshMs) {
+            return;
+        }
+        for (Map.Entry<String, Long> entry : modifiedTimeCache.entrySet()) {
+            relativeModifiedCache.put(entry.getKey(), humanReadableModified(now, entry.getValue()));
+        }
+        nextRelativeRefreshMs = now + 1000L;
     }
 
     /**
      * Hook the import modal calls after a successful download. Just
-     * a thin wrapper around {@link #refreshTimestamps} that the menu
+     * a thin wrapper around {@link #refreshMetadataCaches} that the menu
      * can pass as a {@code Runnable} - keeps the import path from
      * having to know about ConfigsView's internals.
      */
     public void refreshAfterImport() {
-        refreshTimestamps();
+        refreshMetadataCaches();
     }
 
     /* ============================================================ */
@@ -170,6 +197,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         // fade so the rows AND the kebab popup softly fade in/out
         // alongside the rest of the GUI instead of snapping.
         float fadeAlpha = openAnim.getOutputFloat() * globalAlpha;
+        refreshRelativeModifiedCache();
 
         float listX = x + SIDE_MARGIN;
         float listW = width - SIDE_MARGIN * 2.0F;
@@ -231,6 +259,9 @@ public class ConfigsViewComponent extends AbstractComponent {
                            float listX, float rowY, float listW,
                            String name, String authorLabel, float fadeAlpha) {
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, listX, rowY, listW, ROW_HEIGHT);
+        if (hovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
         Animation rowAnim = rowHoverAnims.computeIfAbsent(name,
                 k -> new DecelerateAnimation().setMs(160).setValue(1));
         rowAnim.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -261,7 +292,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         // imported from a server share-key, {@code file.png} for
         // locally created configs. The marker comes from
         // {@link ConfigManager#isImportedConfig}.
-        boolean imported = ConfigManager.getInstance().isImportedConfig(name);
+        boolean imported = importedCache.getOrDefault(name, Boolean.FALSE);
         String iconTexture = imported ? "textures/file_import.png" : "textures/file.png";
         float iconWidth = resolveUiIconWidth(iconTexture, ICON_SIZE);
         float iconX = listX + 9.0F + (ICON_AREA_W - 6.0F - iconWidth) * 0.5F;
@@ -355,7 +386,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         // 1px down so the text sits on the icon's optical centre.
         cursorX = renderMetaChip(matrix, cursorX, metaY,
                 "textures/size.png",
-                Lang.translate("Size") + ": " + humanReadableSize(configName),
+                Lang.translate("Size") + ": " + sizeCache.getOrDefault(configName, "—"),
                 metaColor, fadeAlpha, 1.0F, META_ICON_SIZE);
         cursorX += META_GROUP_GAP;
 
@@ -371,7 +402,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         } else {
             renderMetaChip(matrix, cursorX, metaY,
                     "textures/clock.png",
-                    Lang.translate("Last modified") + ": " + humanReadableModified(configName),
+                    Lang.translate("Last modified") + ": " + relativeModifiedCache.getOrDefault(configName, "—"),
                     metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
         }
     }
@@ -415,42 +446,31 @@ public class ConfigsViewComponent extends AbstractComponent {
                         .build());
     }
 
-    private String humanReadableSize(String configName) {
-        try {
-            File f = ConfigManager.getInstance().getConfigFile(configName);
-            if (!f.exists()) return "—";
-            long bytes = f.length();
-            if (bytes < 1024L) return bytes + " B";
-            double kb = bytes / 1024.0;
-            if (kb < 1024.0) return String.format(Locale.ROOT, "%.1f KB", kb);
-            double mb = kb / 1024.0;
-            return String.format(Locale.ROOT, "%.1f MB", mb);
-        } catch (Throwable ignored) {
-            return "—";
-        }
+    private String humanReadableSize(long bytes) {
+        if (bytes < 0L) return "—";
+        if (bytes < 1024L) return bytes + " B";
+        double kb = bytes / 1024.0;
+        if (kb < 1024.0) return String.format(Locale.ROOT, "%.1f KB", kb);
+        double mb = kb / 1024.0;
+        return String.format(Locale.ROOT, "%.1f MB", mb);
     }
 
-    private String humanReadableModified(String configName) {
-        try {
-            File f = ConfigManager.getInstance().getConfigFile(configName);
-            if (!f.exists()) return "—";
-            long delta = System.currentTimeMillis() - f.lastModified();
-            if (delta < 0L) delta = 0L;
-            long sec = delta / 1000L;
-            if (sec < 60L) return Lang.translate("just now");
-            long min = sec / 60L;
-            if (min < 60L) return formatRelativeAgo(min, "minute");
-            long hr = min / 60L;
-            if (hr < 24L) return formatRelativeAgo(hr, "hour");
-            long day = hr / 24L;
-            if (day < 30L) return formatRelativeAgo(day, "day");
-            long mon = day / 30L;
-            if (mon < 12L) return formatRelativeAgo(mon, "month");
-            long yr = mon / 12L;
-            return formatRelativeAgo(yr, "year");
-        } catch (Throwable ignored) {
-            return "—";
-        }
+    private String humanReadableModified(long now, long modifiedAt) {
+        if (modifiedAt <= 0L) return "—";
+        long delta = now - modifiedAt;
+        if (delta < 0L) delta = 0L;
+        long sec = delta / 1000L;
+        if (sec < 60L) return Lang.translate("just now");
+        long min = sec / 60L;
+        if (min < 60L) return formatRelativeAgo(min, "minute");
+        long hr = min / 60L;
+        if (hr < 24L) return formatRelativeAgo(hr, "hour");
+        long day = hr / 24L;
+        if (day < 30L) return formatRelativeAgo(day, "day");
+        long mon = day / 30L;
+        if (mon < 12L) return formatRelativeAgo(mon, "month");
+        long yr = mon / 12L;
+        return formatRelativeAgo(yr, "year");
     }
 
     private String formatRelativeAgo(long value, String unit) {
@@ -534,6 +554,9 @@ public class ConfigsViewComponent extends AbstractComponent {
                                     float btnX, float rowY, String configName,
                                     ActionKind kind, float fadeAlpha) {
         boolean hover = MathUtil.isHovered(mouseX, mouseY, btnX, rowY, ACTION_BUTTON_W, ROW_HEIGHT);
+        if (hover) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
         String key = configName + "::" + kind.name();
         Animation a = actionHoverAnims.computeIfAbsent(key,
                 k -> new DecelerateAnimation().setMs(140).setValue(1));
@@ -617,7 +640,7 @@ public class ConfigsViewComponent extends AbstractComponent {
                 if (MathUtil.isHovered(mouseX, mouseY, listX, rowY, bodyEndX - listX, ROW_HEIGHT)) {
                     playButtonClickSound();
                     mgr.loadConfig(name);
-                    refreshTimestamps();
+                    refreshMetadataCaches();
                     return true;
                 }
             }
@@ -634,11 +657,11 @@ public class ConfigsViewComponent extends AbstractComponent {
      *  without the popup intermediate UI. */
     private void handleActionClick(String configName, ActionKind kind) {
         switch (kind) {
-            case RENAME -> MenuScreen.INSTANCE.openConfigRenameModal(configName, this::refreshTimestamps);
+            case RENAME -> MenuScreen.INSTANCE.openConfigRenameModal(configName, this::refreshMetadataCaches);
             case SHARE -> MenuScreen.INSTANCE.openConfigShareModal(configName);
             case DELETE -> {
                 ConfigManager.getInstance().deleteConfig(configName);
-                refreshTimestamps();
+                refreshMetadataCaches();
             }
         }
     }
@@ -845,7 +868,7 @@ public class ConfigsViewComponent extends AbstractComponent {
 
             switch (idx) {
                 case 0 -> MenuScreen.INSTANCE.openConfigShareModal(configName);
-                case 1 -> MenuScreen.INSTANCE.openConfigRenameModal(configName, owner::refreshTimestamps);
+                case 1 -> MenuScreen.INSTANCE.openConfigRenameModal(configName, owner::refreshMetadataCaches);
                 case 2 -> {
                     ConfigManager mgr = ConfigManager.getInstance();
                     // Default is now a regular file - the manager
@@ -854,7 +877,7 @@ public class ConfigsViewComponent extends AbstractComponent {
                     // is also fine: deleteConfig auto-switches to
                     // the next available config.
                     mgr.deleteConfig(configName);
-                    owner.refreshTimestamps();
+                    owner.refreshMetadataCaches();
                 }
             }
             return true;

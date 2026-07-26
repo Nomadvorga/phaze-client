@@ -20,6 +20,9 @@ import vorga.phazeclient.base.util.color.ColorUtil;
 
 public class Rectangle implements Shape, QuickImports {
     private final ShaderProgramKey SHADER_KEY = new ShaderProgramKey(Identifier.of("phaze", "core/round"), VertexFormats.POSITION, Defines.EMPTY);
+    private final Vector3f scratchPosition = new Vector3f();
+    private final Vector3f scratchSize = new Vector3f();
+    private final Vector4f scratchRound = new Vector4f();
 
     @Override
     public void render(ShapeProperties shape) {
@@ -50,9 +53,9 @@ public class Rectangle implements Shape, QuickImports {
         float alpha = RenderSystem.getShaderColor()[3];
 
         Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
-        Vector3f pos = matrix4f.transformPosition(shape.getX(), shape.getY(), 0, new Vector3f()).mul(scale);
-        Vector3f size = matrix4f.getScale(new Vector3f()).mul(scale);
-        Vector4f round = shape.getRound().mul(size.y);
+        Vector3f pos = matrix4f.transformPosition(shape.getX(), shape.getY(), 0, scratchPosition).mul(scale);
+        Vector3f size = matrix4f.getScale(scratchSize).mul(scale);
+        Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);
 
         float softness = shape.getSoftness();
         float thickness = shape.getThickness();

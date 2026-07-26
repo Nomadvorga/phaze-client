@@ -110,18 +110,6 @@ public abstract class AbstractSettingComponent extends AbstractComponent {
 
     protected float animatedCardHover(boolean hovered) {
         cardHoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        // Dynamic Cursor: every setting row that funnels through this
-        // animated-hover helper is interactive (toggle, slider, color
-        // swatch, dropdown, bind capture, multi-select chip, group
-        // header, button). Funneling the request here means each
-        // concrete component just keeps calling animatedCardHover for
-        // its visuals and the cursor updates "for free" - the only
-        // exception is TextComponent, which has its own narrower
-        // beam-shaped rect inside the card and overrides this in its
-        // render method by issuing requestBeam().
-        if (hovered) {
-            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
-        }
         return cardHoverAnimation.getOutputFloat();
     }
 }

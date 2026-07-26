@@ -52,6 +52,10 @@ public final class CursorManager {
     public static final int SHAPE_ARROW = GLFW.GLFW_ARROW_CURSOR;
     public static final int SHAPE_HAND = GLFW.GLFW_HAND_CURSOR;
     public static final int SHAPE_BEAM = GLFW.GLFW_IBEAM_CURSOR;
+    /** Disabled / blocked action cursor. */
+    public static final int SHAPE_NOT_ALLOWED = GLFW.GLFW_NOT_ALLOWED_CURSOR;
+    /** Move / reposition cursor for draggable HUDs. */
+    public static final int SHAPE_MOVE = GLFW.GLFW_RESIZE_ALL_CURSOR;
     /** Vertical resize (the ↕ "изменение вертикальных размеров" shape).
      *  Used while the user spins the wheel vertically. */
     public static final int SHAPE_VRESIZE = GLFW.GLFW_VRESIZE_CURSOR;
@@ -77,11 +81,15 @@ public final class CursorManager {
     private static long arrowCursor = 0L;
     private static long handCursor = 0L;
     private static long beamCursor = 0L;
+    private static long notAllowedCursor = 0L;
+    private static long moveCursor = 0L;
     private static long vResizeCursor = 0L;
     private static long hResizeCursor = 0L;
 
     /** Most recently requested shape this frame. Reset at frame start. */
     private static int requestedShape = SHAPE_ARROW;
+    /** Priority of {@link #requestedShape}; higher wins within the frame. */
+    private static int requestedPriority = 0;
     /** Last shape committed to the OS. Used to skip redundant
      *  glfwSetCursor calls. {@code -1} forces the first commit through
      *  even when the request matches the (uninitialized) ARROW default. */
@@ -116,22 +124,38 @@ public final class CursorManager {
     /** Start of a Screen render frame; clears the request. */
     public static void beginFrame() {
         requestedShape = SHAPE_ARROW;
+        requestedPriority = 0;
         screenActive = true;
     }
 
     /** Request the hand pointer (typical button hover). */
     public static void requestHand() {
-        // Beam wins over hand because text fields are usually layered
-        // on top of buttons in the same screen and the user expects the
-        // input affordance to take precedence at the click point.
-        if (requestedShape != SHAPE_BEAM) {
-            requestedShape = SHAPE_HAND;
-        }
+        requestShape(SHAPE_HAND, 1);
     }
 
     /** Request the I-beam pointer (typical text-input hover). */
     public static void requestBeam() {
-        requestedShape = SHAPE_BEAM;
+        requestShape(SHAPE_BEAM, 5);
+    }
+
+    /** Request the "blocked / disabled" pointer. */
+    public static void requestNotAllowed() {
+        requestShape(SHAPE_NOT_ALLOWED, 4);
+    }
+
+    /** Request the move pointer for draggable HUD bodies. */
+    public static void requestMove() {
+        requestShape(SHAPE_MOVE, 3);
+    }
+
+    /** Request a horizontal resize affordance. */
+    public static void requestHorizontalResize() {
+        requestShape(SHAPE_HRESIZE, 2);
+    }
+
+    /** Request a vertical resize affordance. */
+    public static void requestVerticalResize() {
+        requestShape(SHAPE_VRESIZE, 2);
     }
 
     /**
@@ -322,6 +346,18 @@ public final class CursorManager {
                 }
                 yield beamCursor;
             }
+            case SHAPE_NOT_ALLOWED -> {
+                if (notAllowedCursor == 0L) {
+                    notAllowedCursor = GLFW.glfwCreateStandardCursor(SHAPE_NOT_ALLOWED);
+                }
+                yield notAllowedCursor;
+            }
+            case SHAPE_MOVE -> {
+                if (moveCursor == 0L) {
+                    moveCursor = GLFW.glfwCreateStandardCursor(SHAPE_MOVE);
+                }
+                yield moveCursor;
+            }
             case SHAPE_VRESIZE -> {
                 if (vResizeCursor == 0L) {
                     vResizeCursor = GLFW.glfwCreateStandardCursor(SHAPE_VRESIZE);
@@ -341,6 +377,17 @@ public final class CursorManager {
                 yield arrowCursor;
             }
         };
+    }
+
+    private static void requestShape(int shape, int priority) {
+        if (priority < requestedPriority) {
+            return;
+        }
+        if (priority == requestedPriority && requestedShape == SHAPE_BEAM && shape != SHAPE_BEAM) {
+            return;
+        }
+        requestedShape = shape;
+        requestedPriority = priority;
     }
 
     private static long windowHandle() {

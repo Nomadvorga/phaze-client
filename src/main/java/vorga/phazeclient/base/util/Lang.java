@@ -118,6 +118,7 @@ public final class Lang {
         en("status.cloud_not_found", "Code not found");
         en("status.cloud_exhausted", "This code has run out of uses");
         en("status.kicked_by_admin", "You were kicked by admin");
+        en("slider.snapped_to_default", "snapped to default");
         en("status.import_failed", "Import failed");
         en("status.imported_prefix", "Imported:");
         en("status.key_not_found", "Key not found");
@@ -180,6 +181,7 @@ public final class Lang {
         ru("status.cloud_not_found", "Код не найден");
         ru("status.cloud_exhausted", "У этого кода закончились использования");
         ru("status.kicked_by_admin", "Вы были кикнуты админом");
+        ru("slider.snapped_to_default", "залипло на дефолте");
         ru("status.import_failed", "Не удалось импортировать");
         ru("status.imported_prefix", "Импортирован:");
         ru("status.key_not_found", "Ключ не найден");

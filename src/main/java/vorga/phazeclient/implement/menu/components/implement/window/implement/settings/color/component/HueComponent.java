@@ -29,6 +29,12 @@ public class HueComponent extends AbstractComponent {
         Y = y + 10.5F;
         W = 138;
         H = 50;
+        boolean hoveredPicker = MathUtil.isHovered(mouseX, mouseY, X, Y, W, H);
+        if (hueDragging) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestMove();
+        } else if (hoveredPicker) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
 
         int[] color = {
                 applyGlobalAlpha(0xFF000000),

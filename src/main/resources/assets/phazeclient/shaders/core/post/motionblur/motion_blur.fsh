@@ -57,6 +57,21 @@ void main() {
     velocity = clampLength(velocity);
 
     vec2 totalOffset = BlendFactor * velocity;
+
+    // Ранний выход при пренебрежимо малом смещении.
+    //
+    // Выборки распределены по отрезку длиной totalOffset вокруг texCoord.
+    // Если весь этот отрезок короче четверти пикселя, все выборки попадают
+    // в один и тот же тексель, и цикл просто пересчитывает исходный пиксель:
+    // sqrt(sum(c*c) / N) == c. Порог намеренно консервативный - разница
+    // заведомо ниже кванта 1/255, поэтому качество не страдает, а
+    // неподвижная камера перестаёт стоить целого прохода с выборками.
+    vec2 spanPixels = totalOffset * view_res;
+    if (dot(spanPixels, spanPixels) < 0.0625) {
+        color = vec4(texture(MainSampler, texCoord).rgb, 1.0);
+        return;
+    }
+
     vec2 baseStep = totalOffset * inverseSamples;
 
     vec3 color_sum = vec3(0.0);

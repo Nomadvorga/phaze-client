@@ -42,6 +42,13 @@ public class CategoryContainerComponent extends AbstractComponent {
      */
     private float cachedTotalWidth = -1.0F;
 
+    public void ensureCategoryComponentsInitialized() {
+        if (!categoryComponents.isEmpty()) {
+            return;
+        }
+        initializeCategoryComponents();
+    }
+
     public void initializeCategoryComponents() {
         // Drop every per-card FBO before the old ModuleComponent
         // instances are dereferenced - the FBO color attachments are

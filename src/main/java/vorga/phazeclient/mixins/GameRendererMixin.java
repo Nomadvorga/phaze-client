@@ -2,7 +2,6 @@ package vorga.phazeclient.mixins;
 
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -42,26 +41,23 @@ public abstract class GameRendererMixin {
             return;
         }
 
-        MatrixStack stack = new MatrixStack();
-        stack.peek().getPositionMatrix().identity();
+        Matrix4f projection = new Matrix4f();
 
         float ratio = module.getRatio();
 
         if (zoom != 1.0F) {
-            stack.translate(zoomX, -zoomY, 0.0F);
-            stack.scale(zoom, zoom, 1.0F);
+            projection.translate(zoomX, -zoomY, 0.0F);
+            projection.scale(zoom, zoom, 1.0F);
         }
 
-        stack.peek().getPositionMatrix().mul(
-                new Matrix4f().setPerspective(
-                        (float) (fovDegrees * (Math.PI / 180.0)),
-                        ratio,
-                        0.05F,
-                        viewDistance * 4.0F
-                )
+        projection.perspective(
+                (float) (fovDegrees * (Math.PI / 180.0)),
+                ratio,
+                0.05F,
+                viewDistance * 4.0F
         );
 
-        cir.setReturnValue(stack.peek().getPositionMatrix());
+        cir.setReturnValue(projection);
     }
 
     /** MotionBlur pass - runs BEFORE renderHand so the blurred frame

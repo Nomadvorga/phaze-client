@@ -48,6 +48,10 @@ public class SaturationComponent extends AbstractComponent {
         Y = y + 10.5F;
         W = 6;
         H = 50;
+        boolean hoveredStrip = MathUtil.isHovered(mouseX, mouseY, X, Y, W, H);
+        if (saturationDragging || hoveredStrip) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestVerticalResize();
+        }
 
         // Render the rainbow strip with a custom textured quad whose
         // UVs are swapped 90 degrees so the source texture (a single-

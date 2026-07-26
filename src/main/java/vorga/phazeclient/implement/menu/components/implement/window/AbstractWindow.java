@@ -18,9 +18,12 @@ public abstract class AbstractWindow extends AbstractComponent {
     @Getter
     private final Animation scaleAnimation = new DecelerateAnimation()
             .setValue(1).setMs(200);
+    private final Animation alphaAnimation = new DecelerateAnimation()
+            .setValue(1).setMs(200);
 
     public AbstractWindow() {
         scaleAnimation.setDirection(Direction.FORWARDS);
+        alphaAnimation.setDirection(Direction.FORWARDS);
     }
 
     public AbstractWindow draggable(boolean draggable) {
@@ -66,7 +69,7 @@ public abstract class AbstractWindow extends AbstractComponent {
         }
 
         float scale = scaleAnimation.getOutputFloat();
-        float alpha = scale * scale;
+        float alpha = alphaAnimation.getOutputFloat();
         context.draw();
         context.getMatrices().push();
         context.getMatrices().translate(0.0F, 0.0F, 280.0F);
@@ -97,9 +100,11 @@ public abstract class AbstractWindow extends AbstractComponent {
 
     public void startCloseAnimation() {
         scaleAnimation.setDirection(Direction.BACKWARDS);
+        alphaAnimation.setDirection(Direction.BACKWARDS);
     }
 
     public boolean isCloseAnimationFinished() {
-        return scaleAnimation.isFinished(Direction.BACKWARDS);
+        return scaleAnimation.isFinished(Direction.BACKWARDS)
+                && alphaAnimation.isFinished(Direction.BACKWARDS);
     }
 }

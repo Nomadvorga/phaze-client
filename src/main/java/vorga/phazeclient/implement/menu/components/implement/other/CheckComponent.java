@@ -45,6 +45,9 @@ public class CheckComponent extends AbstractComponent {
 
         float progress = toggleAnimation.getOutputFloat();
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, TOGGLE_WIDTH, TOGGLE_HEIGHT);
+        if (hovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float hoverProgress = hoverAnimation.getOutputFloat();
 
@@ -62,7 +65,7 @@ public class CheckComponent extends AbstractComponent {
                 .color(MenuStyle.withAlpha(background, clampedAlpha))
                 .build());
 
-        rectangle.render(ShapeProperties.create(matrix, knobX, y + 1.2F, 7.0F, 7.0F)
+        rectangle.render(ShapeProperties.create(matrix, knobX, y + 1.7F, 7.0F, 7.0F)
                 .round(3.5F)
                 .color(MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, clampedAlpha))
                 .build());

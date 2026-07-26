@@ -14,6 +14,7 @@ import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
 import vorga.phazeclient.implement.features.modules.other.AutoNear;
 import vorga.phazeclient.implement.features.modules.other.AutoReissue;
+import vorga.phazeclient.implement.features.modules.other.ColorCorrection;
 import vorga.phazeclient.implement.features.modules.other.FreeLook;
 import vorga.phazeclient.implement.features.modules.other.LockSlot;
 import vorga.phazeclient.implement.features.modules.other.MouseClicker;
@@ -49,6 +50,7 @@ public class ClientPlayerEntityMixin {
         PotionAuto.getInstance().tick();
         FreeLook.getInstance().tick();
         AutoReissue.getInstance().tick();
+        ColorCorrection.getInstance().tick();
         MouseClicker.getInstance().onTick();
         // Totem Tracker prunes stale per-player counters once per
         // tick. Also a no-op when disabled or when the user-set
@@ -125,15 +127,8 @@ public class ClientPlayerEntityMixin {
     }
 
     private static void phaze$enforceServerLocks() {
-        Main main = Main.getInstance();
-        if (main == null || main.getModuleProvider() == null) {
-            return;
-        }
-
-        for (Module module : main.getModuleProvider().getModules()) {
-            if (module.isShowEnable() && module.isState() && module.isServerLocked()) {
-                module.setState(false);
-            }
-        }
+        // Intentionally left blank: a locked module should stop
+        // functioning via Module.isEnabled(), but keep its stored
+        // ON/OFF state so unlocking restores the previous user choice.
     }
 }

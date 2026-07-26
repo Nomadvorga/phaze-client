@@ -23,6 +23,10 @@ public class SettingComponent extends AbstractComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         float buttonSize = 11.0F;
+        boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, buttonSize, buttonSize);
+        if (hovered) {
+            vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
+        }
         if (windowOpen) {
             rotationAnimation.setDirection(Direction.FORWARDS);
         } else {
