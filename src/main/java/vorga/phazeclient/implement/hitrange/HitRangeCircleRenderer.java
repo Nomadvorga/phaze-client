@@ -34,7 +34,11 @@ package vorga.phazeclient.implement.hitrange;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderPhase;
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.DepthTestFunction;
+import net.minecraft.client.render.LayeringTransform;
+import net.minecraft.client.render.RenderSetup;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -63,9 +67,9 @@ import java.util.Locale;
  */
 public final class HitRangeCircleRenderer {
     private static final float FILLED_OUTLINE_Y_EPSILON = 0.0015F;
-    private static final RenderLayer.MultiPhase DEBUG_LINES = makeLayer(VertexFormat.DrawMode.DEBUG_LINES);
-    private static final RenderLayer.MultiPhase DEBUG_QUADS = makeLayer(VertexFormat.DrawMode.QUADS);
-    private static final RenderLayer.MultiPhase TRIANGLES = makeLayer(VertexFormat.DrawMode.TRIANGLES);
+    private static final RenderLayer DEBUG_LINES = makeLayer(VertexFormat.DrawMode.DEBUG_LINES);
+    private static final RenderLayer DEBUG_QUADS = makeLayer(VertexFormat.DrawMode.QUADS);
+    private static final RenderLayer TRIANGLES = makeLayer(VertexFormat.DrawMode.TRIANGLES);
 
     private static final List<Angle> angles = new ArrayList<>();
 
@@ -231,32 +235,41 @@ public final class HitRangeCircleRenderer {
         }
     }
 
-    private static RenderLayer.MultiPhase makeLayer(VertexFormat.DrawMode mode) {
+    /**
+     * 1.21.11: {@code RenderPhase} and {@code MultiPhaseParameters} were
+     * removed. The GPU state that used to be assembled from phase objects
+     * (program, transparency, cull, write mask, depth test) now lives on a
+     * {@link RenderPipeline}; lightmap / overlay / layering stayed on the
+     * render-graph side and move to {@link RenderSetup}.
+     *
+     * <p>Same intent as the upstream mod: POSITION_COLOR verts, translucent
+     * blending, depth-tested LEQUAL so the ring is clipped by world
+     * geometry, and the view-offset layering that nudges it forward
+     * fractionally to avoid z-fighting against the ground plane.
+     */
+    private static RenderLayer makeLayer(VertexFormat.DrawMode mode) {
         String name = "phaze_hitrange_" + mode.name().toLowerCase(Locale.ROOT);
 
-        // Same MultiPhase config as the upstream mod: POSITION_COLOR
-        // verts, translucent blending, depth-tested LEQUAL so the ring
-        // is clipped by world geometry, and VIEW_OFFSET_Z_LAYERING to
-        // nudge it forward fractionally and avoid z-fighting flicker
-        // against the ground plane.
+        RenderPipeline pipeline = RenderPipeline.builder()
+                .withLocation(Identifier.of("phaze", "pipeline/hitrange_" + mode.name().toLowerCase(Locale.ROOT)))
+                .withVertexShader(Identifier.of("minecraft", "core/position_color"))
+                .withFragmentShader(Identifier.of("minecraft", "core/position_color"))
+                .withVertexFormat(VertexFormats.POSITION_COLOR, mode)
+                .withBlend(BlendFunction.TRANSLUCENT)
+                .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+                .withDepthWrite(false)
+                .withCull(false)
+                .build();
+
         return RenderLayer.of(
                 name,
-                VertexFormats.POSITION_COLOR,
-                mode,
-                1536,
-                false,
-                true,
-                RenderLayer.MultiPhaseParameters.builder()
-                        .program(RenderPhase.POSITION_COLOR_PROGRAM)
-                        .transparency(RenderPhase.TRANSLUCENT_TRANSPARENCY)
-                        .cull(RenderPhase.DISABLE_CULLING)
-                        .lightmap(RenderPhase.ENABLE_LIGHTMAP)
-                        .overlay(RenderPhase.ENABLE_OVERLAY_COLOR)
-                        .writeMaskState(RenderPhase.COLOR_MASK)
-                        .depthTest(RenderPhase.LEQUAL_DEPTH_TEST)
-                        .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
-                        .build(false)
-        );
+                RenderSetup.builder(pipeline)
+                        .layeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
+                        .useLightmap()
+                        .useOverlay()
+                        .translucent()
+                        .expectedBufferSize(1536)
+                        .build());
     }
 
     /**

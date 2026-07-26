@@ -2,9 +2,7 @@ package vorga.phazeclient.api.system.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -91,7 +89,6 @@ public final class Render3DUtil {
         // lines, vanilla outline, etc.) aren't biased.
         RenderSystem.polygonOffset(-1.0F, -1.0F);
         RenderSystem.enablePolygonOffset();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         // bottom
@@ -124,7 +121,7 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.disablePolygonOffset();
         RenderSystem.depthMask(true);
@@ -158,7 +155,6 @@ public final class Render3DUtil {
         RenderSystem.depthMask(false);
 
         // Filled faces.
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         // bottom
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
@@ -190,10 +186,9 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         // Outline lines.
-        RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
         buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
         // bottom edges
@@ -211,7 +206,7 @@ public final class Render3DUtil {
         line(matrix, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a);
         line(matrix, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a);
         line(matrix, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableCull();
@@ -294,8 +289,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         // bottom
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
@@ -327,7 +320,7 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
@@ -400,7 +393,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
         CircleLut circle = circleLut(segments);
         SphereLatitudeLut latitudes = sphereLatitudeLut(stacks);
@@ -436,7 +428,7 @@ public final class Render3DUtil {
         }
         net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
         if (built != null) {
-            BufferRenderer.drawWithGlobalProgram(built);
+            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
         }
 
         RenderSystem.depthMask(true);
@@ -527,7 +519,7 @@ public final class Render3DUtil {
 
         net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
         if (built != null) {
-            BufferRenderer.drawWithGlobalProgram(built);
+            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
         }
 
         com.mojang.blaze3d.systems.RenderSystem.depthMask(true);
@@ -583,7 +575,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -602,7 +593,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, ox2, centerY, oz2).color(r, g, b, a);
             buffer.vertex(matrix, ox1, centerY, oz1).color(r, g, b, a);
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
@@ -652,7 +643,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
@@ -666,7 +656,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, x1, centerY, z1).color(rr, rg, rb, ra);
             buffer.vertex(matrix, x2, centerY, z2).color(rr, rg, rb, ra);
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
@@ -715,7 +705,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         CircleLut circle = circleLut(segments);
@@ -731,7 +720,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, x1, topY, z1).color(r, g, b, a).normal(0, 1, 0);
             buffer.vertex(matrix, x2, topY, z2).color(r, g, b, a).normal(0, 1, 0);
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
@@ -795,7 +784,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         CircleLut circle = circleLut(segments);
@@ -813,7 +801,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, p1x, p1y, p1z).color(r, g, b, a).normal(0, 1, 0);
             buffer.vertex(matrix, p2x, p2y, p2z).color(r, g, b, a).normal(0, 1, 0);
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
@@ -876,7 +864,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -902,7 +889,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, ox2, oy2, oz2).color(r, g, b, a);
             buffer.vertex(matrix, ox1, oy1, oz1).color(r, g, b, a);
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
@@ -971,7 +958,6 @@ public final class Render3DUtil {
         RenderSystem.disableCull();
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
@@ -983,7 +969,7 @@ public final class Render3DUtil {
                 (float) (end.x - camera.x),
                 (float) (end.y - camera.y),
                 (float) (end.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableCull();
@@ -1036,7 +1022,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
@@ -1053,7 +1038,7 @@ public final class Render3DUtil {
                     (float) (end.y - origin.y),
                     (float) (end.z - origin.z)).color(r, g, b, a).normal(0, 1, 0);
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableCull();
@@ -1125,7 +1110,6 @@ public final class Render3DUtil {
             RenderSystem.disableDepthTest();
         }
         RenderSystem.depthMask(false);
-        RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
@@ -1179,7 +1163,7 @@ public final class Render3DUtil {
 
             accLen = endLen;
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableCull();

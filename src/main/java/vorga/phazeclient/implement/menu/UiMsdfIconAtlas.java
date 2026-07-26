@@ -5,7 +5,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -338,7 +337,7 @@ public final class UiMsdfIconAtlas {
 
         BuiltBuffer builtBuffer = builder.endNullable();
         if (builtBuffer != null) {
-            BufferRenderer.drawWithGlobalProgram(builtBuffer);
+            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(ATLAS_TEXTURE_ID).draw(builtBuffer);
         }
 
         RenderSystem.setShaderTexture(0, 0);

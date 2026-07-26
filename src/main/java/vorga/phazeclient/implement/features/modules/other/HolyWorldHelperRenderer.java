@@ -2,9 +2,7 @@ package vorga.phazeclient.implement.features.modules.other;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -249,24 +247,21 @@ public final class HolyWorldHelperRenderer {
         RenderSystem.depthMask(false);
 
         if (fillAlpha > 0.0F) {
-            RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
             RenderSystem.polygonOffset(-1.0F, -1.0F);
             RenderSystem.enablePolygonOffset();
             BufferBuilder fill = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             for (FaceBox face : geometry.faces) {
                 addFace(fill, matrix, face, offsetX, offsetY, offsetZ, red, green, blue, fillAlpha);
             }
-            BufferRenderer.drawWithGlobalProgram(fill.end());
+            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(fill.end());
             RenderSystem.disablePolygonOffset();
         }
-
-        RenderSystem.setShader(ShaderProgramKeys.RENDERTYPE_LINES);
         RenderSystem.lineWidth(2.0F);
         BufferBuilder outline = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
         for (Edge edge : geometry.edges) {
             addLine(outline, matrix, edge, offsetX, offsetY, offsetZ, red, green, blue, alpha);
         }
-        BufferRenderer.drawWithGlobalProgram(outline.end());
+        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(outline.end());
 
         RenderSystem.depthMask(true);
         RenderSystem.enableCull();
