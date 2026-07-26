@@ -1,0 +1,32 @@
+.gradle/
+build/
+out/
+
+*.log
+*.err.log
+*.out.log
+gradle-thread-dump.txt
+
+jdk21.zip
+jdk-*/
+
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+.idea/
+*.iml
+
+.claude/
+.vscode/
+
+# Local, version-specific compile-only jars (Iris etc.) - large and not
+# committed. Fetch them per-machine.
+libs-compileonly/
+
+# Bundled native helper jars. Kept out of git like in the 1.21.4 repo;
+# copy them in from the upstream project before building.
+libs/
+
+# Port working files
+port-build-*.log
