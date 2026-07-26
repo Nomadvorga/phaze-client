@@ -4,11 +4,9 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
@@ -776,11 +774,7 @@ public class BackgroundComponent extends AbstractComponent {
     private void renderConfigCross(MatrixStack matrix, float x, float y, float size, int color) {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, Identifier.of("phaze", "textures/menu/cross.png"));
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        net.minecraft.util.Identifier phaze$tex = Identifier.of("phaze", "textures/menu/cross.png");
 
         Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
@@ -788,7 +782,7 @@ public class BackgroundComponent extends AbstractComponent {
         buffer.vertex(positionMatrix, x, y + size, 0.0F).texture(0.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + size, y + size, 0.0F).texture(1.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + size, y, 0.0F).texture(1.0F, 0.0F).color(color);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
         RenderSystem.disableBlend();
     }
 

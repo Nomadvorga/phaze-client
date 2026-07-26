@@ -2,10 +2,8 @@ package vorga.phazeclient.implement.menu.components.implement.window.implement.s
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.RequiredArgsConstructor;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
@@ -119,14 +117,11 @@ public class SaturationComponent extends AbstractComponent {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, Identifier.of(texture));
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+        net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);
 
         // Linear filtering so the gradient interpolates smoothly when
         // a small source texture (e.g. 256x1 hue.png) gets stretched
         // across the slider's height.
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 
         Matrix4f mat = matrix.peek().getPositionMatrix();
         BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
@@ -146,7 +141,7 @@ public class SaturationComponent extends AbstractComponent {
         buf.vertex(mat, x + w, y + h, 0).texture(1, 1).color(color);
         buf.vertex(mat, x + w, y,     0).texture(0, 1).color(color);
 
-        BufferRenderer.drawWithGlobalProgram(buf.end());
+        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
         RenderSystem.disableBlend();
     }
 
@@ -176,11 +171,7 @@ public class SaturationComponent extends AbstractComponent {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, Identifier.of(texture));
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        net.minecraft.util.Identifier phaze$tex = Identifier.of(texture);
 
         Matrix4f mat = matrix.peek().getPositionMatrix();
         BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
@@ -190,7 +181,7 @@ public class SaturationComponent extends AbstractComponent {
         buf.vertex(mat, x + w, y + h, 0).texture(1, 0).color(color);
         buf.vertex(mat, x + w, y,     0).texture(0, 0).color(color);
 
-        BufferRenderer.drawWithGlobalProgram(buf.end());
+        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
         RenderSystem.disableBlend();
     }
 }
