@@ -617,6 +617,11 @@ public final class RemoteRulesService {
             }
         }
 
+        // Announcements ride the rules response as well as the event
+        // stream, so a client that launched after one was created
+        // still sees it. Duplicates are filtered by id.
+        PhazeAnnouncements.acceptAll(obj.get("announcements"));
+
         PhazePlayerPresence.getInstance().refreshFromRulesPayload(
                 obj,
                 apiBase,

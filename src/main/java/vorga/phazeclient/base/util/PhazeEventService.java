@@ -205,6 +205,21 @@ public final class PhazeEventService {
                     RemoteRulesService.getInstance().requestRefresh();
                 }
                 case "kick" -> handleKick(data);
+                case "announcement" -> {
+                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
+                    if (parsed.isJsonObject() && parsed.getAsJsonObject().has("announcement")) {
+                        JsonElement payload = parsed.getAsJsonObject().get("announcement");
+                        if (payload.isJsonObject()) {
+                            PhazeAnnouncements.accept(payload.getAsJsonObject());
+                        }
+                    }
+                }
+                case "announcement_expired" -> {
+                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
+                    if (parsed.isJsonObject() && parsed.getAsJsonObject().has("id")) {
+                        PhazeAnnouncements.dismiss(parsed.getAsJsonObject().get("id").getAsInt());
+                    }
+                }
                 case "hello", "ping" -> { /* bookkeeping only */ }
                 default -> LOG.debug("unknown event '{}'", event);
             }

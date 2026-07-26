@@ -50,6 +50,10 @@ public abstract class TitleScreenOnlineCounterMixin {
         if (client == null || client.textRenderer == null) {
             return;
         }
+
+        // The main menu is where a "new build is out" announcement is
+        // most useful - before the player joins anything.
+        vorga.phazeclient.implement.menu.AnnouncementOverlay.render(context);
         if (client.currentScreen instanceof MainMenuScreen) {
             return;
         }
