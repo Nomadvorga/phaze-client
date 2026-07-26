@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import org.joml.Matrix3x2fStack;
+
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import vorga.phazeclient.api.system.animation.Animation;
@@ -40,7 +42,7 @@ public class CheckComponent extends AbstractComponent {
             initialized = true;
             toggleAnimation.setDirectionAndFinish(state ? Direction.FORWARDS : Direction.BACKWARDS);
         }
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         toggleAnimation.setDirection(state ? Direction.FORWARDS : Direction.BACKWARDS);
 
         float progress = toggleAnimation.getOutputFloat();

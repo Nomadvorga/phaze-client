@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu.components.implement.window.implement.settings.color.component;
 
+import org.joml.Matrix3x2fStack;
+
 import lombok.RequiredArgsConstructor;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -23,7 +25,7 @@ public class HueComponent extends AbstractComponent {
     
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
 
         X = x + 6;
         Y = y + 10.5F;

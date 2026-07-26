@@ -1,5 +1,7 @@
 package vorga.phazeclient.api.system.shape.implement;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
@@ -71,7 +73,7 @@ public class InvertedArc implements Shape, QuickImports {
         if (window() == null) return;
         float scale = (float) window().getScaleFactor();
 
-        Matrix4f matrix4f = shape.getMatrix().peek().getPositionMatrix();
+        Matrix4f matrix4f = GuiMatrix.mat4(shape.getMatrix());
         Vector3f pos = matrix4f.transformPosition(shape.getX(), shape.getY(), 0, scratchPosition).mul(scale);
         Vector3f size = matrix4f.getScale(scratchSize).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);

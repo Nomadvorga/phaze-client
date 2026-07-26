@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
+import org.joml.Matrix3x2fStack;
+
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import org.lwjgl.glfw.GLFW;
@@ -31,7 +33,7 @@ public class BindComponent extends AbstractSettingComponent {
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
 
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
 
         String bindName = StringUtil.getBindName(setting.getKey());
         String name = binding ? "(" + bindName + ") ..." : bindName;

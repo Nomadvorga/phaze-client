@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.settings.multiselect;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
@@ -128,8 +132,8 @@ public class MultiSelectComponent extends AbstractSettingComponent {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
 
-        MatrixStack matrices = context.getMatrices();
-        Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+        Matrix3x2fStack matrices = context.getMatrices();
+        Matrix4f positionMatrix = GuiMatrix.mat4(matrices);
 
         // Height is "label band + chip rows" - we lay out chips
         // first to know how tall the card has to be, then fall

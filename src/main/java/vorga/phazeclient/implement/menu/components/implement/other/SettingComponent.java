@@ -46,7 +46,7 @@ public class SettingComponent extends AbstractComponent {
                 .color(MenuStyle.PANEL_CHIP)
                 .build());
 
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(centerX, centerY, 0);
         context.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationAngle));
         context.getMatrices().translate(-centerX, -centerY, 0);
@@ -57,7 +57,7 @@ public class SettingComponent extends AbstractComponent {
                 .build()
         );
 
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
 

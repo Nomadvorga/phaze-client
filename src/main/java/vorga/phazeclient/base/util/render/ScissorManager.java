@@ -62,7 +62,7 @@ public class ScissorManager implements QuickImports {
         if (!scissorStack.isEmpty()) {
             freeScissors.addFirst(scissorStack.pop());
             if (scissorStack.isEmpty()) {
-                RenderSystem.disableScissor();
+                RenderSystem.disableScissorForRenderTypeDraws();
             } else {
                 setScissor(scissorStack.peek());
             }
@@ -76,7 +76,7 @@ public class ScissorManager implements QuickImports {
         int width = scissor.width * scaleFactor;
         int height = scissor.height * scaleFactor;
 
-        RenderSystem.enableScissor(x, y, width, height);
+        RenderSystem.enableScissorForRenderTypeDraws(x, y, width, height);
     }
 
     private static class Scissor {

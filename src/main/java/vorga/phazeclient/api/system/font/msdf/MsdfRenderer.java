@@ -44,9 +44,9 @@ public final class MsdfRenderer {
     static {
         VertexFormatElement params = null;
         for (int id = 7; id < 32 && params == null; id++) {
-            if (VertexFormatElement.get(id) == null) {
+            if (VertexFormatElement.byId(id) == null) {
                 params = VertexFormatElement.register(
-                        id, 0, VertexFormatElement.ComponentType.FLOAT,
+                        id, 0, VertexFormatElement.Type.FLOAT,
                         VertexFormatElement.Usage.GENERIC, 4);
             }
         }

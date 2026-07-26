@@ -150,7 +150,7 @@ public class MenuScreen extends Screen implements QuickImports {
         categoryContainerComponent.position(categoryX, y + CATEGORY_ROW_Y);
         searchComponent.position(searchX, y + CATEGORY_ROW_Y);
 
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().scale(overlayRenderScale, overlayRenderScale, 1.0F);
         float scaleAnimation = getScaleAnimation();
         float alphaAnimation = getAlphaAnimation();
@@ -204,7 +204,7 @@ public class MenuScreen extends Screen implements QuickImports {
         } finally {
             vorga.phazeclient.api.system.shape.batched.BatchedRectangle.endScope();
         }
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     private void renderGuiRegionBlur(DrawContext context) {
@@ -243,7 +243,7 @@ public class MenuScreen extends Screen implements QuickImports {
         float horizontalAlpha = horizontalGuideAnimation.getOutputFloat() * 0.5F;
         float verticalAlpha = verticalGuideAnimation.getOutputFloat() * 0.5F;
 
-        RenderSystem.disableScissor();
+        RenderSystem.disableScissorForRenderTypeDraws();
         if (horizontalAlpha > 0.0F) {
             drawGuideLine(context, windowWidth / 2, 0, 1, windowHeight, horizontalAlpha);
         }

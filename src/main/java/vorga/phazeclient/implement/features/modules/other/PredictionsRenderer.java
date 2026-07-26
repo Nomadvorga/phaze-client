@@ -77,7 +77,7 @@ public final class PredictionsRenderer {
      */
     private static Vec3d lerpedEyePos(MinecraftClient mc, RenderTickCounter tickCounter) {
         PlayerEntity p = mc.player;
-        float td = tickCounter.getTickDelta(false);
+        float td = tickCounter.getTickProgress(false);
         return p.getCameraPosVec(td);
     }
 
@@ -116,7 +116,7 @@ public final class PredictionsRenderer {
             // line endpoint snaps 20 times per second while the
             // projectile model interpolates smoothly between ticks,
             // producing a visible jitter at the join.
-            float tickDelta = tickCounter.getTickDelta(false);
+            float tickDelta = tickCounter.getTickProgress(false);
             // ---- Lines ----
             for (var t : trails) {
                 if (t.entity == null) continue;

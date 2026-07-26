@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import org.joml.Matrix3x2fStack;
+
 import lombok.Getter;
 import lombok.Setter;
 import vorga.phazeclient.api.feature.module.Module;
@@ -65,7 +67,7 @@ public class ModuleDescriptionComponent extends AbstractComponent {
         boxX = Math.max(10f, Math.min(boxX, (float) screenWidth - boxWidth - 10f));
         boxY = Math.max(10f, Math.min(boxY, (float) screenHeight - boxHeight - 10f));
 
-        MatrixStack matrices = context.getMatrices();
+        Matrix3x2fStack matrices = context.getMatrices();
         rectangle.render(ShapeProperties.create(matrices, boxX, boxY, boxWidth, boxHeight)
                 .round(4).softness(1).thickness(1.4F)
                 .outlineColor(MenuStyle.BORDER_LIGHT)

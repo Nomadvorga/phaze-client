@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.window.implement.settings.group;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import lombok.Getter;
 import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.api.feature.module.setting.SettingComponentAdder;
@@ -39,7 +43,7 @@ public class GroupWindow extends AbstractWindow {
 
     @Override
     public void drawWindow(DrawContext context, int mouseX, int mouseY, float delta) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
 
         ScissorManager scissorManager = Main.getInstance()
                 .getScissorManager();
@@ -53,7 +57,7 @@ public class GroupWindow extends AbstractWindow {
         Fonts.getSize(15, Fonts.Type.INTER_BOLD).drawString(context.getMatrices(), setting.getLocalizedName(), x + 9, y + 10, applyGlobalAlpha(ColorUtil.getText()));
 
         boolean isLimitedHeight = MathHelper.clamp(height, 0, 200) == 200;
-        if (isLimitedHeight) scissorManager.push(matrix.peek().getPositionMatrix(), x, y + 23, width, height - 28);
+        if (isLimitedHeight) scissorManager.push(GuiMatrix.mat4(matrix), x, y + 23, width, height - 28);
 
         float offset = 0;
         int totalHeight = 0;

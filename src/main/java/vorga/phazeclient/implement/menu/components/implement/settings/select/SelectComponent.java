@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.settings.select;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -77,7 +81,7 @@ public class SelectComponent extends AbstractSettingComponent {
         float animatedTextOffset = ResetIconComponent.getTextOffset() * textOffsetProgress;
         float resetIconAlpha = resetIconAnimation.getOutputFloat();
 
-        MatrixStack matrices = context.getMatrices();
+        Matrix3x2fStack matrices = context.getMatrices();
 
         float selectedBoxX = selectedBoxX();
         float selectedBoxWidth = selectedBoxWidth();
@@ -132,7 +136,7 @@ public class SelectComponent extends AbstractSettingComponent {
         float boxX = selectedBoxX();
         float boxY = selectedBoxY();
         float boxWidth = selectedBoxWidth();
-        Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+        Matrix4f positionMatrix = GuiMatrix.mat4(matrices);
 
         rectangle.render(ShapeProperties.create(matrices, boxX, boxY, boxWidth, SELECT_BOX_HEIGHT)
                 .round(2).softness(1.1F).thickness(1.1F)
@@ -278,7 +282,7 @@ public class SelectComponent extends AbstractSettingComponent {
                     line,
                     LABEL_TEXT_SIZE,
                     color,
-                    matrices.peek().getPositionMatrix(),
+                    GuiMatrix.mat4(matrices),
                     textX,
                     startY,
                     0.0F

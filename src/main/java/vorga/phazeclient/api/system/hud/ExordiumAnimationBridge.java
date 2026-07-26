@@ -1,5 +1,7 @@
 package vorga.phazeclient.api.system.hud;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import com.mojang.blaze3d.opengl.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
@@ -684,7 +686,7 @@ public final class ExordiumAnimationBridge {
     private static Matrix4f baseModelViewMatrix(DrawContext context) {
         Matrix4f matrix = new Matrix4f(RenderSystem.getModelViewMatrix());
         if (context != null) {
-            matrix.mul(context.getMatrices().peek().getPositionMatrix());
+            matrix.mul(GuiMatrix.mat4(context.getMatrices()));
         }
         return matrix;
     }
@@ -696,7 +698,7 @@ public final class ExordiumAnimationBridge {
             float x2,
             float y2
     ) {
-        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
+        Matrix4f matrix = GuiMatrix.mat4(context.getMatrices());
         Vector4f p1 = matrix.transform(new Vector4f(x1, y1, 0.0F, 1.0F));
         Vector4f p2 = matrix.transform(new Vector4f(x2, y1, 0.0F, 1.0F));
         Vector4f p3 = matrix.transform(new Vector4f(x2, y2, 0.0F, 1.0F));

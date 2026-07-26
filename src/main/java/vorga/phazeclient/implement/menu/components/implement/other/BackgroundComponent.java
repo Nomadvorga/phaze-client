@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Setter;
 import lombok.experimental.Accessors;
@@ -79,7 +83,7 @@ public class BackgroundComponent extends AbstractComponent {
         // mid-session locale flip repaints in the new strings without
         // a restart.
         Theme.getInstance().syncLanguage();
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         // Sidebar is hidden while the CONFIGS view is active so the
         // configs list spans the full width of the menu's content
         // pane. Keep the same border / background panels otherwise so
@@ -123,7 +127,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private void renderHeader(DrawContext context, int mouseX, int mouseY) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         float brandIconWidth = BRAND_ICON_HEIGHT * UiMsdfIconAtlas.resolveAspectRatio(BRAND_ICON);
         float brandIconX = x + 8.0F;
         float brandIconY = y + (HEADER_HEIGHT - BRAND_ICON_HEIGHT) / 2.0F + 2.5F;
@@ -140,13 +144,13 @@ public class BackgroundComponent extends AbstractComponent {
 
         float brandX = brandIconX + brandIconWidth + BRAND_ICON_GAP;
         float brandY = MenuStyle.centerMsdfTextY(BRAND_TEXT_SIZE, y + 1.5F, HEADER_HEIGHT);
-        MsdfRenderer.renderText(MsdfFonts.bold(), "PHAZE", BRAND_TEXT_SIZE, applyGlobalAlpha(MenuStyle.TEXT_PRIMARY), matrix.peek().getPositionMatrix(), brandX, brandY, 0.0F);
+        MsdfRenderer.renderText(MsdfFonts.bold(), "PHAZE", BRAND_TEXT_SIZE, applyGlobalAlpha(MenuStyle.TEXT_PRIMARY), GuiMatrix.mat4(matrix), brandX, brandY, 0.0F);
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
                 "CLIENT",
                 BRAND_TEXT_SIZE,
                 applyGlobalAlpha(MenuStyle.TEXT_MUTED),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 brandX + MsdfFonts.bold().getWidth("PHAZE", BRAND_TEXT_SIZE) + 5.0F,
                 brandY,
                 0.0F
@@ -192,7 +196,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private float drawTopTab(DrawContext context, int mouseX, int mouseY, float tabX, String label, boolean active) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         float tabWidth = getTopTabWidth(label);
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, tabX, tabY, tabWidth, TOP_TAB_HEIGHT);
@@ -224,7 +228,7 @@ public class BackgroundComponent extends AbstractComponent {
                 label,
                 TAB_TEXT_SIZE,
                 applyGlobalAlpha(tabText),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), label, TAB_TEXT_SIZE, tabX, tabWidth),
                 MenuStyle.centerMsdfTextY(TAB_TEXT_SIZE, tabY, TOP_TAB_HEIGHT),
                 0.0F
@@ -233,7 +237,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private void renderNewConfigButton(DrawContext context, int mouseX, int mouseY) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         float buttonX = x + 4.0F;
         float buttonY = y + HEADER_HEIGHT + 7.0F;
         float buttonWidth = SIDEBAR_WIDTH - 8.0F;
@@ -252,7 +256,7 @@ public class BackgroundComponent extends AbstractComponent {
                 label,
                 FOOTER_TEXT_SIZE,
                 MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.55F + hoverProgress * 0.45F),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), label, FOOTER_TEXT_SIZE, buttonX, buttonWidth),
                 MenuStyle.centerMsdfTextY(FOOTER_TEXT_SIZE, buttonY, FOOTER_BUTTON_HEIGHT),
                 0.0F
@@ -260,7 +264,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private void renderConfigs(DrawContext context, int mouseX, int mouseY) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         String[] configs = configManager.getConfigList();
         float rowX = configRowX();
         float rowWidth = configRowWidth();
@@ -317,7 +321,7 @@ public class BackgroundComponent extends AbstractComponent {
                     config,
                     CONFIG_TEXT_SIZE,
                     applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
-                    context.getMatrices().peek().getPositionMatrix(),
+                    GuiMatrix.mat4(context.getMatrices()),
                     rowX + CONFIG_TEXT_PADDING,
                     MenuStyle.centerMsdfTextY(CONFIG_TEXT_SIZE, rowY, CONFIG_ROW_HEIGHT),
                     0.0F
@@ -347,7 +351,7 @@ public class BackgroundComponent extends AbstractComponent {
                         editingText + "_",
                         CONFIG_TEXT_SIZE,
                         applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
-                        context.getMatrices().peek().getPositionMatrix(),
+                        GuiMatrix.mat4(context.getMatrices()),
                         rowX + CONFIG_TEXT_PADDING,
                         MenuStyle.centerMsdfTextY(CONFIG_TEXT_SIZE, rowY, CONFIG_ROW_HEIGHT),
                         0.0F
@@ -359,7 +363,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private void renderSidebarFooter(DrawContext context, int mouseX, int mouseY) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         float footerX = x + 4;
         float footerWidth = SIDEBAR_WIDTH - 8;
         float buttonGap = 4.0F;
@@ -380,7 +384,7 @@ public class BackgroundComponent extends AbstractComponent {
                 newConfigLabel,
                 FOOTER_TEXT_SIZE,
                 applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.55F + newConfigHoverProgress * 0.45F)),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), newConfigLabel, FOOTER_TEXT_SIZE, footerX, footerWidth),
                 MenuStyle.centerMsdfTextY(FOOTER_TEXT_SIZE, newConfigY, FOOTER_BUTTON_HEIGHT),
                 0.0F
@@ -402,7 +406,7 @@ public class BackgroundComponent extends AbstractComponent {
                 editLabel,
                 FOOTER_TEXT_SIZE,
                 applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, 1.0F), editHoverProgress)),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), editLabel, FOOTER_TEXT_SIZE, footerX, footerWidth),
                 MenuStyle.centerMsdfTextY(FOOTER_TEXT_SIZE, editHudY, FOOTER_BUTTON_HEIGHT),
                 0.0F
@@ -707,7 +711,7 @@ public class BackgroundComponent extends AbstractComponent {
      * target reads even when there's no label text in the chip.
      */
     private void drawImportPlus(DrawContext context, int mouseX, int mouseY, float tabX) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, tabX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT);
         Animation hoverAnimation = topTabHoverAnimations.computeIfAbsent("__plus__",
@@ -749,7 +753,7 @@ public class BackgroundComponent extends AbstractComponent {
         float iconSize = TOP_TAB_HEIGHT * 0.50F;
         float chipCx = tabX + TOP_TAB_HEIGHT * 0.5F;
         float chipCy = tabY + TOP_TAB_HEIGHT * 0.5F;
-        matrix.push();
+        matrix.pushMatrix();
         // Translate-pivot-translate pattern: anchor the rotation at
         // the chip centre. Image internally rotates +90° around
         // its rect's (x+width, y) corner; combined with the matrix
@@ -759,16 +763,16 @@ public class BackgroundComponent extends AbstractComponent {
         // (chipCx - iconSize/2, chipCy - iconSize/2) so after the
         // 90° internal rotation around (x+width, y) it covers the
         // chip-centred area.
-        matrix.translate(chipCx, chipCy, 0.0F);
+        matrix.translate(chipCx, chipCy);
         matrix.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(45.0F));
-        matrix.translate(-chipCx, -chipCy, 0.0F);
+        matrix.translate(-chipCx, -chipCy);
         image.setTexture("phaze:textures/menu/cross.png")
                 .render(ShapeProperties.create(matrix,
                         chipCx - iconSize * 0.5F, chipCy - iconSize * 0.5F,
                         iconSize, iconSize)
                         .color(applyGlobalAlpha(iconColor))
                         .build());
-        matrix.pop();
+        matrix.popMatrix();
     }
 
     private void renderConfigCross(MatrixStack matrix, float x, float y, float size, int color) {
@@ -776,7 +780,7 @@ public class BackgroundComponent extends AbstractComponent {
         RenderSystem.defaultBlendFunc();
         net.minecraft.util.Identifier phaze$tex = Identifier.of("phaze", "textures/menu/cross.png");
 
-        Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
+        Matrix4f positionMatrix = GuiMatrix.mat4(matrix);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         buffer.vertex(positionMatrix, x, y, 0.0F).texture(0.0F, 0.0F).color(color);
         buffer.vertex(positionMatrix, x, y + size, 0.0F).texture(0.0F, 1.0F).color(color);

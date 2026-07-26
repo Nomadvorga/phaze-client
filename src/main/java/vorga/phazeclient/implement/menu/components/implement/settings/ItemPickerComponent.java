@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -81,7 +85,7 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
                     plus,
                     EMPTY_PLUS_SIZE,
                     MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha),
-                    context.getMatrices().peek().getPositionMatrix(),
+                    GuiMatrix.mat4(context.getMatrices()),
                     MenuStyle.centerMsdfTextX(MsdfFonts.bold(), plus, EMPTY_PLUS_SIZE, iconX, ICON_SIZE) + 3.0F,
                     MenuStyle.centerMsdfTextY(EMPTY_PLUS_SIZE, iconY, ICON_SIZE) + 0.15F,
                     0.0F
@@ -211,20 +215,20 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
     }
 
     private void renderPreviewItem(DrawContext context, ItemStack stack, float iconX, float iconY) {
-        MatrixStack matrices = context.getMatrices();
+        Matrix3x2fStack matrices = context.getMatrices();
         float iconScale = 0.86F + currentAlpha * 0.14F;
         float center = ICON_SIZE / 2.0F;
 
-        matrices.push();
-        matrices.translate(iconX + center, iconY + center, 0.0F);
-        matrices.scale(iconScale, iconScale, 1.0F);
-        matrices.translate(-center, -center, 0.0F);
+        matrices.pushMatrix();
+        matrices.translate(iconX + center, iconY + center);
+        matrices.scale(iconScale, iconScale);
+        matrices.translate(-center, -center);
 
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, currentAlpha);
         context.drawItem(stack, 0, 0);
         context.draw();
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
-        matrices.pop();
+        matrices.popMatrix();
     }
 }

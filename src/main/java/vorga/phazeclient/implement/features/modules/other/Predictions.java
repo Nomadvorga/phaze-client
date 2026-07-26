@@ -396,7 +396,7 @@ public final class Predictions extends Module {
             case TRIDENT -> 2.5;
             case BOW -> {
                 int useTicks = mc.player.getItemUseTime();
-                yield 3.0 * MathHelper.clamp((useTicks + mc.getRenderTickCounter().getTickDelta(false)) / 20.0F, 0.0F, 1.0F);
+                yield 3.0 * MathHelper.clamp((useTicks + mc.getRenderTickCounter().getTickProgress(false)) / 20.0F, 0.0F, 1.0F);
             }
             case CROSSBOW -> CrossbowItem.isCharged(stack) ? 3.15 : 0.0;
             case NONE -> 0.0;

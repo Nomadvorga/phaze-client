@@ -93,7 +93,7 @@ public abstract class ChatScreenInputFieldMixin {
             return;
         }
         context.draw();
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, phaze$displacement, 0.0F);
     }
 
@@ -111,7 +111,7 @@ public abstract class ChatScreenInputFieldMixin {
             return;
         }
         context.draw();
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     @Inject(method = "removed", at = @At("HEAD"))

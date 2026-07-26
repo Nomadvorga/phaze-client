@@ -47,7 +47,7 @@ public final class MenuPanoramaRenderer {
         this.cubeMap.draw(client, 10.0F, -this.pitch, alpha);
         context.draw();
         context.drawTexture(
-                RenderLayer::getGuiTextured,
+                RenderPipelines.GUI_TEXTURED,
                 OVERLAY_TEXTURE,
                 0,
                 0,

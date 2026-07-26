@@ -1,5 +1,7 @@
 package vorga.phazeclient.implement.menu.components.implement.module;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import lombok.Getter;
@@ -259,10 +261,10 @@ public class ModuleComponent extends AbstractComponent {
         if (!snapshot.populated || snapshot.hash != hash) {
             CardSnapshotCache.beginCapture(snapshot, width, height);
             try {
-                context.getMatrices().push();
+                context.getMatrices().pushMatrix();
                 context.getMatrices().translate(-x, -y, 0.0F);
                 renderImmediate(context, mouseX, mouseY, delta, inSearchMode);
-                context.getMatrices().pop();
+                context.getMatrices().popMatrix();
                 snapshot.hash = hash;
             } finally {
                 CardSnapshotCache.endCapture();
@@ -341,7 +343,7 @@ public class ModuleComponent extends AbstractComponent {
         boolean showStateRow = module.isShowEnable();
         float optionsY = y + baseHeight - (showStateRow ? (OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT) : OPTIONS_ROW_HEIGHT);
 
-        context.getMatrices().push();
+        context.getMatrices().pushMatrix();
         context.getMatrices().translate(offsetX, offsetY, 0);
 
         int outlineColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, outlineColorAnimation.getOutputFloat() * 0.75f);
@@ -367,7 +369,7 @@ public class ModuleComponent extends AbstractComponent {
                 moduleName,
                 TITLE_TEXT_SIZE,
                 applyGlobalAlpha(MenuStyle.TEXT_MUTED),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 MenuStyle.centerMsdfTextX(MsdfFonts.medium(), moduleName, TITLE_TEXT_SIZE, x, width),
                 MenuStyle.centerMsdfTextY(TITLE_TEXT_SIZE, titleAreaY, titleAreaHeight),
                 0.0F
@@ -388,7 +390,7 @@ public class ModuleComponent extends AbstractComponent {
             drawBind(context, x, y);
         }
 
-        context.getMatrices().pop();
+        context.getMatrices().popMatrix();
     }
 
     private void renderOptionsRow(DrawContext context, int mouseX, int mouseY, float optionsY, boolean standaloneRow, boolean inSearchMode) {
@@ -421,7 +423,7 @@ public class ModuleComponent extends AbstractComponent {
                 optionsLabel,
                 ROW_TEXT_SIZE,
                 applyGlobalAlpha(hasSettings ? MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, rowHoverProgress * 0.10F) : MenuStyle.mix(MenuStyle.TEXT_MUTED, 0xFFFFFFFF, rowHoverProgress * 0.08F)),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 rowX + 11.0F,
                 MenuStyle.centerMsdfTextY(ROW_TEXT_SIZE, optionsY, OPTIONS_ROW_HEIGHT),
                 0.0F
@@ -458,7 +460,7 @@ public class ModuleComponent extends AbstractComponent {
                 stateText,
                 ROW_TEXT_SIZE,
                 applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), stateText, ROW_TEXT_SIZE, x, width),
                 MenuStyle.centerMsdfTextY(ROW_TEXT_SIZE, enabledY, ENABLED_ROW_HEIGHT - 1),
                 0.0F
@@ -563,7 +565,7 @@ public class ModuleComponent extends AbstractComponent {
                 name,
                 BIND_TEXT_SIZE,
                 applyGlobalAlpha(MenuStyle.TEXT_MUTED),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 bindX + 4.0F,
                 MenuStyle.centerMsdfTextY(BIND_TEXT_SIZE, bindY, 10.0F),
                 0.0F

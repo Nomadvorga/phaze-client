@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -264,20 +268,20 @@ public class ConfigShareModalComponent extends AbstractComponent {
     }
 
     private void renderHeader(DrawContext context, float modalX, float modalY, float fadeAlpha) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         String title = titleText();
         String sub = subText();
 
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), title, TITLE_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), title, TITLE_SIZE, modalX, MODAL_W),
                 modalY + PAD_Y, 0.0F);
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), sub, SUB_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), sub, SUB_SIZE, modalX, MODAL_W),
                 modalY + PAD_Y + TITLE_SIZE + 3.0F, 0.0F);
     }
@@ -296,7 +300,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
 
     private void renderInput(DrawContext context, int mouseX, int mouseY,
                              float modalX, float modalY, float fadeAlpha) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         float ix = modalX + PAD_X;
         float iy = inputY(modalY);
         float iw = MODAL_W - PAD_X * 2.0F;
@@ -319,7 +323,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), visible, INPUT_TEXT_SIZE,
                 MenuStyle.withAlpha(textColor, fadeAlpha),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 ix + 9.0F,
                 MenuStyle.centerMsdfTextY(INPUT_TEXT_SIZE, iy, INPUT_HEIGHT),
                 0.0F);
@@ -359,7 +363,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
 
     private void renderButtons(DrawContext context, int mouseX, int mouseY,
                                float modalX, float modalY, float fadeAlpha) {
-        MatrixStack matrix = context.getMatrices();
+        Matrix3x2fStack matrix = context.getMatrices();
         float by = buttonsY(modalY);
         float primaryW = mode == Mode.RENAME ? PRIMARY_W : CLOUD_PRIMARY_W;
 
@@ -391,7 +395,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), primaryLabel, BUTTON_TEXT_SIZE,
                 MenuStyle.withAlpha(primaryTextColor, fadeAlpha),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), primaryLabel, BUTTON_TEXT_SIZE, primaryX, primaryW),
                 MenuStyle.centerMsdfTextY(BUTTON_TEXT_SIZE, by, BUTTON_HEIGHT),
                 0.0F);
@@ -406,7 +410,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), cancelLabel, BUTTON_TEXT_SIZE,
                 MenuStyle.withAlpha(cancelText, fadeAlpha),
-                matrix.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrix),
                 labelX, labelY, 0.0F);
     }
 
@@ -416,7 +420,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), statusMessage, STATUS_TEXT_SIZE,
                 MenuStyle.withAlpha(color, fadeAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
+                GuiMatrix.mat4(context.getMatrices()),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), statusMessage, STATUS_TEXT_SIZE, modalX, MODAL_W),
                 statusY(modalY), 0.0F);
     }

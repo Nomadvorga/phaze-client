@@ -1,5 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
+import vorga.phazeclient.base.util.render.GuiMatrix;
+
+import org.joml.Matrix3x2fStack;
+
 import lombok.Getter;
 import org.joml.Matrix4f;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
@@ -80,7 +84,7 @@ public class ValueComponent extends AbstractSettingComponent {
         float animatedTextOffset = ResetIconComponent.getTextOffset() * textOffsetProgress;
         float resetIconAlpha = resetIconAnimation.getOutputFloat();
 
-        MatrixStack matrices = context.getMatrices();
+        Matrix3x2fStack matrices = context.getMatrices();
 
         float selectedBoxX = x + width - 108.0F;
         String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) Math.max(28.0F, selectedBoxX - x - 20 - animatedTextOffset), 14);
@@ -125,7 +129,7 @@ public class ValueComponent extends AbstractSettingComponent {
                 value,
                 VALUE_TEXT_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, currentAlpha),
-                matrices.peek().getPositionMatrix(),
+                GuiMatrix.mat4(matrices),
                 valueX,
                 centerY - VALUE_TEXT_SIZE / 2 + 0.5F,
                 0.0F
@@ -148,7 +152,7 @@ public class ValueComponent extends AbstractSettingComponent {
                     line,
                     LABEL_TEXT_SIZE,
                     color,
-                    matrices.peek().getPositionMatrix(),
+                    GuiMatrix.mat4(matrices),
                     textX,
                     startY,
                     0.0F

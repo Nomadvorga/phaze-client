@@ -1,9 +1,18 @@
 accessWidener v2 named
 
 # Essential rendering access for GUI and custom rendering
-accessible field net/minecraft/client/util/math/MatrixStack stack Ljava/util/Deque;
-accessible field net/minecraft/client/gui/DrawContext vertexConsumers Lnet/minecraft/client/render/VertexConsumerProvider$Immediate;
-accessible field net/minecraft/client/gui/DrawContext guiAtlasManager Lnet/minecraft/client/texture/GuiAtlasManager;
+#
+# 1.21.11 notes:
+#  - MatrixStack.stack is a List, not a Deque.
+#  - DrawContext no longer has vertexConsumers or guiAtlasManager: GUI
+#    rendering builds a GuiRenderState instead of writing through an
+#    immediate VertexConsumerProvider. Both entries are dropped rather
+#    than fixed, because there is nothing equivalent to widen.
+#  - AbstractTexture.sampler is widened so Phaze can pick a filter mode;
+#    setFilter(boolean, boolean) is gone and filtering is a sampler
+#    property now.
+accessible field net/minecraft/client/util/math/MatrixStack stack Ljava/util/List;
+accessible field net/minecraft/client/texture/AbstractTexture sampler Lnet/minecraft/client/gl/GpuSampler;
 
 # Player movement and entity access
 accessible field net/minecraft/entity/Entity velocity Lnet/minecraft/util/math/Vec3d;
@@ -47,8 +56,9 @@ accessible field net/minecraft/client/render/item/ItemRenderState layers [Lnet/m
 accessible field net/minecraft/client/render/item/ItemRenderState layerCount I
 accessible field net/minecraft/client/render/item/ItemRenderState$LayerRenderState model Lnet/minecraft/client/render/model/BakedModel;
 
-# Framebuffer depth attachment for stencil
-accessible field net/minecraft/client/gl/Framebuffer depthAttachment I
+# Framebuffer depth attachment for stencil.
+# 1.21.11: no longer a raw GL int handle - attachments are GpuTexture now.
+accessible field net/minecraft/client/gl/Framebuffer depthAttachment Lcom/mojang/blaze3d/textures/GpuTexture;
 
 # BossBarHud access
 accessible field net/minecraft/client/gui/hud/BossBarHud bossBars Ljava/util/Map;
