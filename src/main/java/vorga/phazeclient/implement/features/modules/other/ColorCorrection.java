@@ -177,6 +177,12 @@ public final class ColorCorrection extends Module {
         }
 
         private boolean isActive() {
+            // The popup keeps slider values when its checkbox is disabled so
+            // users can turn a preset back on later. Those stored values must
+            // not leak into rendering while the group itself is off.
+            if (!group.isValue()) {
+                return false;
+            }
             if (red.getValue() != 1.0F || green.getValue() != 1.0F || blue.getValue() != 1.0F) {
                 return true;
             }

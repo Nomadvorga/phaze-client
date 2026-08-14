@@ -62,7 +62,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
     private static final float BUTTON_HEIGHT = 16.0F;
     private static final float PRIMARY_W = 56.0F;
     private static final float CLOUD_PRIMARY_W = 104.0F;
-    private static final float SECONDARY_W = 38.0F;
+    private static final float SECONDARY_W = 48.0F;
     private static final float BUTTON_GAP = 10.0F;
 
     /** Menu corner radius, matched in the dim backdrop so the
@@ -242,9 +242,11 @@ public class ConfigShareModalComponent extends AbstractComponent {
     }
 
     private String subText() {
-        if (mode == Mode.IMPORT || mode == Mode.SHARE) {
-            return Lang.t("modal.cloud.subtitle");
+        if (mode == Mode.IMPORT) {
+            return Lang.t("modal.import.subtitle");
         }
+        // SHARE and RENAME both act on a named config, so both show
+        // which one - that context is the whole point of the line.
         String name = configName == null ? ConfigManager.getInstance().getCurrentConfigName() : configName;
         return Lang.t("modal.share.subtitle.prefix") + " " + name + "  •  " + authorLabel;
     }
@@ -260,9 +262,9 @@ public class ConfigShareModalComponent extends AbstractComponent {
 
     private String primaryLabel() {
         switch (mode) {
-            case SHARE: return Lang.t("status.cloud_disabled_short");
+            case SHARE: return Lang.t("modal.share.primary");
             case RENAME: return Lang.t("modal.rename.primary");
-            case IMPORT: return Lang.t("status.cloud_disabled_short");
+            case IMPORT: return Lang.t("modal.import.primary");
         }
         return "";
     }
@@ -365,7 +367,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
                                float modalX, float modalY, float fadeAlpha) {
         Matrix3x2fStack matrix = context.getMatrices();
         float by = buttonsY(modalY);
-        float primaryW = mode == Mode.RENAME ? PRIMARY_W : CLOUD_PRIMARY_W;
+        float primaryW = mode == Mode.RENAME ? PRIMARY_W : SECONDARY_W;
 
         // Buttons centred under the input.
         float groupW = primaryW + BUTTON_GAP + SECONDARY_W;
@@ -379,19 +381,15 @@ public class ConfigShareModalComponent extends AbstractComponent {
 
         // Primary - themed accent fill (CHIP_ACTIVE = palette accent).
         float pHover = primaryHover.getOutputFloat();
-        int primaryFill = mode == Mode.RENAME
-                ? MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, pHover * 0.10F)
-                : MenuStyle.mix(MenuStyle.PANEL_CHIP, 0xFFE05050, 0.10F + pHover * 0.08F);
-        int primaryOutline = mode == Mode.RENAME
-                ? MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, 0.18F)
-                : MenuStyle.mix(0xFFE05050, 0xFFFFFFFF, 0.15F);
+        int primaryFill = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, pHover * 0.10F);
+        int primaryOutline = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, 0xFFFFFFFF, 0.18F);
         rectangle.render(ShapeProperties.create(matrix, primaryX, by, primaryW, BUTTON_HEIGHT)
-                .round(4.0F).thickness(1.5F)
+                .round(4.0F).thickness(1.25F)
                 .outlineColor(MenuStyle.withAlpha(primaryOutline, fadeAlpha))
                 .color(MenuStyle.withAlpha(primaryFill, fadeAlpha))
                 .build());
         String primaryLabel = primaryLabel();
-        int primaryTextColor = mode == Mode.RENAME ? 0xFFFFFFFF : 0xFFE05050;
+        int primaryTextColor = 0xFFFFFFFF;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), primaryLabel, BUTTON_TEXT_SIZE,
                 MenuStyle.withAlpha(primaryTextColor, fadeAlpha),
@@ -400,9 +398,15 @@ public class ConfigShareModalComponent extends AbstractComponent {
                 MenuStyle.centerMsdfTextY(BUTTON_TEXT_SIZE, by, BUTTON_HEIGHT),
                 0.0F);
 
-        // Secondary — text only, NO underline. Hover lightens the
-        // text color to give visual feedback.
+        // Secondary — same medium outline as the primary button.
         float cHover = cancelHover.getOutputFloat();
+        int cancelFill = MenuStyle.mix(MenuStyle.PANEL_BG_SOFT, MenuStyle.TEXT_PRIMARY, cHover * 0.08F);
+        int cancelOutline = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.BORDER_LIGHT, 0.45F + cHover * 0.25F);
+        rectangle.render(ShapeProperties.create(matrix, cancelX, by, SECONDARY_W, BUTTON_HEIGHT)
+                .round(4.0F).thickness(1.25F)
+                .outlineColor(MenuStyle.withAlpha(cancelOutline, fadeAlpha))
+                .color(MenuStyle.withAlpha(cancelFill, fadeAlpha))
+                .build());
         int cancelText = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.40F + cHover * 0.50F);
         String cancelLabel = Lang.t("button.cancel");
         float labelX = MenuStyle.centerMsdfTextX(MsdfFonts.bold(), cancelLabel, BUTTON_TEXT_SIZE, cancelX, SECONDARY_W);
@@ -453,7 +457,7 @@ public class ConfigShareModalComponent extends AbstractComponent {
         }
         // Buttons.
         float by = buttonsY(modalY);
-        float primaryW = mode == Mode.RENAME ? PRIMARY_W : CLOUD_PRIMARY_W;
+        float primaryW = mode == Mode.RENAME ? PRIMARY_W : SECONDARY_W;
         float groupW = primaryW + BUTTON_GAP + SECONDARY_W;
         float primaryX = modalX + (MODAL_W - groupW) * 0.5F;
         float cancelX = primaryX + primaryW + BUTTON_GAP;

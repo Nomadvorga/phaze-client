@@ -15,7 +15,9 @@ import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
+import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.MenuUiSettings;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.math.MathHelper;
 
@@ -52,6 +54,12 @@ public class ValueComponent extends AbstractSettingComponent {
     public ValueComponent(ValueSetting setting) {
         super(setting);
         this.setting = setting;
+        if (isGuiScaleSetting()) {
+            setting.range(MenuUiSettings.MIN_GUI_SCALE, MenuUiSettings.MAX_GUI_SCALE).step(0.1F);
+            if (setting.getValue() < MenuUiSettings.MIN_GUI_SCALE) {
+                setting.setValue(MenuUiSettings.MIN_GUI_SCALE);
+            }
+        }
         this.previousValue = setting.getValue();
         this.animation = (setting.getValue() - setting.getMin()) / (setting.getMax() - setting.getMin()) * SLIDER_FIXED_WIDTH;
         boolean isModified = setting.isModified();
@@ -138,7 +146,7 @@ public class ValueComponent extends AbstractSettingComponent {
 
         // 1.21.11: ResetIconComponent.render() takes the GUI pose (Matrix3x2fc) directly -
         // it only feeds ShapeProperties.create, which is Matrix3x2fc-based since the port.
-        resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(matrices);
+        resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(context);
     }
 
     // 1.21.11: the GUI pose is org.joml.Matrix3x2f now, not MatrixStack.
@@ -187,6 +195,9 @@ public class ValueComponent extends AbstractSettingComponent {
         if (wasClicked) {
             playButtonClickSound();
             dragging = true;
+            if (isGuiScaleSetting()) {
+                Theme.getInstance().beginGuiScaleAdjustment();
+            }
             return true;
         }
         dragging = false;
@@ -196,7 +207,11 @@ public class ValueComponent extends AbstractSettingComponent {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        boolean wasDragging = dragging;
         dragging = false;
+        if (wasDragging && isGuiScaleSetting()) {
+            Theme.getInstance().endGuiScaleAdjustment();
+        }
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
@@ -285,5 +300,9 @@ public class ValueComponent extends AbstractSettingComponent {
         }
 
         setting.setValue(newValue);
+    }
+
+    private boolean isGuiScaleSetting() {
+        return setting == Theme.getInstance().guiScale;
     }
 }

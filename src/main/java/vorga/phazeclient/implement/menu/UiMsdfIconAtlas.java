@@ -42,13 +42,15 @@ public final class UiMsdfIconAtlas {
     private static final Identifier ATLAS_DATA_ID = Identifier.of("phaze", "msdf/ui_icons.json");
     private static final Identifier SEARCH_ICON_ID = Identifier.ofVanilla("textures/search_lunar.png");
     private static final Identifier BACK_ARROW_ICON_ID = Identifier.ofVanilla("textures/back_arrow.png");
+    private static final Identifier MENU_CROSS_ICON_ID = Identifier.of("phaze", "textures/menu/cross.png");
     private static final float DEFAULT_DISTANCE_RANGE = 12.0F;
     private static final float SMOOTHNESS = 0.42F;
     private static final float THICKNESS = 0.0F;
     private static final float UV_INSET = 1.0F;
     private static final Set<Identifier> RASTER_FALLBACK_ICONS = Set.of(
             SEARCH_ICON_ID,
-            BACK_ARROW_ICON_ID
+            BACK_ARROW_ICON_ID,
+            MENU_CROSS_ICON_ID
     );
 
     private static final Map<Identifier, AtlasIcon> ATLAS_ICONS = new HashMap<>();
@@ -105,6 +107,48 @@ public final class UiMsdfIconAtlas {
         float drawHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
         FittedRect fittedRect = fitRect(x1, y1, drawWidth, drawHeight, atlasIcon.aspectRatio);
         return renderQuad(GuiMatrix.mat4(context.getMatrices()), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false);
+    }
+
+    public static boolean renderIconClippedVertical(
+            DrawContext context,
+            Identifier icon,
+            float x,
+            float y,
+            float width,
+            float height,
+            float clipTop,
+            float clipBottom,
+            int color
+    ) {
+        AtlasIcon atlasIcon = ensureIconReady(icon);
+        if (atlasIcon == null) {
+            return false;
+        }
+
+        FittedRect fittedRect = fitRect(x, y, Math.max(1.0F, width), Math.max(1.0F, height), atlasIcon.aspectRatio);
+        float visibleTop = Math.max(fittedRect.top, clipTop);
+        float visibleBottom = Math.min(fittedRect.bottom, clipBottom);
+        if (visibleBottom <= visibleTop) {
+            return true;
+        }
+
+        float fittedHeight = Math.max(1.0F, fittedRect.bottom - fittedRect.top);
+        float topFraction = (visibleTop - fittedRect.top) / fittedHeight;
+        float bottomFraction = (visibleBottom - fittedRect.top) / fittedHeight;
+        float minV = atlasIcon.minV + (atlasIcon.maxV - atlasIcon.minV) * topFraction;
+        float maxV = atlasIcon.minV + (atlasIcon.maxV - atlasIcon.minV) * bottomFraction;
+        AtlasIcon clippedIcon = new AtlasIcon(atlasIcon.minU, minV, atlasIcon.maxU, maxV, atlasIcon.aspectRatio);
+
+        return renderQuad(
+                GuiMatrix.mat4(context.getMatrices()),
+                clippedIcon,
+                fittedRect.left,
+                visibleTop,
+                fittedRect.right,
+                visibleBottom,
+                color,
+                false
+        );
     }
 
     public static boolean renderIcon(
@@ -310,23 +354,21 @@ public final class UiMsdfIconAtlas {
             filterApplied = true;
         }
 
-        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-        if (legacyImageOrientation) {
-            builder.vertex(matrix, x1, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.minV).color(color);
-            builder.vertex(matrix, x2, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.maxV).color(color);
-            builder.vertex(matrix, x2, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.maxV).color(color);
-            builder.vertex(matrix, x1, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.minV).color(color);
-        } else {
-            builder.vertex(matrix, x1, y1, 0.0F).texture(atlasIcon.minU, atlasIcon.minV).color(color);
-            builder.vertex(matrix, x1, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.maxV).color(color);
-            builder.vertex(matrix, x2, y2, 0.0F).texture(atlasIcon.maxU, atlasIcon.maxV).color(color);
-            builder.vertex(matrix, x2, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.minV).color(color);
-        }
-
-        BuiltBuffer builtBuffer = builder.endNullable();
-        if (builtBuffer != null) {
-            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(ATLAS_TEXTURE_ID).draw(builtBuffer);
-        }
+        // These icons are multi-channel signed distance fields, exactly like
+        // MSDF glyphs, so they need the MSDF shader to decode them. 1.21.4 drew
+        // them with MSDF_FONT_SHADER_KEY plus Range/Thickness/Smoothness
+        // uniforms; the port swapped in PhazeDrawLayers.positionTexColor, which
+        // is a plain textured pipeline and therefore blitted the raw
+        // distance-field texels - every icon rendered as its red/green/blue
+        // encoding instead of a shape. drawAtlasQuad routes them back through
+        // the MSDF pipeline (and installs the GUI projection itself).
+        MsdfRenderer.drawAtlasQuad(
+                atlasTexture == null ? null : atlasTexture.getGlTextureView(),
+                matrix,
+                x1, y1, x2, y2,
+                atlasIcon.minU, atlasIcon.minV, atlasIcon.maxU, atlasIcon.maxV,
+                color, distanceRange, THICKNESS, SMOOTHNESS,
+                legacyImageOrientation);
 
         return true;
     }

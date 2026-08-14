@@ -116,6 +116,7 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
     private static final Set<String> SODIUM_ONLY = Set.of(
             "vorga.phazeclient.mixins.sodium.DefaultFluidRendererWorldColorMixin",
             "vorga.phazeclient.mixins.sodium.SodiumGlProgramWorldColorMixin",
+            "vorga.phazeclient.mixins.sodium.SodiumGlShaderWorldColorMixin",
             "vorga.phazeclient.mixins.sodium.DefaultChunkRendererChunkAnimatorMixin",
             "vorga.phazeclient.mixins.sodium.ShaderParserChunkAnimatorMixin",
             "vorga.phazeclient.mixins.sodium.SodiumGlShaderChunkAnimatorMixin",

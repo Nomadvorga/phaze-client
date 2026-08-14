@@ -273,7 +273,7 @@ public final class PredictionsRenderer {
         java.util.List<ImpactMark> marks = IMPACT_MARKS;
 
         if (module.shouldPredictHeld()) {
-            collectHeldHand(mc, module, tickCounter, trajectories, marks);
+            collectHeldHand(mc, module, cameraPos, tickCounter, trajectories, marks);
         }
 
         // Drop trajectories that have less than 2 path points - those
@@ -320,7 +320,7 @@ public final class PredictionsRenderer {
 
             net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
             if (built != null) {
-                vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
+                vorga.phazeclient.util.render.PhazeRenderLayers.getThickLines(lineWidth).draw(built);
             }
 
         }
@@ -481,6 +481,7 @@ public final class PredictionsRenderer {
     }
 
     private static void collectHeldHand(MinecraftClient mc, Predictions module,
+                                        Vec3d renderCameraPos,
                                         RenderTickCounter tickCounter,
                                         java.util.List<Predictions.TrajectoryResult> out,
                                         java.util.List<ImpactMark> marks) {
@@ -505,11 +506,18 @@ public final class PredictionsRenderer {
 
         Vec3d look = p.getRotationVec(1.0F);
         Vec3d motion = look.multiply(speed);
-        // Lerped eye position - matches the camera frustum the
-        // crosshair was drawn through, so the trajectory line stays
-        // glued to the crosshair while the player is moving instead
-        // of trailing one tick behind their real eye.
-        Vec3d eye = lerpedEyePos(mc, tickCounter);
+        // In first person use the exact camera origin from the world
+        // render state. The path is later made camera-relative with
+        // this same value, so strafing cannot introduce a one-frame
+        // lateral delta between simulation and rendering. Third
+        // person still starts at the player's actual eye, not at the
+        // chase camera behind them.
+        net.minecraft.client.render.Camera activeCamera = mc.gameRenderer == null
+                ? null : mc.gameRenderer.getCamera();
+        boolean firstPersonPlayerCamera = activeCamera != null
+                && !activeCamera.isThirdPerson()
+                && activeCamera.getFocusedEntity() == p;
+        Vec3d eye = firstPersonPlayerCamera ? renderCameraPos : lerpedEyePos(mc, tickCounter);
         double gravity = switch (type) {
             case SNOWBALL, EGG, ENDER_PEARL, EXPERIENCE_BOTTLE, SPLASH_POTION -> 0.03;
             case BOW, CROSSBOW, TRIDENT -> 0.05;

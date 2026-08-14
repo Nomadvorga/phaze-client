@@ -62,7 +62,7 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         height = (int) ROW_HEIGHT;
         renderSettingCard(context, activeProgress, hoverProgress);
 
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context);
 
         float colorX = x + width - COLOR_RIGHT - COLOR_SIZE;
         float colorY = y + ROW_HEIGHT / 2.0F - COLOR_SIZE / 2.0F;

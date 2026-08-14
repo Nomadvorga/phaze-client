@@ -250,13 +250,13 @@ public final class HolyWorldHelperRenderer {
             // world blocks it traces has to be baked into the layer this
             // buffer is submitted through, so it can no longer leak into
             // later draws either.
-            // TODO(1.21.11): when PhazeWorldDrawStub is replaced, give
-            //  this fill a layer built with .withDepthBias(-1.0F, -1.0F).
+            // That layer is PhazeRenderLayers.getBlockFill(), built with
+            // .withDepthBias(-1.0F, -1.0F).
             BufferBuilder fill = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             for (FaceBox face : geometry.faces) {
                 addFace(fill, matrix, face, offsetX, offsetY, offsetZ, red, green, blue, fillAlpha);
             }
-            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(fill.end());
+            vorga.phazeclient.util.render.PhazeRenderLayers.getBlockFill().draw(fill.end());
         }
         // 1.21.11: RenderSystem.lineWidth is gone and VertexFormats.LINES was
         // replaced by POSITION_COLOR_NORMAL_LINE_WIDTH - the width is a
@@ -266,7 +266,7 @@ public final class HolyWorldHelperRenderer {
         for (Edge edge : geometry.edges) {
             addLine(outline, matrix, edge, offsetX, offsetY, offsetZ, red, green, blue, alpha, OUTLINE_LINE_WIDTH);
         }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(outline.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getThickLines(OUTLINE_LINE_WIDTH).draw(outline.end());
 
     }
 

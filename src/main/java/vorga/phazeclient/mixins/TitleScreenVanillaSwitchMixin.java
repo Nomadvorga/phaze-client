@@ -1,7 +1,7 @@
 package vorga.phazeclient.mixins;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -12,9 +12,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import vorga.phazeclient.base.util.render.Render2DUtil;
 import vorga.phazeclient.implement.menu.MainMenuScreen;
-import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 
 @Mixin(TitleScreen.class)
 public abstract class TitleScreenVanillaSwitchMixin extends Screen {
@@ -43,7 +41,7 @@ public abstract class TitleScreenVanillaSwitchMixin extends Screen {
                                     }
                                 }
                         )
-                        .dimensions(this.width - 28, -3, 20, 20)
+                        .dimensions(this.width - 28, 8, 20, 20)
                         .build()
         );
     }
@@ -54,28 +52,28 @@ public abstract class TitleScreenVanillaSwitchMixin extends Screen {
             return;
         }
 
-        float iconHeight = 22.0F;
-        float iconWidth = iconHeight * Math.max(1.0F, UiMsdfIconAtlas.resolveAspectRatio(PHAZE_MENU_SWITCH_ICON));
-        float iconX = phaze$switchBackButton.getX() + (phaze$switchBackButton.getWidth() - iconWidth) / 2.0F;
-        float iconY = phaze$switchBackButton.getY() + (phaze$switchBackButton.getHeight() - iconHeight) / 2.0F;
-        int tint = 0xFFFFFFFF;
-        if (!UiMsdfIconAtlas.renderIcon(context, PHAZE_MENU_SWITCH_ICON, iconX, iconY, iconWidth, iconHeight, tint, true)) {
-            Render2DUtil.drawTexture(
-                    context.getMatrices(),
-                    PHAZE_MENU_SWITCH_ICON,
-                    iconX,
-                    iconX + iconWidth,
-                    iconY,
-                    iconY + iconHeight,
-                    0.0F,
-                    64,
-                    64,
-                    0.0F,
-                    0.0F,
-                    64,
-                    64,
-                    tint
-            );
-        }
+        int iconSize = 16;
+        int iconX = phaze$switchBackButton.getX() + (phaze$switchBackButton.getWidth() - iconSize) / 2;
+        int iconY = phaze$switchBackButton.getY() + (phaze$switchBackButton.getHeight() - iconSize) / 2;
+
+        // 1.21.11 DrawContext records GUI elements for a deferred render pass.
+        // The old immediate Render2DUtil draw ran after TitleScreen had already
+        // submitted its GUI state and disappeared, leaving only the gray button.
+        context.createNewRootLayer();
+        context.drawTexture(
+                RenderPipelines.GUI_TEXTURED,
+                PHAZE_MENU_SWITCH_ICON,
+                iconX,
+                iconY,
+                0.0F,
+                0.0F,
+                iconSize,
+                iconSize,
+                64,
+                64,
+                64,
+                64,
+                0xFFFFFFFF
+        );
     }
 }

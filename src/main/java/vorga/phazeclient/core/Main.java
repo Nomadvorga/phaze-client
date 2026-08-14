@@ -58,6 +58,10 @@ public class Main implements ModInitializer {
         return instance;
     }
 
+    public ScissorManager getScissorManager() {
+        return scissorManager;
+    }
+
     @Override
     public void onInitialize() {
         HolyWorldFeatureControlService.getInstance().init();

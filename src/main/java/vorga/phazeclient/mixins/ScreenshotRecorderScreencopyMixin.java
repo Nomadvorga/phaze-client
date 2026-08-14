@@ -7,6 +7,7 @@
  */
 package vorga.phazeclient.mixins;
 
+import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.util.ScreenshotRecorder;
 import net.minecraft.text.Text;
@@ -36,34 +37,56 @@ import java.util.function.Consumer;
  * vanilla finish writing the {@code .png} so the user keeps a local
  * copy alongside the clipboard push.
  *
- * <p>In 1.21.4 {@code saveScreenshotInner} has the signature
- * {@code (File, String, Framebuffer, Consumer<Text>)} and creates
- * the {@link NativeImage} by delegating to the static helper
- * {@code ScreenshotRecorder.takeScreenshot(Framebuffer)}. We wrap
- * that inner call to intercept the resulting image while it is still
- * alive, then hand it to {@link ChatHelper#copyImageToClipboardAsync}.
- * The original call proceeds unchanged - vanilla's disk save path
- * is not affected.
+ * <p>1.21.11 reshaped this path. The private {@code saveScreenshotInner}
+ * helper is gone, and screenshot capture became asynchronous: the
+ * former {@code ScreenshotRecorder.takeScreenshot(Framebuffer)} that
+ * returned a {@link NativeImage} is now
+ * {@code takeScreenshot(Framebuffer, int downscale, Consumer<NativeImage>)}
+ * which returns {@code void} and delivers the image to a callback once
+ * the GPU-&gt;CPU buffer copy completes. The public entry point
+ * {@code saveScreenshot(File, String, Framebuffer, int, Consumer<Text>)}
+ * is what actually issues that call (the 3-arg overload just delegates
+ * to it), so we wrap the {@code takeScreenshot} invocation there and
+ * decorate the vanilla image consumer instead of intercepting a return
+ * value.
+ *
+ * <p>Ordering is preserved: the clipboard push runs before vanilla's
+ * consumer schedules the disk write, exactly as the old
+ * "wrap the returning call" form did. The original call always
+ * proceeds - vanilla's disk save path is not affected.
  */
 @Mixin(ScreenshotRecorder.class)
 public abstract class ScreenshotRecorderScreencopyMixin {
 
     @WrapOperation(
-            method = "saveScreenshotInner",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/util/ScreenshotRecorder;takeScreenshot(Lnet/minecraft/client/gl/Framebuffer;)Lnet/minecraft/client/texture/NativeImage;")
+            method = "saveScreenshot(Ljava/io/File;Ljava/lang/String;Lnet/minecraft/client/gl/Framebuffer;ILjava/util/function/Consumer;)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/util/ScreenshotRecorder;takeScreenshot(Lnet/minecraft/client/gl/Framebuffer;ILjava/util/function/Consumer;)V")
     )
-    private static NativeImage phaze$screencopyWrapToImage(net.minecraft.client.gl.Framebuffer framebuffer, Operation<NativeImage> original, File file, String fileName, net.minecraft.client.gl.Framebuffer fb2, Consumer<Text> messageReceiver) {
-        NativeImage image = original.call(framebuffer);
-        ChatHelper helper = ChatHelper.getInstance();
-        if (image != null && helper != null && helper.shouldCopyScreenshot()) {
-            try {
-                helper.copyImageToClipboardAsync(image, messageReceiver);
-            } catch (Throwable t) {
-                if (messageReceiver != null) {
-                    messageReceiver.accept(Text.literal("Screencopy failed: " + t.getClass().getSimpleName()));
+    private static void phaze$screencopyWrapTakeScreenshot(Framebuffer framebuffer,
+                                                           int downscaleFactor,
+                                                           Consumer<NativeImage> vanillaImageConsumer,
+                                                           Operation<Void> original,
+                                                           File directory,
+                                                           String fileName,
+                                                           Framebuffer targetFramebuffer,
+                                                           int targetDownscaleFactor,
+                                                           Consumer<Text> messageReceiver) {
+        Consumer<NativeImage> decorated = image -> {
+            ChatHelper helper = ChatHelper.getInstance();
+            if (image != null && helper != null && helper.shouldCopyScreenshot()) {
+                try {
+                    helper.copyImageToClipboardAsync(image, messageReceiver);
+                } catch (Throwable t) {
+                    if (messageReceiver != null) {
+                        messageReceiver.accept(Text.literal("Screencopy failed: " + t.getClass().getSimpleName()));
+                    }
                 }
             }
-        }
-        return image;
+            // Always hand the image on to vanilla so the .png still lands on disk.
+            if (vanillaImageConsumer != null) {
+                vanillaImageConsumer.accept(image);
+            }
+        };
+        original.call(framebuffer, downscaleFactor, decorated);
     }
 }

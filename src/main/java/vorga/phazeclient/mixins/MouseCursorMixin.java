@@ -2,6 +2,7 @@ package vorga.phazeclient.mixins;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.Mouse;
+import net.minecraft.client.input.MouseInput;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -44,8 +45,8 @@ public abstract class MouseCursorMixin {
      *  releases that get swallowed by parent components or
      *  screen-swap-mid-drag. {@code endDrag} is idempotent. */
     @Inject(method = "onMouseButton", at = @At("HEAD"))
-    private void phaze$cursorOnMouseButton(long window, int button, int action, int mods, CallbackInfo ci) {
-        if (action == GLFW.GLFW_RELEASE && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+    private void phaze$cursorOnMouseButton(long window, MouseInput input, int action, CallbackInfo ci) {
+        if (action == GLFW.GLFW_RELEASE && input.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             CursorManager.endDrag();
         }
     }

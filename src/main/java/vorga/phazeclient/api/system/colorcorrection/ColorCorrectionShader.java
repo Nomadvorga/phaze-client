@@ -15,6 +15,15 @@ public class ColorCorrectionShader {
         this.shader = new PostEffectShader(
                 Identifier.of("phazeclient", "color_correction")
         );
+        // Must match, in order, the "ColorCorrectionConfig" list in
+        // assets/phazeclient/post_effect/color_correction.json and the block in
+        // assets/phazeclient/shaders/core/post/colorcorrection/color_correction.fsh.
+        // All three describe one byte layout; only the JSON one is visible to
+        // vanilla, so a mismatch shows up as values landing on wrong members
+        // rather than as an error.
+        this.shader.declareUniformBlock("ColorCorrectionConfig",
+                "Brightness", "Contrast", "Saturation", "Hue",
+                "Gamma", "Temperature", "Vibrance");
     }
 
     private float lastBrightness = Float.NaN;

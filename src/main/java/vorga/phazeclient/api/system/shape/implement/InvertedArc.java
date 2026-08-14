@@ -19,6 +19,7 @@ import vorga.phazeclient.api.system.shape.Shape;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
+import net.minecraft.client.gl.UniformType;
 
 /**
  * Inverting arc / ring segment.
@@ -50,6 +51,8 @@ public class InvertedArc implements Shape, QuickImports {
                 .withLocation(Identifier.of("phaze", "pipeline/arc_inverted"))
                 .withVertexShader(Identifier.of("phaze", "core/arc_inverted"))
                 .withFragmentShader(Identifier.of("phaze", "core/arc_inverted"))
+                .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+                .withUniform("Projection", UniformType.UNIFORM_BUFFER)
                 .withVertexFormat(FORMAT, VertexFormat.DrawMode.QUADS)
                 .withBlend(BlendFunction.INVERT)
                 .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
@@ -95,7 +98,15 @@ public class InvertedArc implements Shape, QuickImports {
         emit(buffer, matrix4f, x + w, y + h, locX, locY, width, height, round.x, shape);
         emit(buffer, matrix4f, x + w, y, locX, locY, width, height, round.x, shape);
 
-        LAYER.draw(buffer.end());
+        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
+        // immediate draw runs outside the GUI pass and must install the
+        // GUI ortho projection (and its z = -11000 model-view) itself.
+        vorga.phazeclient.api.system.draw.GuiProjection.begin();
+        try {
+            LAYER.draw(buffer.end());
+        } finally {
+            vorga.phazeclient.api.system.draw.GuiProjection.end();
+        }
     }
 
     private static void emit(BufferBuilder buffer, Matrix4f matrix,

@@ -4,24 +4,42 @@
   },
   "passes": [
     {
-      "program": "phazeclient:core/post/colorcorrection/color_correction",
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "phazeclient:core/post/colorcorrection/color_correction",
       "inputs": [
         {
           "sampler_name": "Main",
           "target": "minecraft:main"
         }
       ],
-      "output": "swap"
+      "output": "swap",
+      "uniforms": {
+        "ColorCorrectionConfig": [
+          { "name": "Brightness", "type": "float", "value": 0.0 },
+          { "name": "Contrast", "type": "float", "value": 1.0 },
+          { "name": "Saturation", "type": "float", "value": 1.0 },
+          { "name": "Hue", "type": "float", "value": 0.0 },
+          { "name": "Gamma", "type": "float", "value": 1.0 },
+          { "name": "Temperature", "type": "float", "value": 0.0 },
+          { "name": "Vibrance", "type": "float", "value": 0.0 }
+        ]
+      }
     },
     {
-      "program": "minecraft:post/blit",
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "minecraft:post/blit",
       "inputs": [
         {
           "sampler_name": "In",
           "target": "swap"
         }
       ],
-      "output": "minecraft:main"
+      "output": "minecraft:main",
+      "uniforms": {
+        "BlitConfig": [
+          { "name": "ColorModulate", "type": "vec4", "value": [ 1.0, 1.0, 1.0, 1.0 ] }
+        ]
+      }
     }
   ]
 }

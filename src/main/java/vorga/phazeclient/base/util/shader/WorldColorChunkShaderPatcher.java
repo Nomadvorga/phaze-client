@@ -9,8 +9,9 @@ public final class WorldColorChunkShaderPatcher {
     private static final Pattern MESH_ID_ASSIGN =
             Pattern.compile("((?:_draw_id|_vert_mesh_id)\\s*=\\s*[^;]+;)");
 
-    private static final Pattern FRAG_COLOR_ASSIGN =
-            Pattern.compile("((?:fragColor|out_FragColor)\\s*=\\s*[^;]+;)");
+    private static final Pattern FOG_COLOR_ASSIGN = Pattern.compile(
+            "((?:fragColor|out_FragColor)\\s*=\\s*_linearFog\\s*\\([^;]+;)"
+    );
 
     private WorldColorChunkShaderPatcher() {
     }
@@ -49,11 +50,15 @@ public final class WorldColorChunkShaderPatcher {
         }
 
         String withDecl = original.substring(0, insertAt)
-                + "\nout float v_PhazeWorldColorFluid;\n"
+                + "\nflat out float v_PhazeWorldColorFluid;\n"
                 + original.substring(insertAt);
 
         String result = MESH_ID_ASSIGN.matcher(withDecl).replaceFirst(
-                "$1\n    v_PhazeWorldColorFluid = (_vert_color.a < 0.999) ? 1.0 : 0.0;\n"
+                // Fluid vertices are tagged with the exact byte value 254.
+                // Testing merely for alpha < 1 also classified naturally
+                // translucent/tinted block vertices (notably redstone dust)
+                // as fluids.
+                "$1\n    v_PhazeWorldColorFluid = (abs(_vert_color.a - (254.0 / 255.0)) < 0.001) ? 1.0 : 0.0;\n"
                         + "    if (v_PhazeWorldColorFluid > 0.5) { _vert_color.a = 1.0; }"
         );
         return result.equals(withDecl) ? original : result;
@@ -68,7 +73,7 @@ public final class WorldColorChunkShaderPatcher {
         String withDecl = original.substring(0, insertAt)
                 + """
 
-in float v_PhazeWorldColorFluid;
+flat in float v_PhazeWorldColorFluid;
 uniform vec4 PhazeBlockColor;
 uniform vec4 PhazeBlockParams;
 uniform vec4 PhazeFluidColor;
@@ -99,11 +104,15 @@ vec4 phazeApplyWorldColorCorrection(vec4 color, vec4 tint, vec4 params) {
 """
                 + original.substring(insertAt);
 
-        String result = FRAG_COLOR_ASSIGN.matcher(withDecl).replaceFirst(
-                "$1\n    " + fragColorToken + " = phazeApplyWorldColorCorrection("
-                        + fragColorToken
+        // Correct the sampled terrain colour before Sodium blends fog into
+        // it. Correcting fragColor after _linearFog also recoloured the fog
+        // itself and, with strong settings, produced the white/noisy frame
+        // seen by users.
+        String result = FOG_COLOR_ASSIGN.matcher(withDecl).replaceFirst(
+                "color = phazeApplyWorldColorCorrection("
+                        + "color"
                         + ", v_PhazeWorldColorFluid > 0.5 ? PhazeFluidColor : PhazeBlockColor,"
-                        + " v_PhazeWorldColorFluid > 0.5 ? PhazeFluidParams : PhazeBlockParams);"
+                        + " v_PhazeWorldColorFluid > 0.5 ? PhazeFluidParams : PhazeBlockParams);\n    $1"
         );
         return result.equals(withDecl) ? original : result;
     }

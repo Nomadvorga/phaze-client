@@ -18,7 +18,10 @@ jdk-*/
 *.iml
 
 .claude/
+.codex_tmp/
+.zcode/
 .vscode/
+run/
 
 # Local, version-specific compile-only jars (Iris etc.) - large and not
 # committed. Fetch them per-machine.
@@ -30,3 +33,15 @@ libs/
 
 # Port working files
 port-build-*.log
+
+# Local credentials and machine-specific secrets
+.env
+.env.*
+!.env.example
+credentials.json
+service-account*.json
+secrets.*
+*.pem
+*.p12
+*.pfx
+id_rsa

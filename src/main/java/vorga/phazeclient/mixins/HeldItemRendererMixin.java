@@ -2,13 +2,13 @@ package vorga.phazeclient.mixins;
 
 import com.llamalad7.mixinextras.injector.v2.WrapWithCondition;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.command.OrderedRenderCommandQueue;
 import net.minecraft.client.render.item.HeldItemRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Arm;
 import net.minecraft.util.Hand;
-import org.joml.Quaternionf;
+import org.joml.Quaternionfc;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -32,8 +32,8 @@ import vorga.phazeclient.implement.features.modules.other.ChangeHand;
  *
  * <h3>No hand sway</h3>
  * MixinExtras' {@link WrapWithCondition} on the
- * {@code matrices.multiply(Quaternionf)} calls inside the outer
- * {@code renderItem(F,MatrixStack,VCPI,CPE,I)V} overload. Returning
+ * {@code matrices.multiply(Quaternionfc)} calls inside the outer
+ * {@code renderItem(F,MatrixStack,OrderedRenderCommandQueue,CPE,I)V} overload. Returning
  * {@code false} suppresses both quaternion multiplies (the pitch
  * and yaw lag rotations); returning {@code true} lets vanilla run
  * unchanged.
@@ -46,11 +46,16 @@ import vorga.phazeclient.implement.features.modules.other.ChangeHand;
 @Mixin(HeldItemRenderer.class)
 public abstract class HeldItemRendererMixin {
 
+    // 1.21.11: renderFirstPersonItem's VertexConsumerProvider param became an
+    // OrderedRenderCommandQueue, and the renderItem overload it calls lost the
+    // `boolean leftHanded` arg while ModelTransformationMode was renamed to
+    // ItemDisplayContext. Both the injection point descriptor and the handler
+    // parameter list are updated to the real 1.21.11 shapes.
     @Inject(
-            method = "renderFirstPersonItem",
+            method = "renderFirstPersonItem(Lnet/minecraft/client/network/AbstractClientPlayerEntity;FFLnet/minecraft/util/Hand;FLnet/minecraft/item/ItemStack;FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;I)V",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/item/HeldItemRenderer;renderItem(Lnet/minecraft/entity/LivingEntity;Lnet/minecraft/item/ItemStack;Lnet/minecraft/item/ModelTransformationMode;ZLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V"
+                    target = "Lnet/minecraft/client/render/item/HeldItemRenderer;renderItem(Lnet/minecraft/entity/LivingEntity;Lnet/minecraft/item/ItemStack;Lnet/minecraft/item/ItemDisplayContext;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;I)V"
             )
     )
     private void phaze$applyHandTweaks(
@@ -62,7 +67,7 @@ public abstract class HeldItemRendererMixin {
             ItemStack item,
             float equipProgress,
             MatrixStack matrices,
-            VertexConsumerProvider vertexConsumers,
+            OrderedRenderCommandQueue queue,
             int light,
             CallbackInfo ci
     ) {
@@ -104,14 +109,19 @@ public abstract class HeldItemRendererMixin {
         }
     }
 
+    // 1.21.11: the outer renderItem overload takes an OrderedRenderCommandQueue
+    // instead of VertexConsumerProvider$Immediate, and MatrixStack.multiply is now
+    // declared against the Quaternionfc interface rather than Quaternionf.
+    // Still exactly two multiply(Quaternionfc) call sites in that method (the pitch
+    // and yaw lag rotations), so the un-ordinal'd wrap keeps its original meaning.
     @WrapWithCondition(
-            method = "renderItem(FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider$Immediate;Lnet/minecraft/client/network/ClientPlayerEntity;I)V",
+            method = "renderItem(FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/network/ClientPlayerEntity;I)V",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/util/math/MatrixStack;multiply(Lorg/joml/Quaternionf;)V"
+                    target = "Lnet/minecraft/client/util/math/MatrixStack;multiply(Lorg/joml/Quaternionfc;)V"
             )
     )
-    private boolean phaze$skipHandSway(MatrixStack instance, Quaternionf rotation) {
+    private boolean phaze$skipHandSway(MatrixStack instance, Quaternionfc rotation) {
         ChangeHand mod = ChangeHand.getInstance();
         if (mod == null || !mod.isEnabled() || !mod.noHandSway.isValue()) {
             return true;

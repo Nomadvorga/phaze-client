@@ -50,6 +50,10 @@ public abstract class TitleScreenOnlineCounterMixin {
         if (client == null || client.textRenderer == null) {
             return;
         }
+
+        // Server announcements are useful on the title screen before
+        // the player has joined a world.
+        vorga.phazeclient.implement.menu.AnnouncementOverlay.render(context);
         if (client.currentScreen instanceof MainMenuScreen) {
             return;
         }
@@ -58,8 +62,6 @@ public abstract class TitleScreenOnlineCounterMixin {
         String text = count < 0
                 ? "Phaze: connecting\u2026"   // U+2026 horizontal ellipsis
                 : "Phaze: " + count + " online";
-        int y = MainMenuScreen.isCustomMainMenuEnabled() ? PADDING : 28;
-
-        context.drawTextWithShadow(client.textRenderer, text, PADDING, y, TEXT_COLOR);
+        context.drawTextWithShadow(client.textRenderer, text, PADDING, PADDING, TEXT_COLOR);
     }
 }

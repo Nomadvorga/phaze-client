@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.ChatHud;
@@ -20,7 +21,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.base.util.animation.Interpolation;
 import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
@@ -164,27 +164,49 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
     // ---------------------------------------------------------------
     // ChatHudFadeInMixin
     // ---------------------------------------------------------------
+    // 1.21.11 deleted {@code ChatHud.getMessageOpacityMultiplier(int)}.
+    // Per-line opacity is now produced by the nested (package-private)
+    // {@code ChatHud$OpacityRule} functional interface: the render pass
+    // builds either {@code OpacityRule.CONSTANT} (chat focused) or
+    // {@code OpacityRule.timeBased(currentTick)}, and
+    // {@code forEachVisibleLine} calls {@code rule.calculate(visible)}
+    // once per visible line. That call site is the exact successor of the
+    // old method, so the fade-in multiplier is applied there instead.
+    // The old {@code messageAge} argument is reconstructed the same way
+    // vanilla used to compute it: {@code inGameHud.getTicks() -
+    // visible.addedTime()} (a Visible's addedTime IS the ChatHudLine's
+    // creationTick, which vanilla stamps from InGameHud.getTicks()).
 
-    @Inject(method = "getMessageOpacityMultiplier", at = @At("RETURN"), cancellable = true)
-    private static void phaze$applyFadeIn(int messageAge, CallbackInfoReturnable<Double> cir) {
+    @ModifyExpressionValue(
+            method = "forEachVisibleLine",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/hud/ChatHud$OpacityRule;calculate(Lnet/minecraft/client/gui/hud/ChatHudLine$Visible;)F"
+            ),
+            require = 0
+    )
+    private float phaze$applyFadeIn(float original, @Local ChatHudLine.Visible visible) {
         Animations module = Animations.getInstance();
         if (module == null || !module.isChatFadeEnabled()) {
-            return;
+            return original;
         }
         // Exordium's source texture must contain the final full-opacity row.
         // The cached row receives a smooth per-display-frame alpha later.
         if (ExordiumAnimationBridge.isCapturingChat()) {
-            return;
+            return original;
         }
-        float fadeIn = module.computeChatFadeInMultiplier(messageAge);
+        if (visible == null) {
+            return original;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.inGameHud == null) {
+            return original;
+        }
+        float fadeIn = module.computeChatFadeInMultiplier(client.inGameHud.getTicks() - visible.addedTime());
         if (fadeIn >= 1.0F) {
-            return;
+            return original;
         }
-        Double original = cir.getReturnValue();
-        if (original == null) {
-            return;
-        }
-        cir.setReturnValue(original * fadeIn);
+        return original * fadeIn;
     }
 
     // ---------------------------------------------------------------
@@ -229,9 +251,23 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         ExordiumAnimationBridge.requestImmediateCapture(ExordiumAnimationBridge.CHAT);
     }
 
-    @Inject(method = "render", at = @At("HEAD"))
-    private void phaze$prepareFrame(DrawContext context, int currentTick, int mouseX, int mouseY,
-                                    boolean focused, CallbackInfo ci) {
+    /**
+     * 1.21.11 has three {@code render} overloads on {@link ChatHud}
+     * ({@code (DrawContext, TextRenderer, int, int, int, boolean, boolean)},
+     * {@code (DrawnTextConsumer, int, int, boolean)} and the private
+     * {@code (ChatHud$Backend, int, int, boolean)}), so the bare
+     * {@code method = "render"} selector is now ambiguous. We pin the
+     * DrawContext one - the actual HUD draw pass. The DrawnTextConsumer
+     * overload must NOT tick the animation: it is the click hit-test
+     * replay driven from {@code ChatScreen.mouseClicked}.
+     */
+    @Inject(
+            method = "render(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/font/TextRenderer;IIIZZ)V",
+            at = @At("HEAD")
+    )
+    private void phaze$prepareFrame(DrawContext context, TextRenderer textRenderer, int currentTick,
+                                    int mouseX, int mouseY, boolean interactable, boolean insertMode,
+                                    CallbackInfo ci) {
         phaze$drawnBadgeTicksThisFrame.clear();
         phaze$tickAnimationFrame();
     }
@@ -299,8 +335,20 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
                 && visible.addedTime() == phaze$latestAddedTick;
     }
 
+    // TODO(1.21.11): INERT. 1.21.11 routes every chat draw through the new
+    // {@code ChatHud$Backend} abstraction: the per-line background is now
+    // {@code Backend.fill(IIIII)} emitted from the static lambda
+    // {@code ChatHud.method_75802}, and only {@code ChatHud$Hud} (the
+    // DrawContext-backed Backend impl) forwards it to
+    // {@code DrawContext.fill}. There is no {@code DrawContext.fill} call
+    // left anywhere in {@code ChatHud.render}, so this operation never
+    // matches and {@code require = 0} keeps it a silent no-op instead of a
+    // launch crash. Restoring the message-slide/Exordium capture needs a
+    // mixin on {@code ChatHud$Hud} (which owns the DrawContext) - it cannot
+    // be done from a {@code ChatHud} mixin, because the Backend interface
+    // hides the DrawContext that {@code recordChatElement} requires.
     @WrapOperation(
-            method = "render",
+            method = "render(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/font/TextRenderer;IIIZZ)V",
             at = @At(value = "INVOKE",
                     target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V"),
             require = 0
@@ -325,16 +373,26 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         }
     }
 
+    // TODO(1.21.11): INERT. Same Backend rewrite as phaze$shiftFill above:
+    // chat text is now submitted as {@code Backend.text(int, float,
+    // OrderedText)} from the anonymous {@code ChatHud$1} LineConsumer, and
+    // {@code ChatHud$Hud} hands it to a {@code DrawnTextConsumer} - never to
+    // {@code DrawContext.drawTextWithShadow}. That call no longer exists in
+    // {@code ChatHud.render}, so this stays a no-op under
+    // {@code require = 0}. Consequence: the Phaze chat badge and the
+    // message-slide offset are not drawn on 1.21.11. Re-porting needs a
+    // mixin on {@code ChatHud$Hud} / {@code ChatHud$1}, which owns both the
+    // DrawContext and the pixel coordinates this handler needs.
     @WrapOperation(
-            method = "render",
+            method = "render(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/font/TextRenderer;IIIZZ)V",
             at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/OrderedText;III)I"),
+                    target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/OrderedText;III)V"),
             require = 0
     )
-    private int phaze$shiftText(DrawContext ctx, TextRenderer renderer, OrderedText text,
-                                int x, int y, int color,
-                                Operation<Integer> op,
-                                @Local ChatHudLine.Visible visible) {
+    private void phaze$shiftText(DrawContext ctx, TextRenderer renderer, OrderedText text,
+                                 int x, int y, int color,
+                                 Operation<Void> op,
+                                 @Local ChatHudLine.Visible visible) {
         if (ExordiumAnimationBridge.isCapturingChat()) {
             ExordiumAnimationBridge.recordChatElement(
                     ctx,
@@ -349,7 +407,8 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
                         ctx, renderer, x - 1.0F, y - 1.0F, PhazeBadgeUtil.alphaWhite(color)
                 );
             }
-            return op.call(ctx, renderer, text, x, y, color);
+            op.call(ctx, renderer, text, x, y, color);
+            return;
         }
 
         int drawX = x;
@@ -363,7 +422,7 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
             PhazeBadgeUtil.drawChatBadgeAsText(ctx, renderer, drawX - 1.0F, drawY - 1.0F, PhazeBadgeUtil.alphaWhite(color));
         }
 
-        return op.call(ctx, renderer, text, drawX, drawY, color);
+        op.call(ctx, renderer, text, drawX, drawY, color);
     }
 
     @Unique

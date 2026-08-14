@@ -22,6 +22,7 @@ import org.joml.Vector4i;
 import org.lwjgl.system.MemoryUtil;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.color.ColorUtil;
+import net.minecraft.client.gl.UniformType;
 
 /**
  * Batched rounded-rect renderer. Replaces the per-rectangle BufferBuilder
@@ -165,6 +166,8 @@ public final class BatchedRectangle {
                     .withLocation(Identifier.of("phaze", "pipeline/round_batched"))
                     .withVertexShader(Identifier.of("phaze", "core/round_batched"))
                     .withFragmentShader(Identifier.of("phaze", "core/round_batched"))
+                    .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+                    .withUniform("Projection", UniformType.UNIFORM_BUFFER)
                     .withVertexFormat(format, VertexFormat.DrawMode.QUADS)
                     .withBlend(BlendFunction.TRANSLUCENT)
                     .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
@@ -353,6 +356,11 @@ public final class BatchedRectangle {
         // back-face cull stays on (we emit in the same winding the
         // legacy quad emitter does, so no flipped quads).
 
+        // The GUI orthographic projection has to be installed by hand here:
+        // 1.21.11 defers every DrawContext call into a GuiRenderState and only
+        // binds that matrix inside GuiRenderer's own pass, which runs AFTER
+        // this immediate draw. See GuiProjection for the full explanation.
+        vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             // Blend / depth / cull now live on the pipeline, and the layer
             // owns the whole submission. The surrounding RenderSystem state
@@ -360,6 +368,7 @@ public final class BatchedRectangle {
             // read that state; this draw itself no longer depends on them.
             BATCHED_LAYER.draw(built);
         } finally {
+            vorga.phazeclient.api.system.draw.GuiProjection.end();
         }
     }
 

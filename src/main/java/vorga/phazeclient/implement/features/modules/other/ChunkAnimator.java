@@ -160,6 +160,32 @@ public final class ChunkAnimator extends Module {
     }
 
     /**
+     * Block entities render outside the chunk mesh pass, so they cannot use
+     * the terrain shader transform. Hide them for exactly the same window as
+     * their column, preventing floating chests and barrels during entry.
+     */
+    public boolean isColumnAnimating(BlockPos position) {
+        if (!isEnabled() || position == null) return false;
+        long key = ChunkPos.toLong(position.getX() >> 4, position.getZ() >> 4);
+        if (pendingAnimationKeys.contains(key)) return true;
+        long total = Math.max(1L, (long) duration.getInt());
+        Long startedAt = firstSeenMs.get(key);
+        if (startedAt != null && System.currentTimeMillis() - startedAt < total) return true;
+
+        int chunkX = position.getX() >> 4;
+        int sectionY = position.getY() >> 4;
+        int chunkZ = position.getZ() >> 4;
+        long regionKey = ChunkSectionPos.asLong(
+                Math.floorDiv(chunkX, 8) * 8,
+                Math.floorDiv(sectionY, 4) * 4,
+                Math.floorDiv(chunkZ, 8) * 8
+        );
+        Long regionStartedAt = regionFirstSeenMs.get(regionKey);
+        return regionStartedAt != null && System.currentTimeMillis() - regionStartedAt < total
+                || hasActiveAnimations();
+    }
+
+    /**
      * Per-region first-seen tracker for the shadered fallback path.
      * Keyed by the region's chunk-space origin packed via
      * {@link ChunkSectionPos#asLong}. Separate from
@@ -198,11 +224,8 @@ public final class ChunkAnimator extends Module {
      * section first appears {@code distance} blocks below its real
      * position and slides up to land. {@code Side} routes the entry
      * along the chosen cardinal direction instead - chunks slide in
-     * horizontally from {@link #directionSide}. {@code Fade} skips
-     * spatial movement entirely and dissolves each section in via a
-     * per-fragment Bayer-dither alpha discard - the easing dropdown
-     * has no effect under Fade because progress is intentionally
-     * linear (the dither pattern is what hides the linearity).
+     * horizontally from {@link #directionSide}. Scale grows each
+     * section from its centre when Sodium's shader patch is present.
      *
      * <p>Declared BEFORE the dependent settings ({@link #distance},
      * {@link #easing}) because their visibility predicates close over
@@ -213,16 +236,15 @@ public final class ChunkAnimator extends Module {
      */
     public final SelectSetting animationType = new SelectSetting(
             "Animation Type",
-            "How chunks enter view. Top/Bottom/Side slide chunks in from a direction. Fade dissolves chunks via alpha (Sodium only). Scale grows each section out from its centre (Sodium only - shader patch required)."
-    ).value("Top", "Bottom", "Side", "Fade", "Scale").selected("Bottom");
+            "How chunks enter view. Top/Bottom/Side slide chunks in from a direction. Scale grows each section out from its centre (Sodium only - shader patch required)."
+    ).value("Top", "Bottom", "Side", "Scale").selected("Bottom");
     public final ValueSetting distance = new ValueSetting(
             "Distance",
             "How many blocks chunks travel before reaching their final position."
     ).range(8, 256).step(1).setValue(64)
-            // No spatial travel under Fade (alpha-only) or Scale (the
+            // No spatial travel under Scale (the
             // section grows from its centre, no translation involved).
-            .visible(() -> !animationType.isSelected("Fade")
-                    && !animationType.isSelected("Scale"));
+            .visible(() -> !animationType.isSelected("Scale"));
     /**
      * Cardinal direction for {@link #animationType} = {@code Side}.
      * Hidden when the type is {@code Bottom} via the visibility
@@ -241,48 +263,26 @@ public final class ChunkAnimator extends Module {
             "Easing",
             "Easing curve for the slide. Decelerate gives a soft landing; Bounce / Elastic add an overshoot."
     ).value(Interpolations.getAllNames()).selected("Decelerate")
-            // Fade is a pure-alpha dissolve and Scale is a pure-size
+            // Scale is a pure-size
             // grow, both driven by linear progress through
             // {@link #duration}. Neither has a spatial slide curve to
             // shape, so the easing dropdown would be misleading.
-            .visible(() -> !animationType.isSelected("Fade")
-                    && !animationType.isSelected("Scale"));
+            .visible(() -> !animationType.isSelected("Scale"));
 
-    /**
-     * Visual flavour for the {@code Fade} animation type. Two modes
-     * are compiled into the patched fragment shader simultaneously
-     * and selected at runtime via the {@code u_PhazeFadeStyle}
-     * uniform (shader recompile per pick would freeze the world for
-     * the duration of a glLink, which is several frames):
-     *
-     * <ul>
-     *   <li><b>Dither</b> (index 0) - per-fragment Bayer-4x4
-     *       threshold {@code discard} produces a hard-edged stippled
-     *       reveal, like a paper-grainy print materialising. Costs
-     *       one comparison + one LUT fetch per fragment per frame
-     *       only while the section is actually mid-fade; the
-     *       {@code v_PhazeChunkAnimFade < 1.0} short-circuit skips
-     *       it entirely once the section settles.</li>
-     *   <li><b>Fog Mix</b> (index 1) - {@code mix(fragColor, u_FogColor, 1.0 - fade)}
-     *       blends the fragment toward the current fog colour as
-     *       progress runs from 0 to 1. Visually the section
-     *       coalesces out of the distance haze instead of stippling
-     *       in. No discards, so the depth buffer fills normally
-     *       (which matters for translucent layers behind the
-     *       fading section).</li>
-     * </ul>
-     *
-     * <p>Hidden when the {@link #animationType} isn't {@code Fade} -
-     * the styling only matters under the dither/discard pipeline.
-     */
-    public final SelectSetting fadeStyle = new SelectSetting(
+    /** Legacy config field retained only for safe deserialization of old profiles. */
+    private final SelectSetting fadeStyle = new SelectSetting(
             "Fade Style",
             "Fog Mix: smooth blend toward fog-like distance colour. Applies only when Animation Type is Fade."
     ).value("Fog Mix").selected("Fog Mix")
-            .visible(() -> animationType.isSelected("Fade"));
+            .visible(() -> false);
 
     private ChunkAnimator() {
         super("chunk_animator", "World Animator", ModuleCategory.OTHER);
+        // Configs from older builds may still contain Fade. Convert that value
+        // at load time to the closest retained behaviour.
+        animationType.onChange(value -> {
+            if ("Fade".equalsIgnoreCase(value)) animationType.setSelected("Bottom");
+        });
         duration.setFullWidth(true);
         distance.setFullWidth(true);
         animationType.setFullWidth(true);
@@ -292,10 +292,8 @@ public final class ChunkAnimator extends Module {
         // Order matches the requested UI layout: Animation Type and
         // its dependent Side picker sit between Distance and Easing
         // so the operator picks WHERE chunks enter from before
-        // tweaking HOW they ease in. Fade Style sits last because it
-        // only surfaces under the Fade type and is a "nice to have"
-        // tweak.
-        setup(generalSection, duration, distance, animationType, directionSide, easing, fadeStyle);
+        // tweaking HOW they ease in.
+        setup(generalSection, duration, distance, animationType, directionSide, easing);
 
         // Wire the per-column "fresh load" signal: Fabric fires
         // CHUNK_LOAD whenever Minecraft materializes a chunk that just

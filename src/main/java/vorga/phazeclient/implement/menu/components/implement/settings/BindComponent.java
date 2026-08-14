@@ -66,7 +66,7 @@ public class BindComponent extends AbstractSettingComponent {
 
         bindFont.drawString(matrix, name, x + width - 12 - stringWidth - 1, centeredTextY(bindFont, name, badgeY, 11.5F), mutedText());
 
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context);
 
         float textX = x + 10 + textOffset;
         labelFont.drawString(matrix, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());

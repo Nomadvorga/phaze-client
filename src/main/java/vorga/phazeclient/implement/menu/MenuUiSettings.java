@@ -11,6 +11,9 @@ public final class MenuUiSettings {
     public static final int DEFAULT_GUI_FPS_LIMIT = 60;
     public static final int MIN_GUI_FPS_LIMIT = 10;
     public static final int MAX_GUI_FPS_LIMIT = 260;
+    public static final float DEFAULT_GUI_SCALE = 1.0F;
+    public static final float MIN_GUI_SCALE = 0.9F;
+    public static final float MAX_GUI_SCALE = 2.5F;
     public static final String DEFAULT_PANORAMA_PRESET_ID = "vanilla";
     public static final boolean DEFAULT_CUSTOM_MAIN_MENU_ENABLED = true;
 
@@ -18,6 +21,7 @@ public final class MenuUiSettings {
 
     private double panoramaSpeed = DEFAULT_PANORAMA_SPEED;
     private int guiFpsLimit = DEFAULT_GUI_FPS_LIMIT;
+    private float guiScale = DEFAULT_GUI_SCALE;
     private String selectedPanoramaPresetId = DEFAULT_PANORAMA_PRESET_ID;
     private boolean customMainMenuEnabled = DEFAULT_CUSTOM_MAIN_MENU_ENABLED;
 
@@ -34,6 +38,10 @@ public final class MenuUiSettings {
 
     public int getGuiFpsLimit() {
         return guiFpsLimit;
+    }
+
+    public float getGuiScale() {
+        return guiScale;
     }
 
     public PanoramaDescriptor getSelectedPanoramaPreset() {
@@ -57,6 +65,11 @@ public final class MenuUiSettings {
         setGuiFpsLimitInternal(guiFpsLimit, true);
     }
 
+    public void setGuiScale(float guiScale) {
+        this.guiScale = quantizeGuiScale(guiScale);
+        ConfigManager.getInstance().markDirty();
+    }
+
     public void setSelectedPanoramaPreset(PanoramaDescriptor preset) {
         setSelectedPanoramaPresetInternal(preset, true);
     }
@@ -73,10 +86,11 @@ public final class MenuUiSettings {
         setCustomMainMenuEnabledInternal(enabled, true);
     }
 
-    public void applyConfig(double panoramaSpeed, int guiFpsLimit, String presetId, boolean customMainMenuEnabled) {
+    public void applyConfig(double panoramaSpeed, int guiFpsLimit, float guiScale, String presetId, boolean customMainMenuEnabled) {
         setSelectedPanoramaPresetInternal(MenuPanoramaRegistry.findById(presetId), false);
         setPanoramaSpeedInternal(panoramaSpeed, false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
+        this.guiScale = quantizeGuiScale(guiScale);
         setCustomMainMenuEnabledInternal(customMainMenuEnabled, false);
     }
 
@@ -95,7 +109,12 @@ public final class MenuUiSettings {
     }
 
     public void resetToDefaults() {
-        applyConfig(DEFAULT_PANORAMA_SPEED, DEFAULT_GUI_FPS_LIMIT, DEFAULT_PANORAMA_PRESET_ID, DEFAULT_CUSTOM_MAIN_MENU_ENABLED);
+        applyConfig(DEFAULT_PANORAMA_SPEED, DEFAULT_GUI_FPS_LIMIT, DEFAULT_GUI_SCALE, DEFAULT_PANORAMA_PRESET_ID, DEFAULT_CUSTOM_MAIN_MENU_ENABLED);
+    }
+
+    private static float quantizeGuiScale(float value) {
+        float clamped = clamp(value, MIN_GUI_SCALE, MAX_GUI_SCALE);
+        return Math.round(clamped * 10.0F) / 10.0F;
     }
 
     private void setPanoramaSpeedInternal(double panoramaSpeed, boolean markDirty) {
@@ -136,6 +155,10 @@ public final class MenuUiSettings {
     }
 
     private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
     }
 

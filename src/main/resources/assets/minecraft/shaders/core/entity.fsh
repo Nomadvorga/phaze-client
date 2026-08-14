@@ -1,24 +1,47 @@
-#version 150
+#version 330
+
+// Phaze override of vanilla minecraft:core/entity.
+//
+// Rebased onto the 1.21.11 vanilla source. Versus the 1.21.4 version:
+//   - #version 150 -> 330.
+//   - ColorModulator moved into the std140 "DynamicTransforms" block
+//     (dynamictransforms.glsl); FogColor / FogStart / FogEnd moved into the
+//     "Fog" block (fog.glsl). Redeclaring FogColor here is what produced
+//     "C1038: declaration of FogColor conflicts with previous declaration".
+//   - linear_fog(...) was replaced by apply_fog(...), which takes both the
+//     spherical and the cylindrical distance plus four fog bounds.
+//   - vanilla gained the PER_FACE_LIGHTING variant.
+//
+// The Phaze world-colour correction below is unchanged.
 
 #moj_import <minecraft:fog.glsl>
+#moj_import <minecraft:dynamictransforms.glsl>
 
 uniform sampler2D Sampler0;
 
-uniform vec4 ColorModulator;
-uniform float FogStart;
-uniform float FogEnd;
-uniform vec4 FogColor;
+// Phaze world colour tint, fed by WorldColorShaderHelper.
+//
+// These are intentionally default-block uniforms. ShaderProgram does not
+// enumerate them, while ShaderProgramWorldColorMixin uploads them after the
+// GL backend binds each render-pass program. This keeps the update live and
+// avoids rebuilding entity buffers.
 uniform vec4 PhazePlayerColor;
 uniform vec4 PhazePlayerParams;
 uniform vec4 PhazeEntityColor;
 uniform vec4 PhazeEntityParams;
 
-in float vertexDistance;
+in float sphericalVertexDistance;
+in float cylindricalVertexDistance;
+#ifdef PER_FACE_LIGHTING
+in vec4 vertexPerFaceColorBack;
+in vec4 vertexPerFaceColorFront;
+#else
 in vec4 vertexColor;
+#endif
 in vec4 lightMapColor;
 in vec4 overlayColor;
 in vec2 texCoord0;
-in float v_PhazeEntityTarget;
+flat in float v_PhazeEntityTarget;
 
 out vec4 fragColor;
 
@@ -51,7 +74,11 @@ void main() {
         discard;
     }
 #endif
+#ifdef PER_FACE_LIGHTING
+    color *= (gl_FrontFacing ? vertexPerFaceColorFront : vertexPerFaceColorBack) * ColorModulator;
+#else
     color *= vertexColor * ColorModulator;
+#endif
 #ifndef NO_OVERLAY
     color.rgb = mix(overlayColor.rgb, color.rgb, overlayColor.a);
 #endif
@@ -67,5 +94,5 @@ void main() {
         );
     }
 
-    fragColor = linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
+    fragColor = apply_fog(color, sphericalVertexDistance, cylindricalVertexDistance, FogEnvironmentalStart, FogEnvironmentalEnd, FogRenderDistanceStart, FogRenderDistanceEnd, FogColor);
 }

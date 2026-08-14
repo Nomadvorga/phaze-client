@@ -58,6 +58,14 @@ public class DrawEngineImpl implements DrawEngine, QuickImports {
         buffer.vertex(matrix4f, x + width, y + height, 0).texture(0, 1).color(color);
         buffer.vertex(matrix4f, x + width, y, 0).texture(1, 1).color(color);
         buffer.vertex(matrix4f, x, y, 0).texture(1, 0).color(color);
-        TEXTURED_QUAD_LAYER.draw(buffer.end());
+        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
+        // immediate draw runs outside the GUI pass and must install the
+        // GUI ortho projection (and its z = -11000 model-view) itself.
+        vorga.phazeclient.api.system.draw.GuiProjection.begin();
+        try {
+            TEXTURED_QUAD_LAYER.draw(buffer.end());
+        } finally {
+            vorga.phazeclient.api.system.draw.GuiProjection.end();
+        }
     }
 }

@@ -111,7 +111,7 @@ public class TextComponent extends AbstractSettingComponent {
 
         // 1.21.11: ResetIconComponent.render() now takes the GUI pose (Matrix3x2fc) directly -
         // it only feeds ShapeProperties.create, which is Matrix3x2fc-based since the port.
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context);
 
         float textX = x + 10 + textOffset;
         labelFont.drawString(textPose, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());

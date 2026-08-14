@@ -7,14 +7,18 @@ import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
-import org.joml.Matrix3x2fc;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.util.Identifier;
 
 public class ResetIconComponent implements QuickImports {
 
-    private static final float ICON_SIZE = 8.0f;
-    private static final float ICON_X_OFFSET = 8.0f;
-    private static final float ICON_Y_OFFSET = 6.0f;
+    private static final float BASE_ICON_SIZE = 8.0f;
+    private static final float ICON_SIZE = BASE_ICON_SIZE * (1.7f / 1.15f / 1.2f);
+    private static final float ICON_X_OFFSET = 8.0f - (ICON_SIZE - BASE_ICON_SIZE) / 2.0f;
+    private static final float ICON_Y_OFFSET = 6.0f - (ICON_SIZE - BASE_ICON_SIZE) / 2.0f;
     private static final String ICON_TEXTURE = "textures/reset.png";
+    private static final Identifier ICON_ID = Identifier.ofVanilla(ICON_TEXTURE);
 
     private float x, y;
     private float alpha = 1.0f;
@@ -52,13 +56,7 @@ public class ResetIconComponent implements QuickImports {
         return this;
     }
 
-    /**
-     * 1.21.11: the GUI pose is {@code org.joml.Matrix3x2f}, not
-     * {@code MatrixStack}, and {@code ShapeProperties.create} takes a
-     * {@code Matrix3x2fc}, so the icon consumes the 2D pose directly -
-     * callers can hand over {@code DrawContext.getMatrices()} unchanged.
-     */
-    public void render(Matrix3x2fc matrix) {
+    public void render(DrawContext context) {
         Direction targetDir = isModified ? Direction.FORWARDS : Direction.BACKWARDS;
         if (!visibilitySeeded) {
             // First render after a fresh attach: snap directly to
@@ -80,10 +78,12 @@ public class ResetIconComponent implements QuickImports {
 
         int iconColor = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, iconAlpha);
 
-        image.setTexture(ICON_TEXTURE)
-                .render(ShapeProperties.create(matrix, x, y, ICON_SIZE, ICON_SIZE)
-                        .color(iconColor)
-                        .build());
+        if (!UiMsdfIconAtlas.renderIcon(context, ICON_ID, x, y, ICON_SIZE, ICON_SIZE, iconColor, true)) {
+            image.setTexture(ICON_TEXTURE)
+                    .render(ShapeProperties.create(context.getMatrices(), x, y, ICON_SIZE, ICON_SIZE)
+                            .color(iconColor)
+                            .build());
+        }
     }
 
     public boolean isHovered(double mouseX, double mouseY) {
@@ -94,7 +94,7 @@ public class ResetIconComponent implements QuickImports {
     }
 
     public static float getTextOffset() {
-        return ICON_SIZE + 2.0f;
+        return BASE_ICON_SIZE + 2.0f;
     }
 
     public static float getXOffset() {

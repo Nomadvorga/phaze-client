@@ -2,6 +2,9 @@ package vorga.phazeclient.api.system.shape.implement;
 
 import vorga.phazeclient.base.util.render.GuiMatrix;
 
+import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.blaze3d.buffers.Std140Builder;
+import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.systems.RenderPass;
@@ -13,6 +16,7 @@ import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.Tessellator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
@@ -28,6 +32,10 @@ import vorga.phazeclient.base.util.color.ColorUtil;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 
+import net.minecraft.client.gl.UniformType;
+import org.lwjgl.system.MemoryStack;
+
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.OptionalInt;
 
@@ -78,6 +86,85 @@ public class Blur implements Shape {
             .withCull(false)
             .withVertexFormat(VertexFormats.EMPTY, VertexFormat.DrawMode.TRIANGLES)
             .build();
+
+    /**
+     * Dual-Kawase down/upsample pass.
+     *
+     * <p>Like {@link #COPY_PIPELINE} this is a bufferless fullscreen triangle;
+     * the only additions are the sampler and the std140 block that replaced the
+     * pass' loose uniforms. Blending stays off because each pass fully replaces
+     * its target - these render into Phaze's own half/quarter FBOs, never onto
+     * the screen.
+     */
+    private static final RenderPipeline DUAL_KAWASE_PIPELINE = RenderPipeline.builder()
+            .withLocation(Identifier.of("phaze", "pipeline/blur_dual_kawase"))
+            .withVertexShader(Identifier.of("phaze", "core/blur_dual_kawase"))
+            .withFragmentShader(Identifier.of("phaze", "core/blur_dual_kawase"))
+            .withSampler("Sampler0")
+            .withUniform("DualKawaseConfig", UniformType.UNIFORM_BUFFER)
+            .withoutBlend()
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withColorWrite(true, true)
+            .withCull(false)
+            .withVertexFormat(VertexFormats.EMPTY, VertexFormat.DrawMode.TRIANGLES)
+            .build();
+
+    /** Separable Gaussian pass; same shape as {@link #DUAL_KAWASE_PIPELINE}. */
+    private static final RenderPipeline GAUSSIAN_PIPELINE = RenderPipeline.builder()
+            .withLocation(Identifier.of("phaze", "pipeline/blur_gaussian"))
+            .withVertexShader(Identifier.of("phaze", "core/blur_gaussian"))
+            .withFragmentShader(Identifier.of("phaze", "core/blur_gaussian"))
+            .withSampler("Sampler0")
+            .withUniform("GaussianConfig", UniformType.UNIFORM_BUFFER)
+            .withoutBlend()
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withColorWrite(true, true)
+            .withCull(false)
+            .withVertexFormat(VertexFormats.EMPTY, VertexFormat.DrawMode.TRIANGLES)
+            .build();
+
+    /**
+     * The composite: paints an already-blurred surface into a rounded GUI rect.
+     *
+     * <p>Unlike the two pass pipelines this one has real geometry (the rect's
+     * quad, POSITION_COLOR) and two samplers - the blurred surface plus the
+     * previous frame, which the temporal mix reads when {@code FrameMix < 1}.
+     */
+    private static final RenderPipeline COMPOSITE_PIPELINE = RenderPipeline.builder()
+            .withLocation(Identifier.of("phaze", "pipeline/blur_composite"))
+            .withVertexShader(Identifier.of("phaze", "core/blur"))
+            .withFragmentShader(Identifier.of("phaze", "core/blur"))
+            .withSampler("Sampler0")
+            .withSampler("Sampler1")
+            .withUniform("BlurCompositeConfig", UniformType.UNIFORM_BUFFER)
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
+            .withBlend(BlendFunction.TRANSLUCENT)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withCull(false)
+            .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
+            .build();
+
+    private static final int DUAL_KAWASE_UBO_SIZE = 16;
+    private static final int GAUSSIAN_UBO_SIZE = 32;
+    private static final int COMPOSITE_UBO_SIZE = 64;
+
+    private GpuBuffer compositeUbo;
+
+    /**
+     * One UBO per pass kind, reused across the whole chain.
+     *
+     * <p>A blur is six to eight passes per frame, each with different offsets.
+     * Allocating a buffer per pass would churn GPU memory every frame; instead
+     * the contents are rewritten before each pass, which is a 16- or 32-byte
+     * host-to-device copy. Created lazily because no GpuDevice exists yet when
+     * this class initialises.
+     */
+    private GpuBuffer dualKawaseUbo;
+    private GpuBuffer gaussianUbo;
 
     private final DrawEngineImpl drawEngine = new DrawEngineImpl();
     private Framebuffer input;
@@ -347,12 +434,22 @@ public class Blur implements Shape {
                 shape.getHeight() + softness,
                 color
         );
-        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
-        if (shader != null) {
-            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
-        } else {
-            buffer.end();
-        }
+        // This path blurs into a per-region slot framebuffer, so that slot's
+        // colour attachment is what the composite samples.
+        drawComposite(
+                buffer.end(),
+                matrix4f,
+                slot.framebuffer != null ? slot.framebuffer.getColorAttachmentView() : null,
+                null,
+                width, height,
+                round,
+                softness,
+                blurRadius,
+                Theme.getInstance().getHudBlurMode(),
+                noTint(),
+                1.0F,
+                false,
+                true);
         restoreRenderState(true);
     }
 
@@ -424,15 +521,24 @@ public class Blur implements Shape {
         int blurColor = (MathHelper.clamp(Math.round(clampedOpacity * 255.0F), 0, 255) << 24) | 0x00FFFFFF;
         drawEngine.quad(matrix, buffer, x, y, width, height, blurColor);
 
-        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
-        if (shader != null) {
-            Theme theme = Theme.getInstance();
-            int blurMode = theme.getHudBlurMode();
-            setTintUniform(shader, tintColor);
-            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
-        } else {
-            buffer.end();
-        }
+        Theme theme = Theme.getInstance();
+        // RectMask = true: world-space nametag backdrops are plain rectangles
+        // and must bypass the rounded SDF, exactly as the shader comment on
+        // RectMask describes.
+        drawComposite(
+                buffer.end(),
+                matrix,
+                nametagInput != null ? nametagInput.getColorAttachmentView() : null,
+                null,
+                width, height,
+                scratchRound.set(0.0F, 0.0F, 0.0F, 0.0F),
+                0.001F,
+                0.0F,
+                theme.getHudBlurMode(),
+                tintVector(tintColor, scratchTint),
+                1.0F,
+                true,
+                false);
 
         restoreRenderState(true);
     }
@@ -473,7 +579,7 @@ public class Blur implements Shape {
         }
         BufferBuilder fallback = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         drawEngine.quad(matrix, fallback, x, y, width, height, tintColor);
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(fallback.end()); // TODO(1.21.11 port)
+        vorga.phazeclient.util.render.PhazeRenderLayers.getHitboxFill().draw(fallback.end());
     }
 
     /**
@@ -527,13 +633,9 @@ public class Blur implements Shape {
                 continue;
             }
             if (!preparedState.matches(activeState)) {
-                hudBatchMaskShader = shader;
-                if (shader == null) {
-                    if (!useHudBatch) {
-                        restoreRenderState(true);
-                    }
-                    return;
-                }
+                // Was an early return on a null ShaderProgram, which killed the
+                // entire HUD batch. Each shape now carries its own uniform
+                // upload, so a state change is just a bookkeeping update.
                 activeState = preparedState;
             }
             renderPreparedShapeWithBoundShader(shape, shader, preparedState);
@@ -550,7 +652,7 @@ public class Blur implements Shape {
 
     private void renderPreparedShapeWithBoundShader(ShapeProperties shape, ShaderProgram shader, PreparedBlurState preparedState) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || input == null || shader == null || preparedState == null) {
+        if (client == null || input == null || preparedState == null) {
             return;
         }
 
@@ -575,7 +677,20 @@ public class Blur implements Shape {
                 color
         );
 
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
+        drawComposite(
+                buffer.end(),
+                matrix4f,
+                preparedState.sourceTexture(),
+                null,
+                width, height,
+                round,
+                softness,
+                preparedState.blurRadius(),
+                preparedState.blurMode(),
+                noTint(),
+                1.0F,
+                false,
+                true);
     }
 
     private void render(ShapeProperties shape, boolean cacheFrame) {
@@ -656,12 +771,20 @@ public class Blur implements Shape {
                 color
         );
 
-        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
-        hudBatchMaskShader = shader;
-        if (shader == null) {
-            return false;
-        }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end()); // TODO(1.21.11 port)
+        drawComposite(
+                buffer.end(),
+                matrix4f,
+                preparedState.sourceTexture(),
+                null,
+                width, height,
+                round,
+                softness,
+                preparedState.blurRadius(),
+                preparedState.blurMode(),
+                noTint(),
+                1.0F,
+                false,
+                true);
         return true;
     }
 
@@ -1030,10 +1153,7 @@ public class Blur implements Shape {
         int h = sourceInput.textureHeight;
         // Keep radius continuous to avoid abrupt jumps on the HUD slider.
         float quantizedRadius = MathHelper.clamp(blurRadius, 0.0f, 24.0f);
-        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
-        if (shader == null) {
-            return false;
-        }
+        ShaderProgram shader = null; // unused: passes bind their own pipeline
 
         // Keep the HUD slider visually progressive: very low radii should
         // start almost clean instead of jumping straight into a strong blur.
@@ -1110,10 +1230,7 @@ public class Blur implements Shape {
             return slot.framebuffer;
         }
 
-        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
-        if (shader == null) {
-            return null;
-        }
+        ShaderProgram shader = null; // unused: passes bind their own pipeline
 
         float normalized = MathHelper.clamp(radius / 24.0f, 0.0f, 1.0f);
         runDualKawasePass(shader, hudHalfInput, quarterA, radius * 0.14f, true, region);
@@ -1278,10 +1395,7 @@ public class Blur implements Shape {
             return slot.framebuffer;
         }
 
-        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
-        if (shader == null) {
-            return null;
-        }
+        ShaderProgram shader = null; // unused: passes bind their own pipeline
 
         // No downsample here: offset 0 is visually clean and low slider
         // values increase continuously instead of inheriting a fixed blur
@@ -1302,13 +1416,184 @@ public class Blur implements Shape {
             boolean downsample,
             BlurRegion region
     ) {
-        // TODO(1.21.11): needs a real RenderPipeline (core/screenquad + a Phaze
-        // dual-Kawase fragment shader) and a std140 uniform block for
-        // Offset/HalfPixel/Direction. Loose uniforms, Framebuffer.beginWrite /
-        // endWrite and the global shader binding this pass relied on are all
-        // gone; the target is now named by the render pass and the offsets have
-        // to travel in a UBO. Every caller is gated behind a null ShaderProgram,
-        // so this is unreachable until that pipeline is built (plan item B3).
+        if (source == null || target == null) {
+            return;
+        }
+        // TexelSize is the source's texel step - the sampling offsets are
+        // expressed in source texels, which is what makes one pass scale
+        // correctly whether it reads the full-res, half-res or quarter-res FBO.
+        float texelX = 1.0F / Math.max(1, source.textureWidth);
+        float texelY = 1.0F / Math.max(1, source.textureHeight);
+
+        dualKawaseUbo = ensureUbo(dualKawaseUbo, "phaze/blur dual kawase", DUAL_KAWASE_UBO_SIZE);
+        if (dualKawaseUbo == null) {
+            return;
+        }
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            ByteBuffer data = Std140Builder.onStack(stack, DUAL_KAWASE_UBO_SIZE)
+                    .putVec2(texelX, texelY)
+                    .putFloat(offset)
+                    .putInt(downsample ? 1 : 0)
+                    .get();
+            RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(dualKawaseUbo.slice(), data);
+        }
+
+        runFullscreenPass(DUAL_KAWASE_PIPELINE, "phaze/blur dual kawase",
+                source, target, dualKawaseUbo, "DualKawaseConfig", region);
+    }
+
+    /**
+     * Shared body of both blur passes: sample {@code source}, write
+     * {@code target}, with the pass' own std140 block bound.
+     *
+     * <p>1.21.11 removed {@code Framebuffer.beginWrite}/{@code endWrite} - a
+     * draw picks its target when it opens a render pass, so the target is named
+     * here rather than bound beforehand. {@code OptionalInt.empty()} means
+     * "preserve, do not clear"; each pass covers the whole target anyway, and
+     * clearing would only add a redundant full-surface write.
+     */
+    private void runFullscreenPass(
+            RenderPipeline pipeline,
+            String label,
+            Framebuffer source,
+            Framebuffer target,
+            GpuBuffer ubo,
+            String uniformName,
+            BlurRegion region
+    ) {
+        try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+                () -> label,
+                target.getColorAttachmentView(),
+                OptionalInt.empty())) {
+            pass.setPipeline(pipeline);
+            RenderSystem.bindDefaultUniforms(pass);
+            pass.setUniform(uniformName, ubo.slice());
+            pass.bindTexture("Sampler0", source.getColorAttachmentView(),
+                    RenderSystem.getSamplerCache().get(FilterMode.LINEAR));
+            if (region != null) {
+                // Scissoring the intermediate passes to the blurred region is
+                // the biggest win available here: a HUD blur usually covers a
+                // small strip, and without this every pass shades the whole
+                // half- or quarter-res surface regardless of how little of it
+                // is ever read back. scaleBlurRegion maps the region into this
+                // target's resolution and pads it, so samples that reach just
+                // outside the rect still find real pixels.
+                BlurRegion scaled = scaleBlurRegion(region, target.textureWidth, target.textureHeight);
+                pass.enableScissor(scaled.x(), scaled.y(), scaled.width(), scaled.height());
+            }
+            pass.draw(0, 3);
+        }
+    }
+
+    /**
+     * Draws the blur composite quad.
+     *
+     * @param blurred  the blurred surface to paint
+     * @param previous previous frame for the temporal mix; may be null, in
+     *                 which case {@code frameMix} is forced to 1 so the shader
+     *                 never samples an unbound texture
+     */
+    private void drawComposite(
+            BuiltBuffer built,
+            Matrix4f modelView,
+            GpuTextureView blurred,
+            GpuTextureView previous,
+            float sizeX, float sizeY,
+            Vector4f radius,
+            float smoothness,
+            float blurRadius,
+            int blurMode,
+            Vector4f tintColor,
+            float frameMix,
+            boolean rectMask,
+            boolean guiSpace
+    ) {
+        if (built == null) {
+            return;
+        }
+        if (blurred == null) {
+            built.close();
+            return;
+        }
+
+        float effectiveMix = previous == null ? 1.0F : MathHelper.clamp(frameMix, 0.0F, 1.0F);
+
+        compositeUbo = ensureUbo(compositeUbo, "phaze/blur composite", COMPOSITE_UBO_SIZE);
+        if (compositeUbo == null) {
+            built.close();
+            return;
+        }
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            ByteBuffer data = Std140Builder.onStack(stack, COMPOSITE_UBO_SIZE)
+                    .putVec4(radius.x, radius.y, radius.z, radius.w)
+                    .putVec4(tintColor.x, tintColor.y, tintColor.z, tintColor.w)
+                    .putVec2(sizeX, sizeY)
+                    .putFloat(smoothness)
+                    .putFloat(blurRadius)
+                    .putFloat(effectiveMix)
+                    .putInt(rectMask ? 1 : 0)
+                    .putInt(blurMode)
+                    .get();
+            RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(compositeUbo.slice(), data);
+        }
+
+        // Sampler1 is only read when the mix is active, but it must still be
+        // bound - an unbound sampler reads undefined data on some drivers, so
+        // it aliases Sampler0 when there is no previous frame.
+        GpuTextureView previousView = previous != null ? previous : blurred;
+
+        // GUI space needs the ortho projection installed by hand, exactly like
+        // every other immediate Phaze draw: 1.21.11 defers DrawContext into a
+        // GuiRenderState and only binds that matrix inside GuiRenderer's own
+        // pass, which runs later. Without this the composite quad sits in front
+        // of the ortho near plane and is clipped away entirely - a real draw
+        // call that produces nothing, which is why the blur was invisible in the
+        // menu, behind the HUD and in the colour picker alike.
+        //
+        // drawEngine.quad already transformed the vertices by `modelView` on the
+        // CPU, so the shader must NOT apply it a second time - it gets only the
+        // z offset (GUI) or identity (world, where the perspective matrix is
+        // already live and correct).
+        if (guiSpace) {
+            vorga.phazeclient.api.system.draw.GuiProjection.begin();
+        }
+        try {
+            Matrix4f pose = guiSpace
+                    ? vorga.phazeclient.api.system.draw.GuiProjection.guiModelView(scratchCompositePose)
+                    : scratchCompositePose.identity();
+            vorga.phazeclient.api.system.draw.GpuDraw.drawWithUniforms(
+                    COMPOSITE_PIPELINE,
+                    built,
+                    "Sampler0", blurred,
+                    "Sampler1", previousView,
+                    FilterMode.LINEAR,
+                    pose,
+                    new Vector4f(1.0F, 1.0F, 1.0F, 1.0F),
+                    "BlurCompositeConfig", compositeUbo);
+        } finally {
+            if (guiSpace) {
+                vorga.phazeclient.api.system.draw.GuiProjection.end();
+            }
+            built.close();
+        }
+    }
+
+    /** Scratch for the composite's model-view, render thread only. */
+    private final Matrix4f scratchCompositePose = new Matrix4f();
+
+    /** Lazily allocates a uniform buffer that {@code writeToBuffer} will accept. */
+    private static GpuBuffer ensureUbo(GpuBuffer existing, String label, int size) {
+        if (existing != null && !existing.isClosed()) {
+            return existing;
+        }
+        // USAGE_COPY_DST is what makes the buffer a legal destination for
+        // writeToBuffer; without it the encoder rejects the write outright.
+        return RenderSystem.getDevice().createBuffer(
+                () -> label,
+                GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST,
+                size);
     }
 
     public float getPlayerSpeed(MinecraftClient client) {
@@ -1357,10 +1642,7 @@ public class Blur implements Shape {
             return true;
         }
 
-        ShaderProgram shader = null; // TODO(1.21.11 port): pipeline not built yet
-        if (shader == null) {
-            return false;
-        }
+        ShaderProgram shader = null; // unused: passes bind their own pipeline
 
         runGaussianPass(shader, input, ping, 1.0F, 0.0F, blurRadius, null);
         runGaussianPass(shader, ping, pong, 0.0F, 1.0F, blurRadius, null);
@@ -1369,10 +1651,38 @@ public class Blur implements Shape {
     }
 
     private void runGaussianPass(ShaderProgram shader, Framebuffer source, Framebuffer target, float directionX, float directionY, float blurRadius, BlurRegion region) {
-        // TODO(1.21.11): same rewrite as runDualKawasePass - the separable
-        // Gaussian needs its Direction/Radius/Sigma values in a std140 block on
-        // a Phaze-owned pipeline. Unreachable while applyGaussianBlur's
-        // ShaderProgram is null (plan item B3).
+        if (source == null || target == null) {
+            return;
+        }
+        float texelX = 1.0F / Math.max(1, source.textureWidth);
+        float texelY = 1.0F / Math.max(1, source.textureHeight);
+
+        // Sigma drives the falloff; support is the half-width of the kernel.
+        // Capping support keeps the inner loop bounded no matter what the
+        // radius slider is set to - the visual difference past 3*sigma is
+        // below one 8-bit step, so the extra taps would cost fill rate for
+        // nothing.
+        float sigma = Math.max(0.1F, blurRadius * 0.5F);
+        int support = Math.min(24, Math.max(1, Math.round(sigma * 3.0F)));
+
+        gaussianUbo = ensureUbo(gaussianUbo, "phaze/blur gaussian", GAUSSIAN_UBO_SIZE);
+        if (gaussianUbo == null) {
+            return;
+        }
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            ByteBuffer data = Std140Builder.onStack(stack, GAUSSIAN_UBO_SIZE)
+                    .putVec2(directionX, directionY)
+                    .putVec2(texelX, texelY)
+                    .putFloat(sigma)
+                    .putFloat(1.0F)
+                    .putInt(support)
+                    .get();
+            RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(gaussianUbo.slice(), data);
+        }
+
+        runFullscreenPass(GAUSSIAN_PIPELINE, "phaze/blur gaussian",
+                source, target, gaussianUbo, "GaussianConfig", region);
     }
 
     private BlurRegion computeHudGaussianRegion(MinecraftClient client, ShapeProperties shape, float blurRadius) {
@@ -1512,11 +1822,29 @@ public class Blur implements Shape {
     // interface with no set(). The tint has to become part of the blur
     // pipeline's std140 block (or a per-vertex colour) when that pipeline is
     // built. Left computing nothing so the call site keeps its shape.
-    private static void setTintUniform(ShaderProgram shader, int argb) {
-        float alpha = ((argb >>> 24) & 0xFF) / 255.0f;
-        float red = ((argb >>> 16) & 0xFF) / 255.0f;
-        float green = ((argb >>> 8) & 0xFF) / 255.0f;
-        float blue = (argb & 0xFF) / 255.0f;
+    /**
+     * ARGB int to the {@code TintColor} vec4 the composite block expects.
+     *
+     * <p>Replaces the old {@code setTintUniform}, which pushed the same four
+     * floats straight into a loose uniform - a route 1.21.11 no longer has.
+     */
+    private static Vector4f tintVector(int argb, Vector4f dest) {
+        return dest.set(
+                ((argb >>> 16) & 0xFF) / 255.0F,
+                ((argb >>> 8) & 0xFF) / 255.0F,
+                (argb & 0xFF) / 255.0F,
+                ((argb >>> 24) & 0xFF) / 255.0F);
+    }
+
+    private final Vector4f scratchTint = new Vector4f();
+
+    /**
+     * Neutral tint: alpha 0 means the shader's {@code mix} keeps the blurred
+     * colour untouched. The HUD composite gets its colour from the shape's own
+     * vertex colour, so it wants no additional tint.
+     */
+    private Vector4f noTint() {
+        return scratchTint.set(0.0F, 0.0F, 0.0F, 0.0F);
     }
 
     private static float maxCornerRadius(Vector4f radius) {

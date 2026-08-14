@@ -14,6 +14,7 @@ import net.minecraft.util.Identifier;
 
 import java.util.HashMap;
 import java.util.Map;
+import net.minecraft.client.gl.UniformType;
 
 /**
  * Shared draw layers replacing the 1.21.4
@@ -38,6 +39,8 @@ public final class PhazeDrawLayers {
             .withLocation(Identifier.of("phaze", "pipeline/position_color"))
             .withVertexShader(Identifier.of("minecraft", "core/position_color"))
             .withFragmentShader(Identifier.of("minecraft", "core/position_color"))
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
@@ -54,6 +57,8 @@ public final class PhazeDrawLayers {
             .withLocation(Identifier.of("phaze", "pipeline/position_color_tris"))
             .withVertexShader(Identifier.of("minecraft", "core/position_color"))
             .withFragmentShader(Identifier.of("minecraft", "core/position_color"))
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.TRIANGLE_STRIP)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
@@ -70,6 +75,8 @@ public final class PhazeDrawLayers {
             .withLocation(Identifier.of("phaze", "pipeline/position_tex_color"))
             .withVertexShader(Identifier.of("minecraft", "core/position_tex_color"))
             .withFragmentShader(Identifier.of("minecraft", "core/position_tex_color"))
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
             .withSampler("Sampler0")
             .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
             .withBlend(BlendFunction.TRANSLUCENT)

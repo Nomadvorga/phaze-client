@@ -6,6 +6,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * Aspect Ratio override. Forces the world projection matrix to use a
  * custom width/height ratio instead of the actual window's, so the user
@@ -24,12 +27,13 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
  *       is hidden when preset mode is on.</li>
  * </ul>
  *
- * <p>Logic mirrors the upstream {@code padej.soup.other.AspectRatio}
- * port. The projection-matrix override itself lives in
- * {@link vorga.phazeclient.mixins.GameRendererAspectRatioMixin} which
+ * <p>The projection-matrix override itself lives in
+ * {@link vorga.phazeclient.mixins.GameRendererMixin} which
  * calls {@link #getRatio()} once per projection-matrix recomputation.
  */
 public final class AspectRatio extends Module {
+    private static final Pattern PRESET_RATIO = Pattern.compile("^(\\d+(?:\\.\\d+)?)\\s*:\\s*(\\d+(?:\\.\\d+)?)$");
+    private static final float FALLBACK_RATIO = 16.0F / 9.0F;
     private static final AspectRatio INSTANCE = new AspectRatio();
 
     public final vorga.phazeclient.api.feature.module.setting.implement.SectionSetting generalSection =
@@ -42,8 +46,17 @@ public final class AspectRatio extends Module {
 
     public final SelectSetting preset = new SelectSetting(
             "Aspect Preset",
-            "Common cinematic / vanilla aspect ratios"
-    ).value("16:9", "5:4", "4:3", "21:9").selected("16:9");
+            "Choose a standard, classic, or ultrawide aspect ratio"
+    ).value(
+            "4:3",
+            "5:4",
+            "1:1",
+            "3:2",
+            "16:10",
+            "16:9",
+            "21:9",
+            "32:9"
+    ).selected("16:9");
 
     public final ValueSetting factor = new ValueSetting(
             "Aspect Factor",
@@ -70,20 +83,36 @@ public final class AspectRatio extends Module {
      * Resolves the currently-configured aspect ratio. When
      * {@link #usePreset} is on, decodes the {@link #preset} string into
      * a width/height ratio; otherwise returns the raw {@link #factor}
-     * slider value. Default fall-through is {@code 16:9} so an unknown
-     * preset string can never blank the world out.
+     * slider value. Unknown or invalid preset values fall back to
+     * {@code 16:9}, so an edited or old config can never blank the world.
      */
     public float getRatio() {
         if (usePreset.isValue()) {
-            return switch (preset.getSelected()) {
-                case "16:9" -> 16.0F / 9.0F;
-                case "5:4" -> 5.0F / 4.0F;
-                case "4:3" -> 4.0F / 3.0F;
-                case "21:9" -> 21.0F / 9.0F;
-                default -> 16.0F / 9.0F;
-            };
+            return parsePresetRatio(preset.getSelected());
         }
         return factor.getValue();
+    }
+
+    private static float parsePresetRatio(String preset) {
+        if (preset == null) {
+            return FALLBACK_RATIO;
+        }
+
+        Matcher matcher = PRESET_RATIO.matcher(preset);
+        if (!matcher.matches()) {
+            return FALLBACK_RATIO;
+        }
+
+        try {
+            float width = Float.parseFloat(matcher.group(1));
+            float height = Float.parseFloat(matcher.group(2));
+            if (width > 0.0F && height > 0.0F) {
+                return width / height;
+            }
+        } catch (NumberFormatException ignored) {
+            // A malformed value from a manually edited config uses 16:9.
+        }
+        return FALLBACK_RATIO;
     }
 
     @Override

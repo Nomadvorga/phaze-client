@@ -18,12 +18,14 @@ import vorga.phazeclient.implement.features.modules.other.NoRender;
 
 /**
  * Drops particle creation requests at the {@link ParticleManager}
- * funnel. In 1.21.4 the public surface is a single 7-arg
- * {@code addParticle(ParticleEffect, double x, y, z, double vx, vy,
- * vz)} (verified by {@code javap -p}); the older 8/9-arg overloads
- * with {@code alwaysSpawn} / {@code canSpawnOnMinimal} flags were
- * removed. Targeting just the 7-arg method covers every
- * {@code World#addParticle} client-side call site.
+ * funnel. In 1.21.11 the effect-based public surface is still a
+ * single 7-arg {@code addParticle(ParticleEffect, double x, y, z,
+ * double vx, vy, vz)} returning {@code Particle} (verified against
+ * the 1.21.11 jar with {@code javap -p}); the older 8/9-arg overloads
+ * with {@code alwaysSpawn} / {@code canSpawnOnMinimal} flags stay
+ * removed. Every {@code ClientWorld#addParticleClient} /
+ * {@code addImportantParticleClient} path still bottoms out here, so
+ * targeting just the 7-arg method covers the client-side call sites.
  *
  * <p>Two gating modes:
  * <ul>
@@ -141,10 +143,27 @@ public abstract class ParticleManagerNoRenderMixin {
 
     /**
      * Cancel the burst of block-shard particles vanilla emits when a
-     * block finishes breaking. {@code addBlockBreakParticles} is the
-     * single funnel called from {@code WorldRenderer#processWorldEvent}
-     * (event id 2001) so a HEAD cancel covers every break source -
-     * own digging, neighbour break, BUD-style updates, world events.
+     * block finishes breaking. Up to 1.21.4 {@code ParticleManager}
+     * owned this funnel and a HEAD cancel here covered every break
+     * source - own digging, neighbour break, BUD-style updates, world
+     * events.
+     *
+     * <p>TODO(1.21.11): {@code ParticleManager} no longer declares
+     * {@code addBlockBreakParticles} at all. Verified against the
+     * 1.21.11 jar: the method moved to
+     * {@code net.minecraft.client.world.ClientWorld#addBlockBreakParticles(BlockPos, BlockState)}
+     * (overriding {@code World#addBlockBreakParticles}), which builds the
+     * shard particles itself and hands finished {@code Particle}
+     * instances to {@code ParticleManager#addParticle(Particle)} -
+     * i.e. it bypasses the {@code ParticleEffect} funnel this mixin
+     * filters, so nothing else in this class catches it either.
+     * Re-targeting is not possible from inside this mixin because
+     * {@code @Mixin} here is bound to {@code ParticleManager}; fixing
+     * it needs a new {@code ClientWorldBreakParticlesMixin} plus an
+     * entry in {@code phaze.mixins.json}, both outside this file.
+     * Left with {@code require = 0} so it is a silent no-op instead of
+     * a launch-time injection failure; the NoRender "break block
+     * particles" toggle is inert until that mixin exists.
      */
     @Inject(method = "addBlockBreakParticles(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;)V",
             at = @At("HEAD"),
@@ -171,6 +190,17 @@ public abstract class ParticleManagerNoRenderMixin {
      * #phaze$cancelBreakParticles} but visually part of the same
      * "breaking a block" experience - one toggle controls both so
      * users don't have to track the engine's internal split.
+     *
+     * <p>TODO(1.21.11): same breakage as
+     * {@link #phaze$cancelBreakParticles} - {@code ParticleManager}
+     * no longer declares {@code addBlockBreakingParticles}. Verified
+     * against the 1.21.11 jar: it moved to {@code ClientWorld} AND was
+     * renamed, to
+     * {@code net.minecraft.client.world.ClientWorld#spawnBlockBreakingParticle(BlockPos, Direction)}
+     * (called from {@code MinecraftClient}'s dig loop). Needs the same
+     * new {@code ClientWorld} mixin + {@code phaze.mixins.json} entry;
+     * kept at {@code require = 0} so it stays a silent no-op rather
+     * than a hard injection failure.
      */
     @Inject(method = "addBlockBreakingParticles(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/Direction;)V",
             at = @At("HEAD"),

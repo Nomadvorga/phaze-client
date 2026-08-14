@@ -3,6 +3,7 @@ package vorga.phazeclient.implement.features.modules.client;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.base.util.Lang;
@@ -11,6 +12,7 @@ import vorga.phazeclient.base.util.color.ThemeColorPalette;
 import vorga.phazeclient.implement.menu.MenuPalette;
 import vorga.phazeclient.implement.menu.MenuPalettes;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.MenuUiSettings;
 
 public final class Theme extends Module {
     private static final Theme INSTANCE = new Theme();
@@ -20,6 +22,8 @@ public final class Theme extends Module {
     }
 
     private ColorPalette currentPalette = new ThemeColorPalette(MenuPalettes.LUNAR_BLUE);
+    private boolean guiScaleAdjustmentActive;
+    private float pendingGuiScale = MenuUiSettings.DEFAULT_GUI_SCALE;
 
     public final SelectSetting menuTheme = new SelectSetting("Theme", "Menu & HUD theme preset")
             .value(
@@ -52,6 +56,12 @@ public final class Theme extends Module {
             .range(0, 32)
             .setValue(16);
 
+    public final ValueSetting guiScale = new ValueSetting("GUI Scale", "Scale the entire Phaze GUI")
+            .range(MenuUiSettings.MIN_GUI_SCALE, MenuUiSettings.MAX_GUI_SCALE)
+            .step(0.1F)
+            .setValue(MenuUiSettings.DEFAULT_GUI_SCALE)
+            .onChange(this::applyGuiScale);
+
     public final ColorSetting hudTextColor = new ColorSetting(
             "Hud Text Color",
             "Default color for HUD text that does not use its own dynamic tint"
@@ -72,11 +82,18 @@ public final class Theme extends Module {
             .value(Lang.EN, Lang.RU)
             .selected(Lang.EN);
 
+    public final BooleanSetting renderOtherPlayerCosmetics = new BooleanSetting(
+            "Render Other Player Cosmetics",
+            "Render Phaze cosmetics equipped by other players"
+    ).setValue(true);
+
     private Theme() {
         super("themes", "Themes", ModuleCategory.OTHER, false, false);
         hudTextColor.setFullWidth(true);
         language.setFullWidth(true);
-        setup(menuTheme, blurRadius, language, hudTextColor);
+        guiScale.setFullWidth(true);
+        renderOtherPlayerCosmetics.setFullWidth(true);
+        setup(menuTheme, blurRadius, language, hudTextColor, guiScale, renderOtherPlayerCosmetics);
 
         // Push the initial selection through to the Lang table so
         // any code reading {@link Lang#t} during boot sees the
@@ -143,6 +160,31 @@ public final class Theme extends Module {
 
     public int getHudTextColor() {
         return 0xFF000000 | (hudTextColor.getColor() & 0x00FFFFFF);
+    }
+
+    private void applyGuiScale(float value) {
+        float clamped = Math.max(MenuUiSettings.MIN_GUI_SCALE, Math.min(MenuUiSettings.MAX_GUI_SCALE, value));
+        if (Float.compare(value, clamped) != 0) {
+            guiScale.setValue(clamped);
+            return;
+        }
+        pendingGuiScale = clamped;
+        if (!guiScaleAdjustmentActive) {
+            MenuUiSettings.getInstance().setGuiScale(clamped);
+        }
+    }
+
+    public void beginGuiScaleAdjustment() {
+        guiScaleAdjustmentActive = true;
+        pendingGuiScale = guiScale.getValue();
+    }
+
+    public void endGuiScaleAdjustment() {
+        if (!guiScaleAdjustmentActive) {
+            return;
+        }
+        guiScaleAdjustmentActive = false;
+        applyGuiScale(pendingGuiScale);
     }
 
     @Override

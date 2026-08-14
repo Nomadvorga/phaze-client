@@ -67,6 +67,14 @@ public class Shader {
                 Identifier.of("phazeclient", "motion_blur"),
                 shader -> shader.setUniformValue("BlendFactor", config.getStrength())
         );
+        // Must match, in order, the "MotionBlurConfig" list in
+        // assets/phazeclient/post_effect/motion_blur.json and the block in
+        // assets/phazeclient/shaders/core/post/motionblur/motion_blur.fsh.
+        motionBlurShader.declareUniformBlock("MotionBlurConfig",
+                "mvInverse", "projInverse", "prevModelView", "prevProjection",
+                "cameraPos", "prevCameraPos", "view_res",
+                "BlendFactor", "inverseSamples", "handDepthThreshold",
+                "motionBlurSamples", "halfSamples", "blurAlgorithm");
     }
 
     public void applyMotionBlurBeforeHands() {

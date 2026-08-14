@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.client.gl.UniformType;
 
 /**
  * Per-component framebuffer (FBO) snapshot cache. Lets a heavy GUI
@@ -169,6 +170,14 @@ public final class CardSnapshotCache {
      * like vanilla's own two instances.
      */
     private static ProjectionMatrix2 cardProjection;
+
+    /**
+     * Scratch for {@link vorga.phazeclient.api.system.draw.GuiProjection#guiModelView},
+     * render thread only. {@code GpuDraw.draw} folds it into the
+     * {@code DynamicTransforms} UBO before returning, so one instance shared
+     * between {@link #blit} and {@link #blitRounded} is safe - neither nests.
+     */
+    private static final Matrix4f BLIT_GUI_POSE = new Matrix4f();
 
     private CardSnapshotCache() {
     }
@@ -465,6 +474,8 @@ public final class CardSnapshotCache {
             .withLocation(Identifier.of("phaze", "pipeline/card_snapshot"))
             .withVertexShader(Identifier.of("minecraft", "core/position_tex_color"))
             .withFragmentShader(Identifier.of("minecraft", "core/position_tex_color"))
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
             .withSampler("Sampler0")
             .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
             .withBlend(new BlendFunction(SourceFactor.SRC_ALPHA, DestFactor.ONE_MINUS_SRC_ALPHA,
@@ -484,6 +495,8 @@ public final class CardSnapshotCache {
             .withLocation(Identifier.of("phaze", "pipeline/card_snapshot_rounded"))
             .withVertexShader(Identifier.of("minecraft", "core/position_tex_color"))
             .withFragmentShader(Identifier.of("minecraft", "core/position_tex_color"))
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
             .withSampler("Sampler0")
             .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
             .withBlend(new BlendFunction(SourceFactor.DST_ALPHA, DestFactor.ONE_MINUS_DST_ALPHA))
@@ -537,10 +550,29 @@ public final class CardSnapshotCache {
         // full-screen, reads no matrix and has no tint path.
         BuiltBuffer built = buffer.endNullable();
         if (built != null) {
+            // This composites the card FBO onto the MAIN framebuffer in GUI
+            // space, so it needs the GUI ortho projection - 1.21.11 defers
+            // DrawContext work into a GuiRenderState and only binds that matrix
+            // inside GuiRenderer's own pass, which runs AFTER this immediate
+            // draw. (The card-local ortho beginCapture installs is a different
+            // projection for a different target and is already gone by here.)
+            vorga.phazeclient.api.system.draw.GuiProjection.begin();
             try {
+                // GpuDraw writes DynamicTransforms from this argument rather
+                // than from the RenderSystem model-view stack, so the GUI
+                // z = -11000 offset has to be folded into the matrix itself.
+                //
+                // The z offset ONLY. The four vertices above were emitted with
+                // buffer.vertex(matrix, ...), which transforms on the CPU, so
+                // `matrix` is already baked into Position; core/position_tex_color
+                // then computes ProjMat * ModelViewMat * Position. Passing
+                // `matrix` here as well would apply the GUI pose twice and the
+                // card would land at the wrong place and scale.
                 GpuDraw.draw(TRANSLUCENT_PIPELINE, built, "Sampler0",
-                        snapshot.fbo.getColorAttachmentView(), FilterMode.LINEAR, matrix);
+                        snapshot.fbo.getColorAttachmentView(), FilterMode.LINEAR,
+                        vorga.phazeclient.api.system.draw.GuiProjection.guiModelView(BLIT_GUI_POSE));
             } finally {
+                vorga.phazeclient.api.system.draw.GuiProjection.end();
                 built.close();
             }
         }
@@ -582,10 +614,17 @@ public final class CardSnapshotCache {
         // snapshot to the rounded background drawn just above.
         BuiltBuffer built = buffer.endNullable();
         if (built != null) {
+            // Same GUI-space composite onto the main framebuffer as blit();
+            // see the comment there for why the projection and the z offset
+            // both have to be installed by hand, and why the pose must NOT be
+            // repeated in the model-view (it is already baked into the vertices).
+            vorga.phazeclient.api.system.draw.GuiProjection.begin();
             try {
                 GpuDraw.draw(DST_ALPHA_PIPELINE, built, "Sampler0",
-                        snapshot.fbo.getColorAttachmentView(), FilterMode.LINEAR, matrix);
+                        snapshot.fbo.getColorAttachmentView(), FilterMode.LINEAR,
+                        vorga.phazeclient.api.system.draw.GuiProjection.guiModelView(BLIT_GUI_POSE));
             } finally {
+                vorga.phazeclient.api.system.draw.GuiProjection.end();
                 built.close();
             }
         }
