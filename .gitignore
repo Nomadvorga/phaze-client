@@ -21,6 +21,10 @@ jdk-*/
 
 .claude/
 claude_launcher.exe
+run/
+config.json
+*.zip
+*.rar
 
 # Iris (and other) compile-only jars - large, version-specific, not committed
 libs-compileonly/
@@ -38,6 +42,19 @@ __server_staging/
 # Temporary one-off helper scripts and logs created during build /
 # deploy sessions. They are recreated on demand so committing them
 # would just churn diffs.
+.codex_tmp/
+.scripts/
+.phaze-signing/
+.sodium-tmp/
+tmp/
+tmp_mc_src/
+net/
+libs/
+libs-compileonly/
+tools/
+Phaze Client.code-workspace
+build_and_copy_v2.ps1
+build_mod.bat
 __*.cjs
 __*.js
 __*.log

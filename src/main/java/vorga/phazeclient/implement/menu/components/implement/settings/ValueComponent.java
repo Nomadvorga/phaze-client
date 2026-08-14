@@ -12,7 +12,9 @@ import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
+import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.MenuUiSettings;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
@@ -50,6 +52,14 @@ public class ValueComponent extends AbstractSettingComponent {
     public ValueComponent(ValueSetting setting) {
         super(setting);
         this.setting = setting;
+        if (isGuiScaleSetting()) {
+            // GUI Scale uses only the regular 0.1 step grid. It must not
+            // inherit the magnetic scale snap used by HUD-size controls.
+            setting.range(0.90F, MenuUiSettings.MAX_GUI_SCALE).step(0.1F);
+            if (setting.getValue() < 0.90F) {
+                setting.setValue(0.90F);
+            }
+        }
         this.previousValue = setting.getValue();
         this.animation = (setting.getValue() - setting.getMin()) / (setting.getMax() - setting.getMin()) * SLIDER_FIXED_WIDTH;
         boolean isModified = setting.isModified();
@@ -180,6 +190,9 @@ public class ValueComponent extends AbstractSettingComponent {
         if (wasClicked) {
             playButtonClickSound();
             dragging = true;
+            if (isGuiScaleSetting()) {
+                Theme.getInstance().beginGuiScaleAdjustment();
+            }
             return true;
         }
         dragging = false;
@@ -189,10 +202,14 @@ public class ValueComponent extends AbstractSettingComponent {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        boolean wasDragging = dragging;
         if (dragging) {
             ScaleSnapOverlay.hide();
         }
         dragging = false;
+        if (wasDragging && isGuiScaleSetting()) {
+            Theme.getInstance().endGuiScaleAdjustment();
+        }
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
@@ -304,12 +321,23 @@ public class ValueComponent extends AbstractSettingComponent {
      * every unrelated slider would be noise.
      */
     private void announceScale(float value, boolean snapped) {
-        if (setting.getSnapRadius() <= 0.0F) {
+        if (isGuiScaleSetting()) {
+            ScaleSnapOverlay.hide();
+            return;
+        }
+        String settingName = setting.getName().toLowerCase(java.util.Locale.ROOT);
+        if (setting.getSnapRadius() <= 0.0F
+                && !settingName.contains("scale")
+                && !settingName.contains("size")) {
             return;
         }
         ScaleSnapOverlay.show(
                 value,
                 snapped,
                 snapped ? Lang.t("slider.snapped_to_default") : setting.getName());
+    }
+
+    private boolean isGuiScaleSetting() {
+        return setting == Theme.getInstance().guiScale;
     }
 }

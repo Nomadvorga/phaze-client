@@ -11,7 +11,6 @@ public final class PingHud extends RectHudModule {
         return INSTANCE;
     }
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
     public final BooleanSetting dynamicPingColor = new BooleanSetting("Dynamic Ping Color", "Color ping by thresholds").setValue(true);
     /**
      * Swap the {@code Ping} label position. Default OFF renders
@@ -25,7 +24,7 @@ public final class PingHud extends RectHudModule {
         super("ping_hud", "Ping", 22.0f, 190.0f, 1.0f);
         dynamicPingColor.setFullWidth(true);
         reverseOrder.setFullWidth(true);
-        setup(otherSection, dynamicPingColor, reverseOrder);
+        setup(dynamicPingColor, reverseOrder);
     }
 
     public int getCachedPing() {

@@ -5,6 +5,7 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
+import vorga.phazeclient.api.system.shape.implement.Blur;
 
 public final class HudOptimizer extends Module {
     private static final HudOptimizer INSTANCE = new HudOptimizer();
@@ -14,12 +15,18 @@ public final class HudOptimizer extends Module {
             .range(10, 120)
             .setValue(30)
             .onChange(value -> BatchedHudBuffer.INSTANCE.setTargetFps(value.intValue()));
-
+    public final ValueSetting blurBackgroundFps = new ValueSetting("Blur Background FPS", "How many times per second the world behind blurred HUDs is refreshed.")
+            .range(10, 360)
+            .step(1)
+            .setValue(120)
+            .onChange(value -> Blur.INSTANCE.setHudBackgroundFps(value.intValue()));
     private HudOptimizer() {
         super("hudoptimizer", "HUD Optimizer", ModuleCategory.HUD);
         refreshRate.setFullWidth(true);
-        setup(generalSection, refreshRate);
+        blurBackgroundFps.setFullWidth(true);
+        setup(generalSection, refreshRate, blurBackgroundFps);
         BatchedHudBuffer.INSTANCE.setTargetFps((int) refreshRate.getValue());
+        Blur.INSTANCE.setHudBackgroundFps(blurBackgroundFps.getInt());
     }
 
     public static HudOptimizer getInstance() {
@@ -44,6 +51,11 @@ public final class HudOptimizer extends Module {
     @Override
     public boolean isCanBind() {
         return false;
+    }
+
+    @Override
+    public boolean isEnabledByDefault() {
+        return true;
     }
 
     @Override

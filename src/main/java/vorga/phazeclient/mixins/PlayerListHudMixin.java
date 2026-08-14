@@ -128,26 +128,6 @@ public class PlayerListHudMixin {
         phaze$tabTransformPushed = false;
     }
 
-    @Inject(method = "render", at = @At("HEAD"), cancellable = true)
-    private void phaze$skipInvisibleTabFrame(DrawContext context, int scaledWindowWidth,
-                                             net.minecraft.scoreboard.Scoreboard scoreboard,
-                                             net.minecraft.scoreboard.ScoreboardObjective objective,
-                                             CallbackInfo ci) {
-        Animations module = Animations.getInstance();
-        if (module == null || !module.isTabSlideEnabled()) {
-            return;
-        }
-        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
-            return;
-        }
-
-        float alpha = module.currentTabAlpha();
-        if (alpha <= 0.018F) {
-            ci.cancel();
-            return;
-        }
-    }
-
     @Inject(
             method = "render",
             at = @At(
@@ -370,8 +350,16 @@ public class PlayerListHudMixin {
         int fadedColor = phaze$applyTabAlpha(color);
         if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
             context.draw();
-            float size = PhazeBadgeUtil.guiBadgeSize(renderer);
-            PhazeBadgeUtil.drawGuiBadge(context, x - 2.5F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(fadedColor));
+            boolean codeBadge = PhazeBadgeUtil.isCodeBadgeUser(entry.getProfile().getName());
+            float regularSize = PhazeBadgeUtil.guiBadgeSize(renderer);
+            // Keep the regular Phaze badge unchanged. The developer emblem is
+            // intentionally 1.3x smaller in TAB, centred in the same slot.
+            float size = codeBadge ? regularSize / 1.3F : regularSize;
+            float inset = (regularSize - size) / 2.0F;
+            PhazeBadgeUtil.drawGuiBadge(
+                    context, x - 2.5F + inset, y - 2.5F + inset, size,
+                    PhazeBadgeUtil.alphaWhite(fadedColor), codeBadge
+            );
         }
         return operation.call(context, renderer, text, x, y, fadedColor);
     }
@@ -482,25 +470,11 @@ public class PlayerListHudMixin {
 
     @Unique
     private static int phaze$applyTabFillAlpha(int color) {
-        if (ExordiumAnimationBridge.isCapturingPlayerList()) {
-            return color;
-        }
-        Animations module = Animations.getInstance();
-        if (module == null || !module.isTabSlideEnabled()) {
-            return color;
-        }
-
-        float alphaMultiplier = module.currentTabAlpha();
-        if (alphaMultiplier < 0.35F) {
-            alphaMultiplier = (alphaMultiplier * alphaMultiplier) / 0.35F;
-        }
-
-        int baseAlpha = color >>> 24;
-        if (baseAlpha == 0 && (color & 0x00FFFFFF) != 0) {
-            baseAlpha = 0xFF;
-        }
-        int scaledAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * alphaMultiplier)));
-        return (color & 0x00FFFFFF) | (scaledAlpha << 24);
+        // The animation may fade text, heads and icons, but the vanilla TAB
+        // background must keep its original opacity throughout the motion.
+        // Returning the existing color is also the cheapest possible path:
+        // no extra fill, framebuffer or blend-state pass.
+        return color;
     }
 
     @Unique

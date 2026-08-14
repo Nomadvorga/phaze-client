@@ -600,16 +600,13 @@ public final class Translator extends Module {
     ).value("Google", "Apify").selected("Google");
 
     /**
-     * Apify personal API token - default value is the one the user
-     * pasted in chat ({@code apify_api_AWCI...}). Stored as a TextSetting
-     * so the user can rotate it from the GUI without rebuilding the mod.
-     * Visibility-gated to the Apify provider so it doesn't clutter the
-     * default settings panel.
+     * Apify personal API token. It is intentionally blank in source control;
+     * enter a personal token through the GUI when using the Apify provider.
      */
     public final TextSetting apifyToken = new TextSetting(
             "Apify Token",
             "Personal API token for api.apify.com (used only when Provider=Apify)"
-    ).setText("apify_api_AWCI0hEcYpdGYUL3TJQSNj9sj6hvW50Nqgkm")
+    ).setText("")
      .visible(() -> provider.isSelected("Apify"));
 
     /**

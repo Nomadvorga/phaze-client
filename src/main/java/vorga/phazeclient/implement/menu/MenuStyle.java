@@ -212,4 +212,13 @@ public final class MenuStyle {
     public static float centerMsdfTextY(float size, float boxY, float boxHeight) {
         return boxY + (boxHeight - size) / 2.0F + MSDF_CENTER_Y_OFFSET;
     }
+
+    public static float centerMsdfTextY(float size, float boxY, float boxHeight, float opticalOffset) {
+        return centerMsdfTextY(size, boxY, boxHeight) + opticalOffset;
+    }
+
+    /** Keeps an icon and an already-positioned MSDF label on the same visual centre line. */
+    public static float alignIconToMsdfTextY(float textY, float textSize, float iconSize) {
+        return textY + (textSize - iconSize) / 2.0F;
+    }
 }

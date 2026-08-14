@@ -40,7 +40,7 @@ public class MainMenuScreen extends TitleScreen {
     private static final double MIN_OVERLAY_SCALE = 1.0D;
     private static final int DEFAULT_OVERLAY_WIDTH = 462;
     private static final int DEFAULT_OVERLAY_HEIGHT = 300;
-    private static final String FOOTER_LEFT_TEXT = "Phaze Client 1.21.4 (1.0)";
+    private static final String FOOTER_LEFT_TEXT = "Phaze Client 1.21.4 (1.1)";
     private static final String FOOTER_RIGHT_TEXT = "Not affiliated with Mojang or Microsoft. Do not distribute!";
     private static final Identifier ICON_SINGLE = Identifier.of("phaze", "textures/menu/user.png");
     private static final Identifier ICON_MULTI = Identifier.of("phaze", "textures/menu/users.png");
@@ -93,6 +93,8 @@ public class MainMenuScreen extends TitleScreen {
     private float panoramaSliderVisualProgress = (float) (MenuUiSettings.getInstance().getPanoramaSpeed() / 100.0D);
     private float guiFpsSliderVisualProgress = (MenuUiSettings.getInstance().getGuiFpsLimit() - MenuUiSettings.MIN_GUI_FPS_LIMIT)
             / (float) (MenuUiSettings.MAX_GUI_FPS_LIMIT - MenuUiSettings.MIN_GUI_FPS_LIMIT);
+    private float guiScaleSliderVisualProgress = (MenuUiSettings.getInstance().getGuiScale() - MenuUiSettings.MIN_GUI_SCALE)
+            / (MenuUiSettings.MAX_GUI_SCALE - MenuUiSettings.MIN_GUI_SCALE);
     private long themeUiLastFrameNs = -1L;
     private float themeUiSmoothing = 1.0F;
     private float themeModalSmoothing = 1.0F;
@@ -316,21 +318,24 @@ public class MainMenuScreen extends TitleScreen {
 
     private void stabilizeMainMenuButtonLayout() {
         float scale = phaze$menuScale();
+        float sizeMul = 1.3F / 1.2F;
         int overlayW = getOverlayViewportWidth();
         int overlayH = getOverlayViewportHeight();
         int gap = Math.max(3, Math.round(8.0F * scale));
+        int mainWidth = Math.max(96, Math.round(320.0F * scale * sizeMul));
+        int mainHeight = Math.max(12, Math.round(36.0F * scale * sizeMul));
         int mainY = overlayH / 2 - Math.round(72.0F * scale);
-        int mainX = singleplayerButton != null ? overlayW / 2 - singleplayerButton.getWidth() / 2 : 0;
+        int mainX = overlayW / 2 - mainWidth / 2;
 
-        setButtonPosition(singleplayerButton, mainX, mainY);
+        setButtonLayout(singleplayerButton, mainX, mainY, mainWidth, mainHeight);
         if (singleplayerButton != null) {
             mainY += singleplayerButton.getHeight() + gap;
         }
-        setButtonPosition(multiplayerButton, mainX, mainY);
+        setButtonLayout(multiplayerButton, mainX, mainY, mainWidth, mainHeight);
         if (multiplayerButton != null) {
             mainY += multiplayerButton.getHeight() + gap;
         }
-        setButtonPosition(quitButton, mainX, mainY);
+        setButtonLayout(quitButton, mainX, mainY, mainWidth, mainHeight);
 
         int dockY = overlayH - Math.round(50.0F * scale);
         int dockGap = Math.max(6, Math.round(8.0F * scale));
@@ -343,71 +348,57 @@ public class MainMenuScreen extends TitleScreen {
         int dockTotalWidth = dockButtonCount * dockSize + Math.max(0, dockButtonCount - 1) * dockGap;
         int dockX = overlayW / 2 - dockTotalWidth / 2;
 
-        setButtonPosition(settingsButton, dockX, dockY);
+        setButtonLayout(settingsButton, dockX, dockY, dockSize, dockSize);
         dockX += dockSize + dockGap;
-        setButtonPosition(realmsButton, dockX, dockY);
+        setButtonLayout(realmsButton, dockX, dockY, dockSize, dockSize);
         dockX += dockSize + dockGap;
         if (flashbackButton != null) {
-            setButtonPosition(flashbackButton, dockX, dockY);
+            setButtonLayout(flashbackButton, dockX, dockY, dockSize, dockSize);
             dockX += dockSize + dockGap;
         }
         if (replayModButton != null) {
-            setButtonPosition(replayModButton, dockX, dockY);
+            setButtonLayout(replayModButton, dockX, dockY, dockSize, dockSize);
             dockX += dockSize + dockGap;
         }
         if (accountSwitcherButton != null) {
-            setButtonPosition(accountSwitcherButton, dockX, dockY);
+            setButtonLayout(accountSwitcherButton, dockX, dockY, dockSize, dockSize);
             dockX += dockSize + dockGap;
         }
-        setButtonPosition(modMenuButton, dockX, dockY);
+        setButtonLayout(modMenuButton, dockX, dockY, dockSize, dockSize);
 
         if (themeSelectorButton != null) {
             int topInset = Math.max(8, Math.round(10.0F * scale));
-            setButtonPosition(
+            setButtonLayout(
                     themeSelectorButton,
-                    overlayW - topInset - themeSelectorButton.getWidth() * 2 - gap,
-                    topInset
+                    overlayW - topInset - dockSize * 2 - gap,
+                    topInset,
+                    dockSize,
+                    dockSize
             );
             if (vanillaMainMenuButton != null) {
-                setButtonPosition(
+                setButtonLayout(
                         vanillaMainMenuButton,
-                        overlayW - topInset - vanillaMainMenuButton.getWidth(),
-                        topInset
+                        overlayW - topInset - dockSize,
+                        topInset,
+                        dockSize,
+                        dockSize
                 );
             }
         }
     }
 
     private int resolveDockButtonSize() {
-        if (settingsButton != null) {
-            return settingsButton.getWidth();
-        }
-        if (realmsButton != null) {
-            return realmsButton.getWidth();
-        }
-        if (flashbackButton != null) {
-            return flashbackButton.getWidth();
-        }
-        if (replayModButton != null) {
-            return replayModButton.getWidth();
-        }
-        if (accountSwitcherButton != null) {
-            return accountSwitcherButton.getWidth();
-        }
-        if (modMenuButton != null) {
-            return modMenuButton.getWidth();
-        }
-        if (themeSelectorButton != null) {
-            return themeSelectorButton.getWidth();
-        }
         return Math.max(12, Math.round(30.0F * phaze$menuScale() * (1.3F / 1.2F)));
     }
 
-    private void setButtonPosition(MainMenuButtonWidget button, int x, int y) {
-        if (button == null || (button.getX() == x && button.getY() == y)) {
+    private void setButtonLayout(MainMenuButtonWidget button, int x, int y, int width, int height) {
+        if (button == null) {
             return;
         }
-        button.setPosition(x, y);
+        button.phaze$setDimensions(width, height);
+        if (button.getX() != x || button.getY() != y) {
+            button.setPosition(x, y);
+        }
     }
 
     private void renderMainMenuBackground(DrawContext context, float delta) {
@@ -880,11 +871,11 @@ public class MainMenuScreen extends TitleScreen {
         float resetTextSize = (13.65F / 1.2F) * layout.scale;
         float footerRowY = layout.footerY - 9.0F * layout.scale;
         float footerTextY = MenuStyle.centerMsdfTextY(footerTextSize, footerRowY, 18.0F * layout.scale);
-        float resetTextY = MenuStyle.centerMsdfTextY(resetTextSize, footerRowY, 18.0F * layout.scale);
-        float resetIconSize = 11.0F * layout.scale;
+        float resetTextY = MenuStyle.centerMsdfTextY(resetTextSize, footerRowY, 18.0F * layout.scale) + 1.5F;
+        float resetIconSize = 11.0F * 1.6F * layout.scale;
         float resetTextShiftX = 17.0F * layout.scale;
         float resetIconShiftX = 17.0F * layout.scale;
-        float resetIconY = footerRowY + (18.0F * layout.scale - resetIconSize) / 2.0F - 0.5F * layout.scale;
+        float resetIconY = MenuStyle.alignIconToMsdfTextY(resetTextY, resetTextSize, resetIconSize);
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
                 Lang.translate("Active") + ": " + activeThemeName,
@@ -896,14 +887,16 @@ public class MainMenuScreen extends TitleScreen {
                 0.0F
         );
 
-        renderMenuIcon(
+        renderMenuIconPrecise(
                 context,
                 ICON_RESET,
                 layout.resetX + resetIconShiftX,
                 resetIconY,
                 resetIconSize,
                 resetIconSize,
-                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, themeSelectorResetHoverAnim), modalAlpha)
+                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, themeSelectorResetHoverAnim), modalAlpha),
+                0.06F,
+                0.38F
         );
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
@@ -1074,8 +1067,10 @@ public class MainMenuScreen extends TitleScreen {
                     customBadgeLayout.badgeTextSize,
                     scaleColorAlpha(0xFFF2FAF5, alpha),
                     context.getMatrices().peek().getPositionMatrix(),
-                    customBadgeLayout.badgeX + customBadgeLayout.badgePaddingX + 0.5F,
-                    MenuStyle.centerMsdfTextY(customBadgeLayout.badgeTextSize, customBadgeLayout.badgeY, customBadgeLayout.badgeH),
+                    MenuStyle.centerMsdfTextX(MsdfFonts.bold(), "ZIP", customBadgeLayout.badgeTextSize,
+                            customBadgeLayout.badgeX, customBadgeLayout.badgeW),
+                    MenuStyle.centerMsdfTextY(customBadgeLayout.badgeTextSize,
+                            customBadgeLayout.badgeY, customBadgeLayout.badgeH, 0.50F),
                     0.0F
             );
 
@@ -1086,15 +1081,22 @@ public class MainMenuScreen extends TitleScreen {
                     .outlineColor(scaleColorAlpha(lerpArgb(0xFF6C242B, 0xFFB1404D, deleteHoverAnim), alpha))
                     .color(scaleColorAlpha(lerpArgb(0xB92A0D14, 0xE5411C28, deleteHoverAnim), alpha))
                     .build());
-            float deleteIconSize = 5.7F * layout.scale;
+            // This badge is tiny after the main-menu scale is applied. At
+            // 5.7 units the two diagonal MSDF strokes collapsed to roughly
+            // one screen pixel, and the old X-only half-pixel offset made
+            // one arm noticeably softer than the other. Give the glyph
+            // enough screen coverage and keep it exactly centered.
+            float deleteIconSize = 7.4F * layout.scale;
             renderMenuIconPrecise(
                     context,
                     ICON_CROSS,
-                    customBadgeLayout.deleteX + (customBadgeLayout.deleteSize - deleteIconSize) / 2.0F + 0.5F,
+                    customBadgeLayout.deleteX + (customBadgeLayout.deleteSize - deleteIconSize) / 2.0F,
                     customBadgeLayout.deleteY + (customBadgeLayout.deleteSize - deleteIconSize) / 2.0F,
                     deleteIconSize,
                     deleteIconSize,
-                    scaleColorAlpha(lerpArgb(0xFFE8A9B0, 0xFFFFD6D9, deleteHoverAnim), alpha)
+                    scaleColorAlpha(lerpArgb(0xFFE8A9B0, 0xFFFFD6D9, deleteHoverAnim), alpha),
+                    0.16F,
+                    0.38F
             );
         }
 
@@ -1144,9 +1146,12 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderPanoramaPresetPreview(DrawContext context, MenuUiSettings.PanoramaDescriptor preset, float x, float y, float size, float alpha) {
-        if (this.client != null) {
-            preset.getRenderer().prepareTextures(this.client);
-        }
+        // A card only draws its thumbnail. Calling getRenderer() here used
+        // to instantiate the full panorama and, for a custom ZIP, decode
+        // and upload all six cube faces as soon as its row entered the
+        // scroll viewport. That was the large hitch when opening/scrolling
+        // the selector. Full faces are now loaded only when a preset is
+        // actually selected for the main-menu background.
         Identifier preview = preset.previewTexture();
         if (!preset.hasPreviewTexture()) {
             rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, Math.max(1.0F, size), Math.max(1.0F, size))
@@ -1233,15 +1238,17 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderThemeSelectorCloseAction(DrawContext context, float x, float y, float size, float hoverAnim, float alpha) {
-        float iconSize = (13.0F / (1.2F * 1.1F)) * phaze$menuScale();
-        renderMenuIcon(
+        float iconSize = (13.0F / (1.2F * 1.1F)) * phaze$menuScale() * (2.5F / 1.2F) / 1.15F;
+        renderMenuIconPrecise(
                 context,
                 ICON_CROSS,
                 x + (size - iconSize) / 2.0F,
                 y + (size - iconSize) / 2.0F,
                 iconSize,
                 iconSize,
-                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim), alpha)
+                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim), alpha),
+                0.04F,
+                0.38F
         );
     }
 
@@ -1279,6 +1286,9 @@ public class MainMenuScreen extends TitleScreen {
                 (MenuUiSettings.getInstance().getGuiFpsLimit() - MenuUiSettings.MIN_GUI_FPS_LIMIT)
                         / (float) (MenuUiSettings.MAX_GUI_FPS_LIMIT - MenuUiSettings.MIN_GUI_FPS_LIMIT)
         );
+        guiScaleSliderVisualProgress = animateThemeUiValue(guiScaleSliderVisualProgress,
+                (MenuUiSettings.getInstance().getGuiScale() - MenuUiSettings.MIN_GUI_SCALE)
+                        / (MenuUiSettings.MAX_GUI_SCALE - MenuUiSettings.MIN_GUI_SCALE));
 
         renderThemeSettingsSlider(
                 context,
@@ -1299,6 +1309,14 @@ public class MainMenuScreen extends TitleScreen {
                 modalAlpha
         );
 
+        renderThemeSettingsSlider(context, layout, Lang.translate("GUI Scale"),
+                Lang.translate("Scales the entire Phaze GUI"),
+                String.format(java.util.Locale.ROOT, "%.1fx", MenuUiSettings.getInstance().getGuiScale()),
+                layout.scaleTrackX, layout.scaleTrackY, layout.trackWidth, layout.trackHeight,
+                guiScaleSliderVisualProgress, mouseX, mouseY,
+                activeThemeSettingsSlider == ThemeSettingsSlider.GUI_SCALE,
+                layout.scaleValueX, layout.scaleLabelY, modalAlpha);
+
         renderThemeSettingsSlider(
                 context,
                 layout,
@@ -1318,19 +1336,6 @@ public class MainMenuScreen extends TitleScreen {
                 modalAlpha
         );
 
-        float presetTitleSize = 9.8F * layout.scale;
-        MsdfRenderer.renderText(
-                MsdfFonts.bold(),
-                Lang.translate("Panorama Preset"),
-                presetTitleSize,
-                scaleColorAlpha(0xFFF0F4FE, modalAlpha),
-                context.getMatrices().peek().getPositionMatrix(),
-                layout.contentX,
-                layout.presetSectionY - 1.0F * layout.scale,
-                0.0F
-        );
-
-        renderPanoramaPresetOption(context, layout, MenuUiSettings.PanoramaPreset.VANILLA, 0, mouseX, mouseY, modalAlpha);
         context.getMatrices().pop();
     }
 
@@ -1439,68 +1444,6 @@ public class MainMenuScreen extends TitleScreen {
         );
     }
 
-    private void renderPanoramaPresetOption(
-            DrawContext context,
-            ThemeSettingsLayout layout,
-            MenuUiSettings.PanoramaPreset preset,
-            int index,
-            int mouseX,
-            int mouseY,
-            float alpha
-    ) {
-        float rowY = getPanoramaPresetRowY(layout, index);
-        boolean selected = MenuUiSettings.getInstance().getSelectedPanoramaPresetId().equalsIgnoreCase(preset.getId());
-        boolean hovered = isPointInside(mouseX, mouseY, layout.contentX, rowY, layout.contentRight - layout.contentX, layout.presetRowHeight);
-        float hoverAnim = animateThemeUiValue(themeSettingsPresetHoverAnims.getOrDefault(preset.getId(), 0.0F), hovered ? 1.0F : 0.0F);
-        themeSettingsPresetHoverAnims.put(preset.getId(), hoverAnim);
-
-        rectangle.render(ShapeProperties.create(context.getMatrices(), layout.contentX, rowY, layout.contentRight - layout.contentX, layout.presetRowHeight)
-                .round(6.0F)
-                .softness(1.0F)
-                .thickness(1.0F)
-                .outlineColor(scaleColorAlpha(selected
-                        ? lerpArgb(0xFF2D5B46, 0xFF3A745A, hoverAnim)
-                        : lerpArgb(0xFF242D3A, 0xFF313D50, hoverAnim), alpha))
-                .color(scaleColorAlpha(selected
-                        ? lerpArgb(0xFF15211B, 0xFF1C2E24, hoverAnim)
-                        : lerpArgb(0xFF141A23, 0xFF18202A, hoverAnim), alpha))
-                .build());
-
-        float dotOuter = 10.0F * layout.scale;
-        float dotInner = 6.0F * layout.scale;
-        float dotX = layout.contentX + 8.0F * layout.scale;
-        float dotY = rowY + (layout.presetRowHeight - dotOuter) / 2.0F;
-        rectangle.render(ShapeProperties.create(context.getMatrices(), dotX, dotY, dotOuter, dotOuter)
-                .round(dotOuter / 2.0F)
-                .softness(1.0F)
-                .color(scaleColorAlpha(selected
-                        ? lerpArgb(0xFF244734, 0xFF2D5A42, hoverAnim)
-                        : lerpArgb(0xFF262F3C, 0xFF323D4E, hoverAnim), alpha))
-                .build());
-        float dotInset = (dotOuter - dotInner) / 2.0F;
-        rectangle.render(ShapeProperties.create(context.getMatrices(), dotX + dotInset, dotY + dotInset, dotInner, dotInner)
-                .round(dotInner / 2.0F)
-                .softness(1.0F)
-                .color(scaleColorAlpha(selected
-                        ? lerpArgb(0xFF25E163, 0xFF56EE88, hoverAnim)
-                        : lerpArgb(0xFF7F8798, 0xFFA6B0C4, hoverAnim), alpha))
-                .build());
-
-        float nameSize = 8.9F * layout.scale;
-        MsdfRenderer.renderText(
-                MsdfFonts.medium(),
-                preset.displayName(),
-                nameSize,
-                scaleColorAlpha(selected
-                        ? lerpArgb(0xFFF4F8FF, 0xFFFFFFFF, hoverAnim)
-                        : lerpArgb(0xFFCCD5E6, 0xFFF4F8FF, hoverAnim), alpha),
-                context.getMatrices().peek().getPositionMatrix(),
-                dotX + dotOuter + 6.0F * layout.scale,
-                MenuStyle.centerMsdfTextY(nameSize, rowY, layout.presetRowHeight),
-                0.0F
-        );
-    }
-
     private void renderTooltipLine(DrawContext context, Identifier icon, String text, float x, float y, float scale) {
         renderTooltipLine(context, icon, text, x, y, scale, 0.0F);
     }
@@ -1556,7 +1499,7 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private float phaze$menuScale() {
-        return 1.0F / 1.4F;
+        return (1.0F / 1.4F) * MenuUiSettings.getInstance().getGuiScale();
     }
 
     private static void renderMenuIcon(DrawContext context, Identifier icon, float x, float y, float width, float height) {
@@ -1587,7 +1530,32 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private static void renderMenuIconPrecise(DrawContext context, Identifier icon, float x, float y, float width, float height, int color) {
-        if (UiMsdfIconAtlas.renderIcon(context, icon, x, y, width, height, color, true)) {
+        renderMenuIconPrecise(context, icon, x, y, width, height, color, 0.0F, 0.42F);
+    }
+
+    private static void renderMenuIconPrecise(
+            DrawContext context,
+            Identifier icon,
+            float x,
+            float y,
+            float width,
+            float height,
+            int color,
+            float msdfThickness,
+            float msdfSmoothness
+    ) {
+        if (UiMsdfIconAtlas.renderIcon(
+                context,
+                icon,
+                x,
+                y,
+                width,
+                height,
+                color,
+                true,
+                msdfThickness,
+                msdfSmoothness
+        )) {
             return;
         }
         FittedIconRect fittedRect = fitIconRect(x, y, width, height, getIconAspectRatio(icon), true);
@@ -1860,10 +1828,10 @@ public class MainMenuScreen extends TitleScreen {
         float scale = phaze$menuScale();
         float overlayW = getOverlayViewportWidth();
         float overlayH = getOverlayViewportHeight();
-        float panelW = Math.min(overlayW - 26.0F * scale, 418.0F);
-        float panelH = Math.min(overlayH - 28.0F * scale, 238.0F);
-        panelW = Math.max(320.0F, panelW);
-        panelH = Math.max(210.0F, panelH);
+        float panelW = Math.min(overlayW - 26.0F * scale, 418.0F * scale);
+        float panelH = Math.min(overlayH - 28.0F * scale, 280.0F * scale);
+        panelW = Math.max(320.0F * scale, panelW);
+        panelH = Math.max(210.0F * scale, panelH);
         panelW = Math.min(panelW, overlayW - 12.0F * scale);
         panelH = Math.min(panelH, overlayH - 12.0F * scale);
 
@@ -1892,13 +1860,13 @@ public class MainMenuScreen extends TitleScreen {
         float footerY = panelY + panelH - 16.0F * scale;
         float cardsViewportH = Math.max(cardTotalHeight, footerY - cardsY - 12.0F * scale);
         float resetTextSize = 13.65F * scale;
-        float resetIconSize = 11.0F * scale;
+        float resetIconSize = 11.0F * 1.6F * scale;
         float resetTextShiftX = 17.0F * scale;
         float resetContentW = resetIconSize + 4.0F * scale + MsdfFonts.medium().getWidth(Lang.translate("Reset to default"), resetTextSize);
         float resetW = resetContentW + resetTextShiftX;
         float resetH = 18.0F * scale;
         float resetX = panelX + panelW - 12.0F * scale - resetContentW;
-        float resetY = footerY - 4.0F * scale;
+        float resetY = footerY - 4.0F * scale + 1.5F;
 
         return new ThemeSelectorLayout(
                 scale,
@@ -1936,10 +1904,10 @@ public class MainMenuScreen extends TitleScreen {
 
     private ThemeSettingsLayout getThemeSettingsLayout(ThemeSelectorLayout parentLayout) {
         float scale = parentLayout.scale;
-        float panelW = Math.min(parentLayout.panelW - 28.0F * scale, 282.0F);
-        float panelH = Math.min(parentLayout.panelH - 18.0F * scale, 238.0F);
+        float panelW = Math.min(parentLayout.panelW - 28.0F * scale, 282.0F * scale);
+        float panelH = Math.min(parentLayout.panelH - 18.0F * scale, 190.0F * scale);
         float panelX = parentLayout.panelX + (parentLayout.panelW - panelW) / 2.0F;
-        float panelY = parentLayout.panelY + 13.0F * scale;
+        float panelY = parentLayout.panelY + (parentLayout.panelH - panelH) / 2.0F;
         float closeSize = 18.0F * scale;
         float closeX = panelX + panelW - closeSize - 10.0F * scale;
         float closeY = panelY + 10.0F * scale;
@@ -1953,10 +1921,9 @@ public class MainMenuScreen extends TitleScreen {
         float fpsLabelY = panoramaTrackY + 35.0F * scale;
         float fpsTrackX = contentX;
         float fpsTrackY = fpsLabelY + 16.0F * scale;
-        float presetSectionY = fpsTrackY + trackHeight + 24.0F * scale;
-        float presetRowHeight = 18.0F * scale;
-        float presetRowGap = 5.0F * scale;
-
+        float scaleLabelY = fpsTrackY + 35.0F * scale;
+        float scaleTrackX = contentX;
+        float scaleTrackY = scaleLabelY + 16.0F * scale;
         return new ThemeSettingsLayout(
                 scale,
                 panelX,
@@ -1978,9 +1945,10 @@ public class MainMenuScreen extends TitleScreen {
                 fpsTrackX,
                 fpsTrackY,
                 contentRight - MsdfFonts.medium().getWidth(MenuUiSettings.MAX_GUI_FPS_LIMIT + " FPS", 9.2F * scale),
-                presetSectionY,
-                presetRowHeight,
-                presetRowGap
+                scaleLabelY,
+                scaleTrackX,
+                scaleTrackY,
+                contentRight - MsdfFonts.medium().getWidth("2.5x", 9.2F * scale)
         );
     }
 
@@ -1997,23 +1965,13 @@ public class MainMenuScreen extends TitleScreen {
             int fpsRange = MenuUiSettings.MAX_GUI_FPS_LIMIT - MenuUiSettings.MIN_GUI_FPS_LIMIT;
             int fps = MenuUiSettings.MIN_GUI_FPS_LIMIT + Math.round(progress * fpsRange);
             MenuUiSettings.getInstance().setGuiFpsLimit(fps);
+            return;
         }
-    }
 
-    private float getPanoramaPresetRowY(ThemeSettingsLayout layout, int index) {
-        return layout.presetSectionY + 12.0F * layout.scale + index * (layout.presetRowHeight + layout.presetRowGap);
-    }
-
-    private MenuUiSettings.PanoramaPreset getPanoramaPresetAt(ThemeSettingsLayout layout, float mouseX, float mouseY) {
-        float rowWidth = layout.contentRight - layout.contentX;
-        int index = 0;
-        for (MenuUiSettings.PanoramaPreset preset : MenuUiSettings.PanoramaPreset.values()) {
-            float rowY = getPanoramaPresetRowY(layout, index++);
-            if (isPointInside(mouseX, mouseY, layout.contentX, rowY, rowWidth, layout.presetRowHeight)) {
-                return preset;
-            }
+        if (slider == ThemeSettingsSlider.GUI_SCALE) {
+            MenuUiSettings.getInstance().setGuiScale(MenuUiSettings.MIN_GUI_SCALE
+                    + progress * (MenuUiSettings.MAX_GUI_SCALE - MenuUiSettings.MIN_GUI_SCALE));
         }
-        return null;
     }
 
     private MenuUiSettings.PanoramaDescriptor getThemeSelectorPresetAt(ThemeSelectorLayout layout, float mouseX, float mouseY) {
@@ -2162,10 +2120,9 @@ public class MainMenuScreen extends TitleScreen {
                         return true;
                     }
 
-                    MenuUiSettings.PanoramaPreset preset = getPanoramaPresetAt(settingsLayout, overlayMouseX, overlayMouseY);
-                    if (preset != null) {
-                        MenuUiSettings.getInstance().setSelectedPanoramaPreset(preset);
-                        syncDisplayedPanoramaName();
+                    if (isPointInside(overlayMouseX, overlayMouseY, settingsLayout.scaleTrackX, settingsLayout.scaleTrackY - 4.0F * settingsLayout.scale, settingsLayout.trackWidth, settingsLayout.trackHeight + 8.0F * settingsLayout.scale)) {
+                        activeThemeSettingsSlider = ThemeSettingsSlider.GUI_SCALE;
+                        updateThemeSettingsSlider(activeThemeSettingsSlider, settingsLayout, overlayMouseX);
                         return true;
                     }
 
@@ -2426,6 +2383,11 @@ public class MainMenuScreen extends TitleScreen {
             this.iconScaleMultiplier = iconScaleMultiplier;
         }
 
+        private void phaze$setDimensions(int width, int height) {
+            this.width = width;
+            this.height = height;
+        }
+
         @Override
         protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
@@ -2485,16 +2447,26 @@ public class MainMenuScreen extends TitleScreen {
                 }
             }
 
+            // phaze$menuScale() includes the historical 1 / 1.4 layout
+            // baseline. Text and icons were already authored at their
+            // correct size before GUI scaling was added, so applying that
+            // baseline to them a second time makes GUI scale 1.0 render at
+            // roughly 71% of the original size. Only apply the user-facing
+            // GUI scale here; widget geometry continues to use menuScale.
+            float contentScale = screen != null
+                    ? MenuUiSettings.getInstance().getGuiScale()
+                    : 1.0F;
             String label = this.getMessage().getString();
-            float size = (this.width <= 32 ? 8.6F : 10.6F) / 1.3F;
-            int textColor = hovered ? 0xFFFFFFFF : 0xFFF4F7FF;
+            boolean compactIconButton = label.isEmpty();
+            float size = ((compactIconButton ? 8.6F : 10.6F) / 1.3F) * contentScale;
+            int textColor = lerpArgb(0xFFB8BCC8, 0xFFDCE1EC, hoverAnim);
             float textX = MenuStyle.centerMsdfTextX(MsdfFonts.bold(), label, size, this.getX(), this.width);
             if (leftIcon != null) {
-                float iconSize = (this.width <= 32 ? 8.0F : 10.0F) * this.iconScaleMultiplier;
+                float iconSize = (compactIconButton ? 8.0F : 10.0F) * this.iconScaleMultiplier * contentScale;
                 float iconW = iconSize * getIconAspectRatio(leftIcon);
                 float iconH = iconSize;
                 boolean hasLabel = !label.isEmpty();
-                float gap = hasLabel ? 6.0F : 0.0F;
+                float gap = hasLabel ? 6.0F * contentScale : 0.0F;
                 float totalW = iconW + gap + (hasLabel ? MsdfFonts.bold().getWidth(label, size) : 0.0F);
                 float left = this.getX() + (this.width - totalW) / 2.0F;
                 if (hasLabel) {
@@ -2512,7 +2484,7 @@ public class MainMenuScreen extends TitleScreen {
                         textColor,
                         context.getMatrices().peek().getPositionMatrix(),
                         textX,
-                        MenuStyle.centerMsdfTextY(size, this.getY(), this.height),
+                        MenuStyle.centerMsdfTextY(size, this.getY(), this.height) + 0.4F,
                         0.0F
                 );
             }
@@ -2679,9 +2651,10 @@ public class MainMenuScreen extends TitleScreen {
         private final float fpsTrackX;
         private final float fpsTrackY;
         private final float fpsValueX;
-        private final float presetSectionY;
-        private final float presetRowHeight;
-        private final float presetRowGap;
+        private final float scaleLabelY;
+        private final float scaleTrackX;
+        private final float scaleTrackY;
+        private final float scaleValueX;
 
         private ThemeSettingsLayout(
                 float scale,
@@ -2704,9 +2677,10 @@ public class MainMenuScreen extends TitleScreen {
                 float fpsTrackX,
                 float fpsTrackY,
                 float fpsValueX,
-                float presetSectionY,
-                float presetRowHeight,
-                float presetRowGap
+                float scaleLabelY,
+                float scaleTrackX,
+                float scaleTrackY,
+                float scaleValueX
         ) {
             this.scale = scale;
             this.panelX = panelX;
@@ -2728,9 +2702,10 @@ public class MainMenuScreen extends TitleScreen {
             this.fpsTrackX = fpsTrackX;
             this.fpsTrackY = fpsTrackY;
             this.fpsValueX = fpsValueX;
-            this.presetSectionY = presetSectionY;
-            this.presetRowHeight = presetRowHeight;
-            this.presetRowGap = presetRowGap;
+            this.scaleLabelY = scaleLabelY;
+            this.scaleTrackX = scaleTrackX;
+            this.scaleTrackY = scaleTrackY;
+            this.scaleValueX = scaleValueX;
         }
     }
 
@@ -2738,5 +2713,6 @@ public class MainMenuScreen extends TitleScreen {
         NONE,
         PANORAMA_SPEED,
         GUI_FPS_LIMIT
+        ,GUI_SCALE
     }
 }

@@ -29,7 +29,6 @@ import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
-import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.core.Main;
@@ -41,10 +40,6 @@ import java.util.Map;
 @Setter
 @Accessors(chain = true)
 public class BackgroundComponent extends AbstractComponent {
-    private static final Identifier BRAND_ICON = Identifier.of("phaze", "textures/menu/phaze_brand.png");
-    private static final float BRAND_TEXT_SIZE = 9.4F;
-    private static final float BRAND_ICON_HEIGHT = 25.2F;
-    private static final float BRAND_ICON_GAP = 6.0F;
     private static final float TAB_TEXT_SIZE = 6.9F;
     private static final float FOOTER_TEXT_SIZE = 5.5F;
     private static final float CONFIG_TEXT_SIZE = 6.0F;
@@ -59,6 +54,7 @@ public class BackgroundComponent extends AbstractComponent {
     private static final float CONFIG_DELETE_ICON_SIZE = 5.4F;
     private static final float CONFIG_TEXT_PADDING = 6.0F;
     private static final float CONFIG_LIST_PADDING = 1.5F;
+    private static final float CONFIG_SCROLL_STEP = 22.0F;
     private static final float FOOTER_BUTTON_HEIGHT = 15.0F;
     private static final float FOOTER_BUTTON_GAP = 14.0F;
 
@@ -74,6 +70,8 @@ public class BackgroundComponent extends AbstractComponent {
     private String editingText = "";
     private long lastClickTime = 0;
     private String lastClickedConfig = null;
+    private double configScroll;
+    private double smoothedConfigScroll;
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -87,6 +85,8 @@ public class BackgroundComponent extends AbstractComponent {
         // pane. Keep the same border / background panels otherwise so
         // the menu chrome stays identical with or without the sidebar.
         boolean configsOpen = MenuScreen.INSTANCE.isConfigsViewOpen();
+        boolean cosmeticsOpen = MenuScreen.INSTANCE.isCosmeticsViewOpen();
+        boolean fullWidthPage = configsOpen || cosmeticsOpen;
 
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(8).softness(1).thickness(2)
@@ -100,7 +100,7 @@ public class BackgroundComponent extends AbstractComponent {
         rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + 1.0F, width - 2.0F, HEADER_HEIGHT)
                 .round(7, 0, 7, 0).color(applyGlobalAlpha(MenuStyle.PANEL_HEADER)).build());
 
-        if (!configsOpen) {
+        if (!fullWidthPage) {
             rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT + 1.0F, SIDEBAR_WIDTH - 1.0F, height - HEADER_HEIGHT - 2.0F)
                     .round(0, 0, 0, 7).color(applyGlobalAlpha(MenuStyle.PANEL_SIDEBAR)).build());
 
@@ -118,47 +118,19 @@ public class BackgroundComponent extends AbstractComponent {
                 .color(applyGlobalAlpha(MenuStyle.BORDER)).build());
 
         renderHeader(context, mouseX, mouseY);
-        if (!configsOpen) {
+        if (!fullWidthPage) {
             renderConfigs(context, mouseX, mouseY);
             renderSidebarFooter(context, mouseX, mouseY);
         }
     }
 
     private void renderHeader(DrawContext context, int mouseX, int mouseY) {
-        MatrixStack matrix = context.getMatrices();
-        float brandIconWidth = BRAND_ICON_HEIGHT * UiMsdfIconAtlas.resolveAspectRatio(BRAND_ICON);
-        float brandIconX = x + 8.0F;
-        float brandIconY = y + (HEADER_HEIGHT - BRAND_ICON_HEIGHT) / 2.0F + 2.5F;
-        UiMsdfIconAtlas.renderIcon(
-                context,
-                BRAND_ICON,
-                brandIconX,
-                brandIconY,
-                brandIconWidth,
-                BRAND_ICON_HEIGHT,
-                applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
-                true
-        );
-
-        float brandX = brandIconX + brandIconWidth + BRAND_ICON_GAP;
-        float brandY = MenuStyle.centerMsdfTextY(BRAND_TEXT_SIZE, y + 1.5F, HEADER_HEIGHT);
-        MsdfRenderer.renderText(MsdfFonts.bold(), "PHAZE", BRAND_TEXT_SIZE, applyGlobalAlpha(MenuStyle.TEXT_PRIMARY), matrix.peek().getPositionMatrix(), brandX, brandY, 0.0F);
-        MsdfRenderer.renderText(
-                MsdfFonts.medium(),
-                "CLIENT",
-                BRAND_TEXT_SIZE,
-                applyGlobalAlpha(MenuStyle.TEXT_MUTED),
-                matrix.peek().getPositionMatrix(),
-                brandX + MsdfFonts.bold().getWidth("PHAZE", BRAND_TEXT_SIZE) + 5.0F,
-                brandY,
-                0.0F
-        );
-
-        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
         boolean settingsActive = isSettingsTabActive();
+        boolean cosmeticsActive = isCosmeticsTabActive();
         boolean configsActive = isConfigsTabActive();
-        boolean modsActive = !settingsActive && !configsActive;
-        boolean[] active = {modsActive, settingsActive, configsActive};
+        boolean modsActive = !settingsActive && !cosmeticsActive && !configsActive;
+        boolean[] active = {modsActive, settingsActive, cosmeticsActive, configsActive};
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
             totalTabsWidth += getTopTabWidth(labels[i]);
@@ -190,11 +162,45 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private float getTopTabWidth(String label) {
-        return MsdfFonts.bold().getWidth(label, TAB_TEXT_SIZE) + TOP_TAB_HORIZONTAL_PADDING;
+        return MsdfFonts.bold().getWidth(topTabText(label), TAB_TEXT_SIZE) + TOP_TAB_HORIZONTAL_PADDING;
+    }
+
+    public void renderPageTransitionMask(DrawContext context, float alpha) {
+        if (alpha <= 0.001F) {
+            return;
+        }
+
+        MatrixStack matrix = context.getMatrices();
+        float contentY = y + HEADER_HEIGHT + 1.0F;
+        float contentHeight = height - HEADER_HEIGHT - 2.0F;
+        boolean fullWidthPage = MenuScreen.INSTANCE.isConfigsViewOpen()
+                || MenuScreen.INSTANCE.isCosmeticsViewOpen();
+
+        if (fullWidthPage) {
+            rectangle.render(ShapeProperties.create(matrix, x + 1.0F, contentY, width - 2.0F, contentHeight)
+                    .round(0, 0, 7, 7)
+                    .color(MenuStyle.withAlpha(MenuStyle.PANEL_CONTENT, alpha))
+                    .build());
+            return;
+        }
+
+        rectangle.render(ShapeProperties.create(matrix, x + 1.0F, contentY, SIDEBAR_WIDTH - 1.0F, contentHeight)
+                .round(0, 0, 0, 7)
+                .color(MenuStyle.withAlpha(MenuStyle.PANEL_SIDEBAR, alpha))
+                .build());
+        rectangle.render(ShapeProperties.create(matrix, x + SIDEBAR_WIDTH, contentY,
+                        width - SIDEBAR_WIDTH - 1.0F, contentHeight)
+                .round(0, 7, 0, 0)
+                .color(MenuStyle.withAlpha(MenuStyle.PANEL_CONTENT, alpha))
+                .build());
+        rectangle.render(ShapeProperties.create(matrix, x + SIDEBAR_WIDTH, contentY, 1.0F, contentHeight)
+                .color(MenuStyle.withAlpha(MenuStyle.BORDER, alpha))
+                .build());
     }
 
     private float drawTopTab(DrawContext context, int mouseX, int mouseY, float tabX, String label, boolean active) {
         MatrixStack matrix = context.getMatrices();
+        String displayLabel = topTabText(label);
         float tabWidth = getTopTabWidth(label);
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, tabX, tabY, tabWidth, TOP_TAB_HEIGHT);
@@ -223,15 +229,19 @@ public class BackgroundComponent extends AbstractComponent {
                 .round(2).thickness(3.0F).outlineColor(applyGlobalAlpha(borderColor)).color(MenuStyle.withAlpha(tabColor, 0)).build());
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                label,
+                displayLabel,
                 TAB_TEXT_SIZE,
                 applyGlobalAlpha(tabText),
                 matrix.peek().getPositionMatrix(),
-                MenuStyle.centerMsdfTextX(MsdfFonts.bold(), label, TAB_TEXT_SIZE, tabX, tabWidth),
+                MenuStyle.centerMsdfTextX(MsdfFonts.bold(), displayLabel, TAB_TEXT_SIZE, tabX, tabWidth),
                 MenuStyle.centerMsdfTextY(TAB_TEXT_SIZE, tabY, TOP_TAB_HEIGHT),
                 0.0F
         );
         return tabWidth;
+    }
+
+    private static String topTabText(String id) {
+        return id;
     }
 
     private void renderNewConfigButton(DrawContext context, int mouseX, int mouseY) {
@@ -266,20 +276,26 @@ public class BackgroundComponent extends AbstractComponent {
         String[] configs = configManager.getConfigList();
         float rowX = configRowX();
         float rowWidth = configRowWidth();
-        float rowY = configRowStartY();
-        int visibleConfigCount = 0;
-
-        for (int i = 0; i < configs.length; i++) {
-            float currentRowY = rowY + i * (CONFIG_ROW_HEIGHT + CONFIG_ROW_GAP);
-            if (currentRowY + CONFIG_ROW_HEIGHT > footerStartY() - 4.0F) {
-                break;
+        float viewportY = configViewportY();
+        float viewportHeight = configViewportHeight();
+        float contentHeight = configContentHeight(configs.length);
+        double maxScroll = Math.max(0.0F, contentHeight - viewportHeight);
+        configScroll = Math.max(-maxScroll, Math.min(0.0D, configScroll));
+        if (maxScroll <= 0.01D) {
+            configScroll = 0.0D;
+            smoothedConfigScroll = 0.0D;
+        } else {
+            smoothedConfigScroll = MathUtil.interpolateSmooth(
+                    3.5D, smoothedConfigScroll, configScroll
+            );
+            if (Math.abs(smoothedConfigScroll - configScroll) < 0.01D) {
+                smoothedConfigScroll = configScroll;
             }
-            visibleConfigCount++;
         }
 
-        if (visibleConfigCount > 0) {
-            float listHeight = visibleConfigCount * CONFIG_ROW_HEIGHT + (visibleConfigCount - 1) * CONFIG_ROW_GAP + CONFIG_LIST_PADDING * 2.0F;
-            rectangle.render(ShapeProperties.create(matrix, rowX - CONFIG_LIST_PADDING, rowY - CONFIG_LIST_PADDING, rowWidth + CONFIG_LIST_PADDING * 2.0F, listHeight)
+        if (configs.length > 0) {
+            float listHeight = Math.min(viewportHeight, contentHeight) + CONFIG_LIST_PADDING * 2.0F;
+            rectangle.render(ShapeProperties.create(matrix, rowX - CONFIG_LIST_PADDING, viewportY - CONFIG_LIST_PADDING, rowWidth + CONFIG_LIST_PADDING * 2.0F, listHeight)
                     .round(1.8F)
                     .thickness(1.15F)
                     .outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER_LIGHT, applyGlobalAlpha(0.62F)))
@@ -288,9 +304,16 @@ public class BackgroundComponent extends AbstractComponent {
         }
 
         String currentConfig = configManager.getCurrentConfigName();
-        for (String config : configs) {
-            if (rowY + CONFIG_ROW_HEIGHT > footerStartY() - 4.0F) {
-                break;
+        Main.getInstance().getScissorManager().push(
+                matrix.peek().getPositionMatrix(), rowX, viewportY, rowWidth, viewportHeight
+        );
+        for (int i = 0; i < configs.length; i++) {
+            String config = configs[i];
+            float rowY = viewportY + i * (CONFIG_ROW_HEIGHT + CONFIG_ROW_GAP)
+                    + (float) smoothedConfigScroll;
+            if (rowY + CONFIG_ROW_HEIGHT < viewportY - 1.0F
+                    || rowY > viewportY + viewportHeight + 1.0F) {
+                continue;
             }
 
             boolean rowHovered = MathUtil.isHovered(mouseX, mouseY, rowX, rowY, rowWidth, CONFIG_ROW_HEIGHT);
@@ -355,9 +378,8 @@ public class BackgroundComponent extends AbstractComponent {
                         0.0F
                 );
             }
-
-            rowY += CONFIG_ROW_HEIGHT + CONFIG_ROW_GAP;
         }
+        Main.getInstance().getScissorManager().pop();
     }
 
     private void renderSidebarFooter(DrawContext context, int mouseX, int mouseY) {
@@ -421,11 +443,11 @@ public class BackgroundComponent extends AbstractComponent {
             return true;
         }
 
-        // While CONFIGS view is open the sidebar isn't rendered, so
+        // Full-width top-level pages do not render the sidebar, so
         // its click handlers (config rows, NEW CONFIG, EDIT HUD)
         // would react to clicks in the now full-width content pane
         // where they have no visible widgets. Skip them entirely.
-        if (MenuScreen.INSTANCE.isConfigsViewOpen()) {
+        if (MenuScreen.INSTANCE.isConfigsViewOpen() || MenuScreen.INSTANCE.isCosmeticsViewOpen()) {
             return false;
         }
 
@@ -454,11 +476,15 @@ public class BackgroundComponent extends AbstractComponent {
 
         float rowX = configRowX();
         float rowWidth = configRowWidth();
-        float rowY = configRowStartY();
+        float viewportY = configViewportY();
+        float viewportBottom = viewportY + configViewportHeight();
         String[] configs = configManager.getConfigList();
-        for (String config : configs) {
-            if (rowY + CONFIG_ROW_HEIGHT > footerStartY() - 4.0F) {
-                break;
+        for (int i = 0; i < configs.length; i++) {
+            String config = configs[i];
+            float rowY = viewportY + i * (CONFIG_ROW_HEIGHT + CONFIG_ROW_GAP)
+                    + (float) smoothedConfigScroll;
+            if (rowY + CONFIG_ROW_HEIGHT < viewportY || rowY > viewportBottom) {
+                continue;
             }
 
             if (isDeleteHovered(mouseX, mouseY, rowY)) {
@@ -499,8 +525,6 @@ public class BackgroundComponent extends AbstractComponent {
                 }
                 return true;
             }
-
-            rowY += CONFIG_ROW_HEIGHT + CONFIG_ROW_GAP;
         }
 
         // Click outside - stop editing
@@ -572,18 +596,19 @@ public class BackgroundComponent extends AbstractComponent {
 
         float rowX = configRowX();
         float rowWidth = configRowWidth();
-        float rowY = configRowStartY();
+        float viewportY = configViewportY();
+        float viewportBottom = viewportY + configViewportHeight();
         String[] configs = configManager.getConfigList();
-        for (String ignored : configs) {
-            if (rowY + CONFIG_ROW_HEIGHT > footerStartY() - 4.0F) {
-                break;
+        for (int i = 0; i < configs.length; i++) {
+            float rowY = viewportY + i * (CONFIG_ROW_HEIGHT + CONFIG_ROW_GAP)
+                    + (float) smoothedConfigScroll;
+            if (rowY + CONFIG_ROW_HEIGHT < viewportY || rowY > viewportBottom) {
+                continue;
             }
 
             if (MathUtil.isHovered(mouseX, mouseY, rowX, rowY, rowWidth, CONFIG_ROW_HEIGHT) || isDeleteHovered(mouseX, mouseY, rowY)) {
                 return true;
             }
-
-            rowY += CONFIG_ROW_HEIGHT + CONFIG_ROW_GAP;
         }
 
         return false;
@@ -599,6 +624,45 @@ public class BackgroundComponent extends AbstractComponent {
 
     private float configRowStartY() {
         return y + HEADER_HEIGHT + 7.0F;
+    }
+
+    private float configViewportY() {
+        return configRowStartY();
+    }
+
+    private float configViewportHeight() {
+        // Config rows must never enter the footer. The scroll scissor ends
+        // above the NEW CONFIG button rather than at the sidebar's bottom,
+        // so rows cannot paint underneath either footer action.
+        float newConfigY = footerStartY() - 5.0F
+                - FOOTER_BUTTON_HEIGHT - 4.0F;
+        return Math.max(0.0F, newConfigY - 4.0F - configViewportY());
+    }
+
+    private static float configContentHeight(int configCount) {
+        if (configCount <= 0) {
+            return 0.0F;
+        }
+        return configCount * CONFIG_ROW_HEIGHT
+                + (configCount - 1) * CONFIG_ROW_GAP;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+        if (MenuScreen.INSTANCE.isConfigsViewOpen() || MenuScreen.INSTANCE.isCosmeticsViewOpen()
+                || !MathUtil.isHovered(mouseX, mouseY, x, configViewportY(), SIDEBAR_WIDTH, configViewportHeight())) {
+            return false;
+        }
+
+        double maxScroll = Math.max(0.0F,
+                configContentHeight(configManager.getConfigList().length) - configViewportHeight());
+        if (maxScroll <= 0.01D) {
+            return false;
+        }
+
+        configScroll = Math.max(-maxScroll, Math.min(0.0D,
+                configScroll + amount * CONFIG_SCROLL_STEP));
+        return true;
     }
 
     private float configRowWidth() {
@@ -625,7 +689,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private boolean handleTopTabClick(double mouseX, double mouseY) {
-        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
         boolean configsActive = isConfigsTabActive();
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
@@ -648,16 +712,7 @@ public class BackgroundComponent extends AbstractComponent {
             float tabWidth = getTopTabWidth(label);
             if (MathUtil.isHovered(mouseX, mouseY, tabsX, tabY, tabWidth, TOP_TAB_HEIGHT)) {
                 playButtonClickSound();
-                if ("SETTINGS".equals(label)) {
-                    MenuScreen.INSTANCE.openModuleDetail(Theme.getInstance());
-                    MenuScreen.INSTANCE.closeConfigsView();
-                } else if ("CONFIGS".equals(label)) {
-                    MenuScreen.INSTANCE.openConfigsView();
-                } else {
-                    MenuScreen.INSTANCE.closeModuleDetail();
-                    MenuScreen.INSTANCE.closeConfigsView();
-                    MenuScreen.INSTANCE.setCategory(ModuleCategory.ALL);
-                }
+                MenuScreen.INSTANCE.requestTopTab(label);
                 return true;
             }
             tabsX += tabWidth + TOP_TAB_GAP;
@@ -673,7 +728,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private boolean isTopTabHovered(double mouseX, double mouseY) {
-        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
         boolean configsActive = isConfigsTabActive();
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
@@ -799,5 +854,9 @@ public class BackgroundComponent extends AbstractComponent {
 
     private boolean isConfigsTabActive() {
         return MenuScreen.INSTANCE.isConfigsViewOpen();
+    }
+
+    private boolean isCosmeticsTabActive() {
+        return MenuScreen.INSTANCE.isCosmeticsViewOpen();
     }
 }

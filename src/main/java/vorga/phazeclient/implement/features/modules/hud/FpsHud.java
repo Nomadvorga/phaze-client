@@ -16,7 +16,6 @@ public final class FpsHud extends RectHudModule {
      * toggle visually separated from the Background / Text Shadow
      * controls inherited from {@link RectHudModule}.
      */
-    public final SectionSetting otherSection = new SectionSetting("Other");
 
     /**
      * Swap the {@code FPS} label position. Default OFF renders
@@ -27,7 +26,7 @@ public final class FpsHud extends RectHudModule {
     private FpsHud() {
         super("fps_hud", "FPS");
         reverseOrder.setFullWidth(true);
-        setup(otherSection, reverseOrder);
+        setup(reverseOrder);
     }
 
     @Override

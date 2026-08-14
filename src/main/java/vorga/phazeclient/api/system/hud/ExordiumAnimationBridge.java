@@ -498,7 +498,11 @@ public final class ExordiumAnimationBridge {
             matrix.scale(scale, scale, 1.0F);
             matrix.translate(-tabPivotX, -tabPivotY, 0.0F);
         }
-        drawExordiumTexture(texture, matrix, animations.currentTabAlpha());
+        // Exordium stores the whole player list in one texture, so applying
+        // animation alpha here also fades its vanilla background. Keep the
+        // cached texture at native opacity; movement/scale still uses the same
+        // single cached draw and therefore has no additional FPS cost.
+        drawExordiumTexture(texture, matrix, 1.0F);
     }
 
     private static void renderChat(DrawContext context, int texture) {

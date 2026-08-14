@@ -2,10 +2,9 @@ package vorga.phazeclient.implement.menu.components.implement.settings;
 
 import net.minecraft.client.gui.DrawContext;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
+import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.implement.menu.MenuStyle;
-
-import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
 
 public class SectionComponent extends AbstractSettingComponent {
     private final SectionSetting setting;
@@ -20,12 +19,16 @@ public class SectionComponent extends AbstractSettingComponent {
         updateVisibilityAnimation();
         height = 12;
 
-        var font = Fonts.getSize(11, INTER_BOLD);
+        float fontSize = 5.5F;
         String text = setting.getLocalizedName().toUpperCase();
-        float textWidth = font.getStringWidth(text);
+        float textWidth = MsdfFonts.bold().getWidth(text, fontSize);
         float centerX = x + (width - textWidth) / 2.0f;
         int color = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, currentAlpha * 0.7f);
-        font.drawString(context.getMatrices(), text, centerX, y + 4, color);
+        MsdfRenderer.renderText(
+                MsdfFonts.bold(), text, fontSize, color,
+                context.getMatrices().peek().getPositionMatrix(),
+                centerX, y + 3.25F, 0.0F
+        );
     }
 
     @Override

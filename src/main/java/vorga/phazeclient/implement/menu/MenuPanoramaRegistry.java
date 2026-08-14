@@ -29,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipEntry;
@@ -915,42 +916,64 @@ public final class MenuPanoramaRegistry {
             MinecraftClient client = MinecraftClient.getInstance();
             if (previewTexture != null || client == null || !previewLoading.compareAndSet(false, true)) return;
 
-            // Served from disk after the first sighting. Without this
-            // the grid re-fetches every thumbnail over HTTP on every
-            // launch, which is both slow to appear and pointless
-            // traffic for images that never change.
             Path cacheFile = previewCacheFile(sanitizeTextureToken(id), 0L);
-            NativeImage cached = readCachedPreview(cacheFile);
-            if (cached != null) {
-                previewTexture = new NativeImageBackedTexture(cached);
-                client.getTextureManager().registerTexture(previewTextureId, previewTexture);
-                previewLoading.set(false);
-                return;
-            }
 
-            HttpRequest request = HttpRequest.newBuilder(previewUri).GET().build();
-            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
-                    .thenAccept(response -> {
-                        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                            previewLoading.set(false);
-                            return;
-                        }
-                        client.execute(() -> {
+            // Disk PNG decoding, network-image decoding and cache writes are
+            // all CPU / I/O work. Keeping them off the render thread prevents
+            // a new row of remote cards from hitching the selector while the
+            // user scrolls. Only the final GL texture registration is queued
+            // back onto Minecraft's thread.
+            CompletableFuture.runAsync(() -> {
+                NativeImage cached = readCachedPreview(cacheFile);
+                if (cached != null) {
+                    installPreview(client, cached);
+                    return;
+                }
+
+                HttpRequest request = HttpRequest.newBuilder(previewUri).GET().build();
+                HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+                        .thenAcceptAsync(response -> {
+                            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                                previewLoading.set(false);
+                                return;
+                            }
                             try {
                                 NativeImage image = downscaleSquare(
                                         cropToSquare(NativeImage.read(new ByteArrayInputStream(response.body()))),
                                         PREVIEW_CACHE_SIZE);
                                 writeCachedPreview(cacheFile, image, sanitizeTextureToken(id));
-                                previewTexture = new NativeImageBackedTexture(image);
-                                client.getTextureManager().registerTexture(previewTextureId, previewTexture);
+                                installPreview(client, image);
                             } catch (Throwable error) {
-                                System.err.println("[Phaze] remote panorama preview failed: " + error);
-                            } finally {
                                 previewLoading.set(false);
+                                System.err.println("[Phaze] remote panorama preview failed: " + error);
                             }
+                        })
+                        .exceptionally(error -> {
+                            previewLoading.set(false);
+                            return null;
                         });
-                    })
-                    .exceptionally(error -> { previewLoading.set(false); return null; });
+            }).exceptionally(error -> {
+                previewLoading.set(false);
+                return null;
+            });
+        }
+
+        private void installPreview(MinecraftClient client, NativeImage image) {
+            client.execute(() -> {
+                try {
+                    if (previewTexture == null) {
+                        previewTexture = new NativeImageBackedTexture(image);
+                        client.getTextureManager().registerTexture(previewTextureId, previewTexture);
+                    } else {
+                        image.close();
+                    }
+                } catch (Throwable error) {
+                    image.close();
+                    System.err.println("[Phaze] remote panorama preview registration failed: " + error);
+                } finally {
+                    previewLoading.set(false);
+                }
+            });
         }
 
         private void activate() {

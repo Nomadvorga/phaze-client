@@ -143,6 +143,14 @@ public class ConfigsViewComponent extends AbstractComponent {
         return open || openAnim.getOutputFloat() > 0.001F;
     }
 
+    public boolean isActive() {
+        return open;
+    }
+
+    public boolean shouldRender() {
+        return open || openAnim.getOutputFloat() > 0.001F;
+    }
+
     private void refreshMetadataCaches() {
         timestampCache.clear();
         sizeCache.clear();

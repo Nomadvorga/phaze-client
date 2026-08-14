@@ -37,7 +37,6 @@ public final class ReachHud extends RectHudModule {
      */
     private long lastHitTimeMillis = 0L;
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
 
     /**
      * Swap the {@code Reach} label position. Default OFF renders the
@@ -55,7 +54,7 @@ public final class ReachHud extends RectHudModule {
     private ReachHud() {
         super("reach_hud", "Reach HUD");
         reverseOrder.setFullWidth(true);
-        setup(otherSection, reverseOrder);
+        setup(reverseOrder);
     }
 
     @Override

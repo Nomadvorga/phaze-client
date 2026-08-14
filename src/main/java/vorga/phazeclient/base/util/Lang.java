@@ -145,6 +145,29 @@ public final class Lang {
         en("sidebar.new_config", "NEW CONFIG");
         en("sidebar.edit_hud", "EDIT HUD LAYOUT");
 
+        // Cosmetics
+        en("cosmetics.title", "COSMETICS");
+        en("cosmetics.subtitle", "Phaze cosmetic collection");
+        en("cosmetics.category.all", "ALL");
+        en("cosmetics.category.wings", "WINGS");
+        en("cosmetics.category.capes", "CAPES");
+        en("cosmetics.category.hats", "HATS");
+        en("cosmetics.category.pets", "PETS");
+        en("cosmetics.wheel", "WHEEL");
+        en("cosmetics.equipped", "EQUIPPED");
+        en("cosmetics.locked", "LOCKED");
+        en("cosmetics.missing_suffix", "missing file");
+        en("cosmetics.preview", "PREVIEW");
+        en("cosmetics.rotate", "ROTATING");
+        en("cosmetics.drag_to_rotate", "DRAG TO ROTATE");
+        en("cosmetics.hide_elytra", "HIDE ELYTRA");
+        en("cosmetics.wing_motion", "WING MOTION");
+        en("cosmetics.pet_follow", "PET FOLLOW");
+        en("cosmetics.equip", "EQUIP");
+        en("cosmetics.remove", "REMOVE");
+        en("cosmetics.enter_world", "ENTER A WORLD TO PREVIEW");
+        en("cosmetics.model_missing", "MODEL FILE NOT FOUND");
+
         // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
         ru("modal.cloud.subtitle", "Поделись конфигом или загрузи по коду");
@@ -205,6 +228,28 @@ public final class Lang {
 
         ru("sidebar.new_config", "НОВЫЙ КОНФИГ");
         ru("sidebar.edit_hud", "РЕДАКТОР HUD");
+
+        ru("cosmetics.title", "КОСМЕТИКА");
+        ru("cosmetics.subtitle", "Коллекция косметики Phaze");
+        ru("cosmetics.category.all", "ВСЁ");
+        ru("cosmetics.category.wings", "КРЫЛЬЯ");
+        ru("cosmetics.category.capes", "ПЛАЩИ");
+        ru("cosmetics.category.hats", "ГОЛОВА");
+        ru("cosmetics.category.pets", "ПИТОМЦЫ");
+        ru("cosmetics.wheel", "КОЛЕСО");
+        ru("cosmetics.equipped", "НАДЕТО");
+        ru("cosmetics.locked", "ЗАКРЫТО");
+        ru("cosmetics.missing_suffix", "нет файла");
+        ru("cosmetics.preview", "ПРЕДПРОСМОТР");
+        ru("cosmetics.rotate", "ПОВОРОТ");
+        ru("cosmetics.drag_to_rotate", "ТЯНИТЕ ДЛЯ ПОВОРОТА");
+        ru("cosmetics.hide_elytra", "СКРЫВАТЬ ЭЛИТРЫ");
+        ru("cosmetics.wing_motion", "ДВИЖЕНИЕ КРЫЛЬЕВ");
+        ru("cosmetics.pet_follow", "ПЛАВНОСТЬ ПИТОМЦА");
+        ru("cosmetics.equip", "НАДЕТЬ");
+        ru("cosmetics.remove", "СНЯТЬ");
+        ru("cosmetics.enter_world", "ВОЙДИТЕ В МИР ДЛЯ ПРОСМОТРА");
+        ru("cosmetics.model_missing", "ФАЙЛ МОДЕЛИ НЕ НАЙДЕН");
     }
 
     private static final Map<String, String> SETTING_TRANSLATIONS = new HashMap<>();
@@ -261,6 +306,11 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Background Blur Radius", "Радиус размытия фона");
         SETTING_TRANSLATIONS.put("Background Opacity", "Прозрачность фона");
         SETTING_TRANSLATIONS.put("Background Preset", "Стиль фона");
+        SETTING_TRANSLATIONS.put("Custom Background Color", "Свой цвет");
+        SETTING_TRANSLATIONS.put("Gradient Start Color", "Первый цвет градиента");
+        SETTING_TRANSLATIONS.put("Gradient End Color", "Второй цвет градиента");
+        SETTING_TRANSLATIONS.put("Gradient Speed", "Скорость градиента");
+        SETTING_TRANSLATIONS.put("Gradient Direction", "Направление градиента");
         SETTING_TRANSLATIONS.put("Base Color", "Базовый цвет");
         SETTING_TRANSLATIONS.put("Batches all 2D HUD elements into a single FBO and refreshes at a throttled rate", "Объединяет 2D-элементы HUD в один FBO и ограничивает частоту обновления");
         SETTING_TRANSLATIONS.put("Better Death", "Улучшенная смерть");
@@ -535,6 +585,15 @@ public final class Lang {
         // locale, only the displayed label changes.
         SETTING_TRANSLATIONS.put("Lunar Blue", "Синий Лунар");
         SETTING_TRANSLATIONS.put("Mocha Gold", "Мокка с золотом");
+        SETTING_TRANSLATIONS.put("Custom Color", "Свой цвет");
+        SETTING_TRANSLATIONS.put("Gradient", "Градиент");
+        SETTING_TRANSLATIONS.put("Left to Right", "Слева направо");
+        SETTING_TRANSLATIONS.put("Right to Left", "Справа налево");
+        SETTING_TRANSLATIONS.put("Top to Bottom", "Сверху вниз");
+        SETTING_TRANSLATIONS.put("Bottom to Top", "Снизу вверх");
+        SETTING_TRANSLATIONS.put("Diagonal Down", "По диагонали вниз");
+        SETTING_TRANSLATIONS.put("Diagonal Up", "По диагонали вверх");
+        SETTING_TRANSLATIONS.put("Pulse", "Пульсация");
         SETTING_TRANSLATIONS.put("Rose Quartz", "Розовый кварц");
         SETTING_TRANSLATIONS.put("Emerald Frost", "Изумрудный иней");
         SETTING_TRANSLATIONS.put("Arctic Mint", "Арктическая мята");
@@ -830,6 +889,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Recolor the vanilla block outline at your crosshair, optionally fill the faces", "Перекрашивает ванильный контур блока под прицелом, опционально заливает грани");
         SETTING_TRANSLATIONS.put("Records your coords on death so you can return for your dropped items", "Запоминает координаты смерти, чтобы вернуться за выпавшим");
         SETTING_TRANSLATIONS.put("Refresh Rate", "Частота обновления");
+        SETTING_TRANSLATIONS.put("Blur Background FPS", "FPS фона с блюром");
         SETTING_TRANSLATIONS.put("Refresh Rate Scaling", "Масштаб частоты обновления");
         SETTING_TRANSLATIONS.put("Removes the fog and screen overlay applied while the camera is submerged in water or lava", "Убирает туман и оверлей при погружении камеры в воду или лаву");
         SETTING_TRANSLATIONS.put("Removes the right-click delay when throwing experience bottles", "Убирает задержку ПКМ при бросании бутылок опыта");
@@ -1176,7 +1236,10 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Trap", "Трапка");
         SETTING_TRANSLATIONS.put("Translation Options", "Параметры перевода");
         SETTING_TRANSLATIONS.put("Hud Text Color", "Цвет текста HUD");
+        SETTING_TRANSLATIONS.put("Corner Rounding", "Закругление краёв");
         SETTING_TRANSLATIONS.put("Default color for HUD text that does not use its own dynamic tint", "Цвет текста HUD по умолчанию для элементов без собственной динамической окраски");
+        SETTING_TRANSLATIONS.put("Render Other Player Cosmetics", "Показывать косметику других игроков");
+        SETTING_TRANSLATIONS.put("Render Phaze cosmetics equipped by other players", "Показывать косметику Phaze, надетую другими игроками");
 
         // Main-menu / configs UI strings that are not module or
         // category names and should therefore localize to Russian.

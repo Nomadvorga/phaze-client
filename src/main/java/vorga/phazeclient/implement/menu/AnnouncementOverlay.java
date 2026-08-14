@@ -31,9 +31,38 @@ public final class AnnouncementOverlay {
     private static final float PAD_X = 12.0F;
     private static final float PAD_Y = 9.0F;
     private static final float TEXT_SIZE = 8.0F;
-    private static final float TOP_MARGIN = 14.0F;
+    /** Fraction of screen height the stack starts at, floored by MIN_TOP_MARGIN. */
+    private static final float TOP_FRACTION = 0.17F;
+    private static final float MIN_TOP_MARGIN = 26.0F;
+
+    /**
+     * Flat black at half opacity, the same treatment the HUD uses.
+     * Opaque on purpose: MenuStyle.withAlpha multiplies the existing
+     * alpha byte, so a 0x000000 constant would come out invisible.
+     */
+    private static final int BACKGROUND = 0xFF000000;
+    private static final float BACKGROUND_ALPHA = 0.5F;
     private static final float CARD_GAP = 5.0F;
     private static final float CORNER = 6.0F;
+
+    /**
+     * MsdfRenderer's default glyph thickness. applyGlyphs adds
+     * {@code thickness * 0.5 * size} to the pen after every glyph,
+     * but MsdfFont.getWidth sums glyph widths only - so measured text
+     * comes out narrower than drawn text, by this much per character.
+     * On a forty-character banner that is several pixels, which is
+     * enough to push the text visibly off-centre inside a card sized
+     * from the unadjusted measurement.
+     */
+    private static final float RENDER_THICKNESS = 0.05F;
+    private static final float PER_GLYPH_EXTRA = RENDER_THICKNESS * 0.5F * TEXT_SIZE;
+
+    /**
+     * MSDF text is drawn from its top edge with the baseline pushed
+     * down inside the em box, so geometric centring sits slightly
+     * high. Same correction MenuStyle.centerMsdfTextY applies.
+     */
+    private static final float BASELINE_NUDGE = 1.15F;
 
     /** Fade applied over the last moment of a card's life. */
     private static final long FADE_MS = 600L;
@@ -55,17 +84,32 @@ public final class AnnouncementOverlay {
         }
 
         float screenWidth = client.getWindow().getScaledWidth();
-        float cardWidth = Math.min(MAX_WIDTH, screenWidth - 24.0F);
-        float textWidth = cardWidth - PAD_X * 2.0F;
-        float y = TOP_MARGIN;
+        float screenHeight = client.getWindow().getScaledHeight();
+        float maxCardWidth = Math.min(MAX_WIDTH, screenWidth - 24.0F);
+        float maxTextWidth = maxCardWidth - PAD_X * 2.0F;
+
+        // Proportional rather than a fixed offset: sitting clear of the
+        // vanilla toast strip at any GUI scale matters more than being
+        // at an exact pixel.
+        float y = Math.max(MIN_TOP_MARGIN, screenHeight * TOP_FRACTION);
 
         MatrixStack matrices = context.getMatrices();
         long now = System.currentTimeMillis();
 
         for (PhazeAnnouncements.Banner banner : banners) {
-            String[] lines = wrap(banner.text(), textWidth);
+            String[] lines = wrap(banner.text(), maxTextWidth);
+
+            // The card is sized to its text, so a three-word notice
+            // does not get the same slab as a full sentence.
+            float widest = 0.0F;
+            for (String line : lines) {
+                widest = Math.max(widest, measure(line));
+            }
+            float cardWidth = Math.min(maxCardWidth, widest + PAD_X * 2.0F);
+
             float lineHeight = TEXT_SIZE + 3.0F;
-            float cardHeight = PAD_Y * 2.0F + lines.length * lineHeight - 3.0F;
+            float textBlockHeight = lines.length * lineHeight - 3.0F;
+            float cardHeight = PAD_Y * 2.0F + textBlockHeight;
             float x = (screenWidth - cardWidth) / 2.0F;
 
             long remaining = banner.shownUntilMs() - now;
@@ -75,17 +119,18 @@ public final class AnnouncementOverlay {
 
             RECTANGLE.render(ShapeProperties.create(matrices, x, y, cardWidth, cardHeight)
                     .round(CORNER)
-                    .thickness(1.0F)
-                    .outlineColor(MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, alpha * 0.55F))
-                    .color(MenuStyle.withAlpha(MenuStyle.PANEL_BG, alpha * 0.92F))
+                    .color(MenuStyle.withAlpha(BACKGROUND, alpha * BACKGROUND_ALPHA))
                     .build());
 
-            float textY = y + PAD_Y;
+            // Centre the text block vertically instead of pinning it to
+            // the top padding, so one-line and two-line cards both sit
+            // in the middle of their background.
+            float textY = y + (cardHeight - textBlockHeight) / 2.0F + BASELINE_NUDGE;
             for (String line : lines) {
-                float lineX = x + (cardWidth - MsdfFonts.bold().getWidth(line, TEXT_SIZE)) / 2.0F;
+                float lineX = x + (cardWidth - measure(line)) / 2.0F;
                 MsdfRenderer.renderText(
                         MsdfFonts.bold(), line, TEXT_SIZE,
-                        MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, alpha),
+                        MenuStyle.withAlpha(banner.color(), alpha),
                         matrices.peek().getPositionMatrix(),
                         lineX, textY, 0.0F);
                 textY += lineHeight;
@@ -93,6 +138,17 @@ public final class AnnouncementOverlay {
 
             y += cardHeight + CARD_GAP;
         }
+    }
+
+    /**
+     * Width the text will actually occupy once drawn, as opposed to
+     * the sum of its glyph widths.
+     */
+    private static float measure(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0.0F;
+        }
+        return MsdfFonts.bold().getWidth(text, TEXT_SIZE) + text.length() * PER_GLYPH_EXTRA;
     }
 
     /**
@@ -106,7 +162,7 @@ public final class AnnouncementOverlay {
 
         for (String word : text.split(" ")) {
             String candidate = current.isEmpty() ? word : current + " " + word;
-            if (MsdfFonts.bold().getWidth(candidate, TEXT_SIZE) <= maxWidth) {
+            if (measure(candidate) <= maxWidth) {
                 current.setLength(0);
                 current.append(candidate);
                 continue;
@@ -115,9 +171,9 @@ public final class AnnouncementOverlay {
                 lines.add(current.toString());
                 current.setLength(0);
             }
-            while (MsdfFonts.bold().getWidth(word, TEXT_SIZE) > maxWidth && word.length() > 1) {
+            while (measure(word) > maxWidth && word.length() > 1) {
                 int cut = word.length();
-                while (cut > 1 && MsdfFonts.bold().getWidth(word.substring(0, cut), TEXT_SIZE) > maxWidth) {
+                while (cut > 1 && measure(word.substring(0, cut)) > maxWidth) {
                     cut--;
                 }
                 lines.add(word.substring(0, cut));

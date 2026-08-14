@@ -362,6 +362,13 @@ public class Main implements ModInitializer {
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
                 client -> configManager.flushIfDirty()
         );
+        vorga.phazeclient.implement.cosmetics.bridge.PhazePulsePetRenderer.register();
+        vorga.phazeclient.implement.cosmetics.bridge.PhazePulseGraffitiRenderer.register();
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
+                client -> vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
+                        .getInstance()
+                        .tick(client)
+        );
 
         // Last-chance save on JVM shutdown. Catches Alt+F4 / window
         // close / SIGTERM that ClientLifecycleEvents.CLIENT_STOPPING

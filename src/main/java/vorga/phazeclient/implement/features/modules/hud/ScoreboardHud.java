@@ -16,7 +16,6 @@ public final class ScoreboardHud extends RectHudModule {
         return INSTANCE;
     }
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
     public final BooleanLike showNumbers = () -> true;
     public final BooleanLike showZeros = () -> true;
     public final BooleanSetting showTitle = new BooleanSetting("Show Title", "Show scoreboard title").setValue(true);
@@ -25,7 +24,7 @@ public final class ScoreboardHud extends RectHudModule {
         // Default position: right side, vertically centered
         super("scoreboard_hud", "Scoreboard", 0.0f, 0.0f, 1.0f);
         showTitle.setFullWidth(true);
-        setup(otherSection, showTitle);
+        setup(showTitle);
     }
 
     @Override

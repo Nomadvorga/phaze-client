@@ -89,6 +89,21 @@ processResources {
     }
 }
 
+tasks.register('verifySignedModuleManifest', Exec) {
+    group = 'verification'
+    description = 'Verifies the signed module catalog and checks it matches Main.java'
+    inputs.file('src/main/resources/phaze/module-manifest.json')
+    inputs.file('src/main/resources/phaze/module-manifest.sig')
+    inputs.file('security/manifest-ed25519-public.pem')
+    inputs.file('src/main/java/vorga/phazeclient/core/Main.java')
+    inputs.dir('src/main/java/vorga/phazeclient/implement/features/modules')
+    commandLine 'node', 'scripts/module-manifest.mjs', 'verify'
+}
+
+tasks.named('processResources') {
+    dependsOn tasks.named('verifySignedModuleManifest')
+}
+
 def targetJavaVersion = 21
 tasks.withType(JavaCompile).configureEach {
     it.options.encoding = "UTF-8"
@@ -117,6 +132,35 @@ jar {
         configurations.runtimeClasspath.findAll { it.name.startsWith('vlcj') || it.name.startsWith('jna') }.collect { it.isDirectory() ? it : zipTree(it) }
     }
     duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+}
+
+// Cutebow granted permission to bundle this exact Custom Glint 1.21.4
+// implementation. The classes are already remapped for the runtime jar.
+def licensedCustomGlintJar = file('C:/Users/PC/Downloads/Telegram Desktop/PhazeClient-1.0 (2).jar')
+def licensedCustomGlintOverlay = layout.buildDirectory.dir('tmp/licensed-custom-glint')
+tasks.register('overlayLicensedCustomGlint') {
+    dependsOn tasks.named('remapJar')
+    inputs.file(licensedCustomGlintJar)
+    outputs.file(tasks.named('remapJar').flatMap { it.archiveFile })
+    doLast {
+        copy {
+            from zipTree(licensedCustomGlintJar)
+            into licensedCustomGlintOverlay
+            include 'vorga/phazeclient/implement/customglint/**'
+            include 'vorga/phazeclient/implement/features/modules/other/CustomGlint.class'
+            include 'assets/phaze/shaders/core/glint_*_bloom.*'
+            include 'assets/phaze/shaders/core/glint_bloom_composite.*'
+            include 'assets/phaze/textures/misc/glints/**'
+            include 'assets/phaze/textures/modules/custom_glint.png'
+        }
+        exec {
+            workingDir licensedCustomGlintOverlay.get().asFile
+            commandLine 'jar', 'uf', tasks.named('remapJar').get().archiveFile.get().asFile.absolutePath, '-C', '.', '.'
+        }
+    }
+}
+tasks.named('remapJar') {
+    finalizedBy tasks.named('overlayLicensedCustomGlint')
 }
 
 // configure the maven publication

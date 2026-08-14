@@ -12,6 +12,8 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.feature.FeatureRenderer;
+import net.minecraft.client.render.entity.model.EntityModel;
+import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
@@ -30,6 +32,7 @@ import vorga.phazeclient.implement.features.modules.other.HitRange;
 import vorga.phazeclient.implement.hitcolor.OverlayRendered;
 import vorga.phazeclient.implement.hitcolor.OverlayReloadListener;
 import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
+import vorga.phazeclient.implement.cosmetics.CosmeticsRenderer;
 
 /**
  * Consolidated mixin for {@link LivingEntityRenderer}, merging:
@@ -43,7 +46,14 @@ import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
  * </ul>
  */
 @Mixin(LivingEntityRenderer.class)
-public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extends LivingEntityRenderState, M extends net.minecraft.client.model.Model> {
+public abstract class LivingEntityRendererMixin<
+        T extends LivingEntity,
+        S extends LivingEntityRenderState,
+        M extends EntityModel<? super S>
+        > {
+
+    @Shadow
+    protected M model;
 
     @Shadow
     protected abstract float getAnimationCounter(S state);
@@ -174,4 +184,61 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
 
         HitRangeCircleRenderer.drawCircle(matrices, vertexConsumers, playerState);
     }
+
+    /**
+     * Render inside vanilla's live entity matrix, immediately before it is
+     * popped. This inherits body yaw, swimming/elytra/death transforms and is
+     * independent from the third-person camera rotation.
+     */
+    @Inject(
+            method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/util/math/MatrixStack;pop()V",
+                    shift = At.Shift.BEFORE
+            )
+    )
+    private void phaze$renderCosmeticInBodySpace(
+            S state,
+            MatrixStack matrices,
+            VertexConsumerProvider vertexConsumers,
+            int light,
+            CallbackInfo ci
+    ) {
+        if (state instanceof PlayerEntityRenderState playerState) {
+            // ModelPart.rotate applies the exact live torso pivot/pitch used by
+            // vanilla. In particular, sneaking moves and bends the attachment
+            // point as one unit, so cosmetics cannot separate from the back.
+            if (this.model instanceof PlayerEntityModel playerModel) {
+                MatrixStack.Entry stableLightingEntry = matrices.peek();
+                matrices.push();
+                playerModel.body.rotate(matrices);
+                CosmeticsRenderer.renderLocalPlayer(
+                        matrices, vertexConsumers, playerState, light,
+                        stableLightingEntry
+                );
+                vorga.phazeclient.implement.cosmetics.bridge.PhazePulseRenderer.renderBody(
+                        matrices, vertexConsumers, playerState, light
+                );
+                matrices.pop();
+
+                matrices.push();
+                playerModel.head.rotate(matrices);
+                CosmeticsRenderer.renderHeadCosmetic(
+                        matrices, vertexConsumers, playerState, light,
+                        stableLightingEntry
+                );
+                vorga.phazeclient.implement.cosmetics.bridge.PhazePulseRenderer.renderHead(
+                        matrices, vertexConsumers, playerState, light
+                );
+                matrices.pop();
+            } else {
+                CosmeticsRenderer.renderLocalPlayer(
+                        matrices, vertexConsumers, playerState, light,
+                        matrices.peek()
+                );
+            }
+        }
+    }
+
 }

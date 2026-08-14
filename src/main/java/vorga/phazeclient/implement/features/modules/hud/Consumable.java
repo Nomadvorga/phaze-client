@@ -111,7 +111,7 @@ public final class Consumable extends RectHudModule {
      * coordinates inside the icon grid. The mixin walks the list,
      * multiplies coords by {@code iconSize}, and draws each entry.
      */
-    public record IconEntry(ItemStack stack, int row, int col) {}
+    public record IconEntry(ItemStack stack, int row, float col) {}
 
     /**
      * Result of the layout pass: the icons-with-positions list,
@@ -142,36 +142,26 @@ public final class Consumable extends RectHudModule {
         float baseItemSize = 16.0f;
         float itemSize = baseItemSize + 2.0f;
 
-        // Two-pass walk so the visible-set rule is unambiguous:
-        //   1. Count every selected item type once.
-        //   2. If any of them is in the inventory, show only the
-        //      present ones; otherwise (nothing selected is in the
-        //      inventory) show every selected entry with its 0 count
-        //      so the user can still see what's tracked.
-        // In chat-editing mode all entries are forced visible with a
-        // placeholder count of 1 so the rect stays draggable on a
-        // fresh inventory.
+        // Count every selected item type once. Outside chat the HUD lists
+        // actual consumables only: an empty inventory means no HUD at all.
+        // Chat editing uses selected items as a preview only when there are
+        // no real consumables to render, so a live stack always wins.
         List<String> selected = itemTypes.getSelected();
         List<ItemStack> presentStacks = new ArrayList<>();
-        List<ItemStack> fallbackStacks = new ArrayList<>();
+        List<ItemStack> previewStacks = new ArrayList<>();
         for (String type : selected) {
             Item item = ITEM_MAP.get(type);
             if (item == null) continue;
-            if (chatEditing) {
-                fallbackStacks.add(new ItemStack(item, 1));
-                continue;
-            }
             int count = countItem(client, item);
             if (count > 0) {
                 presentStacks.add(new ItemStack(item, count));
-            } else {
-                fallbackStacks.add(new ItemStack(item, 1));
             }
+            previewStacks.add(new ItemStack(item, 1));
         }
 
-        List<ItemStack> visibleStacks = chatEditing
-                ? fallbackStacks
-                : (presentStacks.isEmpty() ? fallbackStacks : presentStacks);
+        List<ItemStack> visibleStacks = !presentStacks.isEmpty()
+                ? presentStacks
+                : (chatEditing ? previewStacks : new ArrayList<>());
 
         // Empty-inventory fallback in chat-editing mode when nothing
         // is selected: a single golden apple placeholder so the
@@ -199,7 +189,19 @@ public final class Consumable extends RectHudModule {
             int r, c;
             switch (layout.getSelected()) {
                 case "Column" -> { r = i; c = 0; }
-                case "Table" -> { r = i / cols; c = i % cols; }
+                case "Table" -> {
+                    r = i / cols;
+                    int itemsInRow = Math.min(cols, n - r * cols);
+                    // Centre an incomplete final row. A half-column offset
+                    // keeps two remaining icons visually balanced in a
+                    // three-column grid instead of pinning them to the left.
+                    c = i % cols;
+                    entries.add(new IconEntry(
+                            visibleStacks.get(i), r,
+                            c + (cols - itemsInRow) / 2.0F
+                    ));
+                    continue;
+                }
                 default      -> { r = 0;     c = i; }
             }
             entries.add(new IconEntry(visibleStacks.get(i), r, c));

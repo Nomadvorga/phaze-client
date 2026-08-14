@@ -10,7 +10,6 @@ public final class DayCounterHud extends RectHudModule {
         return INSTANCE;
     }
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
 
     /**
      * Swap the {@code Day} label position. Default OFF preserves the
@@ -24,7 +23,7 @@ public final class DayCounterHud extends RectHudModule {
     private DayCounterHud() {
         super("day_counter_hud", "Day Counter", 22.0f, 338.0f, 1.0f);
         reverseOrder.setFullWidth(true);
-        setup(otherSection, reverseOrder);
+        setup(reverseOrder);
     }
 
     @Override

@@ -184,14 +184,20 @@ public final class ConfigManager {
             if (module instanceof RectHudModule rectHudModule) {
                 moduleData.addProperty("hud_x", rectHudModule.getHudX());
                 moduleData.addProperty("hud_y", rectHudModule.getHudY());
-                moduleData.addProperty("hud_x_ratio", rectHudModule.getHudXRatio());
-                moduleData.addProperty("hud_y_ratio", rectHudModule.getHudYRatio());
+                // Screen the pixel coordinates were measured on, so a
+                // config written in a small window can be rescaled
+                // instead of dropping the HUD into the wrong corner.
+                moduleData.addProperty("hud_ref_w", rectHudModule.getHudRefWidth());
+                moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
             } else if (module instanceof ArmorHud armorHud) {
                 moduleData.addProperty("hud_x", armorHud.getHudX());
                 moduleData.addProperty("hud_y", armorHud.getHudY());
-                moduleData.addProperty("hud_x_ratio", armorHud.getHudXRatio());
-                moduleData.addProperty("hud_y_ratio", armorHud.getHudYRatio());
+                // Screen the pixel coordinates were measured on, so a
+                // config written in a small window can be rescaled
+                // instead of dropping the HUD into the wrong corner.
+                moduleData.addProperty("hud_ref_w", armorHud.getHudRefWidth());
+                moduleData.addProperty("hud_ref_h", armorHud.getHudRefHeight());
                 moduleData.addProperty("hud_scale", armorHud.getHudScale());
             }
 
@@ -217,9 +223,14 @@ public final class ConfigManager {
         config.addProperty("blurRadius", theme.blurRadius.getValue());
         config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
         config.addProperty("menuGuiFpsLimit", MenuUiSettings.getInstance().getGuiFpsLimit());
+        config.addProperty("menuGuiScale", MenuUiSettings.getInstance().getGuiScale());
         config.addProperty("menuPanoramaPreset", MenuUiSettings.getInstance().getSelectedPanoramaPresetId());
         config.addProperty("customMainMenuEnabled", MenuUiSettings.getInstance().isCustomMainMenuEnabled());
         config.addProperty("menuPanoramaSpeedScaleVersion", MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION);
+        // Screen this whole config was written against. Individual HUDs
+        // carry their own reference, but this covers the ones that were
+        // never touched in this session and therefore never got one.
+        writeScreenReference(config);
 
         // Preserve the {@code imported} marker that
         // {@link #importFromString} writes when a config came from a
@@ -486,10 +497,14 @@ public final class ConfigManager {
             if (module instanceof RectHudModule rectHudModule) {
                 moduleData.addProperty("hud_x", rectHudModule.getHudX());
                 moduleData.addProperty("hud_y", rectHudModule.getHudY());
+                moduleData.addProperty("hud_ref_w", rectHudModule.getHudRefWidth());
+                moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
             } else if (module instanceof ArmorHud armorHud) {
                 moduleData.addProperty("hud_x", armorHud.getHudX());
                 moduleData.addProperty("hud_y", armorHud.getHudY());
+                moduleData.addProperty("hud_ref_w", armorHud.getHudRefWidth());
+                moduleData.addProperty("hud_ref_h", armorHud.getHudRefHeight());
                 moduleData.addProperty("hud_scale", armorHud.getHudScale());
             }
 
@@ -509,9 +524,14 @@ public final class ConfigManager {
         config.addProperty("blurRadius", theme.blurRadius.getValue());
         config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
         config.addProperty("menuGuiFpsLimit", MenuUiSettings.getInstance().getGuiFpsLimit());
+        config.addProperty("menuGuiScale", MenuUiSettings.getInstance().getGuiScale());
         config.addProperty("menuPanoramaPreset", MenuUiSettings.getInstance().getSelectedPanoramaPresetId());
         config.addProperty("customMainMenuEnabled", MenuUiSettings.getInstance().isCustomMainMenuEnabled());
         config.addProperty("menuPanoramaSpeedScaleVersion", MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION);
+        // Screen this whole config was written against. Individual HUDs
+        // carry their own reference, but this covers the ones that were
+        // never touched in this session and therefore never got one.
+        writeScreenReference(config);
         return config;
     }
     
@@ -688,12 +708,26 @@ public final class ConfigManager {
      */
     private void applyConfigJson(JsonObject config) {
         try {
+            pendingScreenRefWidth = config.has("screen_w") ? config.get("screen_w").getAsInt() : -1;
+            pendingScreenRefHeight = config.has("screen_h") ? config.get("screen_h").getAsInt() : -1;
+            // A config from before screen references existed cannot say
+            // which window its HUD pixels belong to, so this one launch
+            // has to take them at face value. Mark it dirty so the
+            // reference is written straight away and every later launch
+            // can rescale properly - without this the user would have to
+            // happen to change a setting before the fix takes effect.
+            boolean needsScreenReference = pendingScreenRefWidth <= 0 || pendingScreenRefHeight <= 0;
+
             if (config.has("modules")) {
                 JsonObject modules = config.getAsJsonObject("modules");
                 for (Module module : Main.getInstance().getModuleProvider().getModules()) {
                     try {
                         loadModule(module, modules);
-                    } catch (Throwable t) {
+            
+            if (needsScreenReference) {
+                markDirty();
+            }
+        } catch (Throwable t) {
                         System.err.println("[Phaze] failed to load module '"
                                 + module.getName() + "' from config: " + t);
                     }
@@ -728,6 +762,11 @@ public final class ConfigManager {
                 } catch (Throwable ignored) {}
             }
 
+            float guiScale = MenuUiSettings.DEFAULT_GUI_SCALE;
+            if (config.has("menuGuiScale")) {
+                try { guiScale = config.get("menuGuiScale").getAsFloat(); } catch (Throwable ignored) {}
+            }
+
             String panoramaPreset = MenuUiSettings.DEFAULT_PANORAMA_PRESET_ID;
             if (config.has("menuPanoramaPreset")) {
                 try {
@@ -750,7 +789,7 @@ public final class ConfigManager {
             }
 
             if (panoramaSpeedScaleVersion >= MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION) {
-                MenuUiSettings.getInstance().applyConfig(panoramaSpeed, guiFpsLimit, panoramaPreset, customMainMenuEnabled);
+                MenuUiSettings.getInstance().applyConfig(panoramaSpeed, guiFpsLimit, guiScale, panoramaPreset, customMainMenuEnabled);
             } else if (panoramaSpeedScaleVersion == 2) {
                 MenuUiSettings.getInstance().applyLegacyScaleV2Config(panoramaSpeed, guiFpsLimit, panoramaPreset, customMainMenuEnabled);
             } else {
@@ -763,6 +802,9 @@ public final class ConfigManager {
 
     private void loadConfigInternalLegacyApply(JsonObject config) {
         try {
+            pendingScreenRefWidth = config.has("screen_w") ? config.get("screen_w").getAsInt() : -1;
+            pendingScreenRefHeight = config.has("screen_h") ? config.get("screen_h").getAsInt() : -1;
+
             if (config.has("modules")) {
                 JsonObject modules = config.getAsJsonObject("modules");
                 for (Module module : Main.getInstance().getModuleProvider().getModules()) {
@@ -817,12 +859,10 @@ public final class ConfigManager {
      */
     private void applyInCodeDefaults() {
         for (Module module : Main.getInstance().getModuleProvider().getModules()) {
-            // Toggle off any module that's currently on. switchState()
-            // routes through the same notifyChange path a manual click
-            // would take, which is what we want - keybinds, listeners,
-            // overlay registrations all see the disable.
-            if (module.isState()) {
-                module.switchState();
+            // Restore the module's declared initial state before applying the
+            // target config. Explicit saved states are loaded afterwards.
+            if (module.isState() != module.isEnabledByDefault()) {
+                module.setState(module.isEnabledByDefault());
             }
             module.setKey(0);
             // Use each setting's own reset() so the value snaps back
@@ -873,6 +913,38 @@ public final class ConfigManager {
      * unparseable. Used by {@link #loadConfigInternal} so the caller
      * can transparently retry against the {@code .bak} sibling.
      */
+
+    /**
+     * Records the scaled screen size the config was written on.
+     *
+     * <p>HUD coordinates are stored in pixels, which only mean anything
+     * relative to a particular screen. Without this, a layout arranged
+     * in a half-size window is restored verbatim into a fullscreen one
+     * and every element lands in the upper-left quadrant.
+     */
+    private static void writeScreenReference(JsonObject config) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return;
+        }
+        int width = client.getWindow().getScaledWidth();
+        int height = client.getWindow().getScaledHeight();
+        if (width > 0 && height > 0) {
+            config.addProperty("screen_w", width);
+            config.addProperty("screen_h", height);
+        }
+    }
+
+    /**
+     * Screen reference for the config currently being applied, or -1
+     * when it has none. Per-module references win over this; it exists
+     * so a config saved before per-module references were added still
+     * rescales correctly instead of needing one throwaway session to
+     * pick them up.
+     */
+    private int pendingScreenRefWidth = -1;
+    private int pendingScreenRefHeight = -1;
+
     private JsonObject readConfigFile(File file) {
         if (file == null || !file.exists()) {
             return null;
@@ -904,7 +976,9 @@ public final class ConfigManager {
         JsonObject moduleData = hasModuleData ? modules.getAsJsonObject(module.getName()) : null;
 
         if (module.isShowEnable()) {
-            boolean enabled = hasModuleData && moduleData.has("enabled") && moduleData.get("enabled").getAsBoolean();
+            boolean enabled = hasModuleData && moduleData.has("enabled")
+                    ? moduleData.get("enabled").getAsBoolean()
+                    : module.isEnabledByDefault();
             module.setState(enabled);
         }
 
@@ -928,17 +1002,37 @@ public final class ConfigManager {
             if (!hasModuleData) {
                 rectHudModule.resetHudTransform();
             } else {
-                if (moduleData.has("hud_x")) {
-                    rectHudModule.setHudX(moduleData.get("hud_x").getAsFloat());
-                } else if (moduleData.has("hud_x_ratio")) {
-                    rectHudModule.setHudXRatio(moduleData.get("hud_x_ratio").getAsFloat());
+                // Fractions first, pixels only as a fallback for configs
+                // written before ratios existed. Absolute coordinates are
+                // meaningless across a resolution change: restoring them
+                // puts a HUD laid out in a small window into the wrong
+                // part of a fullscreen one.
+                // Position and the screen it was measured on are restored
+                // together: applying x and y through separate setters would
+                // rescale the value the first call just wrote. The ratio pair
+                // Configs written before the reference existed fall through to
+                // bare pixels: their stored ratios are not usable. getHudXRatio
+                // clamped to 0..1, so any HUD past the screen edge of whatever
+                // window happened to be open saturated at exactly 1.0 and lost
+                // its real position. Reusing that would scatter the layout,
+                // which is precisely what it did.
+                if (moduleData.has("hud_x") && moduleData.has("hud_y")
+                        && moduleData.has("hud_ref_w") && moduleData.has("hud_ref_h")) {
+                    rectHudModule.setHudPosition(
+                            moduleData.get("hud_x").getAsFloat(),
+                            moduleData.get("hud_y").getAsFloat(),
+                            moduleData.get("hud_ref_w").getAsInt(),
+                            moduleData.get("hud_ref_h").getAsInt());
+                                } else if (moduleData.has("hud_x") && moduleData.has("hud_y")) {
+                    // No per-module reference: fall back to the one the
+                    // whole config carries. Older configs have neither,
+                    // and then the pixels are taken at face value.
+                    rectHudModule.setHudPosition(
+                            moduleData.get("hud_x").getAsFloat(),
+                            moduleData.get("hud_y").getAsFloat(),
+                            pendingScreenRefWidth, pendingScreenRefHeight);
                 } else {
                     rectHudModule.resetHudTransform();
-                }
-                if (moduleData.has("hud_y")) {
-                    rectHudModule.setHudY(moduleData.get("hud_y").getAsFloat());
-                } else if (moduleData.has("hud_y_ratio")) {
-                    rectHudModule.setHudYRatio(moduleData.get("hud_y_ratio").getAsFloat());
                 }
                 if (moduleData.has("hud_scale")) {
                     rectHudModule.setHudScale(moduleData.get("hud_scale").getAsFloat());
@@ -948,17 +1042,37 @@ public final class ConfigManager {
             if (!hasModuleData) {
                 armorHud.resetHudTransform();
             } else {
-                if (moduleData.has("hud_x")) {
-                    armorHud.setHudX(moduleData.get("hud_x").getAsFloat());
-                } else if (moduleData.has("hud_x_ratio")) {
-                    armorHud.setHudXRatio(moduleData.get("hud_x_ratio").getAsFloat());
+                // Fractions first, pixels only as a fallback for configs
+                // written before ratios existed. Absolute coordinates are
+                // meaningless across a resolution change: restoring them
+                // puts a HUD laid out in a small window into the wrong
+                // part of a fullscreen one.
+                // Position and the screen it was measured on are restored
+                // together: applying x and y through separate setters would
+                // rescale the value the first call just wrote. The ratio pair
+                // Configs written before the reference existed fall through to
+                // bare pixels: their stored ratios are not usable. getHudXRatio
+                // clamped to 0..1, so any HUD past the screen edge of whatever
+                // window happened to be open saturated at exactly 1.0 and lost
+                // its real position. Reusing that would scatter the layout,
+                // which is precisely what it did.
+                if (moduleData.has("hud_x") && moduleData.has("hud_y")
+                        && moduleData.has("hud_ref_w") && moduleData.has("hud_ref_h")) {
+                    armorHud.setHudPosition(
+                            moduleData.get("hud_x").getAsFloat(),
+                            moduleData.get("hud_y").getAsFloat(),
+                            moduleData.get("hud_ref_w").getAsInt(),
+                            moduleData.get("hud_ref_h").getAsInt());
+                                } else if (moduleData.has("hud_x") && moduleData.has("hud_y")) {
+                    // No per-module reference: fall back to the one the
+                    // whole config carries. Older configs have neither,
+                    // and then the pixels are taken at face value.
+                    armorHud.setHudPosition(
+                            moduleData.get("hud_x").getAsFloat(),
+                            moduleData.get("hud_y").getAsFloat(),
+                            pendingScreenRefWidth, pendingScreenRefHeight);
                 } else {
                     armorHud.resetHudTransform();
-                }
-                if (moduleData.has("hud_y")) {
-                    armorHud.setHudY(moduleData.get("hud_y").getAsFloat());
-                } else if (moduleData.has("hud_y_ratio")) {
-                    armorHud.setHudYRatio(moduleData.get("hud_y_ratio").getAsFloat());
                 }
                 if (moduleData.has("hud_scale")) {
                     armorHud.setHudScale(moduleData.get("hud_scale").getAsFloat());

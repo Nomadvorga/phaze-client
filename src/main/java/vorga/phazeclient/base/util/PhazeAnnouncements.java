@@ -11,6 +11,7 @@ import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
+import net.minecraft.text.TextColor;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -51,14 +52,45 @@ public final class PhazeAnnouncements {
     private static final Pattern URL_PATTERN =
             Pattern.compile("https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+[\\w\\-_~/#\\[\\]@$&*+=]");
 
-    private static final Set<Integer> seenIds = new LinkedHashSet<>();
+    /** Emerald gradient endpoints for the chat brand, light to deep. */
+    private static final int BRAND_FROM = 0x6EF7A5;
+    private static final int BRAND_TO = 0x0FA968;
+
+    private static final Set<String> seenIds = new LinkedHashSet<>();
     private static final List<Banner> banners = new ArrayList<>();
 
     private PhazeAnnouncements() {
     }
 
+    /**
+     * Palette the server's colour keys resolve against.
+     *
+     * <p>The server only ever sends a name, never a hex value, so this
+     * map is the complete set of colours an announcement can be - and
+     * the palette can be restyled in a client update without touching
+     * anything already stored.
+     */
+    private static int resolveColor(String key) {
+        if (key == null) {
+            return 0xFFFFFFFF;
+        }
+        return switch (key) {
+            case "gray" -> 0xFF9CA3AF;
+            case "red" -> 0xFFFF5555;
+            case "orange" -> 0xFFFFA33F;
+            case "yellow" -> 0xFFFFD93D;
+            case "green" -> 0xFF4ADE80;
+            case "aqua" -> 0xFF3FE0D0;
+            case "blue" -> 0xFF5B9DFF;
+            case "purple" -> 0xFFB57BFF;
+            case "pink" -> 0xFFFF7BC2;
+            // "white" and anything unrecognised
+            default -> 0xFFFFFFFF;
+        };
+    }
+
     /** One on-screen announcement with its own deadline. */
-    public record Banner(int id, String text, long shownUntilMs) {
+    public record Banner(int id, String text, int color, long shownUntilMs) {
         public boolean isExpired(long now) {
             return now >= shownUntilMs;
         }
@@ -104,14 +136,24 @@ public final class PhazeAnnouncements {
         }
 
         int id;
+        int repeatCount;
         try {
             id = json.get("id").getAsInt();
+            repeatCount = json.has("repeatCount") && !json.get("repeatCount").isJsonNull()
+                    ? json.get("repeatCount").getAsInt()
+                    : 0;
         } catch (Throwable malformed) {
             return;
         }
 
+        // Keyed on id AND repeat count. The id alone stops push and
+        // poll from ringing twice for the same announcement; including
+        // the counter is what lets the operator send one again -
+        // without it a repeat would be silently swallowed by everyone
+        // who already saw the original.
+        String key = id + ":" + repeatCount;
         synchronized (PhazeAnnouncements.class) {
-            if (!seenIds.add(id)) {
+            if (!seenIds.add(key)) {
                 return;
             }
         }
@@ -121,6 +163,7 @@ public final class PhazeAnnouncements {
             return;
         }
         String sound = optionalString(json, "sound");
+        int color = resolveColor(optionalString(json, "color"));
         boolean chatEnabled = json.has("chatEnabled")
                 && !json.get("chatEnabled").isJsonNull()
                 && json.get("chatEnabled").getAsBoolean();
@@ -130,13 +173,13 @@ public final class PhazeAnnouncements {
         if (client == null) {
             return;
         }
-        client.execute(() -> show(client, id, text, sound, chatText));
+        client.execute(() -> show(client, id, text, color, sound, chatText));
     }
 
-    private static void show(MinecraftClient client, int id, String text,
+    private static void show(MinecraftClient client, int id, String text, int color,
                              String sound, String chatText) {
         synchronized (PhazeAnnouncements.class) {
-            banners.add(new Banner(id, text, System.currentTimeMillis() + BANNER_MS));
+            banners.add(new Banner(id, text, color, System.currentTimeMillis() + BANNER_MS));
         }
 
         playSound(client, sound);
@@ -186,7 +229,7 @@ public final class PhazeAnnouncements {
      * the message opened a browser.
      */
     static Text buildChatMessage(String raw) {
-        MutableText result = Text.literal("");
+        MutableText result = brandPrefix();
         Matcher matcher = URL_PATTERN.matcher(raw);
         int cursor = 0;
 
@@ -205,6 +248,41 @@ public final class PhazeAnnouncements {
             result.append(Text.literal(raw.substring(cursor)));
         }
         return result;
+    }
+
+    /**
+     * "Phaze Client · " in an emerald gradient, prepended to every
+     * announcement in chat.
+     *
+     * <p>Chat has no gradient support, so the effect is one styled
+     * component per character - fine for eleven characters, and the
+     * reason the gradient stops at the brand rather than running
+     * through the whole message.
+     */
+    private static MutableText brandPrefix() {
+        final String brand = "Phaze Client";
+        MutableText prefix = Text.literal("");
+
+        for (int i = 0; i < brand.length(); i++) {
+            float t = brand.length() == 1 ? 0.0F : i / (float) (brand.length() - 1);
+            prefix.append(Text.literal(String.valueOf(brand.charAt(i)))
+                    .setStyle(Style.EMPTY
+                            .withColor(TextColor.fromRgb(lerpColor(BRAND_FROM, BRAND_TO, t)))
+                            .withBold(true)));
+        }
+
+        // Separator kept dim so the brand and the message read as two
+        // things rather than one long sentence.
+        prefix.append(Text.literal(" · ")
+                .setStyle(Style.EMPTY.withColor(Formatting.DARK_GRAY)));
+        return prefix;
+    }
+
+    private static int lerpColor(int from, int to, float t) {
+        int r = (int) (((from >> 16) & 0xFF) + (((to >> 16) & 0xFF) - ((from >> 16) & 0xFF)) * t);
+        int g = (int) (((from >> 8) & 0xFF) + (((to >> 8) & 0xFF) - ((from >> 8) & 0xFF)) * t);
+        int b = (int) ((from & 0xFF) + ((to & 0xFF) - (from & 0xFF)) * t);
+        return (r << 16) | (g << 8) | b;
     }
 
     private static String optionalString(JsonObject json, String field) {
