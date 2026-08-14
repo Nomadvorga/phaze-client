@@ -85,7 +85,7 @@ public final class Predictions extends Module {
     public final ValueSetting lineWidth = new ValueSetting(
             "Line Width",
             "Pixel thickness of the trajectory polyline"
-    ).range(1, 6).step(1).setValue(2);
+    ).range(1, 6).step(0.5f).setValue(2);
     public final BooleanSetting fadeTrail = new BooleanSetting(
             "Smooth Fade",
             "Fade out the trajectory line behind the projectile so it visually dissolves as it flies"
