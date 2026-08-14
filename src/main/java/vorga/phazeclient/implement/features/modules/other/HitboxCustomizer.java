@@ -30,7 +30,7 @@ public final class HitboxCustomizer extends Module {
             .popupRow();
     public final ValueSetting outlineThickness = new ValueSetting("Outline Thickness", "Thickness of the hitbox outline")
             .range(1.0f, 6.0f)
-            .step(0.25f)
+            .step(0.5f)
             .setValue(1.0f);
     public final BooleanSetting showLookLine = new BooleanSetting("Show Eye Line", "Draws a line in the entity look direction")
             .setValue(true);
