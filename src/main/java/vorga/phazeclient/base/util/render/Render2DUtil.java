@@ -12,9 +12,11 @@ import net.minecraft.util.Identifier;
 import org.joml.Matrix3x2fStack;
 import org.joml.Matrix3x2fc;
 import org.joml.Matrix4f;
+import vorga.phazeclient.api.system.draw.GuiProjection;
 import vorga.phazeclient.api.system.draw.PhazeAlpha;
 import vorga.phazeclient.api.system.draw.PhazeDrawLayers;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.color.ColorUtil;
@@ -32,7 +34,15 @@ public class Render2DUtil implements QuickImports {
         if (!QUAD.isEmpty()) {
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             QUAD.forEach(quad -> drawEngine.quad(matrix4f, buffer, quad.x, quad.y, quad.width, quad.height, quad.color));
-            PhazeDrawLayers.POSITION_COLOR.draw(buffer.end());
+            // 1.21.11 defers DrawContext work into a GuiRenderState, so this
+            // immediate draw runs outside the GUI pass and must install the
+            // GUI ortho projection (and its z = -11000 model-view) itself.
+            GuiProjection.begin();
+            try {
+                PhazeDrawLayers.POSITION_COLOR.draw(buffer.end());
+            } finally {
+                GuiProjection.end();
+            }
             QUAD.clear();
         }
     }
@@ -109,7 +119,13 @@ public class Render2DUtil implements QuickImports {
             buffer.vertex(matrix4f, 1, 1, 0).texture(u2_overlay, v2_overlay).color(color);
             buffer.vertex(matrix4f, 1, 0, 0).texture(u2_overlay, v1_overlay).color(color);
 
-            PhazeDrawLayers.positionTexColor(id).draw(buffer.end());
+            // GUI-space immediate draw: install the GUI ortho projection.
+            GuiProjection.begin();
+            try {
+                PhazeDrawLayers.positionTexColor(id).draw(buffer.end());
+            } finally {
+                GuiProjection.end();
+            }
 
             matrix.translate(-x, -y);
             matrix.popMatrix();
@@ -139,13 +155,103 @@ public class Render2DUtil implements QuickImports {
     }
 
     public void drawTexturedQuad(@NonNull Matrix3x2fc matrix, @NonNull Identifier texture, float x1, float x2, float y1, float y2, float u1, float u2, float v1, float v2, int color) {
+        BatchedRectangle.flushIfBatching();
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         Matrix4f matrix4f = GuiMatrix.mat4(matrix);
         buffer.vertex(matrix4f, x1, y1, 0).texture(u1, v1).color(color);
         buffer.vertex(matrix4f, x1, y2, 0).texture(u1, v2).color(color);
         buffer.vertex(matrix4f, x2, y2, 0).texture(u2, v2).color(color);
         buffer.vertex(matrix4f, x2, y1, 0).texture(u2, v1).color(color);
-        PhazeDrawLayers.positionTexColor(texture).draw(buffer.end());
+        // GUI-space immediate draw (menu icons, title-screen switch button):
+        // install the GUI ortho projection, same as Image.renderRawTexture.
+        GuiProjection.begin();
+        try {
+            PhazeDrawLayers.positionTexColor(texture).draw(buffer.end());
+        } finally {
+            GuiProjection.end();
+        }
+    }
+
+    public void drawRoundedTexturedQuad(
+            @NonNull Matrix3x2fc matrix,
+            @NonNull Identifier texture,
+            float x,
+            float y,
+            float width,
+            float height,
+            float clipTop,
+            float clipBottom,
+            float radius,
+            float u1,
+            float u2,
+            float v1,
+            float v2,
+            int color
+    ) {
+        float visibleTop = Math.max(y, clipTop);
+        float visibleBottom = Math.min(y + height, clipBottom);
+        if (width <= 0.0F || height <= 0.0F || visibleBottom <= visibleTop) {
+            return;
+        }
+
+        BatchedRectangle.flushIfBatching();
+        float safeRadius = Math.min(Math.max(0.0F, radius), Math.min(width, height) * 0.5F);
+        int cornerSteps = 10;
+        List<Float> bands = new ArrayList<>();
+        bands.add(visibleTop);
+        bands.add(visibleBottom);
+        if (safeRadius > 0.0F) {
+            for (int i = 0; i <= cornerSteps; i++) {
+                float offset = safeRadius * i / cornerSteps;
+                float topBand = y + offset;
+                float bottomBand = y + height - safeRadius + offset;
+                if (topBand > visibleTop && topBand < visibleBottom) bands.add(topBand);
+                if (bottomBand > visibleTop && bottomBand < visibleBottom) bands.add(bottomBand);
+            }
+        }
+        bands.sort(Float::compare);
+
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+        Matrix4f matrix4f = GuiMatrix.mat4(matrix);
+        for (int i = 0; i + 1 < bands.size(); i++) {
+            float bandTop = bands.get(i);
+            float bandBottom = bands.get(i + 1);
+            if (bandBottom - bandTop <= 0.0001F) continue;
+
+            float topInset = roundedInset(bandTop - y, height, safeRadius);
+            float bottomInset = roundedInset(bandBottom - y, height, safeRadius);
+            float topV = v1 + (v2 - v1) * ((bandTop - y) / height);
+            float bottomV = v1 + (v2 - v1) * ((bandBottom - y) / height);
+            float topLeftU = u1 + (u2 - u1) * (topInset / width);
+            float topRightU = u2 - (u2 - u1) * (topInset / width);
+            float bottomLeftU = u1 + (u2 - u1) * (bottomInset / width);
+            float bottomRightU = u2 - (u2 - u1) * (bottomInset / width);
+
+            buffer.vertex(matrix4f, x + topInset, bandTop, 0).texture(topLeftU, topV).color(color);
+            buffer.vertex(matrix4f, x + bottomInset, bandBottom, 0).texture(bottomLeftU, bottomV).color(color);
+            buffer.vertex(matrix4f, x + width - bottomInset, bandBottom, 0).texture(bottomRightU, bottomV).color(color);
+            buffer.vertex(matrix4f, x + width - topInset, bandTop, 0).texture(topRightU, topV).color(color);
+        }
+
+        GuiProjection.begin();
+        try {
+            PhazeDrawLayers.positionTexColor(texture).draw(buffer.end());
+        } finally {
+            GuiProjection.end();
+        }
+    }
+
+    private float roundedInset(float localY, float height, float radius) {
+        if (radius <= 0.0F) return 0.0F;
+        float centerDelta;
+        if (localY < radius) {
+            centerDelta = localY - radius;
+        } else if (localY > height - radius) {
+            centerDelta = localY - (height - radius);
+        } else {
+            return 0.0F;
+        }
+        return radius - (float) Math.sqrt(Math.max(0.0F, radius * radius - centerDelta * centerDelta));
     }
 
     public void drawQuad(float x, float y, float width, float height, int color) {

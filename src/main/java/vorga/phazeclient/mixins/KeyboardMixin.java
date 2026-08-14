@@ -1,6 +1,7 @@
 package vorga.phazeclient.mixins;
 
 import net.minecraft.client.Keyboard;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.render.WorldRenderer;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
@@ -38,7 +39,8 @@ import vorga.phazeclient.implement.features.modules.other.Zoom;
  *       let one cancellation block another module from observing
  *       the same key tick - bad for binds that need to coexist
  *       (e.g. Zoom + Binds on different keys).</li>
- *   <li>{@code ChunkAnimatorReset} hooks {@code processF3(I)Z} -
+ *   <li>{@code ChunkAnimatorReset} hooks
+ *       {@code processF3(KeyInput)Z} -
  *       a different vanilla method - and uses
  *       {@code CallbackInfoReturnable<Boolean>}, which is
  *       structurally incompatible with the other handlers' {@code
@@ -63,18 +65,19 @@ public abstract class KeyboardMixin {
      *  trigger. Not cancellable - the action is a chat-side-effect,
      *  not a keymap replacement. */
     @Inject(method = "onKey", at = @At("HEAD"))
-    private void phaze$onKeyAucHelper(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
-        AucHelper.getInstance().onBindPressed(key, action);
+    private void phaze$onKeyAucHelper(long window, int action, KeyInput input, CallbackInfo ci) {
+        AucHelper.getInstance().onBindPressed(input.key(), action);
     }
 
     /** AutoSwap: PRESS on the configured bind triggers a direct
      *  swap and CANCELS the vanilla key dispatch so the bind key
      *  doesn't double-fire its normal binding. */
     @Inject(method = "onKey", at = @At("HEAD"), cancellable = true)
-    private void phaze$onKeyAutoSwap(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
+    private void phaze$onKeyAutoSwap(long window, int action, KeyInput input, CallbackInfo ci) {
         if (!AutoSwap.getInstance().isEnabled() || !AutoSwap.getInstance().canActivateInGame()) {
             return;
         }
+        int key = input.key();
         int bindKey = AutoSwap.getInstance().keybind.getKey();
         if (bindKey == key && bindKey != GLFW.GLFW_KEY_UNKNOWN && action == GLFW.GLFW_PRESS) {
             AutoSwap.getInstance().activateDirectSwap();
@@ -87,26 +90,26 @@ public abstract class KeyboardMixin {
      *  a chat message is a side effect, the user's other binds on
      *  the same key (rare, but allowed) should still fire. */
     @Inject(method = "onKey", at = @At("HEAD"))
-    private void phaze$onKeyBinds(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
-        Binds.getInstance().onKey(key, action);
+    private void phaze$onKeyBinds(long window, int action, KeyInput input, CallbackInfo ci) {
+        Binds.getInstance().onKey(input.key(), action);
     }
 
     /** FastSwap: item-specific hotkeys that jump to the first
      *  matching stack already present in the hotbar. */
     @Inject(method = "onKey", at = @At("HEAD"))
-    private void phaze$onKeyFastSwap(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
-        FastSwap.getInstance().onKey(key, action);
+    private void phaze$onKeyFastSwap(long window, int action, KeyInput input, CallbackInfo ci) {
+        FastSwap.getInstance().onKey(input.key(), action);
     }
 
     /** ElytraUtility: forwards every key edge to the module's bind
      *  state machine. */
     @Inject(method = "onKey", at = @At("HEAD"))
-    private void phaze$onKeyElytraUtility(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
+    private void phaze$onKeyElytraUtility(long window, int action, KeyInput input, CallbackInfo ci) {
         ElytraUtility module = ElytraUtility.getInstance();
         if (module == null) {
             return;
         }
-        module.onBindStateChanged(key, action);
+        module.onBindStateChanged(input.key(), action);
     }
 
     /**
@@ -116,7 +119,9 @@ public abstract class KeyboardMixin {
      * keybind shares it).
      */
     @Inject(method = "onKey", at = @At("HEAD"), cancellable = true)
-    private void phaze$onKeyZoom(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
+    private void phaze$onKeyZoom(long window, int action, KeyInput input, CallbackInfo ci) {
+        int key = input.key();
+
         FreeLook freeLook = FreeLook.getInstance();
         if (freeLook != null && freeLook.isEnabled()) {
             freeLook.onBindStateChanged(key, action);
@@ -161,20 +166,20 @@ public abstract class KeyboardMixin {
 
     /**
      * ChunkAnimator F3+A reset hook. Different target method
-     * ({@code processF3(I)Z}) and different return signal
+     * ({@code processF3(KeyInput)Z}) and different return signal
      * ({@code CallbackInfoReturnable<Boolean>}), so it shares the
      * file but not the injector with the {@code onKey} handlers
      * above. Mixin merges all of them into the same transformed
      * Keyboard class regardless.
      */
     @Inject(
-            method = "processF3(I)Z",
+            method = "processF3(Lnet/minecraft/client/input/KeyInput;)Z",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/render/WorldRenderer;reload()V"
             )
     )
-    private void phaze$chunkAnimatorOnF3A(int key, CallbackInfoReturnable<Boolean> cir) {
+    private void phaze$chunkAnimatorOnF3A(KeyInput input, CallbackInfoReturnable<Boolean> cir) {
         ChunkAnimator.getInstance().onF3AReload();
     }
 }

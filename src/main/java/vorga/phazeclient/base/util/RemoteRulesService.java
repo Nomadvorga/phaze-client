@@ -8,9 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import net.minecraft.client.MinecraftClient;
-import vorga.phazeclient.api.feature.module.Module;
-import vorga.phazeclient.api.feature.module.ModuleCategory;
-import vorga.phazeclient.core.Main;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -25,8 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.Base64;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -186,6 +183,19 @@ public final class RemoteRulesService {
     private final String clientId;
 
     private volatile Set<String> blocked = Collections.emptySet();
+
+    /**
+     * Modules the API has explicitly marked allowed for the current
+     * host. Distinct from "not in {@link #blocked}": an entry here is
+     * a positive statement from the operator, and it outranks the
+     * hard-coded server whitelists compiled into the client - see
+     * {@link vorga.phazeclient.api.feature.module.Module#isServerLocked()}.
+     *
+     * <p>The API has always returned this list; until now the client
+     * parsed only {@code blocked}, so the panel could add a lock but
+     * never lift one.
+     */
+    private volatile Set<String> allowed = Collections.emptySet();
     private volatile String lastHost = null;          // null = "never refreshed yet"
     private volatile long lastRefreshMs = 0L;
     private volatile long lastSuccessfulFetchMs = 0L;
@@ -230,6 +240,34 @@ public final class RemoteRulesService {
     /** Stable random identity for this install. See {@link #loadOrCreateClientId()}. */
     public String getClientId() {
         return clientId;
+    }
+
+    /**
+     * Base URL of the rules backend, trailing slashes stripped. Empty
+     * when the service is disabled via {@code -Dphaze.rules.api=}.
+     * Shared with {@link PhazeEventService} and the cloud-config
+     * client so the whole mod talks to one host.
+     */
+    public String getApiBase() {
+        return apiBase;
+    }
+
+    /**
+     * True when the API has explicitly allowed this module on the
+     * current server. Callers use it to override a local whitelist -
+     * an explicit allow from the operator is newer and more specific
+     * than a list compiled into the jar months ago.
+     */
+    public boolean isModuleExplicitlyAllowed(String moduleId) {
+        if (moduleId == null || moduleId.isEmpty()) {
+            return false;
+        }
+        // An outage must not let a stale allow linger: without a fresh
+        // answer we fall back to whatever the client ships with.
+        if (isRulesApiUnavailableNow()) {
+            return false;
+        }
+        return allowed.contains(moduleId.toLowerCase());
     }
 
     /**
@@ -326,6 +364,11 @@ public final class RemoteRulesService {
                 /* period       */ HEARTBEAT_SECONDS,
                 TimeUnit.SECONDS
         );
+
+        // The event stream carries rule changes in seconds and kicks
+        // immediately; the heartbeat above stays as the fallback for
+        // when the stream is down and as the presence ping.
+        PhazeEventService.getInstance().start();
     }
 
     /**
@@ -420,6 +463,20 @@ public final class RemoteRulesService {
             return;
         }
         scheduler.execute(this::heartbeat);
+    }
+
+    /** Reads a string array from the payload into a lower-cased set. */
+    private static Set<String> readModuleIds(JsonObject obj, String field) {
+        Set<String> out = new HashSet<>();
+        if (obj.has(field) && obj.get(field).isJsonArray()) {
+            JsonArray arr = obj.getAsJsonArray(field);
+            for (JsonElement el : arr) {
+                if (el.isJsonPrimitive()) {
+                    out.add(el.getAsString().toLowerCase());
+                }
+            }
+        }
+        return out;
     }
 
     private void heartbeat() {
@@ -546,15 +603,8 @@ public final class RemoteRulesService {
         if (!parsed.isJsonObject()) return;
         JsonObject obj = parsed.getAsJsonObject();
 
-        Set<String> next = new HashSet<>();
-        if (obj.has("blocked") && obj.get("blocked").isJsonArray()) {
-            JsonArray arr = obj.getAsJsonArray("blocked");
-            for (JsonElement el : arr) {
-                if (el.isJsonPrimitive()) {
-                    next.add(el.getAsString().toLowerCase());
-                }
-            }
-        }
+        Set<String> next = readModuleIds(obj, "blocked");
+        Set<String> nextAllowed = readModuleIds(obj, "allowed");
 
         if (obj.has("online") && obj.get("online").isJsonPrimitive()) {
             try {
@@ -563,6 +613,11 @@ public final class RemoteRulesService {
                 // Keep the previous value if the payload is malformed.
             }
         }
+
+        // Announcements ride the rules response as well as the event
+        // stream, so a client that launched after one was created
+        // still sees it. Duplicates are filtered by id.
+        PhazeAnnouncements.acceptAll(obj.get("announcements"));
 
         PhazePlayerPresence.getInstance().refreshFromRulesPayload(
                 obj,
@@ -580,6 +635,7 @@ public final class RemoteRulesService {
         // tick and re-fetch.
         if (host == null ? lastHost == null : host.equals(lastHost)) {
             blocked = Collections.unmodifiableSet(next);
+            allowed = Collections.unmodifiableSet(nextAllowed);
             lastRefreshMs = System.currentTimeMillis();
             lastSuccessfulFetchMs = lastRefreshMs;
         }
@@ -604,71 +660,31 @@ public final class RemoteRulesService {
     }
 
     /**
-     * Posts the local module list to {@code POST /api/manifest} so
-     * the admin dashboard's chip palette stays in sync with whatever
-     * modules this client actually exposes. Body shape matches the
-     * worker's zod schema in
-     * {@code phaze-rules-admin/functions/_lib/routes/public.ts}:
-     *
-     * <pre>
-     * {
-     *   "clientId": "uuid",
-     *   "modules": [
-     *     { "id": "auto_eat", "name": "Auto Eat", "category": "UTILITIES" },
-     *     ...
-     *   ]
-     * }
-     * </pre>
-     *
-     * <p>Failure modes are all swallowed by the caller -
-     * {@link #fetch(String)} - because the catalog is purely
-     * advisory. Network errors, 4xx, missing module provider on
-     * a startup race, all of them just result in a retry on the
-     * next heartbeat.
+     * Uploads the build-time Ed25519-signed catalog bundled in the JAR.
+     * The private key never ships with the client. A modified client can
+     * replay this exact catalog, but it cannot add invented module ids.
      */
     private void pushManifest() throws IOException {
-        Main main = Main.getInstance();
-        if (main == null || main.getModuleProvider() == null) {
-            // Module registry hasn't initialised yet (very early
-            // startup or a rare init order quirk). Throw so the
-            // caller rolls the once-flag back; we'll retry on the
-            // next heartbeat when the provider exists.
-            throw new IOException("module provider not ready");
+        byte[] manifestBytes;
+        String signature;
+        try (InputStream manifest = RemoteRulesService.class.getResourceAsStream(
+                "/phaze/module-manifest.json");
+             InputStream signatureStream = RemoteRulesService.class.getResourceAsStream(
+                     "/phaze/module-manifest.sig")) {
+            if (manifest == null || signatureStream == null) {
+                throw new IOException("signed module manifest is missing from JAR");
+            }
+            manifestBytes = manifest.readAllBytes();
+            signature = new String(signatureStream.readAllBytes(), StandardCharsets.US_ASCII).trim();
         }
-        List<Module> modules = main.getModuleProvider().getModules();
-        if (modules == null || modules.isEmpty()) {
-            throw new IOException("no modules registered");
+        if (manifestBytes.length == 0 || signature.isEmpty()) {
+            throw new IOException("signed module manifest is empty");
         }
 
-        // Build the JSON body manually instead of pulling in a
-        // serialiser dependency. The shape is small and stable.
         JsonObject body = new JsonObject();
         body.addProperty("clientId", clientId);
-        JsonArray arr = new JsonArray();
-        for (Module m : modules) {
-            if (m == null) continue;
-            String id = m.getIdentifier();
-            if (id == null || id.isEmpty()) continue;
-            JsonObject entry = new JsonObject();
-            entry.addProperty("id", id.toLowerCase());
-            // visibleName is the human label shown in the GUI; the
-            // mod sets it equal to `name` when no explicit override
-            // is provided, which is fine.
-            String visible = m.getVisibleName();
-            if (visible != null && !visible.isEmpty()) {
-                entry.addProperty("name", visible);
-            } else {
-                entry.add("name", com.google.gson.JsonNull.INSTANCE);
-            }
-            ModuleCategory cat = m.getCategory();
-            if (cat != null) {
-                entry.addProperty("category", cat.name());
-            } else {
-                entry.add("category", com.google.gson.JsonNull.INSTANCE);
-            }
-            arr.add(entry);
-        }
-        body.add("modules", arr);
+        body.addProperty("payload", Base64.getEncoder().encodeToString(manifestBytes));
+        body.addProperty("signature", signature);
 
         URI uri = URI.create(apiBase + "/api/manifest");
         HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();

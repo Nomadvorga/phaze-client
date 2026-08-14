@@ -35,6 +35,16 @@ import vorga.phazeclient.implement.features.modules.other.Animations;
  * {@code mouseDragged}. Reflective shadows give us access to the
  * private {@code firstCharacterIndex} / {@code drawsBackground}
  * fields without having to mutate the field's encapsulation.
+ *
+ * <p>NOTE(1.21.11): the injection below is descriptor-correct and
+ * still fires, but the premise above is no longer true in 1.21.11 -
+ * {@code TextFieldWidget} now overrides {@code onDrag(Click, double,
+ * double)} and implements drag-selection itself via
+ * {@code calculateCursorPos(Click)} + {@code setCursor(pos, true)},
+ * which correctly accounts for {@code firstCharacterIndex} scroll.
+ * Our HEAD-cancellable hook returns before vanilla's version runs,
+ * so the (less accurate, prefix-search) approximation here wins.
+ * Consider dropping this mixin and letting vanilla handle it.
  */
 @Mixin(ClickableWidget.class)
 public abstract class ClickableWidgetDragSelectMixin {

@@ -68,6 +68,8 @@ public class MenuScreen extends Screen implements QuickImports {
     private final ModuleDetailComponent moduleDetailComponent = new ModuleDetailComponent();
     private final vorga.phazeclient.implement.menu.components.implement.other.ConfigsViewComponent configsView =
             new vorga.phazeclient.implement.menu.components.implement.other.ConfigsViewComponent();
+    private final vorga.phazeclient.implement.menu.components.implement.other.CosmeticsViewComponent cosmeticsView =
+            new vorga.phazeclient.implement.menu.components.implement.other.CosmeticsViewComponent();
     private final vorga.phazeclient.implement.menu.components.implement.other.ConfigShareModalComponent configShareModal =
             new vorga.phazeclient.implement.menu.components.implement.other.ConfigShareModalComponent();
     public final Animation animation = new LinearAnimation().setMs(200).setValue(1);
@@ -130,8 +132,8 @@ public class MenuScreen extends Screen implements QuickImports {
         updateOverlayMetrics();
         Theme.getInstance().applyMenuTheme();
         super.render(context, mouseX, mouseY, delta);
-        int overlayMouseX = Math.round(toOverlayCoordinate(mouseX));
-        int overlayMouseY = Math.round(toOverlayCoordinate(mouseY));
+        int overlayMouseX = (int) Math.round(toMenuCoordinateX(mouseX));
+        int overlayMouseY = (int) Math.round(toMenuCoordinateY(mouseY));
         width = Math.min(DEFAULT_WIDTH, Math.max(MIN_WIDTH, getOverlayViewportWidth() - SCREEN_MARGIN));
         height = Math.min(DEFAULT_HEIGHT, Math.max(MIN_HEIGHT, getOverlayViewportHeight() - SCREEN_MARGIN));
 
@@ -154,9 +156,12 @@ public class MenuScreen extends Screen implements QuickImports {
         searchComponent.position(searchX, y + CATEGORY_ROW_Y);
 
         context.getMatrices().pushMatrix();
-        // 1.21.11: the GUI pose is a Matrix3x2fStack - there is no Z axis, so the
-        // old scale(x, y, 1.0F) becomes the 2D scale(x, y). The 3-arg overload on
-        // Matrix3x2f is scale(x, y, dest) and would silently bind wrong.
+        float guiScale = MenuUiSettings.getInstance().getGuiScale();
+        float menuCenterX = x + width / 2.0F;
+        float menuCenterY = y + height / 2.0F;
+        context.getMatrices().translate(menuCenterX, menuCenterY);
+        context.getMatrices().scale(guiScale, guiScale);
+        context.getMatrices().translate(-menuCenterX, -menuCenterY);
         context.getMatrices().scale(overlayRenderScale, overlayRenderScale);
         float scaleAnimation = getScaleAnimation();
         float alphaAnimation = getAlphaAnimation();
@@ -181,11 +186,14 @@ public class MenuScreen extends Screen implements QuickImports {
             MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> {
                 boolean moduleDetailOpen = moduleDetailComponent.isOpen();
                 boolean configsViewOpen = configsView.isOpen();
+                boolean cosmeticsViewOpen = cosmeticsView.isOpen();
                 boolean mouseOverWindow = windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
                 int routedMouseX = mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseX;
                 int routedMouseY = mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseY;
                 for (AbstractComponent component : components) {
-                    if ((moduleDetailOpen || configsViewOpen) && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
+                    if ((moduleDetailOpen || configsViewOpen || cosmeticsViewOpen)
+                            && (component == searchComponent || component == categoryContainerComponent
+                            || component == moduleDescriptionComponent)) {
                         continue;
                     }
                     component.globalAlpha = alphaAnimation;
@@ -195,6 +203,11 @@ public class MenuScreen extends Screen implements QuickImports {
                     configsView.position(x, y).size(width, height);
                     configsView.globalAlpha = alphaAnimation;
                     configsView.render(context, routedMouseX, routedMouseY, delta);
+                }
+                if (cosmeticsViewOpen) {
+                    cosmeticsView.position(x, y).size(width, height);
+                    cosmeticsView.globalAlpha = alphaAnimation;
+                    cosmeticsView.render(context, routedMouseX, routedMouseY, delta);
                 }
                 windowManager.render(context, overlayMouseX, overlayMouseY, delta);
                 // ConfigShare modal renders LAST so it floats above
@@ -289,12 +302,16 @@ public class MenuScreen extends Screen implements QuickImports {
         // the same view next time, which reads as "the menu doesn't
         // remember the home tab".
         closeConfigsView();
+        closeCosmeticsView();
         category = ModuleCategory.ALL;
         Theme.getInstance().applyMenuTheme();
 
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null) {
             client.setScreen(this);
+            if ("1".equals(System.getenv("PHAZE_GUI_AUTOTEST_COSMETICS"))) {
+                openCosmeticsView();
+            }
         }
     }
 
@@ -328,6 +345,8 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     public void openModuleDetail(vorga.phazeclient.api.feature.module.Module module) {
+        closeCosmeticsView();
+        closeConfigsView();
         windowManager.closeAll();
         SelectComponent.closeAllDropdowns();
         MultiSelectComponent.closeAllDropdowns();
@@ -372,6 +391,7 @@ public class MenuScreen extends Screen implements QuickImports {
 
     public void openConfigsView() {
         closeModuleDetail();
+        closeCosmeticsView();
         configsView.position(x, y).size(width, height);
         configsView.open();
     }
@@ -382,6 +402,21 @@ public class MenuScreen extends Screen implements QuickImports {
 
     public boolean isConfigsViewOpen() {
         return configsView.isOpen();
+    }
+
+    public void openCosmeticsView() {
+        closeModuleDetail();
+        closeConfigsView();
+        cosmeticsView.position(x, y).size(width, height);
+        cosmeticsView.open();
+    }
+
+    public void closeCosmeticsView() {
+        cosmeticsView.close();
+    }
+
+    public boolean isCosmeticsViewOpen() {
+        return cosmeticsView.isOpen();
     }
 
     public float getScaleAnimation() {
@@ -404,8 +439,8 @@ public class MenuScreen extends Screen implements QuickImports {
         double mouseY = click.y();
         int button = click.button();
         updateOverlayMetrics();
-        double overlayMouseX = toOverlayCoordinate(mouseX);
-        double overlayMouseY = toOverlayCoordinate(mouseY);
+        double overlayMouseX = toMenuCoordinateX(mouseX);
+        double overlayMouseY = toMenuCoordinateY(mouseY);
         boolean insideMenu = MathUtil.isHovered(overlayMouseX, overlayMouseY, x, y, width, height);
         boolean clickInsideWindow = windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
 
@@ -443,6 +478,13 @@ public class MenuScreen extends Screen implements QuickImports {
             if (backgroundComponent.mouseClicked(overlayMouseX, overlayMouseY, button)) {
                 return true;
             }
+            return true;
+        }
+
+        if (cosmeticsView.isOpen()) {
+            cosmeticsView.position(x, y).size(width, height);
+            if (cosmeticsView.mouseClicked(overlayMouseX, overlayMouseY, button)) return true;
+            backgroundComponent.mouseClicked(overlayMouseX, overlayMouseY, button);
             return true;
         }
 
@@ -487,8 +529,8 @@ public class MenuScreen extends Screen implements QuickImports {
         double mouseY = click.y();
         int button = click.button();
         updateOverlayMetrics();
-        double overlayMouseX = toOverlayCoordinate(mouseX);
-        double overlayMouseY = toOverlayCoordinate(mouseY);
+        double overlayMouseX = toMenuCoordinateX(mouseX);
+        double overlayMouseY = toMenuCoordinateY(mouseY);
         if (menuDragging && button == 0) {
             menuDragging = false;
             return true;
@@ -497,6 +539,11 @@ public class MenuScreen extends Screen implements QuickImports {
         if (moduleDetailComponent.isOpen()) {
             windowManager.mouseReleased(overlayMouseX, overlayMouseY, button);
             moduleDetailComponent.mouseReleased(overlayMouseX, overlayMouseY, button);
+            return true;
+        }
+
+        if (cosmeticsView.isOpen()) {
+            cosmeticsView.mouseReleased(overlayMouseX, overlayMouseY, button);
             return true;
         }
 
@@ -511,10 +558,11 @@ public class MenuScreen extends Screen implements QuickImports {
         double mouseY = click.y();
         int button = click.button();
         updateOverlayMetrics();
-        double overlayMouseX = toOverlayCoordinate(mouseX);
-        double overlayMouseY = toOverlayCoordinate(mouseY);
-        double overlayDeltaX = toOverlayCoordinate(deltaX);
-        double overlayDeltaY = toOverlayCoordinate(deltaY);
+        double overlayMouseX = toMenuCoordinateX(mouseX);
+        double overlayMouseY = toMenuCoordinateY(mouseY);
+        double guiScale = MenuUiSettings.getInstance().getGuiScale();
+        double overlayDeltaX = toOverlayCoordinate(deltaX) / guiScale;
+        double overlayDeltaY = toOverlayCoordinate(deltaY) / guiScale;
         if (menuDragging) {
             float mouseDragX = (float) (overlayMouseX + dragOffsetX);
             float mouseDragY = (float) (overlayMouseY + dragOffsetY);
@@ -544,6 +592,13 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
+        if (cosmeticsView.isOpen()) {
+            cosmeticsView.mouseDragged(
+                    overlayMouseX, overlayMouseY, button,
+                    overlayDeltaX, overlayDeltaY);
+            return true;
+        }
+
         if (!windowManager.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY)) {
             components.forEach(component -> component.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY));
         }
@@ -563,8 +618,8 @@ public class MenuScreen extends Screen implements QuickImports {
         vorga.phazeclient.api.system.cursor.CursorManager.notifyScroll(horizontal, vertical);
 
         updateOverlayMetrics();
-        double overlayMouseX = toOverlayCoordinate(mouseX);
-        double overlayMouseY = toOverlayCoordinate(mouseY);
+        double overlayMouseX = toMenuCoordinateX(mouseX);
+        double overlayMouseY = toMenuCoordinateY(mouseY);
         if (moduleDetailComponent.isOpen()) {
             if (windowManager.mouseScrolled(overlayMouseX, overlayMouseY, vertical)) {
                 return true;
@@ -581,6 +636,11 @@ public class MenuScreen extends Screen implements QuickImports {
         if (configsView.isOpen()) {
             configsView.position(x, y).size(width, height);
             configsView.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
+            return true;
+        }
+        if (cosmeticsView.isOpen()) {
+            cosmeticsView.position(x, y).size(width, height);
+            cosmeticsView.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
             return true;
         }
 
@@ -754,10 +814,22 @@ public class MenuScreen extends Screen implements QuickImports {
         return overlayRenderScale == 0.0F ? (float) value : (float) (value / overlayRenderScale);
     }
 
+    private double toMenuCoordinateX(double value) {
+        float overlay = toOverlayCoordinate(value);
+        return x + width / 2.0F + (overlay - (x + width / 2.0F))
+                / MenuUiSettings.getInstance().getGuiScale();
+    }
+
+    private double toMenuCoordinateY(double value) {
+        float overlay = toOverlayCoordinate(value);
+        return y + height / 2.0F + (overlay - (y + height / 2.0F))
+                / MenuUiSettings.getInstance().getGuiScale();
+    }
+
     private void startMenuDrag(double mouseX, double mouseY) {
         menuDragging = true;
-        dragOffsetX = (int) (x - toOverlayCoordinate(mouseX));
-        dragOffsetY = (int) (y - toOverlayCoordinate(mouseY));
+        dragOffsetX = (int) (x - toMenuCoordinateX(mouseX));
+        dragOffsetY = (int) (y - toMenuCoordinateY(mouseY));
     }
 
     private boolean shouldStartMenuDrag(double overlayMouseX, double overlayMouseY, int button, boolean insideMenu) {
@@ -770,6 +842,9 @@ public class MenuScreen extends Screen implements QuickImports {
             return false;
         }
         if (button != 0 || !insideMenu) {
+            return false;
+        }
+        if (cosmeticsView.isOpen() && overlayMouseY >= y + HEADER_DRAG_HEIGHT) {
             return false;
         }
 

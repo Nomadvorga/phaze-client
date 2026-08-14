@@ -1,13 +1,24 @@
-#version 150
+#version 330
 
 in vec2 texCoord;
 
 uniform sampler2D Sampler0;
-uniform vec2 Direction;
-uniform vec2 TexelSize;
-uniform int Support;
-uniform float Sigma;
-uniform float Brightness;
+
+// See blur_dual_kawase.fsh. Member order must match Blur.writeGaussianConfig.
+//
+// std140:
+//   Direction  @0  (8)
+//   TexelSize  @8  (8)
+//   Sigma      @16 (4)
+//   Brightness @20 (4)
+//   Support    @24 (4)  = 28, padded to 32
+layout(std140) uniform GaussianConfig {
+    vec2 Direction;
+    vec2 TexelSize;
+    float Sigma;
+    float Brightness;
+    int Support;
+};
 
 out vec4 fragColor;
 

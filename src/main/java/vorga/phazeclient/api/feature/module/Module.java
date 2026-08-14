@@ -282,10 +282,17 @@ public class Module extends SettingRepository implements QuickImports {
         if (host == null || host.isEmpty()) {
             return false;
         }
+        String identifier = getIdentifier();
+
+        // A current explicit allow from the backend outranks local
+        // server whitelists compiled into an older client build.
+        if (RemoteRulesService.getInstance().isModuleExplicitlyAllowed(identifier)) {
+            return false;
+        }
+
         if (!isServerAllowed()) {
             return true;
         }
-        String identifier = getIdentifier();
         if (!ServerUtil.isModuleAllowedByMirroredRules(identifier)) {
             return true;
         }

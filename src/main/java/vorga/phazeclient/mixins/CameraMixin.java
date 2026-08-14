@@ -4,7 +4,7 @@ import net.minecraft.block.enums.CameraSubmersionType;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
-import net.minecraft.world.BlockView;
+import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -176,7 +176,7 @@ public abstract class CameraMixin {
     /** Smooth-F5 step 1: tick the interpolator at HEAD so subsequent
      *  hooks read current state. */
     @Inject(method = "update", at = @At("HEAD"))
-    private void phaze$tickSmoothF5(BlockView area, Entity focusedEntity, boolean thirdPerson,
+    private void phaze$tickSmoothF5(World area, Entity focusedEntity, boolean thirdPerson,
                                     boolean inverseView, float tickDelta, CallbackInfo ci) {
         MinecraftClient mc = MinecraftClient.getInstance();
         Animations animations = Animations.getInstance();

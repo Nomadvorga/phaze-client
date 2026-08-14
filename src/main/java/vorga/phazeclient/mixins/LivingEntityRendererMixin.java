@@ -16,6 +16,8 @@ import net.minecraft.client.render.entity.feature.FeatureRenderer;
 import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
+import net.minecraft.client.render.entity.model.EntityModel;
+import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.state.CameraRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.LivingEntity;
@@ -32,6 +34,8 @@ import vorga.phazeclient.implement.features.modules.other.HitRange;
 import vorga.phazeclient.implement.hitcolor.OverlayRendered;
 import vorga.phazeclient.implement.hitcolor.OverlayReloadListener;
 import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
+import vorga.phazeclient.implement.cosmetics.CosmeticsRenderer;
+import vorga.phazeclient.implement.cosmetics.PreviewMarker;
 
 /**
  * Consolidated mixin for {@link LivingEntityRenderer}, merging:
@@ -53,10 +57,77 @@ import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
  * from the 1.21.11 bytecode; the surrounding Phaze logic is unchanged.
  */
 @Mixin(LivingEntityRenderer.class)
-public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extends LivingEntityRenderState, M extends net.minecraft.client.model.Model> {
+public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extends LivingEntityRenderState, M extends EntityModel<? super S>> {
 
     @Shadow
     protected abstract float getAnimationCounter(S state);
+
+    /** Attaches Phaze cosmetics in the same already-transformed body space as the vanilla player model. */
+    @Inject(
+            method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/render/state/CameraRenderState;)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/util/math/MatrixStack;pop()V", shift = At.Shift.BEFORE)
+    )
+    private void phaze$renderCosmeticsInBodySpace(
+            S state,
+            MatrixStack matrices,
+            OrderedRenderCommandQueue queue,
+            CameraRenderState cameraState,
+            CallbackInfo ci
+    ) {
+        if (!(state instanceof PlayerEntityRenderState playerState)) return;
+        if (playerState instanceof PreviewMarker marker
+                && marker.phaze$previewSelection() != null) {
+            CosmeticsRenderer.renderPreview(
+                    marker.phaze$previewSelection(), marker.phaze$previewAlpha(),
+                    marker.phaze$previewYaw(),
+                    () -> phaze$renderCosmetics(playerState, state, matrices));
+            return;
+        }
+        phaze$renderCosmetics(playerState, state, matrices);
+    }
+
+    private void phaze$renderCosmetics(
+            PlayerEntityRenderState playerState,
+            S state,
+            MatrixStack matrices
+    ) {
+        boolean preview = CosmeticsRenderer.isRenderingPreview();
+        VertexConsumerProvider consumers = preview
+                ? CosmeticsRenderer.previewVertexConsumers()
+                : MinecraftClient.getInstance().getBufferBuilders().getEntityVertexConsumers();
+        // getModel() is public in 1.21.11. Calling it through the target type
+        // avoids a fragile @Shadow field whose descriptor changed this release.
+        EntityModel<?> model = ((LivingEntityRenderer<?, ?, ?>) (Object) this).getModel();
+        try {
+            if (model instanceof PlayerEntityModel playerModel) {
+                MatrixStack.Entry stableLightingEntry = matrices.peek();
+                matrices.push();
+                playerModel.body.applyTransform(matrices);
+                CosmeticsRenderer.renderLocalPlayer(
+                        matrices, consumers, playerState, state.light, stableLightingEntry);
+                vorga.phazeclient.implement.cosmetics.bridge.PhazePulseRenderer.renderBody(
+                        matrices, consumers, playerState, state.light);
+                matrices.pop();
+
+                matrices.push();
+                playerModel.head.applyTransform(matrices);
+                CosmeticsRenderer.renderHeadCosmetic(
+                        matrices, consumers, playerState, state.light, stableLightingEntry);
+                vorga.phazeclient.implement.cosmetics.bridge.PhazePulseRenderer.renderHead(
+                        matrices, consumers, playerState, state.light);
+                matrices.pop();
+            } else {
+                CosmeticsRenderer.renderLocalPlayer(
+                        matrices, consumers, playerState, state.light, matrices.peek());
+            }
+        } finally {
+            if (preview) {
+                // Still inside EntityGuiElementRenderer's framebuffer override:
+                // cosmetics, player depth and translucent glow now compose together.
+                CosmeticsRenderer.flushPreviewVertexConsumers();
+            }
+        }
+    }
 
     // ---------------------------------------------------------------
     // HitColor: capture the overlay int into FeatureRenderer instances

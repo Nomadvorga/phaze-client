@@ -54,7 +54,7 @@ public class MultiColorComponent extends AbstractSettingComponent {
         height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context);
         renderSettingCard(context, 0.0f, hoverProgress);
 
         float textX = x + 10 + textOffset;

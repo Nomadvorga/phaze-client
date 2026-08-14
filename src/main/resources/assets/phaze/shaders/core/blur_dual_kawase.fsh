@@ -1,11 +1,21 @@
-#version 150
+#version 330
 
 in vec2 texCoord;
 
 uniform sampler2D Sampler0;
-uniform vec2 TexelSize;
-uniform float Offset;
-uniform int Downsample;
+
+// 1.21.11 has no loose uniforms - UniformType only offers UNIFORM_BUFFER /
+// TEXEL_BUFFER. Member order must match Blur.writeDualKawaseConfig.
+//
+// std140: vec2 aligns to 8, so the block is
+//   TexelSize  @0  (8)
+//   Offset     @8  (4)
+//   Downsample @12 (4)   = 16 bytes
+layout(std140) uniform DualKawaseConfig {
+    vec2 TexelSize;
+    float Offset;
+    int Downsample;
+};
 
 out vec4 fragColor;
 

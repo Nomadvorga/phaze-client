@@ -40,10 +40,6 @@ import java.util.Map;
 @Setter
 @Accessors(chain = true)
 public class BackgroundComponent extends AbstractComponent {
-    private static final Identifier BRAND_ICON = Identifier.of("phaze", "textures/menu/phaze_brand.png");
-    private static final float BRAND_TEXT_SIZE = 9.4F;
-    private static final float BRAND_ICON_HEIGHT = 25.2F;
-    private static final float BRAND_ICON_GAP = 6.0F;
     private static final float TAB_TEXT_SIZE = 6.9F;
     private static final float FOOTER_TEXT_SIZE = 5.5F;
     private static final float CONFIG_TEXT_SIZE = 6.0F;
@@ -86,6 +82,8 @@ public class BackgroundComponent extends AbstractComponent {
         // pane. Keep the same border / background panels otherwise so
         // the menu chrome stays identical with or without the sidebar.
         boolean configsOpen = MenuScreen.INSTANCE.isConfigsViewOpen();
+        boolean cosmeticsOpen = MenuScreen.INSTANCE.isCosmeticsViewOpen();
+        boolean fullWidth = configsOpen || cosmeticsOpen;
 
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(8).softness(1).thickness(2)
@@ -99,7 +97,7 @@ public class BackgroundComponent extends AbstractComponent {
         rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + 1.0F, width - 2.0F, HEADER_HEIGHT)
                 .round(7, 0, 7, 0).color(applyGlobalAlpha(MenuStyle.PANEL_HEADER)).build());
 
-        if (!configsOpen) {
+        if (!fullWidth) {
             rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT + 1.0F, SIDEBAR_WIDTH - 1.0F, height - HEADER_HEIGHT - 2.0F)
                     .round(0, 0, 0, 7).color(applyGlobalAlpha(MenuStyle.PANEL_SIDEBAR)).build());
 
@@ -117,47 +115,19 @@ public class BackgroundComponent extends AbstractComponent {
                 .color(applyGlobalAlpha(MenuStyle.BORDER)).build());
 
         renderHeader(context, mouseX, mouseY);
-        if (!configsOpen) {
+        if (!fullWidth) {
             renderConfigs(context, mouseX, mouseY);
             renderSidebarFooter(context, mouseX, mouseY);
         }
     }
 
     private void renderHeader(DrawContext context, int mouseX, int mouseY) {
-        Matrix3x2fStack matrix = context.getMatrices();
-        float brandIconWidth = BRAND_ICON_HEIGHT * UiMsdfIconAtlas.resolveAspectRatio(BRAND_ICON);
-        float brandIconX = x + 8.0F;
-        float brandIconY = y + (HEADER_HEIGHT - BRAND_ICON_HEIGHT) / 2.0F + 2.5F;
-        UiMsdfIconAtlas.renderIcon(
-                context,
-                BRAND_ICON,
-                brandIconX,
-                brandIconY,
-                brandIconWidth,
-                BRAND_ICON_HEIGHT,
-                applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
-                true
-        );
-
-        float brandX = brandIconX + brandIconWidth + BRAND_ICON_GAP;
-        float brandY = MenuStyle.centerMsdfTextY(BRAND_TEXT_SIZE, y + 1.5F, HEADER_HEIGHT);
-        MsdfRenderer.renderText(MsdfFonts.bold(), "PHAZE", BRAND_TEXT_SIZE, applyGlobalAlpha(MenuStyle.TEXT_PRIMARY), GuiMatrix.mat4(matrix), brandX, brandY, 0.0F);
-        MsdfRenderer.renderText(
-                MsdfFonts.medium(),
-                "CLIENT",
-                BRAND_TEXT_SIZE,
-                applyGlobalAlpha(MenuStyle.TEXT_MUTED),
-                GuiMatrix.mat4(matrix),
-                brandX + MsdfFonts.bold().getWidth("PHAZE", BRAND_TEXT_SIZE) + 5.0F,
-                brandY,
-                0.0F
-        );
-
-        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
         boolean settingsActive = isSettingsTabActive();
+        boolean cosmeticsActive = isCosmeticsTabActive();
         boolean configsActive = isConfigsTabActive();
-        boolean modsActive = !settingsActive && !configsActive;
-        boolean[] active = {modsActive, settingsActive, configsActive};
+        boolean modsActive = !settingsActive && !cosmeticsActive && !configsActive;
+        boolean[] active = {modsActive, settingsActive, cosmeticsActive, configsActive};
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
             totalTabsWidth += getTopTabWidth(labels[i]);
@@ -189,7 +159,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private float getTopTabWidth(String label) {
-        return MsdfFonts.bold().getWidth(label, TAB_TEXT_SIZE) + TOP_TAB_HORIZONTAL_PADDING;
+        return MsdfFonts.bold().getWidth(topTabText(label), TAB_TEXT_SIZE) + TOP_TAB_HORIZONTAL_PADDING;
     }
 
     private float drawTopTab(DrawContext context, int mouseX, int mouseY, float tabX, String label, boolean active) {
@@ -220,13 +190,14 @@ public class BackgroundComponent extends AbstractComponent {
 
         rectangle.render(ShapeProperties.create(matrix, tabX, tabY, tabWidth, TOP_TAB_HEIGHT)
                 .round(2).thickness(3.0F).outlineColor(applyGlobalAlpha(borderColor)).color(MenuStyle.withAlpha(tabColor, 0)).build());
+        String shownLabel = topTabText(label);
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                label,
+                shownLabel,
                 TAB_TEXT_SIZE,
                 applyGlobalAlpha(tabText),
                 GuiMatrix.mat4(matrix),
-                MenuStyle.centerMsdfTextX(MsdfFonts.bold(), label, TAB_TEXT_SIZE, tabX, tabWidth),
+                MenuStyle.centerMsdfTextX(MsdfFonts.bold(), shownLabel, TAB_TEXT_SIZE, tabX, tabWidth),
                 MenuStyle.centerMsdfTextY(TAB_TEXT_SIZE, tabY, TOP_TAB_HEIGHT),
                 0.0F
         );
@@ -424,7 +395,7 @@ public class BackgroundComponent extends AbstractComponent {
         // its click handlers (config rows, NEW CONFIG, EDIT HUD)
         // would react to clicks in the now full-width content pane
         // where they have no visible widgets. Skip them entirely.
-        if (MenuScreen.INSTANCE.isConfigsViewOpen()) {
+        if (MenuScreen.INSTANCE.isConfigsViewOpen() || MenuScreen.INSTANCE.isCosmeticsViewOpen()) {
             return false;
         }
 
@@ -627,7 +598,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private boolean handleTopTabClick(double mouseX, double mouseY) {
-        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
         boolean configsActive = isConfigsTabActive();
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
@@ -652,12 +623,14 @@ public class BackgroundComponent extends AbstractComponent {
                 playButtonClickSound();
                 if ("SETTINGS".equals(label)) {
                     MenuScreen.INSTANCE.openModuleDetail(Theme.getInstance());
-                    MenuScreen.INSTANCE.closeConfigsView();
+                } else if ("COSMETICS".equals(label)) {
+                    MenuScreen.INSTANCE.openCosmeticsView();
                 } else if ("CONFIGS".equals(label)) {
                     MenuScreen.INSTANCE.openConfigsView();
                 } else {
                     MenuScreen.INSTANCE.closeModuleDetail();
                     MenuScreen.INSTANCE.closeConfigsView();
+                    MenuScreen.INSTANCE.closeCosmeticsView();
                     MenuScreen.INSTANCE.setCategory(ModuleCategory.ALL);
                 }
                 return true;
@@ -675,7 +648,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private boolean isTopTabHovered(double mouseX, double mouseY) {
-        String[] labels = {"MODS", "SETTINGS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
         boolean configsActive = isConfigsTabActive();
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
@@ -788,7 +761,15 @@ public class BackgroundComponent extends AbstractComponent {
         buffer.vertex(positionMatrix, x, y + size, 0.0F).texture(0.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + size, y + size, 0.0F).texture(1.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + size, y, 0.0F).texture(1.0F, 0.0F).color(color);
-        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
+        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
+        // immediate draw runs outside the GUI pass and must install the GUI
+        // ortho projection (and its z = -11000 model-view) itself.
+        vorga.phazeclient.api.system.draw.GuiProjection.begin();
+        try {
+            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
+        } finally {
+            vorga.phazeclient.api.system.draw.GuiProjection.end();
+        }
     }
 
     private boolean isSettingsTabActive() {
@@ -798,5 +779,13 @@ public class BackgroundComponent extends AbstractComponent {
 
     private boolean isConfigsTabActive() {
         return MenuScreen.INSTANCE.isConfigsViewOpen();
+    }
+
+    private boolean isCosmeticsTabActive() {
+        return MenuScreen.INSTANCE.isCosmeticsViewOpen();
+    }
+
+    private static String topTabText(String label) {
+        return Lang.t("menu.tab." + label.toLowerCase(java.util.Locale.ROOT));
     }
 }

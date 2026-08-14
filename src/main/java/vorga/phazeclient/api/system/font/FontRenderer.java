@@ -385,7 +385,15 @@ public class FontRenderer implements QuickImports {
                 buffer.vertex(matrix4f, x1 + width, y1 + 0, 0).texture(u2, v1).color(color);
                 buffer.vertex(matrix4f, x1 + 0, y1 + 0, 0).texture(u1, v1).color(color);
             }
-            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
+            // 1.21.11 defers DrawContext work into a GuiRenderState, so this
+            // immediate draw runs outside the GUI pass and must install the
+            // GUI ortho projection (and its z = -11000 model-view) itself.
+            vorga.phazeclient.api.system.draw.GuiProjection.begin();
+            try {
+                vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
+            } finally {
+                vorga.phazeclient.api.system.draw.GuiProjection.end();
+            }
         }
         matrix.pop();
     }

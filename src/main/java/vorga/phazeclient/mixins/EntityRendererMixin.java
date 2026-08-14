@@ -277,10 +277,11 @@ public abstract class EntityRendererMixin {
     // nametagTextShadow option do nothing. The text transforms above and
     // the visibility control still work.
     //
-    // Also note TextRenderer.draw now returns void, and
-    // OutlineVertexConsumerProviderAccessor targets a field named "parent"
-    // that 1.21.11 renamed to "plainDrawer" - fix that accessor before
-    // re-enabling phaze$flushCurrentNametagLayer.
+    // Also note TextRenderer.draw now returns void.
+    // OutlineVertexConsumerProviderAccessor is fixed (1.21.11 renamed the
+    // field "parent" -> "plainDrawer"), so phaze$flushCurrentNametagLayer
+    // itself is sound; what is still missing is the new mixin class
+    // described above, which is what would hand it an Immediate to flush.
     // ------------------------------------------------------------------
 
     @SuppressWarnings("unused")

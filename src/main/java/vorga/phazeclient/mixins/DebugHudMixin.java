@@ -1,31 +1,75 @@
 package vorga.phazeclient.mixins;
 
-import com.llamalad7.mixinextras.injector.ModifyReturnValue;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.DebugHud;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.other.BetterF3;
 import vorga.phazeclient.implement.features.modules.other.BetterF3Renderer;
 import vorga.phazeclient.implement.features.modules.other.FakeFps;
 import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Consolidated {@link DebugHud} mixin: BetterF3 layout replacement,
- * StreamerMode coord masking, FakeFps line rewrite. Three
- * independent injectors at different points (HEAD/RETURN); merged
- * into one file because all three share the same target class.
+ * StreamerMode coord masking, FakeFps line rewrite. Merged into one
+ * file because all three share the same target class.
+ *
+ * <p>1.21.11 rewrote the debug HUD. {@code getLeftText()} and
+ * {@code getRightText()} are gone; the F3 text is now produced by a
+ * registry of {@code DebugHudEntry} implementations
+ * ({@code net.minecraft.client.gui.hud.debug.*}) that push strings
+ * into a {@code DebugHudLines} sink, and {@code render} assembles the
+ * result into two local {@code ArrayList}s that it hands to the
+ * private {@code drawText(DrawContext, List, boolean)} - {@code true}
+ * for the left column, {@code false} for the right.
+ *
+ * <p>Consequently the coord/fps post-processing now runs at the HEAD
+ * of {@code drawText} and edits the list in place. It deliberately
+ * does <em>not</em> filter on the {@code left} flag: the position
+ * lines ({@code XYZ}/{@code Block}/{@code Chunk}) are contributed as
+ * a <em>section</em> by {@code PlayerPositionDebugHudEntry}, and
+ * {@code render} distributes whole sections across the two columns
+ * by index, so they can legitimately land on the right. Gating on
+ * {@code left} would let StreamerMode leak coordinates whenever two
+ * or more sections are visible. Both scans stop at the first match
+ * per list, and any given line exists in exactly one of the two
+ * lists, so nothing is rewritten twice.
  */
 @Mixin(DebugHud.class)
 public abstract class DebugHudMixin {
+
+    /**
+     * Is the F3 overlay itself up?
+     *
+     * <p>1.21.11 moved the F3 check INSIDE {@code render}. Through 1.21.4 the
+     * caller only invoked {@code DebugHud.render} while F3 was up, so a HEAD
+     * inject was implicitly gated by it. Now the chain
+     * {@code GameRenderer -> InGameHud.renderDebugHud -> DebugHud.render}
+     * runs every frame the HUD is visible and no screen is open - the guards
+     * at the top of {@code render} are only isFinishedLoading / hudHidden /
+     * currentScreen.
+     *
+     * <p>Deliberately NOT {@code DebugHud.shouldShowDebugHud()}: that is
+     * {@code isF3Enabled() || !getVisibleEntries().isEmpty()}, and the second
+     * half is true whenever any standalone debug overlay is on - F3+B
+     * (hitboxes) being the obvious one. Gating on it made BetterF3 appear on
+     * F3+B with F3 itself closed.
+     */
+    @Unique
+    private static boolean phaze$isF3Open() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        return client != null
+                && client.debugHudEntryList != null
+                && client.debugHudEntryList.isF3Enabled();
+    }
 
     /** Coord-line prefixes for StreamerMode mask. F3 is not
      *  localised so prefix-match against literal English labels is
@@ -48,58 +92,56 @@ public abstract class DebugHudMixin {
         if (module == null || !module.isEnabled()) {
             return;
         }
+        // Explicitly gate on F3 - see phaze$isF3Open for why this is no
+        // longer implied by simply being inside render().
+        if (!phaze$isF3Open()) {
+            return;
+        }
         BetterF3Renderer.render(context);
         ci.cancel();
     }
 
     /**
-     * StreamerMode + FakeFps post-process the left-text list. Both
-     * features fire on the same RETURN; we walk the list once and
-     * apply both transforms in sequence. Order matters: FakeFps
-     * rewrites the {@code "<n> fps"} prefix on the first matching
-     * line, StreamerMode replaces matching coord lines with a
-     * fixed {@code "Label: hidden"} - they target different lines
-     * so there's no interaction.
+     * StreamerMode + FakeFps post-process one rendered column of F3
+     * text. We walk the list once and apply both transforms in
+     * sequence, in the same order the old {@code getLeftText}
+     * {@code @Inject}/{@code @ModifyReturnValue} pair ran: StreamerMode
+     * replaces matching coord lines with a fixed
+     * {@code "Label: hidden"}, then FakeFps rewrites the
+     * {@code "<n> fps"} prefix on the first matching line. They target
+     * different lines so there's no interaction.
+     *
+     * <p>Mutating in place is safe: {@code render} allocates both
+     * lists fresh every frame and passes them nowhere else.
      */
-    @Inject(method = "getLeftText", at = @At("RETURN"), cancellable = true)
-    private void phaze$maskCoordinates(CallbackInfoReturnable<List<String>> cir) {
-        StreamerMode streamer = StreamerMode.getInstance();
-        if (streamer == null || !streamer.isHideCoordinatesEnabled()) {
+    @Inject(
+            method = "drawText(Lnet/minecraft/client/gui/DrawContext;Ljava/util/List;Z)V",
+            at = @At("HEAD")
+    )
+    private void phaze$rewriteDebugLines(DrawContext context, List<String> lines, boolean left, CallbackInfo ci) {
+        if (lines == null || lines.isEmpty()) {
             return;
         }
-        List<String> original = cir.getReturnValue();
-        if (original == null || original.isEmpty()) {
-            return;
-        }
-        List<String> masked = new ArrayList<>(original.size());
-        for (String line : original) {
-            masked.add(phaze$maskLine(line));
-        }
-        cir.setReturnValue(masked);
-    }
 
-    @ModifyReturnValue(method = "getLeftText", at = @At("RETURN"))
-    private List<String> phaze$rewriteFpsLine(List<String> original) {
-        FakeFps module = FakeFps.getInstance();
-        if (module == null || !module.isEnabled() || original == null || original.isEmpty()) {
-            return original;
-        }
-        // Defensive copy so we never mutate vanilla's list (the
-        // StreamerMode inject above already may have replaced it,
-        // but ModifyReturnValue runs on the final return value
-        // regardless).
-        List<String> patched = new ArrayList<>(original);
-        for (int i = 0; i < patched.size(); i++) {
-            String line = patched.get(i);
-            if (line == null) continue;
-            Matcher m = PHAZE_FPS_PREFIX.matcher(line);
-            if (m.find()) {
-                int fake = module.getFakeFps();
-                patched.set(i, fake + " fps" + line.substring(m.end()));
-                break;
+        StreamerMode streamer = StreamerMode.getInstance();
+        if (streamer != null && streamer.isHideCoordinatesEnabled()) {
+            for (int i = 0; i < lines.size(); i++) {
+                lines.set(i, phaze$maskLine(lines.get(i)));
             }
         }
-        return patched;
+
+        FakeFps fakeFps = FakeFps.getInstance();
+        if (fakeFps != null && fakeFps.isEnabled()) {
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (line == null) continue;
+                Matcher m = PHAZE_FPS_PREFIX.matcher(line);
+                if (m.find()) {
+                    lines.set(i, fakeFps.getFakeFps() + " fps" + line.substring(m.end()));
+                    break;
+                }
+            }
+        }
     }
 
     private static String phaze$maskLine(String line) {

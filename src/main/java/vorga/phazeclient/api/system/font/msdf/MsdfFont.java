@@ -88,7 +88,7 @@ public final class MsdfFont {
     // `filterApplied` latch that guarded the repeated glTexParameteri calls
     // has no purpose any more.
     public void applyGlyphs(Matrix4f matrix, net.minecraft.client.render.BufferBuilder consumer, String text, float size, float thickness, float spacing, float x, float y, float z, int color,
-                            com.mojang.blaze3d.vertex.VertexFormatElement paramsElement, float range, float smoothness) {
+                            com.mojang.blaze3d.vertex.VertexFormatElement paramsElement, float range, float shaderThickness, float smoothness) {
         int previousChar = -1;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
@@ -102,7 +102,22 @@ public final class MsdfFont {
                 x += kerning.getOrDefault(c, 0.0F) * size;
             }
 
-            x += glyph.apply(matrix, consumer, size, x, y, z, color, paramsElement, range, thickness, smoothness) + thickness + spacing;
+            // Two DIFFERENT thicknesses, which the port had collapsed into one:
+            //
+            //   shaderThickness - the raw setting (~0.05), a signed-distance
+            //       offset in MSDF units. The shader does
+            //       `median(...) - 0.5 + thickness`, so it must stay small and
+            //       size-independent.
+            //   thickness - the geometric advance the caller derives as
+            //       `raw * 0.5 * size`, in the same units as x/spacing.
+            //
+            // 1.21.4 kept them apart naturally: the first went into the loose
+            // `Thickness` uniform, the second into this advance. When the
+            // uniforms became the MsdfParams vertex attribute both call sites
+            // ended up reading the same variable, so the shader received the
+            // size-scaled value - which made text render far too bold AND made
+            // its weight change with the GUI scale, since `size` carries it.
+            x += glyph.apply(matrix, consumer, size, x, y, z, color, paramsElement, range, shaderThickness, smoothness) + thickness + spacing;
             previousChar = c;
         }
     }

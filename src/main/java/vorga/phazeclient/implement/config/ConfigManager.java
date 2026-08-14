@@ -217,6 +217,7 @@ public final class ConfigManager {
         config.addProperty("blurRadius", theme.blurRadius.getValue());
         config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
         config.addProperty("menuGuiFpsLimit", MenuUiSettings.getInstance().getGuiFpsLimit());
+        config.addProperty("menuGuiScale", MenuUiSettings.getInstance().getGuiScale());
         config.addProperty("menuPanoramaPreset", MenuUiSettings.getInstance().getSelectedPanoramaPresetId());
         config.addProperty("customMainMenuEnabled", MenuUiSettings.getInstance().isCustomMainMenuEnabled());
         config.addProperty("menuPanoramaSpeedScaleVersion", MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION);
@@ -509,6 +510,7 @@ public final class ConfigManager {
         config.addProperty("blurRadius", theme.blurRadius.getValue());
         config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
         config.addProperty("menuGuiFpsLimit", MenuUiSettings.getInstance().getGuiFpsLimit());
+        config.addProperty("menuGuiScale", MenuUiSettings.getInstance().getGuiScale());
         config.addProperty("menuPanoramaPreset", MenuUiSettings.getInstance().getSelectedPanoramaPresetId());
         config.addProperty("customMainMenuEnabled", MenuUiSettings.getInstance().isCustomMainMenuEnabled());
         config.addProperty("menuPanoramaSpeedScaleVersion", MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION);
@@ -728,6 +730,13 @@ public final class ConfigManager {
                 } catch (Throwable ignored) {}
             }
 
+            float guiScale = MenuUiSettings.DEFAULT_GUI_SCALE;
+            if (config.has("menuGuiScale")) {
+                try {
+                    guiScale = config.get("menuGuiScale").getAsFloat();
+                } catch (Throwable ignored) {}
+            }
+
             String panoramaPreset = MenuUiSettings.DEFAULT_PANORAMA_PRESET_ID;
             if (config.has("menuPanoramaPreset")) {
                 try {
@@ -750,7 +759,7 @@ public final class ConfigManager {
             }
 
             if (panoramaSpeedScaleVersion >= MenuUiSettings.PANORAMA_SPEED_SCALE_VERSION) {
-                MenuUiSettings.getInstance().applyConfig(panoramaSpeed, guiFpsLimit, panoramaPreset, customMainMenuEnabled);
+                MenuUiSettings.getInstance().applyConfig(panoramaSpeed, guiFpsLimit, guiScale, panoramaPreset, customMainMenuEnabled);
             } else if (panoramaSpeedScaleVersion == 2) {
                 MenuUiSettings.getInstance().applyLegacyScaleV2Config(panoramaSpeed, guiFpsLimit, panoramaPreset, customMainMenuEnabled);
             } else {

@@ -211,6 +211,6 @@ public abstract class MinecraftClientMixin {
 
     @Inject(method = "getWindowTitle", at = @At("HEAD"), cancellable = true)
     private void phaze$windowTitle(CallbackInfoReturnable<String> cir) {
-        cir.setReturnValue("Phaze Client* 1.21.4");
+        cir.setReturnValue("Phaze Client* 1.21.11");
     }
 }

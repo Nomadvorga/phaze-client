@@ -4,8 +4,11 @@ import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 
 import java.util.Locale;
+import java.util.ArrayDeque;
 
 public final class WorldColorRenderHelper {
+    private static final ThreadLocal<ArrayDeque<WorldColorCorrectionController.Target>> DEFERRED_ENTITY_TARGETS =
+            new ThreadLocal<>();
 
     private WorldColorRenderHelper() {
     }
@@ -22,6 +25,45 @@ public final class WorldColorRenderHelper {
     public static boolean shouldWrapEntityProvider(WorldColorCorrectionController.Target target) {
         return WorldColorCorrectionController.needsColorTransform(target)
                 || WorldColorCorrectionController.needsAlphaTransform(target);
+    }
+
+    public static void pushDeferredEntityTarget(WorldColorCorrectionController.Target target) {
+        ArrayDeque<WorldColorCorrectionController.Target> targets = DEFERRED_ENTITY_TARGETS.get();
+        if (targets == null) {
+            targets = new ArrayDeque<>();
+            DEFERRED_ENTITY_TARGETS.set(targets);
+        }
+        targets.push(target);
+    }
+
+    public static void popDeferredEntityTarget() {
+        ArrayDeque<WorldColorCorrectionController.Target> targets = DEFERRED_ENTITY_TARGETS.get();
+        if (targets != null && !targets.isEmpty()) {
+            targets.pop();
+        }
+        if (targets != null && targets.isEmpty()) {
+            DEFERRED_ENTITY_TARGETS.remove();
+        }
+    }
+
+    /**
+     * Encodes the same alpha marker consumed by minecraft:core/entity.vsh.
+     * RGB stays untouched here so the shader can correct the sampled texture,
+     * not merely the vertex tint. Naturally translucent model colours are left
+     * alone instead of sacrificing their alpha channel.
+     */
+    public static int tagDeferredEntityColor(int color) {
+        ArrayDeque<WorldColorCorrectionController.Target> targets = DEFERRED_ENTITY_TARGETS.get();
+        if (targets == null || targets.isEmpty()) {
+            return color;
+        }
+        WorldColorCorrectionController.Target target = targets.peek();
+        if (!WorldColorCorrectionController.needsColorTransform(target)
+                || ((color >>> 24) & 0xFF) < 250) {
+            return color;
+        }
+        int markerAlpha = target == WorldColorCorrectionController.Target.PLAYERS ? 254 : 253;
+        return (color & 0x00FFFFFF) | (markerAlpha << 24);
     }
 
     /**

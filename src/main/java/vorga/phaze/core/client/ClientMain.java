@@ -4,6 +4,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.SpecialGuiElementRegistry;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
 import net.minecraft.resource.ResourceType;
@@ -51,6 +52,11 @@ public class ClientMain implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         MenuPanoramaRegistry.ensureDirectoryExists();
+        vorga.phazeclient.implement.cosmetics.bridge.PhazePulsePetRenderer.register();
+        vorga.phazeclient.implement.cosmetics.bridge.PhazePulseGraffitiRenderer.register();
+        SpecialGuiElementRegistry.register(context ->
+                new vorga.phazeclient.implement.cosmetics.CosmeticGuiElementRenderer(
+                        context.vertexConsumers()));
         ClientTickEvents.END_CLIENT_TICK.register(this::onClientTick);
         ClientLifecycleEvents.CLIENT_STOPPING.register(this::onClientStopping);
 
@@ -71,6 +77,7 @@ public class ClientMain implements ClientModInitializer {
     }
 
     private void onClientTick(MinecraftClient client) {
+        vorga.phazeclient.implement.cosmetics.CosmeticsSyncService.getInstance().tick(client);
         while (OPEN_MENU_KEY.wasPressed()) {
             if (client.currentScreen instanceof MenuScreen) {
                 client.setScreen(null);

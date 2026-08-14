@@ -3,40 +3,61 @@ package vorga.phazeclient.mixins;
 import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
+import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.ModifyArgs;
-import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import vorga.phazeclient.implement.features.modules.other.ChunkAnimator;
 
 /**
  * Bolts the {@link ChunkAnimator} drop animation onto the vanilla
- * chunk render path. {@code WorldRenderer.renderLayer} sets a
- * {@code modelOffset} shader uniform once per visible
- * {@link ChunkBuilder.BuiltChunk} as (originX - cameraX,
- * originY - cameraY, originZ - cameraZ); intercepting just the Y
- * component of that uniform's input is the surgical spot where we
- * can shift the chunk on the GPU without touching geometry, vertex
- * buffers, or the chunk builder thread.
+ * chunk render path, one {@link ChunkBuilder.BuiltChunk} at a time,
+ * on the GPU - without touching geometry, vertex buffers, or the
+ * chunk builder thread.
  *
- * <p>We {@link ModifyArgs}-inject directly at the
- * {@code glUniform.set(FFF)} call site so the offset is applied
- * as a float to the middle (Y) argument, bypassing the int
- * quantisation we'd get from modifying {@code BlockPos.getY()}.
- * This is what makes the landing smooth instead of snapping in
- * 1-block increments at the tail of the animation.
+ * <h3>1.21.11 port note - why this moved off {@code GlUniform}</h3>
+ * Through 1.21.4 the hook was {@code WorldRenderer.renderLayer},
+ * which set a {@code modelOffset} uniform per visible section via
+ * {@code GlUniform.set(FFF)} as (originX - cameraX, originY -
+ * cameraY, originZ - cameraZ); we {@code @ModifyArgs}-ed that call
+ * so the offset stayed a float and the landing eased smoothly
+ * instead of snapping in 1-block increments.
  *
- * <p>The same method also resets the uniform to (0, 0, 0) once at
- * the bottom of {@code renderLayer} outside the loop; {@code
- * ordinal = 0} on the {@code @At} pins our handler to the first
- * call (inside the while-loop) so we never touch the reset, and
- * {@code @Local BuiltChunk} supplies the section identity the
- * animator needs to look up the per-section timestamp.
+ * <p>1.21.11 deleted both halves of that. {@code renderLayer} is
+ * gone (terrain submission is now
+ * {@code renderBlockLayers(Matrix4fc, double, double, double)},
+ * which builds a {@code SectionRenderState} of deferred
+ * {@code RenderPass.RenderObject}s), and {@code GlUniform} was
+ * reduced to a bare {@code AutoCloseable} - the per-section
+ * transform now travels in a std140 UBO slice built from
+ * {@code DynamicUniforms.ChunkSectionsValue(Matrix4fc modelView,
+ * int x, int y, int z, float visibility, int atlasW, int atlasH)},
+ * one instance per BuiltChunk, uploaded in bulk by
+ * {@code DynamicUniforms.writeChunkSections}.
+ *
+ * <p>The section origin in that record is packed as an
+ * <b>ivec3</b>, so offsetting {@code x/y/z} would reintroduce
+ * exactly the 1-block quantisation the old float path avoided.
+ * The {@code modelView} matrix is the only float-precision channel
+ * left, and vanilla builds a <em>fresh</em> {@code Matrix4f} copy
+ * for every BuiltChunk, so translating our own copy of it shifts
+ * that one section and nothing else. {@code M.translate(v)} yields
+ * {@code M * T(v)}, i.e. every vertex of the section is moved by
+ * {@code +v} in world space - numerically the same displacement
+ * the old {@code modelOffset} addition produced.
+ *
+ * <p>{@code @Local BuiltChunk} still supplies the section identity
+ * the animator needs to look up the per-section timestamp; the
+ * value is live at the call site (vanilla reads its origin two
+ * instructions earlier to fill the ivec3). There is exactly one
+ * {@code ChunkSectionsValue} construction in the method, so no
+ * {@code ordinal} pin is needed any more.
  *
  * <p><b>Sodium compatibility:</b> Sodium's {@code LevelRendererMixin}
- * {@code @Overwrite}s {@code renderLayer}, completely replacing the
+ * {@code @Overwrite}s the vanilla terrain path, completely replacing the
  * vanilla {@code modelOffset} uniform path with its own region
- * renderer - the {@code GlUniform.set(FFF)V} INVOKE target we hook
+ * renderer - the {@code ChunkSectionsValue} INVOKE target we hook
  * no longer exists in the merged bytecode, and Mixin rejects our
  * injection at the prepare stage with a same-priority conflict
  * error regardless of {@code require = 0}. This entire mixin is
@@ -55,42 +76,48 @@ public abstract class WorldRendererChunkAnimatorMixin {
 
     /**
      * Reusable 3-element direction buffer. Render thread is the only
-     * caller; {@code @ModifyArgs} fires synchronously per draw so a
+     * caller; {@code @ModifyArg} fires synchronously per section so a
      * shared scratch is safe and avoids one float[3] allocation per
      * BuiltChunk per frame.
      */
     private static final float[] PHAZE$DIR = new float[3];
 
-    @ModifyArgs(
-            method = "renderLayer",
+    @ModifyArg(
+            method = "renderBlockLayers",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/gl/GlUniform;set(FFF)V",
-                    ordinal = 0
-            )
+                    target = "Lnet/minecraft/client/gl/DynamicUniforms$ChunkSectionsValue;"
+                            + "<init>(Lorg/joml/Matrix4fc;IIIFII)V"
+            ),
+            index = 0
     )
-    private void phaze$chunkAnimatorModelOffset(Args args, @Local ChunkBuilder.BuiltChunk builtChunk) {
+    private Matrix4fc phaze$chunkAnimatorModelOffset(Matrix4fc modelView,
+                                                     @Local ChunkBuilder.BuiltChunk builtChunk) {
         ChunkAnimator animator = ChunkAnimator.getInstance();
         if (animator == null || !animator.isEnabled() || builtChunk == null) {
-            return;
+            return modelView;
         }
         float magnitude = animator.getYOffset(builtChunk.getOrigin());
         if (magnitude == 0.0F) {
-            return;
+            // Not animating: hand vanilla's own matrix straight back so
+            // the steady state costs zero allocations and stays
+            // bit-identical to unmodded rendering.
+            return modelView;
         }
         animator.writeAnimationDirection(PHAZE$DIR);
-        // Args indices mirror the vanilla call site:
-        //   glUniform.set((float)(blockPos.getX() - cameraX),
-        //                 (float)(blockPos.getY() - cameraY),
-        //                 (float)(blockPos.getZ() - cameraZ));
-        // We add `magnitude * direction[axis]` to each component so a
-        // single positive distance setting drives the slide-in along
-        // whatever axis the user picked. Float precision flows all
-        // the way through, so the tail of the easing (magnitude ~= 0)
-        // lerps continuously to 0 instead of snapping in integer
-        // increments.
-        if (PHAZE$DIR[0] != 0.0F) args.set(0, args.<Float>get(0) + magnitude * PHAZE$DIR[0]);
-        if (PHAZE$DIR[1] != 0.0F) args.set(1, args.<Float>get(1) + magnitude * PHAZE$DIR[1]);
-        if (PHAZE$DIR[2] != 0.0F) args.set(2, args.<Float>get(2) + magnitude * PHAZE$DIR[2]);
+        // `magnitude * direction[axis]` on each axis, so a single
+        // positive distance setting drives the slide-in along whatever
+        // axis the user picked. Float precision flows all the way
+        // through the matrix, so the tail of the easing (magnitude ~= 0)
+        // lerps continuously to 0 instead of snapping in the 1-block
+        // increments the ivec3 section origin would force.
+        //
+        // Copy rather than mutate: vanilla's Matrix4f is freshly built
+        // per section today, but a copy keeps us correct even if some
+        // other mod hands a shared/cached matrix through this arg.
+        return new Matrix4f(modelView).translate(
+                magnitude * PHAZE$DIR[0],
+                magnitude * PHAZE$DIR[1],
+                magnitude * PHAZE$DIR[2]);
     }
 }

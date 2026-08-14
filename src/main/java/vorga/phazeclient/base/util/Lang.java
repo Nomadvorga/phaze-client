@@ -85,7 +85,7 @@ public final class Lang {
         en("modal.share.placeholder", "Number of uses");
         en("modal.share.primary", "Create");
         en("modal.cloud.title", "Cloud Configs");
-        en("modal.cloud.subtitle", "Temporarily unavailable");
+        en("modal.cloud.subtitle", "Share a config or load one by code");
 
         // Modal: RENAME
         en("modal.rename.title", "Rename Config");
@@ -107,7 +107,16 @@ public final class Lang {
         en("status.copied_prefix", "Code");
         en("status.copied_suffix", "copied");
         en("status.cloud_disabled_short", "Unavailable");
-        en("status.cloud_disabled_detail", "This is not a bug. It is intentionally disabled.");
+        en("status.cloud_disabled_detail", "Cloud sharing is turned off in this build.");
+        en("status.cloud_quota_exceeded", "Limit reached: %d configs per player");
+        en("status.cloud_rate_limited", "Too many requests, try again in a minute");
+        en("status.cloud_network_error", "No connection to the server");
+        en("status.cloud_server_error", "Server error (%d)");
+        en("status.cloud_bad_payload", "Config could not be packed");
+        en("status.cloud_bad_response", "Unexpected server response");
+        en("status.cloud_bad_code", "Invalid code format");
+        en("status.cloud_not_found", "Code not found");
+        en("status.cloud_exhausted", "This code has run out of uses");
         en("status.import_failed", "Import failed");
         en("status.imported_prefix", "Imported:");
         en("status.key_not_found", "Key not found");
@@ -134,9 +143,35 @@ public final class Lang {
         en("sidebar.new_config", "NEW CONFIG");
         en("sidebar.edit_hud", "EDIT HUD LAYOUT");
 
+        en("menu.tab.mods", "MODS");
+        en("menu.tab.settings", "SETTINGS");
+        en("menu.tab.cosmetics", "COSMETICS");
+        en("menu.tab.configs", "CONFIGS");
+        en("cosmetics.title", "COSMETICS");
+        en("cosmetics.subtitle", "Phaze cosmetic collection");
+        en("cosmetics.category.all", "ALL");
+        en("cosmetics.category.wings", "WINGS");
+        en("cosmetics.category.capes", "CAPES");
+        en("cosmetics.category.hats", "HATS");
+        en("cosmetics.category.pets", "PETS");
+        en("cosmetics.wheel", "WHEEL");
+        en("cosmetics.equipped", "EQUIPPED");
+        en("cosmetics.locked", "LOCKED");
+        en("cosmetics.missing_suffix", "missing file");
+        en("cosmetics.preview", "PREVIEW");
+        en("cosmetics.rotate", "ROTATING");
+        en("cosmetics.drag_to_rotate", "DRAG TO ROTATE");
+        en("cosmetics.hide_elytra", "HIDE ELYTRA");
+        en("cosmetics.wing_motion", "WING MOTION");
+        en("cosmetics.pet_follow", "PET FOLLOW");
+        en("cosmetics.equip", "EQUIP");
+        en("cosmetics.remove", "REMOVE");
+        en("cosmetics.enter_world", "ENTER A WORLD TO PREVIEW");
+        en("cosmetics.model_missing", "MODEL FILE NOT FOUND");
+
         // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
-        ru("modal.cloud.subtitle", "Временно недоступно");
+        ru("modal.cloud.subtitle", "Поделись конфигом или загрузи по коду");
         ru("modal.share.title", "Создание ключа");
         ru("modal.share.subtitle.prefix", "Конфиг");
         ru("modal.share.placeholder", "Количество использований");
@@ -159,7 +194,16 @@ public final class Lang {
         ru("status.copied_prefix", "Код");
         ru("status.copied_suffix", "скопирован");
         ru("status.cloud_disabled_short", "Недоступно");
-        ru("status.cloud_disabled_detail", "Это не баг. Это сделано специально.");
+        ru("status.cloud_disabled_detail", "Облачные конфиги отключены в этой сборке.");
+        ru("status.cloud_quota_exceeded", "Достигнут лимит: %d конфигов на игрока");
+        ru("status.cloud_rate_limited", "Слишком много запросов, попробуй через минуту");
+        ru("status.cloud_network_error", "Нет связи с сервером");
+        ru("status.cloud_server_error", "Ошибка сервера (%d)");
+        ru("status.cloud_bad_payload", "Не удалось упаковать конфиг");
+        ru("status.cloud_bad_response", "Неожиданный ответ сервера");
+        ru("status.cloud_bad_code", "Неверный формат кода");
+        ru("status.cloud_not_found", "Код не найден");
+        ru("status.cloud_exhausted", "У этого кода закончились использования");
         ru("status.import_failed", "Не удалось импортировать");
         ru("status.imported_prefix", "Импортирован:");
         ru("status.key_not_found", "Ключ не найден");
@@ -183,6 +227,32 @@ public final class Lang {
 
         ru("sidebar.new_config", "НОВЫЙ КОНФИГ");
         ru("sidebar.edit_hud", "РЕДАКТОР HUD");
+
+        ru("menu.tab.mods", "МОДЫ");
+        ru("menu.tab.settings", "НАСТРОЙКИ");
+        ru("menu.tab.cosmetics", "КОСМЕТИКА");
+        ru("menu.tab.configs", "КОНФИГИ");
+        ru("cosmetics.title", "КОСМЕТИКА");
+        ru("cosmetics.subtitle", "Коллекция косметики Phaze");
+        ru("cosmetics.category.all", "ВСЁ");
+        ru("cosmetics.category.wings", "КРЫЛЬЯ");
+        ru("cosmetics.category.capes", "ПЛАЩИ");
+        ru("cosmetics.category.hats", "ГОЛОВА");
+        ru("cosmetics.category.pets", "ПИТОМЦЫ");
+        ru("cosmetics.wheel", "КОЛЕСО");
+        ru("cosmetics.equipped", "НАДЕТО");
+        ru("cosmetics.locked", "ЗАКРЫТО");
+        ru("cosmetics.missing_suffix", "нет файла");
+        ru("cosmetics.preview", "ПРЕДПРОСМОТР");
+        ru("cosmetics.rotate", "ПОВОРОТ");
+        ru("cosmetics.drag_to_rotate", "ТЯНИТЕ ДЛЯ ПОВОРОТА");
+        ru("cosmetics.hide_elytra", "СКРЫВАТЬ ЭЛИТРЫ");
+        ru("cosmetics.wing_motion", "ДВИЖЕНИЕ КРЫЛЬЕВ");
+        ru("cosmetics.pet_follow", "ПЛАВНОСТЬ ПИТОМЦА");
+        ru("cosmetics.equip", "НАДЕТЬ");
+        ru("cosmetics.remove", "СНЯТЬ");
+        ru("cosmetics.enter_world", "ВОЙДИТЕ В МИР ДЛЯ ПРОСМОТРА");
+        ru("cosmetics.model_missing", "ФАЙЛ МОДЕЛИ НЕ НАЙДЕН");
     }
 
     private static final Map<String, String> SETTING_TRANSLATIONS = new HashMap<>();
@@ -1155,6 +1225,8 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Translation Options", "Параметры перевода");
         SETTING_TRANSLATIONS.put("Hud Text Color", "Цвет текста HUD");
         SETTING_TRANSLATIONS.put("Default color for HUD text that does not use its own dynamic tint", "Цвет текста HUD по умолчанию для элементов без собственной динамической окраски");
+        SETTING_TRANSLATIONS.put("Render Other Player Cosmetics", "Показывать косметику других игроков");
+        SETTING_TRANSLATIONS.put("Render Phaze cosmetics equipped by other players", "Показывать косметику Phaze, надетую другими игроками");
 
         // Main-menu / configs UI strings that are not module or
         // category names and should therefore localize to Russian.

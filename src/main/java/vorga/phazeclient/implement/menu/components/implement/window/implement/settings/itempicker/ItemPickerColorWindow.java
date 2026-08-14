@@ -265,7 +265,15 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         buffer.vertex(matrices, x, y + height).texture(0.0F, 1.0F).color(color);
         buffer.vertex(matrices, x + width, y + height).texture(1.0F, 1.0F).color(color);
         buffer.vertex(matrices, x + width, y).texture(1.0F, 0.0F).color(color);
-        PhazeDrawLayers.positionTexColor(HUE_TEXTURE).draw(buffer.end());
+        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
+        // immediate draw runs outside the GUI pass and must install the GUI
+        // ortho projection (and its z = -11000 model-view) itself.
+        vorga.phazeclient.api.system.draw.GuiProjection.begin();
+        try {
+            PhazeDrawLayers.positionTexColor(HUE_TEXTURE).draw(buffer.end());
+        } finally {
+            vorga.phazeclient.api.system.draw.GuiProjection.end();
+        }
     }
 
     private static int opaque(int color) {

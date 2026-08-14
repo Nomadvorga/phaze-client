@@ -147,7 +147,7 @@ public class ColorComponent extends AbstractSettingComponent {
 
         height = (int) ROW_HEIGHT;
         renderSettingCard(context, 0.0F, hoverProgress);
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context);
 
         float colorX = x + width - COLOR_RIGHT - COLOR_SIZE;
         float colorY = y + ROW_HEIGHT / 2.0F - COLOR_SIZE / 2.0F;

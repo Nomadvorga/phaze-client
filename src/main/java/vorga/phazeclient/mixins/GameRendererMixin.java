@@ -28,10 +28,16 @@ import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 @Mixin(value = GameRenderer.class, priority = 1100)
 public abstract class GameRendererMixin {
 
-    @Shadow private float zoom;
-    @Shadow private float zoomX;
-    @Shadow private float zoomY;
-    @Shadow private float viewDistance;
+    /**
+     * 1.21.11: {@code GameRenderer.getBasicProjectionMatrix} no longer
+     * consults the far plane field directly - it calls the public
+     * {@code getFarPlaneDistance()}, which is
+     * {@code max(viewDistanceBlocks * 4, cloudRenderDistance * 16)}.
+     * The field itself was also renamed {@code viewDistance ->
+     * viewDistanceBlocks}, so shadowing the accessor is both correct
+     * and rename-proof.
+     */
+    @Shadow public abstract float getFarPlaneDistance();
 
     /** AspectRatio override - replaces vanilla's projection matrix. */
     @Inject(method = "getBasicProjectionMatrix", at = @At("TAIL"), cancellable = true)
@@ -45,28 +51,37 @@ public abstract class GameRendererMixin {
 
         float ratio = module.getRatio();
 
-        if (zoom != 1.0F) {
-            projection.translate(zoomX, -zoomY, 0.0F);
-            projection.scale(zoom, zoom, 1.0F);
-        }
-
+        // 1.21.11: the vanilla debug-camera zoom fields (zoom, zoomX,
+        // zoomY) were removed from GameRenderer entirely, and
+        // getBasicProjectionMatrix no longer applies any
+        // translate/scale before the perspective call. The old
+        // `if (zoom != 1.0F)` block that mirrored it is therefore gone
+        // too - this override now matches vanilla exactly apart from
+        // the substituted aspect ratio.
         projection.perspective(
                 (float) (fovDegrees * (Math.PI / 180.0)),
                 ratio,
                 0.05F,
-                viewDistance * 4.0F
+                getFarPlaneDistance()
         );
 
         cir.setReturnValue(projection);
     }
 
     /** MotionBlur pass - runs BEFORE renderHand so the blurred frame
-     *  doesn't smear over the held item. */
+     *  doesn't smear over the held item.
+     *
+     *  <p>1.21.11: {@code renderHand(Camera, float, Matrix4f)} became
+     *  {@code renderHand(float tickProgress, boolean sleeping,
+     *  Matrix4f)} - the Camera argument was dropped (it reads
+     *  {@code this.camera} now) and a boolean was added. Descriptor
+     *  updated to {@code (FZLorg/joml/Matrix4f;)V}; still exactly one
+     *  call site inside {@code renderWorld}. */
     @Inject(
             method = "renderWorld",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/GameRenderer;renderHand(Lnet/minecraft/client/render/Camera;FLorg/joml/Matrix4f;)V",
+                    target = "Lnet/minecraft/client/render/GameRenderer;renderHand(FZLorg/joml/Matrix4f;)V",
                     shift = At.Shift.BEFORE
             )
     )
@@ -83,7 +98,7 @@ public abstract class GameRendererMixin {
             method = "renderWorld",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/GameRenderer;renderHand(Lnet/minecraft/client/render/Camera;FLorg/joml/Matrix4f;)V",
+                    target = "Lnet/minecraft/client/render/GameRenderer;renderHand(FZLorg/joml/Matrix4f;)V",
                     shift = At.Shift.AFTER
             )
     )

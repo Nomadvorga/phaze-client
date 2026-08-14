@@ -42,7 +42,7 @@ import org.joml.Vector3f;
  * {@code VertexFormats.LINES} was replaced by.
  *
  * <p>The actual submission still routes through
- * {@code PhazeWorldDrawStub} (world overlays are stubbed for the
+ * PhazeRenderLayers (world overlays draw through real layers as of the
  * first compiling tree); the geometry produced here is already in
  * the shape the real {@code RenderLayer}s will want.
  *
@@ -102,10 +102,9 @@ public final class Render3DUtil {
         // (RenderPipeline.Builder.withDepthBias(factor, units)). The
         // bias that used to push this fill slightly closer to the
         // camera (and so stopped it z-fighting with coplanar world
-        // geometry) must be baked into the layer this buffer is drawn
-        // with, so it can no longer leak into later draws either.
-        // TODO(1.21.11): when PhazeWorldDrawStub is replaced, give this
-        //  fill its own layer built with .withDepthBias(-1.0F, -1.0F).
+        // geometry) is baked into PhazeRenderLayers.getBlockFill() instead,
+        // where it travels with the layer and cannot leak into later draws
+        // the way the old imperative pair could.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         // bottom
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
@@ -137,7 +136,10 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        // World space: the perspective projection is already live here, so
+        // this must NOT go through GuiProjection - that is only for draws
+        // issued from screen/HUD code.
+        vorga.phazeclient.util.render.PhazeRenderLayers.getBlockFill().draw(buffer.end());
     }
 
     /**
@@ -192,7 +194,7 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getHitboxFill().draw(buffer.end());
 
         // Outline lines. 1.21.11: RenderSystem.lineWidth is gone and
         // VertexFormats.LINES was replaced by
@@ -215,7 +217,7 @@ public final class Render3DUtil {
         line(matrix, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a, lw);
         line(matrix, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a, lw);
         line(matrix, buffer, x1, y1, z2, x1, y2, z2, r, g, b, a, lw);
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getThickLines(lw).draw(buffer.end());
 
     }
 
@@ -288,7 +290,7 @@ public final class Render3DUtil {
 
         // 1.21.11: depth test is a pipeline property, not a call.
         // TODO(1.21.11): pick a depth-testing / always-on-top layer from
-        //  `depthTest` when PhazeWorldDrawStub is replaced.
+        //  `depthTest`.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         // bottom
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
@@ -320,7 +322,7 @@ public final class Render3DUtil {
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getHitboxFill().draw(buffer.end());
 
     }
 
@@ -382,7 +384,7 @@ public final class Render3DUtil {
         // emits CCW from outside, matching GL's default GL_BACK.
         // 1.21.11: cull / depth-write / depth-test are pipeline
         // properties now.
-        // TODO(1.21.11): the layer replacing PhazeWorldDrawStub for this
+        // TODO(1.21.11): the layer for this
         //  sphere must be built .withCull(true).withDepthWrite(false)
         //  and pick its depth-test function from `depthTest`.
 
@@ -420,7 +422,7 @@ public final class Render3DUtil {
         }
         net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
         if (built != null) {
-            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
+            vorga.phazeclient.util.render.PhazeRenderLayers.getHitboxFill().draw(built);
         }
 
     }
@@ -487,7 +489,7 @@ public final class Render3DUtil {
         // Blend / cull / depth now live on the RenderPipeline, and the
         // texture is bound by the RenderSetup of the layer, so all of it
         // has to be encoded in the layer this buffer is submitted to.
-        // TODO(1.21.11): replace PhazeWorldDrawStub below with a
+        // TODO(1.21.11): consider a dedicated layer with
         //  POSITION_TEXTURE_COLOR layer for `texture` (see
         //  PhazeDrawLayers.positionTexColor) built with
         //  new BlendFunction(SRC_ALPHA, ONE, ONE, ZERO) for the additive
@@ -508,7 +510,7 @@ public final class Render3DUtil {
 
         net.minecraft.client.render.BuiltBuffer built = buffer.endNullable();
         if (built != null) {
-            vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(built);
+            vorga.phazeclient.util.render.PhazeRenderLayers.getTextured(texture).draw(built);
         }
         // No state restore needed: state travels with the pipeline in
         // 1.21.11 and cannot leak into the next draw.
@@ -553,7 +555,7 @@ public final class Render3DUtil {
 
         // 1.21.11: depth test is a pipeline property.
         // TODO(1.21.11): select the layer from `depthTest` once
-        //  PhazeWorldDrawStub is replaced.
+        //  the layer is selected.
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -572,7 +574,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, ox2, centerY, oz2).color(r, g, b, a);
             buffer.vertex(matrix, ox1, centerY, oz1).color(r, g, b, a);
         }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getHitboxFill().draw(buffer.end());
 
     }
 
@@ -623,7 +625,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, x1, centerY, z1).color(rr, rg, rb, ra);
             buffer.vertex(matrix, x2, centerY, z2).color(rr, rg, rb, ra);
         }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getTriangles().draw(buffer.end());
 
     }
 
@@ -676,7 +678,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, x1, topY, z1).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
             buffer.vertex(matrix, x2, topY, z2).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
         }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getThickLines(lw).draw(buffer.end());
 
     }
 
@@ -747,7 +749,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, p1x, p1y, p1z).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
             buffer.vertex(matrix, p2x, p2y, p2z).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
         }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getThickLines(lw).draw(buffer.end());
 
     }
 
@@ -824,7 +826,7 @@ public final class Render3DUtil {
             buffer.vertex(matrix, ox2, oy2, oz2).color(r, g, b, a);
             buffer.vertex(matrix, ox1, oy1, oz1).color(r, g, b, a);
         }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getHitboxFill().draw(buffer.end());
 
     }
 
@@ -874,6 +876,13 @@ public final class Render3DUtil {
                                   double endX, double endY, double endZ,
                                   int startColor, int endColor, float lineWidth) {
         Matrix4f matrix = matrices.peek().getPositionMatrix();
+        double dx = endX - startX;
+        double dy = endY - startY;
+        double dz = endZ - startZ;
+        double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float normalX = length > 1.0E-7 ? (float) (dx / length) : 0.0F;
+        float normalY = length > 1.0E-7 ? (float) (dy / length) : 1.0F;
+        float normalZ = length > 1.0E-7 ? (float) (dz / length) : 0.0F;
         float lw = Math.max(1.0F, lineWidth);
         float a1 = ((startColor >>> 24) & 0xFF) / 255.0F;
         float r1 = ((startColor >>> 16) & 0xFF) / 255.0F;
@@ -884,9 +893,9 @@ public final class Render3DUtil {
         float g2 = ((endColor >>> 8) & 0xFF) / 255.0F;
         float b2 = (endColor & 0xFF) / 255.0F;
         buffer.vertex(matrix, (float) startX, (float) startY, (float) startZ)
-                .color(r1, g1, b1, a1).normal(0, 1, 0).lineWidth(lw);
+                .color(r1, g1, b1, a1).normal(normalX, normalY, normalZ).lineWidth(lw);
         buffer.vertex(matrix, (float) endX, (float) endY, (float) endZ)
-                .color(r2, g2, b2, a2).normal(0, 1, 0).lineWidth(lw);
+                .color(r2, g2, b2, a2).normal(normalX, normalY, normalZ).lineWidth(lw);
     }
 
     /** Convenience: same colour at both ends. */
@@ -924,7 +933,7 @@ public final class Render3DUtil {
                 (float) (end.x - camera.x),
                 (float) (end.y - camera.y),
                 (float) (end.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0).lineWidth(lw);
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getThickLines(lw).draw(buffer.end());
 
     }
 
@@ -975,16 +984,23 @@ public final class Render3DUtil {
             Vec3d start = points.get(i);
             Vec3d end = points.get(i + 1);
             if (!isRenderablePolylineSegment(start, end)) continue;
+            double dx = end.x - start.x;
+            double dy = end.y - start.y;
+            double dz = end.z - start.z;
+            double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            float normalX = (float) (dx / length);
+            float normalY = (float) (dy / length);
+            float normalZ = (float) (dz / length);
             buffer.vertex(matrix,
                     (float) (start.x - origin.x),
                     (float) (start.y - origin.y),
-                    (float) (start.z - origin.z)).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
+                    (float) (start.z - origin.z)).color(r, g, b, a).normal(normalX, normalY, normalZ).lineWidth(lw);
             buffer.vertex(matrix,
                     (float) (end.x - origin.x),
                     (float) (end.y - origin.y),
-                    (float) (end.z - origin.z)).color(r, g, b, a).normal(0, 1, 0).lineWidth(lw);
+                    (float) (end.z - origin.z)).color(r, g, b, a).normal(normalX, normalY, normalZ).lineWidth(lw);
         }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getThickLines(lw).draw(buffer.end());
 
         matrices.pop();
     }
@@ -1071,6 +1087,9 @@ public final class Render3DUtil {
             double dz = ez - sz;
             double segLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (segLen < 1e-7) continue;
+            float normalX = (float) (dx / segLen);
+            float normalY = (float) (dy / segLen);
+            float normalZ = (float) (dz / segLen);
 
             double startLen = accLen;
             double endLen = accLen + segLen;
@@ -1087,19 +1106,19 @@ public final class Render3DUtil {
                 double my = sy + dy * t;
                 double mz = sz + dz * t;
                 // First half: ramp up to full alpha at the boundary.
-                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0).lineWidth(lw);
-                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0).lineWidth(lw);
+                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(normalX, normalY, normalZ).lineWidth(lw);
+                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(normalX, normalY, normalZ).lineWidth(lw);
                 // Second half: full alpha across the rest.
-                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0).lineWidth(lw);
-                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, maxA).normal(0, 1, 0).lineWidth(lw);
+                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(normalX, normalY, normalZ).lineWidth(lw);
+                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, maxA).normal(normalX, normalY, normalZ).lineWidth(lw);
             } else {
-                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0).lineWidth(lw);
-                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, endAlpha).normal(0, 1, 0).lineWidth(lw);
+                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(normalX, normalY, normalZ).lineWidth(lw);
+                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, endAlpha).normal(normalX, normalY, normalZ).lineWidth(lw);
             }
 
             accLen = endLen;
         }
-        vorga.phazeclient.api.system.draw.PhazeWorldDrawStub.drawStubbed(buffer.end());
+        vorga.phazeclient.util.render.PhazeRenderLayers.getThickLines(lw).draw(buffer.end());
 
         matrices.pop();
     }

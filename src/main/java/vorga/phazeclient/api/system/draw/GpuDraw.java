@@ -57,6 +57,31 @@ public final class GpuDraw {
      *                    {@code bindDefaultUniforms} does NOT supply this one.
      * @param tint        colour modulator; {@code (1,1,1,1)} for none.
      */
+    /**
+     * As {@link #draw}, plus a second sampler and a custom std140 block.
+     *
+     * <p>Exists for the blur composite, which binds the blurred surface and
+     * the previous frame at once (for the temporal mix) and carries its eight
+     * former loose uniforms in a block of its own.
+     *
+     * @param sampler1Name second sampler's name, or null for none
+     * @param uniformName  std140 block declared by the pipeline, or null
+     */
+    public static void drawWithUniforms(RenderPipeline pipeline,
+                                        BuiltBuffer built,
+                                        String samplerName,
+                                        GpuTextureView textureView,
+                                        String sampler1Name,
+                                        GpuTextureView texture1View,
+                                        FilterMode filter,
+                                        Matrix4f modelView,
+                                        Vector4f tint,
+                                        String uniformName,
+                                        GpuBuffer uniformData) {
+        drawInternal(pipeline, built, samplerName, textureView, filter, modelView, tint,
+                sampler1Name, texture1View, uniformName, uniformData);
+    }
+
     public static void draw(RenderPipeline pipeline,
                             BuiltBuffer built,
                             String samplerName,
@@ -64,6 +89,21 @@ public final class GpuDraw {
                             FilterMode filter,
                             Matrix4f modelView,
                             Vector4f tint) {
+        drawInternal(pipeline, built, samplerName, textureView, filter, modelView, tint,
+                null, null, null, null);
+    }
+
+    private static void drawInternal(RenderPipeline pipeline,
+                                     BuiltBuffer built,
+                                     String samplerName,
+                                     GpuTextureView textureView,
+                                     FilterMode filter,
+                                     Matrix4f modelView,
+                                     Vector4f tint,
+                                     String sampler1Name,
+                                     GpuTextureView texture1View,
+                                     String uniformName,
+                                     GpuBuffer uniformData) {
         RenderSystem.assertOnRenderThread();
         if (built == null) {
             return;
@@ -126,10 +166,17 @@ public final class GpuDraw {
             RenderSystem.bindDefaultUniforms(pass);
             pass.setUniform("DynamicTransforms", dynamicTransforms);
             pass.setVertexBuffer(0, vertexBuffer);
+            if (uniformName != null && uniformData != null) {
+                pass.setUniform(uniformName, uniformData.slice());
+            }
             if (textureView != null) {
                 // A mistyped sampler name is silently skipped and shows up as
                 // black output, never as an exception.
                 pass.bindTexture(samplerName, textureView, sampler);
+            }
+            if (sampler1Name != null && texture1View != null) {
+                pass.bindTexture(sampler1Name, texture1View,
+                        RenderSystem.getSamplerCache().get(filter));
             }
             pass.setIndexBuffer(indexBuffer, indexType);
             pass.drawIndexed(0, 0, params.indexCount(), 1);

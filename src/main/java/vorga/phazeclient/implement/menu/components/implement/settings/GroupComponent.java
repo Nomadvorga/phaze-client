@@ -60,7 +60,7 @@ public class GroupComponent extends AbstractSettingComponent {
         float activeProgress = (isGroupWindowOpen() || (setting.isCheckbox() && setting.isValue())) ? 1.0f : 0.0f;
 
         if (!worldColorStyle) {
-            resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
+            resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context);
         }
         renderSettingCard(context, activeProgress, hoverProgress);
 

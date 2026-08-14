@@ -139,7 +139,15 @@ public class AlphaComponent extends AbstractComponent {
         buf.vertex(mat, x + w, y + h, 0).texture(1, 1).color(color);
         buf.vertex(mat, x + w, y,     0).texture(0, 1).color(color);
 
-        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
+        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
+        // immediate draw runs outside the GUI pass and must install the GUI
+        // ortho projection (and its z = -11000 model-view) itself.
+        vorga.phazeclient.api.system.draw.GuiProjection.begin();
+        try {
+            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
+        } finally {
+            vorga.phazeclient.api.system.draw.GuiProjection.end();
+        }
     }
 
     /**
@@ -163,6 +171,13 @@ public class AlphaComponent extends AbstractComponent {
         buf.vertex(mat, x + w, y + h, 0).texture(1, 0).color(color);
         buf.vertex(mat, x + w, y,     0).texture(0, 0).color(color);
 
-        vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
+        // See renderVerticalGradientStrip - GUI-space immediate draw needs
+        // the GUI ortho projection installed around it in 1.21.11.
+        vorga.phazeclient.api.system.draw.GuiProjection.begin();
+        try {
+            vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
+        } finally {
+            vorga.phazeclient.api.system.draw.GuiProjection.end();
+        }
     }
 }

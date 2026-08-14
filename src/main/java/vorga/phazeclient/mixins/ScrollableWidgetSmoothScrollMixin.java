@@ -43,6 +43,25 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
 
     @Shadow private double scrollY;
 
+    @Shadow public abstract void setScrollY(double y);
+
+    /**
+     * True while {@link #phaze$tickDecay} is pushing the eased value back in.
+     *
+     * <p>The tick has to go through {@code setScrollY} rather than writing
+     * {@link #scrollY} directly: 1.21.11's {@code EntryListWidget} overrides
+     * that method to call {@code recalculateAllChildrenPositions()}, and entry
+     * positions are CACHED by it. Writing the field alone animated a number
+     * nothing re-read, so the list sat still - which is exactly how "smooth
+     * scrolling does nothing" presented.
+     *
+     * <p>Going through the setter re-enters
+     * {@link #phaze$captureTargetAndRestore}, which would take our own eased
+     * value for a fresh user scroll and pin the target to it, freezing the
+     * animation after one step. This flag is what tells the two apart.
+     */
+    @Unique private boolean phaze$applyingSmooth;
+
     @Unique private double phaze$targetScroll;
     @Unique private double phaze$displayScroll;
     @Unique private long phaze$lastFrameNanos = 0L;
@@ -68,6 +87,10 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
 
     @Inject(method = "setScrollY", at = @At("TAIL"))
     private void phaze$captureTargetAndRestore(double y, CallbackInfo ci) {
+        // Our own eased write - not a new scroll target.
+        if (phaze$applyingSmooth) {
+            return;
+        }
         if (!phaze$shouldApply()) {
             // Sync state so a later toggle-on doesn't see a stale display.
             phaze$displayScroll = scrollY;
@@ -130,8 +153,10 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
         phaze$insideMouseDragged = false;
     }
 
+    // 1.21.11: drawScrollbar(DrawContext) gained mouse coordinates ->
+    // drawScrollbar(DrawContext, int, int).
     @Inject(method = "drawScrollbar", at = @At("HEAD"))
-    private void phaze$tickDecay(DrawContext context, CallbackInfo ci) {
+    private void phaze$tickDecay(DrawContext context, int mouseX, int mouseY, CallbackInfo ci) {
         if (!phaze$shouldApply()) {
             return;
         }
@@ -160,7 +185,19 @@ public abstract class ScrollableWidgetSmoothScrollMixin {
             phaze$displayScroll = phaze$targetScroll;
         }
 
-        scrollY = phaze$displayScroll;
+        // Through the setter, not the field: EntryListWidget recalculates its
+        // cached child positions in there, and without that the entries never
+        // move. See phaze$applyingSmooth.
+        phaze$applyingSmooth = true;
+        try {
+            setScrollY(phaze$displayScroll);
+        } finally {
+            phaze$applyingSmooth = false;
+        }
+        // setScrollY clamps, so mirror the clamped result back into the
+        // animation state - otherwise the ease keeps chasing a target the
+        // widget will never accept and the list judders at the ends.
+        phaze$displayScroll = scrollY;
     }
 
     @Inject(method = "mouseScrolled", at = @At("HEAD"), require = 0)

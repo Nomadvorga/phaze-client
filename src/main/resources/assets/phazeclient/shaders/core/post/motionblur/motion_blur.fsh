@@ -2,19 +2,45 @@
 
 uniform sampler2D MainSampler;
 uniform sampler2D MainDepthSampler;
-uniform float BlendFactor;
-uniform float inverseSamples;
-uniform vec3 cameraPos;
-uniform vec3 prevCameraPos;
-uniform vec2 view_res;
-uniform mat4 mvInverse;
-uniform mat4 projInverse;
-uniform mat4 prevModelView;
-uniform mat4 prevProjection;
-uniform int motionBlurSamples;
-uniform int halfSamples;
-uniform int blurAlgorithm;
-uniform float handDepthThreshold;
+
+// 1.21.11 removed loose uniforms entirely - UniformType only offers
+// UNIFORM_BUFFER / TEXEL_BUFFER, and a post-effect pass gets its values from a
+// named std140 block declared in the post_effect JSON. The member ORDER here
+// must match the order of the "MotionBlurConfig" entries in
+// assets/phazeclient/post_effect/motion_blur.json, because PostEffectPass packs
+// the buffer by walking that list through Std140Builder in sequence.
+//
+// std140 layout of this block (offsets in bytes):
+//   mvInverse            0    mat4, 64
+//   projInverse         64    mat4, 64
+//   prevModelView      128    mat4, 64
+//   prevProjection     192    mat4, 64
+//   cameraPos          256    vec3 occupies 16 (12 + 4 pad)
+//   prevCameraPos      272    vec3 occupies 16
+//   view_res           288    vec2, 8
+//   BlendFactor        296    float
+//   inverseSamples     300    float
+//   handDepthThreshold 304    float
+//   motionBlurSamples  308    int
+//   halfSamples        312    int
+//   blurAlgorithm      316    int
+//   total              320
+layout(std140) uniform MotionBlurConfig {
+    mat4 mvInverse;
+    mat4 projInverse;
+    mat4 prevModelView;
+    mat4 prevProjection;
+    vec3 cameraPos;
+    vec3 prevCameraPos;
+    vec2 view_res;
+    float BlendFactor;
+    float inverseSamples;
+    float handDepthThreshold;
+    int motionBlurSamples;
+    int halfSamples;
+    int blurAlgorithm;
+};
+
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
 

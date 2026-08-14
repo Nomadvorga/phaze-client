@@ -55,7 +55,7 @@ public class CheckboxComponent extends AbstractSettingComponent {
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
 
-        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
+        resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context);
 
         float textX = x + 10 + textOffset;
         float textY = centeredTextY(labelFont, wrapped);

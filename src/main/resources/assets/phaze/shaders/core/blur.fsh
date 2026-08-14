@@ -1,4 +1,4 @@
-#version 150
+#version 330
 
 #moj_import <phaze:common.glsl>
 
@@ -7,14 +7,28 @@ in vec4 FragColor;
 
 uniform sampler2D Sampler0;
 uniform sampler2D Sampler1;
-uniform vec2 Size;
-uniform vec4 Radius;
-uniform int RectMask;
-uniform float Smoothness;
-uniform float BlurRadius;
-uniform int BlurMode;
-uniform vec4 TintColor;
-uniform float FrameMix;
+
+// 1.21.11 has no loose uniforms. Member order must match
+// Blur.writeCompositeConfig - vec4s first so the std140 16-byte alignment
+// costs no padding:
+//   Radius     @0  (16)
+//   TintColor  @16 (16)
+//   Size       @32 (8)
+//   Smoothness @40 (4)
+//   BlurRadius @44 (4)
+//   FrameMix   @48 (4)
+//   RectMask   @52 (4)
+//   BlurMode   @56 (4)   = 60, padded to 64
+layout(std140) uniform BlurCompositeConfig {
+    vec4 Radius;
+    vec4 TintColor;
+    vec2 Size;
+    float Smoothness;
+    float BlurRadius;
+    float FrameMix;
+    int RectMask;
+    int BlurMode;
+};
 
 out vec4 fragColor;
 

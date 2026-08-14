@@ -1,13 +1,24 @@
 #version 330 core
 
 uniform sampler2D MainSampler;
-uniform float Brightness;
-uniform float Contrast;
-uniform float Saturation;
-uniform float Hue;
-uniform float Gamma;
-uniform float Temperature;
-uniform float Vibrance;
+
+// 1.21.11 removed loose uniforms - a post-effect pass gets its values from a
+// named std140 block declared in the post_effect JSON. The member ORDER here
+// must match the "ColorCorrectionConfig" entry order in
+// assets/phazeclient/post_effect/color_correction.json, because PostEffectPass
+// packs that buffer by walking the list through Std140Builder in sequence.
+//
+// std140: consecutive floats pack tightly at 4-byte alignment, so this block
+// is 7 * 4 = 28 bytes.
+layout(std140) uniform ColorCorrectionConfig {
+    float Brightness;
+    float Contrast;
+    float Saturation;
+    float Hue;
+    float Gamma;
+    float Temperature;
+    float Vibrance;
+};
 
 in vec2 texCoord;
 layout(location = 0) out vec4 fragColor;

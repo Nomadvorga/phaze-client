@@ -14,6 +14,12 @@ base {
 repositories {
     mavenCentral()
     maven { url 'https://jitpack.io' }
+    maven {
+        url 'https://api.modrinth.com/maven'
+        content {
+            includeGroup 'maven.modrinth'
+        }
+    }
 }
 
 loom {
@@ -31,10 +37,15 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // No Sodium dependency. The baseline target for this port is vanilla
-    // plus Fabric API only, and the GUI must render on that baseline with
-    // no third-party mod present. The Sodium / Iris / Exordium compat
-    // mixins stay parked under compat-staging/.
+    // Compile-only: optional renderer integration. Nothing from Sodium is
+    // bundled into Phaze; PhazeMixinPlugin loads these mixins only when the
+    // user's instance already has Sodium installed.
+    // Use the same Sodium binary as the local 1.21.11 integration target.
+    // It remains compile-only and is never packed into PhazeClient.jar.
+    compileOnly fileTree("${System.getenv('APPDATA')}/PrismLauncher/instances/1.21.11/minecraft/mods") {
+        include 'sodium-fabric-0.8.14-beta.1+mc1.21.11.jar'
+        include 'sodium-fabric-0.8.14-beta.1+mc1.21.11.jar.disabled'
+    }
 
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'

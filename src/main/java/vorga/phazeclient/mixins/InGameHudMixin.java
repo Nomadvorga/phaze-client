@@ -406,6 +406,23 @@ public class InGameHudMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         boolean hudHidden = client == null || client.options == null || client.options.hudHidden;
 
+        // 1.21.11 stores DrawContext text, items and textures in one deferred
+        // GuiRenderState which is flushed after Screen#render. Phaze's ClickGUI
+        // draws its cards immediately, so keeping this HUD pass alive makes the
+        // deferred part of a HUD appear above those cards. Do not queue HUD
+        // elements while the ClickGUI is open; its opaque canvas therefore
+        // correctly stays above the in-game HUD. HUD layout editing uses
+        // ChatScreen and remains fully interactive.
+        if (client != null && client.currentScreen instanceof MenuScreen) {
+            BatchedHudBuffer.INSTANCE.invalidate();
+            Blur.INSTANCE.endCachedFrame();
+            return;
+        }
+
+        // Operator announcements sit above the HUD and remain visible
+        // with F1 so realtime server notices are not silently hidden.
+        vorga.phazeclient.implement.menu.AnnouncementOverlay.render(context);
+
         if (!renderedThisFrame) {
             // Capture the clean world/vanilla-HUD framebuffer at the one safe
             // point shared by normal gameplay and open GUIs. Doing this before
@@ -453,7 +470,33 @@ public class InGameHudMixin {
                 BatchedHudBuffer.INSTANCE.setTargetFps(effectiveRefreshRate);
                 boolean chatEditing = client.currentScreen instanceof ChatScreen;
 
-                boolean shouldRefresh = chatEditing || BatchedHudBuffer.INSTANCE.shouldRefresh(false);
+                // 1.21.11: the throttle has to be disabled, or the HUD blinks
+                // at exactly the refresh interval.
+                //
+                // The whole design assumes a capture window can contain the
+                // frame's HUD drawing. That held through 1.21.4, where
+                // DrawContext issued real draws that landed in whatever
+                // framebuffer was bound. In 1.21.11 DrawContext only appends to
+                // a GuiRenderState, and GuiRenderer flushes it later, onto the
+                // main framebuffer - after endCapture(). So the FBO receives
+                // ONLY Phaze's own immediate draws (shapes, MSDF text), while
+                // every vanilla-drawn part (text, item stacks, sprites) misses
+                // it entirely.
+                //
+                // The visible result: on a refresh frame renderHudInternal runs
+                // and its deferred half reaches the screen; on a cached frame it
+                // does not run at all, so that half vanishes and only the blit
+                // remains. Half the HUD strobing on and off at the throttle rate
+                // is exactly the reported flicker.
+                //
+                // Capturing every frame keeps the HUD correct and costs what
+                // an unthrottled HUD costs. The single-blit batching still
+                // applies. Re-enabling the throttle needs a way to flush the
+                // GuiRenderState into an arbitrary target mid-frame; there is
+                // no such hook today.
+                // TODO(1.21.11): restore throttling once GuiRenderState can be
+                //  flushed into the capture FBO.
+                boolean shouldRefresh = true;
 
                 // Pass 1 — refresh frames only: render NON-blur HUDs into the
                 // batched FBO at the throttled refresh rate.
@@ -2882,6 +2925,13 @@ public class InGameHudMixin {
         if (client.options.sneakKey.isPressed() || client.player.isSneaking()) {
             return "Sneaking (Key Held)";
         }
+        // GUI screens stop normal movement input, but the player sprint flag
+        // can survive for a frame while AutoSprint updates it. Keep the HUD
+        // stable in menus after preserving the higher-priority flight/sneak
+        // states above.
+        if (client.currentScreen != null) {
+            return "Not Sprinting";
+        }
         // AutoSprint label override: when the module is on AND its
         // {@code showInSprintHud} toggle is true, the label flips
         // from "Key Held" / "Vanilla" to "AutoSprint" so the user
@@ -2891,6 +2941,22 @@ public class InGameHudMixin {
         // (AutoSprint)" would be a lie.
         AutoSprint autoSprint = AutoSprint.getInstance();
         boolean autoSprintActive = autoSprint.isEnabled() && autoSprint.showInSprintHud.isValue();
+
+        // Standing still with AutoSprint on used to strobe between
+        // "Sprinting (AutoSprint)" and "Not Sprinting": vanilla clears the
+        // sprint flag on every tick with no movement input, and AutoSprint sets
+        // it again on the next one, so isSprinting() genuinely alternates. The
+        // label should follow the MODULE, which is continuously on, rather than
+        // that momentary flag.
+        //
+        // The exceptions are already handled above and return before this
+        // point - flying, flying+descending and sneaking - so the only one left
+        // is having a screen open, where the module stops driving input and the
+        // honest reading is vanilla's own state.
+        if (autoSprintActive) {
+            return "Sprinting (AutoSprint)";
+        }
+
         if (client.options.sprintKey.isPressed()) {
             return autoSprintActive ? "Sprinting (AutoSprint)" : "Sprinting (Key Held)";
         }
@@ -4855,6 +4921,10 @@ public class InGameHudMixin {
 
     @Inject(method = "render", at = @At("TAIL"))
     private void phaze$tabSlideRenderTail(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        if (this.client != null && this.client.currentScreen instanceof MenuScreen) {
+            phaze$tabWasOpenedThisCycle = false;
+            return;
+        }
         Animations module = Animations.getInstance();
         if (module == null || !module.isTabSlideEnabled()) {
             phaze$tabWasOpenedThisCycle = false;
@@ -4969,6 +5039,7 @@ public class InGameHudMixin {
         if (module == null || !module.isEnabled()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null || mc.options == null) return;
+        if (mc.currentScreen instanceof MenuScreen) return;
         if (mc.options.hudHidden) return;
 
         final int hudIndex = HUD_PLAYER_MODEL;
@@ -5105,11 +5176,16 @@ public class InGameHudMixin {
         }
 
         float hoverTarget = chatEditing && hoveredHud ? 1.0F : 0.0F;
+        // approachExp's last argument is a time step in SECONDS - every other
+        // HUD feeds it `deltaSeconds`, the real frame delta (~0.008 at 120fps).
+        // This one was passing tickCounter.getTickProgress(), a 0..1 fraction
+        // of the current tick, so with a rate of 10 the fade converged in one
+        // or two frames and the outline snapped on instead of easing in.
         RECT_HOVER_PROGRESS[hudIndex] = approachExp(
                 RECT_HOVER_PROGRESS[hudIndex],
                 hoverTarget,
                 10.0F,
-                getHudDelta(module, chatEditing, tickCounter.getTickProgress(false))
+                cachedFrameDeltaSeconds
         );
         phaze$pmWasMouseDown = mouseDown;
 
@@ -5190,7 +5266,11 @@ public class InGameHudMixin {
 
         if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05F) {
             int outlineColor = withAlpha(0xFFFFFF, (int) (165.0F * RECT_HOVER_PROGRESS[hudIndex]));
-            drawOuterOutline(context, hoverX, panelY, hoverW, panelH, 1, outlineColor);
+            // Same thickness rule as every other HUD - this one had a
+            // hardcoded 1, which reads as a heavier border next to the
+            // scale-compensated ones.
+            int pmOutlineThickness = Math.max(1, Math.round(BASE_HOVER_OUTLINE_THICKNESS / Math.max(1.0F, scale)));
+            drawOuterOutline(context, hoverX, panelY, hoverW, panelH, pmOutlineThickness, outlineColor);
         }
 
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
@@ -5511,8 +5591,26 @@ public class InGameHudMixin {
     }
 
     // ====================================================================
-    // 12) Crosshair: redirect Perspective.isFirstPerson inside renderCrosshair
+    // 12) Crosshair: suppress while a Phaze screen is open, then redirect
+    //     Perspective.isFirstPerson inside renderCrosshair
     // ====================================================================
+
+    /**
+     * Hide the vanilla crosshair while a Phaze screen is up.
+     *
+     * <p>Minecraft keeps rendering the in-game HUD behind an open screen, so
+     * the crosshair otherwise sits in the middle of the ClickGUI. Vanilla's own
+     * screens never needed this: the crosshair is skipped for spectator mode
+     * and hidden-HUD only, because a vanilla screen visually replaces it with
+     * the mouse cursor anyway.
+     */
+    @Inject(method = "renderCrosshair", at = @At("HEAD"), cancellable = true)
+    private void phaze$hideCrosshairInPhazeGui(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.currentScreen instanceof MenuScreen) {
+            ci.cancel();
+        }
+    }
 
     @Redirect(
             method = "renderCrosshair",
