@@ -119,7 +119,7 @@ public final class FTHelper extends Module {
     public final ValueSetting circleThickness = new ValueSetting(
             "Circle Thickness",
             "World-space thickness of all FT helper circles in blocks"
-    ).range(0.05f, 0.50f).step(0.01f).setValue(0.20f);
+    ).range(0.05f, 0.50f).step(0.05f).setValue(0.20f);
     public final BooleanSetting circleGlow = new BooleanSetting(
             "Circle Glow",
             "Render a flat soft halo under each circle - lays on the ground, no 3D bump"
