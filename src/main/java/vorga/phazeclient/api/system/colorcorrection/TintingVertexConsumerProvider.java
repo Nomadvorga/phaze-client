@@ -12,7 +12,7 @@ public final class TintingVertexConsumerProvider implements VertexConsumerProvid
     private static final boolean SODIUM_LOADED = FabricLoader.getInstance().isModLoaded("sodium");
     private final VertexConsumerProvider parent;
     private final WorldColorCorrectionController.Target target;
-    private final Map<RenderLayer, VertexConsumer> cache = new IdentityHashMap<>();
+    private final Map<RenderLayer, CachedConsumer> cache = new IdentityHashMap<>();
 
     public TintingVertexConsumerProvider(VertexConsumerProvider parent, WorldColorCorrectionController.Target target) {
         this.parent = parent;
@@ -24,7 +24,18 @@ public final class TintingVertexConsumerProvider implements VertexConsumerProvid
         if (layer == null) {
             return parent.getBuffer(null);
         }
-        return cache.computeIfAbsent(layer, currentLayer -> createConsumer(parent.getBuffer(currentLayer)));
+        // Immediate providers replace a layer's BufferBuilder after a flush.
+        // Resolve the parent first and retain the wrapper only while its
+        // delegate is still current (nametag blur can flush mid-entity).
+        VertexConsumer parentConsumer = parent.getBuffer(layer);
+        CachedConsumer cached = cache.get(layer);
+        if (cached != null && cached.parent == parentConsumer) {
+            return cached.tinted;
+        }
+
+        VertexConsumer tinted = createConsumer(parentConsumer);
+        cache.put(layer, new CachedConsumer(parentConsumer, tinted));
+        return tinted;
     }
 
     private VertexConsumer createConsumer(VertexConsumer parentConsumer) {
@@ -35,5 +46,8 @@ public final class TintingVertexConsumerProvider implements VertexConsumerProvid
             }
         }
         return new TintingVertexConsumer(parentConsumer, target);
+    }
+
+    private record CachedConsumer(VertexConsumer parent, VertexConsumer tinted) {
     }
 }

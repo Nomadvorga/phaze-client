@@ -14,6 +14,7 @@ import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import org.joml.Matrix4f;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL30C;
@@ -23,6 +24,7 @@ import vorga.phazeclient.api.system.shape.implement.Rectangle;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 
 import java.util.ArrayList;
+import java.nio.ByteBuffer;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -137,6 +139,7 @@ public final class CardSnapshotCache {
         Framebuffer fbo;
         int fbWidth;
         int fbHeight;
+        boolean useDepth;
         // hash / populated are the freshness contract between the
         // cache and its callers. {@code populated} is set by
         // {@link #endCapture} once the capture pass actually finishes;
@@ -176,18 +179,28 @@ public final class CardSnapshotCache {
      *         whether content also needs re-rendering.
      */
     public static Snapshot getOrCreate(Object key, int fbWidth, int fbHeight) {
+        return getOrCreate(key, fbWidth, fbHeight, false);
+    }
+
+    public static Snapshot getOrCreate(
+            Object key,
+            int fbWidth,
+            int fbHeight,
+            boolean useDepth
+    ) {
         Snapshot snap = CACHE.computeIfAbsent(key, k -> new Snapshot());
-        if (snap.fbo == null || snap.fbWidth != fbWidth || snap.fbHeight != fbHeight) {
+        if (snap.fbo == null
+                || snap.fbWidth != fbWidth
+                || snap.fbHeight != fbHeight
+                || snap.useDepth != useDepth) {
             if (snap.fbo != null) {
                 snap.fbo.delete();
             }
-            // SimpleFramebuffer(width, height, useDepth=false) - we
-            // don't need a depth attachment because GUI components
-            // are flat 2D draws ordered by call sequence, not by Z.
-            snap.fbo = new SimpleFramebuffer(fbWidth, fbHeight, false);
+            snap.fbo = new SimpleFramebuffer(fbWidth, fbHeight, useDepth);
             snap.fbo.setTexFilter(GL11C.GL_LINEAR);
             snap.fbWidth = fbWidth;
             snap.fbHeight = fbHeight;
+            snap.useDepth = useDepth;
             snap.populated = false;
         }
         return snap;
@@ -383,6 +396,63 @@ public final class CardSnapshotCache {
         RenderSystem.setShaderColor(s.savedShaderColor[0], s.savedShaderColor[1], s.savedShaderColor[2], s.savedShaderColor[3]);
 
         s.snapshot.populated = true;
+    }
+
+    /**
+     * Entity render layers (and Iris' compatible replacements) may bind their
+     * own target while a GUI snapshot is being populated. Call immediately
+     * after a layer starts so its shader/blend state is retained but geometry
+     * still lands in the active transparent snapshot instead of the main
+     * framebuffer.
+     */
+    public static void rebindActiveCaptureTarget() {
+        if (active == null || active.snapshot == null
+                || active.snapshot.fbo == null) {
+            return;
+        }
+        active.snapshot.fbo.beginWrite(false);
+        RenderSystem.viewport(
+                0, 0, active.snapshot.fbWidth, active.snapshot.fbHeight
+        );
+    }
+
+    /**
+     * One-time validation for third-party render pipelines. Iris/RenderLayer
+     * may legally redirect a draw after an off-screen FBO was bound; in that
+     * case the snapshot is marked populated but remains fully transparent.
+     * Reading it once after creation lets callers fall back to their live VBO
+     * path instead of displaying a permanently blank card.
+     */
+    public static boolean hasVisiblePixels(Snapshot snapshot) {
+        if (snapshot == null || snapshot.fbo == null
+                || snapshot.fbWidth <= 0 || snapshot.fbHeight <= 0) {
+            return false;
+        }
+        int previousRead = GL11.glGetInteger(
+                GL30C.GL_READ_FRAMEBUFFER_BINDING
+        );
+        ByteBuffer pixels = BufferUtils.createByteBuffer(
+                snapshot.fbWidth * snapshot.fbHeight * 4
+        );
+        try {
+            GlStateManager._glBindFramebuffer(
+                    GL30C.GL_READ_FRAMEBUFFER, snapshot.fbo.fbo
+            );
+            GL11.glReadPixels(
+                    0, 0, snapshot.fbWidth, snapshot.fbHeight,
+                    GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels
+            );
+            for (int i = 3; i < pixels.capacity(); i += 4) {
+                if ((pixels.get(i) & 0xFF) > 2) {
+                    return true;
+                }
+            }
+            return false;
+        } finally {
+            GlStateManager._glBindFramebuffer(
+                    GL30C.GL_READ_FRAMEBUFFER, previousRead
+            );
+        }
     }
 
     /**

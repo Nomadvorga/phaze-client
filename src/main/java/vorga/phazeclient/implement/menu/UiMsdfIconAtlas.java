@@ -93,6 +93,21 @@ public final class UiMsdfIconAtlas {
             int color,
             boolean precise
     ) {
+        return renderIcon(context, icon, x, y, width, height, color, precise, THICKNESS, SMOOTHNESS);
+    }
+
+    public static boolean renderIcon(
+            DrawContext context,
+            Identifier icon,
+            float x,
+            float y,
+            float width,
+            float height,
+            int color,
+            boolean precise,
+            float thickness,
+            float smoothness
+    ) {
         AtlasIcon atlasIcon = ensureIconReady(icon);
         if (atlasIcon == null) {
             return false;
@@ -103,7 +118,18 @@ public final class UiMsdfIconAtlas {
         float drawWidth = precise ? Math.max(1.0F, width) : Math.max(1.0F, Math.round(width));
         float drawHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
         FittedRect fittedRect = fitRect(x1, y1, drawWidth, drawHeight, atlasIcon.aspectRatio);
-        return renderQuad(context.getMatrices().peek().getPositionMatrix(), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false);
+        return renderQuad(
+                context.getMatrices().peek().getPositionMatrix(),
+                atlasIcon,
+                fittedRect.left,
+                fittedRect.top,
+                fittedRect.right,
+                fittedRect.bottom,
+                color,
+                false,
+                thickness,
+                smoothness
+        );
     }
 
     public static boolean renderIcon(
@@ -120,7 +146,7 @@ public final class UiMsdfIconAtlas {
             return false;
         }
         FittedRect fittedRect = fitRect(x, y, Math.max(1.0F, width), Math.max(1.0F, height), atlasIcon.aspectRatio);
-        return renderQuad(matrix.peek().getPositionMatrix(), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, true);
+        return renderQuad(matrix.peek().getPositionMatrix(), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, true, THICKNESS, SMOOTHNESS);
     }
 
     public static boolean renderIcon(
@@ -143,7 +169,7 @@ public final class UiMsdfIconAtlas {
         float drawWidth = precise ? Math.max(1.0F, width) : Math.max(1.0F, Math.round(width));
         float drawHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
         FittedRect fittedRect = fitRect(x1, y1, drawWidth, drawHeight, atlasIcon.aspectRatio);
-        return renderQuad(matrix, atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false);
+        return renderQuad(matrix, atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false, THICKNESS, SMOOTHNESS);
     }
 
     private static synchronized boolean ensureAtlasLoaded() {
@@ -293,7 +319,18 @@ public final class UiMsdfIconAtlas {
         return new FittedRect(x + offsetX, y + offsetY, x + offsetX + drawWidth, y + offsetY + drawHeight);
     }
 
-    private static boolean renderQuad(Matrix4f matrix, AtlasIcon atlasIcon, float x1, float y1, float x2, float y2, int color, boolean legacyImageOrientation) {
+    private static boolean renderQuad(
+            Matrix4f matrix,
+            AtlasIcon atlasIcon,
+            float x1,
+            float y1,
+            float x2,
+            float y2,
+            int color,
+            boolean legacyImageOrientation,
+            float thickness,
+            float smoothness
+    ) {
         BatchedRectangle.flushIfBatching();
 
         if (!filterApplied && atlasTexture != null) {
@@ -310,8 +347,8 @@ public final class UiMsdfIconAtlas {
         ShaderProgram shader = RenderSystem.setShader(MsdfRenderer.MSDF_FONT_SHADER_KEY);
         if (shader != null) {
             shader.getUniform("Range").set(distanceRange);
-            shader.getUniform("Thickness").set(THICKNESS);
-            shader.getUniform("Smoothness").set(SMOOTHNESS);
+            shader.getUniform("Thickness").set(thickness);
+            shader.getUniform("Smoothness").set(smoothness);
             shader.getUniform("Outline").set(0);
             shader.getUniform("OutlineThickness").set(0.0F);
             shader.getUniform("OutlineColor").set(0.0F, 0.0F, 0.0F, 0.0F);

@@ -8,9 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import net.minecraft.client.MinecraftClient;
-import vorga.phazeclient.api.feature.module.Module;
-import vorga.phazeclient.api.feature.module.ModuleCategory;
-import vorga.phazeclient.core.Main;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -25,8 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.Base64;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -663,71 +660,31 @@ public final class RemoteRulesService {
     }
 
     /**
-     * Posts the local module list to {@code POST /api/manifest} so
-     * the admin dashboard's chip palette stays in sync with whatever
-     * modules this client actually exposes. Body shape matches the
-     * worker's zod schema in
-     * {@code phaze-rules-admin/functions/_lib/routes/public.ts}:
-     *
-     * <pre>
-     * {
-     *   "clientId": "uuid",
-     *   "modules": [
-     *     { "id": "auto_eat", "name": "Auto Eat", "category": "UTILITIES" },
-     *     ...
-     *   ]
-     * }
-     * </pre>
-     *
-     * <p>Failure modes are all swallowed by the caller -
-     * {@link #fetch(String)} - because the catalog is purely
-     * advisory. Network errors, 4xx, missing module provider on
-     * a startup race, all of them just result in a retry on the
-     * next heartbeat.
+     * Uploads the build-time Ed25519-signed catalog bundled in the JAR.
+     * The private key never ships with the client. A modified client can
+     * replay this exact catalog, but it cannot add invented module ids.
      */
     private void pushManifest() throws IOException {
-        Main main = Main.getInstance();
-        if (main == null || main.getModuleProvider() == null) {
-            // Module registry hasn't initialised yet (very early
-            // startup or a rare init order quirk). Throw so the
-            // caller rolls the once-flag back; we'll retry on the
-            // next heartbeat when the provider exists.
-            throw new IOException("module provider not ready");
+        byte[] manifestBytes;
+        String signature;
+        try (InputStream manifest = RemoteRulesService.class.getResourceAsStream(
+                "/phaze/module-manifest.json");
+             InputStream signatureStream = RemoteRulesService.class.getResourceAsStream(
+                     "/phaze/module-manifest.sig")) {
+            if (manifest == null || signatureStream == null) {
+                throw new IOException("signed module manifest is missing from JAR");
+            }
+            manifestBytes = manifest.readAllBytes();
+            signature = new String(signatureStream.readAllBytes(), StandardCharsets.US_ASCII).trim();
         }
-        List<Module> modules = main.getModuleProvider().getModules();
-        if (modules == null || modules.isEmpty()) {
-            throw new IOException("no modules registered");
+        if (manifestBytes.length == 0 || signature.isEmpty()) {
+            throw new IOException("signed module manifest is empty");
         }
 
-        // Build the JSON body manually instead of pulling in a
-        // serialiser dependency. The shape is small and stable.
         JsonObject body = new JsonObject();
         body.addProperty("clientId", clientId);
-        JsonArray arr = new JsonArray();
-        for (Module m : modules) {
-            if (m == null) continue;
-            String id = m.getIdentifier();
-            if (id == null || id.isEmpty()) continue;
-            JsonObject entry = new JsonObject();
-            entry.addProperty("id", id.toLowerCase());
-            // visibleName is the human label shown in the GUI; the
-            // mod sets it equal to `name` when no explicit override
-            // is provided, which is fine.
-            String visible = m.getVisibleName();
-            if (visible != null && !visible.isEmpty()) {
-                entry.addProperty("name", visible);
-            } else {
-                entry.add("name", com.google.gson.JsonNull.INSTANCE);
-            }
-            ModuleCategory cat = m.getCategory();
-            if (cat != null) {
-                entry.addProperty("category", cat.name());
-            } else {
-                entry.add("category", com.google.gson.JsonNull.INSTANCE);
-            }
-            arr.add(entry);
-        }
-        body.add("modules", arr);
+        body.addProperty("payload", Base64.getEncoder().encodeToString(manifestBytes));
+        body.addProperty("signature", signature);
 
         URI uri = URI.create(apiBase + "/api/manifest");
         HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();

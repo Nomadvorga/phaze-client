@@ -11,7 +11,6 @@ public final class ComboCounterHud extends RectHudModule {
         return INSTANCE;
     }
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
 
     /**
      * Toggle that swaps the order of the {@code Combo} label and the
@@ -29,7 +28,7 @@ public final class ComboCounterHud extends RectHudModule {
     private ComboCounterHud() {
         super("combo_counter_hud", "Combo Counter", 100.0f, 50.0f, 1.0f);
         reverseOrder.setFullWidth(true);
-        setup(otherSection, reverseOrder);
+        setup(reverseOrder);
     }
 
     public void onAttack(LivingEntity target) {

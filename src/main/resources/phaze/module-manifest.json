@@ -1,0 +1,452 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": 4,
+  "clientVersion": "1.1",
+  "modules": [
+    {
+      "id": "animations",
+      "name": "Animations",
+      "category": "HUD"
+    },
+    {
+      "id": "armor_hud",
+      "name": "Armor",
+      "category": "HUD"
+    },
+    {
+      "id": "armor_notifier",
+      "name": "Armor Notifier",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "aspect_ratio",
+      "name": "Aspect Ratio",
+      "category": "OTHER"
+    },
+    {
+      "id": "auc_helper",
+      "name": "Auc Helper",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "auto_eat",
+      "name": "Auto Eat",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "auto_gg",
+      "name": "Auto GG",
+      "category": "OTHER"
+    },
+    {
+      "id": "auto_respawn",
+      "name": "Auto Respawn",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "auto_sprint",
+      "name": "AutoSprint",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "autonear",
+      "name": "Auto Near",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "autopotion",
+      "name": "Auto Potion",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "autoreissue",
+      "name": "Auto Reissue",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "autoswap",
+      "name": "Auto Swap",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "better_f3",
+      "name": "Better F3",
+      "category": "OTHER"
+    },
+    {
+      "id": "binds",
+      "name": "Binds",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "block_overlay",
+      "name": "Block Overlay",
+      "category": "OTHER"
+    },
+    {
+      "id": "changehand",
+      "name": "Change Hand",
+      "category": "OTHER"
+    },
+    {
+      "id": "chat_helper",
+      "name": "Chat Helper",
+      "category": "OTHER"
+    },
+    {
+      "id": "chunk_animator",
+      "name": "World Animator",
+      "category": "OTHER"
+    },
+    {
+      "id": "color_correction",
+      "name": "Color Correction",
+      "category": "OTHER"
+    },
+    {
+      "id": "combo_counter_hud",
+      "name": "Combo Counter",
+      "category": "HUD"
+    },
+    {
+      "id": "consumable",
+      "name": "Consumable",
+      "category": "HUD"
+    },
+    {
+      "id": "cooldowns",
+      "name": "Cooldowns",
+      "category": "HUD"
+    },
+    {
+      "id": "coordinates_hud",
+      "name": "Coordinates",
+      "category": "HUD"
+    },
+    {
+      "id": "cps_hud",
+      "name": "CPS",
+      "category": "HUD"
+    },
+    {
+      "id": "crosshair",
+      "name": "Crosshair",
+      "category": "OTHER"
+    },
+    {
+      "id": "custom_fog",
+      "name": "Custom Fog",
+      "category": "OTHER"
+    },
+    {
+      "id": "day_counter_hud",
+      "name": "Day Counter",
+      "category": "HUD"
+    },
+    {
+      "id": "death_coords",
+      "name": "Death Coords",
+      "category": "OTHER"
+    },
+    {
+      "id": "discord_rpc",
+      "name": "Discord RPC",
+      "category": "OTHER"
+    },
+    {
+      "id": "elytrautility",
+      "name": "Elytra Swap",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "fake_fps",
+      "name": "Fake FPS",
+      "category": "OTHER"
+    },
+    {
+      "id": "fast_exp",
+      "name": "Fast Exp",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "fast_swap",
+      "name": "Fast Swap",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "fps_hud",
+      "name": "FPS",
+      "category": "HUD"
+    },
+    {
+      "id": "freelook",
+      "name": "Free Look",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "ft_helper",
+      "name": "FT Helper",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "full_bright",
+      "name": "Full Bright",
+      "category": "OTHER"
+    },
+    {
+      "id": "healing_helper",
+      "name": "Healing Helper",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "health_indicator",
+      "name": "Health Indicator",
+      "category": "OTHER"
+    },
+    {
+      "id": "hit_range",
+      "name": "Hit Range",
+      "category": "OTHER"
+    },
+    {
+      "id": "hitboxcustomizer",
+      "name": "Hitbox Customizer",
+      "category": "OTHER"
+    },
+    {
+      "id": "hitcolor",
+      "name": "HitColor",
+      "category": "OTHER"
+    },
+    {
+      "id": "holyworld_helper",
+      "name": "HolyWorld Helper",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "hudoptimizer",
+      "name": "HUD Optimizer",
+      "category": "HUD"
+    },
+    {
+      "id": "inventory_hud",
+      "name": "Inventory",
+      "category": "HUD"
+    },
+    {
+      "id": "item_highlighter",
+      "name": "Item Highlighter",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "item_physics",
+      "name": "Item Physics",
+      "category": "OTHER"
+    },
+    {
+      "id": "item_pickup_logger",
+      "name": "Item Pickup Logger",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "item_scroller",
+      "name": "Item Scroller",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "keystrokes_hud",
+      "name": "Keystrokes",
+      "category": "HUD"
+    },
+    {
+      "id": "lockslot",
+      "name": "Lock Slot",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "mace_indicator",
+      "name": "Mace Indicator",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "memory_hud",
+      "name": "Memory HUD",
+      "category": "HUD"
+    },
+    {
+      "id": "mention_highlight",
+      "name": "Mention Highlight",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "motion_blur",
+      "name": "Motion Blur",
+      "category": "OTHER"
+    },
+    {
+      "id": "mouseclicker",
+      "name": "Tape Mouse",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "movement_speed_hud",
+      "name": "Movement Speed",
+      "category": "HUD"
+    },
+    {
+      "id": "nametag_hud",
+      "name": "Nametag",
+      "category": "HUD"
+    },
+    {
+      "id": "nick_hider",
+      "name": "Nick Hider",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "no_fluid",
+      "name": "No Fluid",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "no_render",
+      "name": "Render Tweaks",
+      "category": "OTHER"
+    },
+    {
+      "id": "pickaxe_notifier",
+      "name": "Pickaxe Notifier",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "ping_hud",
+      "name": "Ping",
+      "category": "HUD"
+    },
+    {
+      "id": "player_model_hud",
+      "name": "Player Model",
+      "category": "HUD"
+    },
+    {
+      "id": "potion_hud",
+      "name": "Potions",
+      "category": "HUD"
+    },
+    {
+      "id": "predictions",
+      "name": "Predictions",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "reach_hud",
+      "name": "Reach HUD",
+      "category": "HUD"
+    },
+    {
+      "id": "saturation",
+      "name": "Saturation",
+      "category": "HUD"
+    },
+    {
+      "id": "scoreboard_hud",
+      "name": "Scoreboard",
+      "category": "HUD"
+    },
+    {
+      "id": "server_address_hud",
+      "name": "Server Address",
+      "category": "HUD"
+    },
+    {
+      "id": "session_time_hud",
+      "name": "Session Time",
+      "category": "HUD"
+    },
+    {
+      "id": "shifttap",
+      "name": "Shift Tap",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "shulker_preview",
+      "name": "Shulker Preview",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "sky_customizer",
+      "name": "Sky Customizer",
+      "category": "OTHER"
+    },
+    {
+      "id": "smooth_camera",
+      "name": "Smooth Camera",
+      "category": "OTHER"
+    },
+    {
+      "id": "sprint_hud",
+      "name": "Sprint HUD",
+      "category": "HUD"
+    },
+    {
+      "id": "streamer_mode",
+      "name": "Streamer Mode",
+      "category": "OTHER"
+    },
+    {
+      "id": "tab_hud",
+      "name": "Tab",
+      "category": "HUD"
+    },
+    {
+      "id": "themes",
+      "name": "Themes",
+      "category": "OTHER"
+    },
+    {
+      "id": "time_changer",
+      "name": "Time Changer",
+      "category": "OTHER"
+    },
+    {
+      "id": "time_hud",
+      "name": "Time",
+      "category": "HUD"
+    },
+    {
+      "id": "totem_tracker",
+      "name": "Totem Tracker",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "tps_hud",
+      "name": "TPS",
+      "category": "HUD"
+    },
+    {
+      "id": "translator",
+      "name": "Translator",
+      "category": "OTHER"
+    },
+    {
+      "id": "trap_timer",
+      "name": "Trap Timer",
+      "category": "UTILITIES"
+    },
+    {
+      "id": "waila_hud",
+      "name": "Waila",
+      "category": "HUD"
+    },
+    {
+      "id": "weather_changer",
+      "name": "Weather Changer",
+      "category": "OTHER"
+    },
+    {
+      "id": "zoom",
+      "name": "Zoom",
+      "category": "OTHER"
+    }
+  ]
+}

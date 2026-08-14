@@ -51,9 +51,15 @@ public class CheckComponent extends AbstractComponent {
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float hoverProgress = hoverAnimation.getOutputFloat();
 
-        int background = state ? MenuStyle.mix(MenuStyle.CHIP_ACTIVE, MenuStyle.ACCENT_GREEN, 0.22F) : MenuStyle.pill(false);
+        int inactiveBackground = MenuStyle.pill(false);
+        int activeBackground = MenuStyle.mix(MenuStyle.CHIP_ACTIVE, MenuStyle.ACCENT_GREEN, 0.22F);
+        int background = MenuStyle.mix(inactiveBackground, activeBackground, progress);
         background = MenuStyle.mix(background, MenuStyle.TEXT_PRIMARY, hoverProgress * 0.035F);
-        int outline = state ? MenuStyle.settingOutline(true) : MenuStyle.settingOutline(false);
+        int outline = MenuStyle.mix(
+                MenuStyle.settingOutline(false),
+                MenuStyle.settingOutline(true),
+                progress
+        );
         outline = MenuStyle.mix(outline, MenuStyle.BORDER_LIGHT, hoverProgress * 0.30F);
         float knobX = x + 1.2F + 7.0F * progress;
         float clampedAlpha = Math.max(0.0F, Math.min(1.0F, alpha));
@@ -65,7 +71,7 @@ public class CheckComponent extends AbstractComponent {
                 .color(MenuStyle.withAlpha(background, clampedAlpha))
                 .build());
 
-        rectangle.render(ShapeProperties.create(matrix, knobX, y + 1.7F, 7.0F, 7.0F)
+        rectangle.render(ShapeProperties.create(matrix, knobX, y + 1.45F, 7.0F, 7.0F)
                 .round(3.5F)
                 .color(MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, clampedAlpha))
                 .build());

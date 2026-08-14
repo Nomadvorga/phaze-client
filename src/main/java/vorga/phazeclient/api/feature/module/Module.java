@@ -168,6 +168,11 @@ public class Module extends SettingRepository implements QuickImports {
         return !showEnable || (state && !isServerLocked());
     }
 
+    /** Initial state for fresh configs; a saved state still takes priority. */
+    public boolean isEnabledByDefault() {
+        return false;
+    }
+
     public boolean isVisible() {
         if (RemoteRulesService.getInstance().shouldHideModuleWhenOffline(getIdentifier())) {
             return false;

@@ -94,7 +94,6 @@ public final class HealthIndicator extends RectHudModule {
     private static final int COLOR_GREEN       = 0xFF55FF55; // Formatting.GREEN
     private static final int COLOR_DARK_GREEN  = 0xFF00AA00; // Formatting.DARK_GREEN
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
 
     /**
      * How long, in seconds, to keep the victim's HP visible after the
@@ -178,11 +177,10 @@ public final class HealthIndicator extends RectHudModule {
         // controls still exist - they just don't draw anything until
         // the user re-enables Background from the settings panel.
         background.setValue(false);
-        otherSection.setFullWidth(true);
         targetDelay.setFullWidth(true);
         colorByHp.setFullWidth(true);
         hpPrefix.setFullWidth(true);
-        setup(otherSection, targetDelay, colorByHp, hpPrefix);
+        setup(targetDelay, colorByHp, hpPrefix);
     }
 
     /**

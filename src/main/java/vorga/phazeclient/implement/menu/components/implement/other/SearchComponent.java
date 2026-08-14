@@ -11,8 +11,9 @@ import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
-import vorga.phazeclient.api.system.font.FontRenderer;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.api.system.font.msdf.MsdfFont;
+import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
+import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.render.ScissorManager;
@@ -42,6 +43,13 @@ public class SearchComponent extends AbstractComponent {
     private static final float EXPANDED_WIDTH = 82;
     private static final float ICON_SIZE = 7;
     private static final float SEARCH_HEIGHT = 14;
+    private static final float SEARCH_TEXT_SIZE = 6.0F;
+    // Text is deliberately closer to the search icon. Keep the clip inset
+    // slightly wider than the text inset so the first glyph is never cut.
+    private static final float INPUT_TEXT_X_OFFSET = 12.0F;
+    private static final float INPUT_SCISSOR_X_OFFSET = 7.0F;
+    private static final float INPUT_SCISSOR_RIGHT_INSET = 2.0F;
+    private static final float SELECTION_X_OFFSET = -2.0F;
     private final Animation hoverAnimation = new DecelerateAnimation().setMs(200).setValue(0.15f);
     private final Animation selectAnimation = new DecelerateAnimation().setMs(200).setValue(1);
 
@@ -88,7 +96,7 @@ public class SearchComponent extends AbstractComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         MatrixStack matrix = context.getMatrices();
-        FontRenderer font = Fonts.getSize(12);
+        MsdfFont font = MsdfFonts.medium();
 
         // Drag-to-extend: while a press is held inside the search box
         // the cursor follows the mouse and the selection grows from
@@ -149,22 +157,23 @@ public class SearchComponent extends AbstractComponent {
 
         float animationProgress = getAnimationProgress();
         float textAlpha = Math.max(0, Math.min(1.0F, (animationProgress - 0.2F) / 0.6F));
-        float textX = x + 13 - xOffset;
+        float textX = x + INPUT_TEXT_X_OFFSET - xOffset;
 
         if (textAlpha > 0.01F) {
             String displayText = text;
             String centeredText = displayText.isEmpty() ? "Search" : displayText;
-            float inputTextY = centeredTextY(font, centeredText, y, height);
+            float inputTextY = MenuStyle.centerMsdfTextY(SEARCH_TEXT_SIZE, y, height);
 
             ScissorManager scissor = Main.getInstance().getScissorManager();
-            scissor.push(matrix.peek().getPositionMatrix(), x + 13, y, width - 15, height);
+            scissor.push(matrix.peek().getPositionMatrix(), x + INPUT_SCISSOR_X_OFFSET, y,
+                    width - INPUT_SCISSOR_X_OFFSET - INPUT_SCISSOR_RIGHT_INSET, height);
 
                 if (typing && hasSelection()) {
                     int s = Math.max(0, Math.min(selStart(), text.length()));
                     int e = Math.max(0, Math.min(selEnd(), text.length()));
                     if (s < e) {
-                        float selX0 = textX + font.getStringWidth(text.substring(0, s));
-                        float selX1 = textX + font.getStringWidth(text.substring(0, e));
+                        float selX0 = textX + font.getWidth(text.substring(0, s), SEARCH_TEXT_SIZE) + SELECTION_X_OFFSET;
+                        float selX1 = textX + font.getWidth(text.substring(0, e), SEARCH_TEXT_SIZE) + SELECTION_X_OFFSET;
                         // Center the selection band on the input rect
                         // itself rather than on the baseline-shifted
                         // text position. Using the rect centre keeps
@@ -175,7 +184,7 @@ public class SearchComponent extends AbstractComponent {
                         // pinned the highlight too low because the
                         // baseline sits in the lower half of the
                         // rendered glyph height.
-                        float selH = Math.max(8.0F, renderedTextHeight(font, "I") + 2.0F);
+                        float selH = 8.0F;
                         float selY = y + (height - selH) * 0.5F;
                         rectangle.render(ShapeProperties.create(matrix, selX0, selY, selX1 - selX0, selH)
                                 .color(MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, applyGlobalAlpha(textAlpha)))
@@ -196,26 +205,22 @@ public class SearchComponent extends AbstractComponent {
                             .ifPresentOrElse(module -> {
                                 String completion = module.getLocalizedName();
                                 String remainingText = completion.substring(text.length());
-                                float textWidth = font.getStringWidth(text);
-
-                                FontRenderer italicFont = Fonts.getSize(12, Fonts.Type.INTER_DEFAULT);
-                                italicFont.drawString(context.getMatrices(), remainingText,
-                                        textX + textWidth, centeredTextY(italicFont, remainingText, y, height), autocompleteColor);
+                                float textWidth = font.getWidth(text, SEARCH_TEXT_SIZE);
+                                drawMsdfText(context, remainingText, textX + textWidth, inputTextY, autocompleteColor);
                             }, () -> findFirstMatchingSetting(searchText).ifPresent(setting -> {
                                 String completion = setting.getLocalizedName();
                                 String remainingText = completion.substring(text.length());
-                                float textWidth = font.getStringWidth(text);
-
-                                FontRenderer italicFont = Fonts.getSize(12, Fonts.Type.INTER_DEFAULT);
-                                italicFont.drawString(context.getMatrices(), remainingText,
-                                        textX + textWidth, centeredTextY(italicFont, remainingText, y, height), autocompleteColor);
+                                float textWidth = font.getWidth(text, SEARCH_TEXT_SIZE);
+                                drawMsdfText(context, remainingText, textX + textWidth, inputTextY, autocompleteColor);
                             }));
                 }
 
                 if (displayText.isEmpty() && !typing) {
-                    font.drawString(context.getMatrices(), "Search", x + 13, inputTextY, MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, applyGlobalAlpha(textAlpha)));
+                    drawMsdfText(context, "Search", x + INPUT_TEXT_X_OFFSET, inputTextY,
+                            MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, applyGlobalAlpha(textAlpha)));
                 } else {
-                    font.drawString(context.getMatrices(), displayText, textX, inputTextY, MenuStyle.withAlpha(0xFFFFFFFF, applyGlobalAlpha(textAlpha)));
+                    drawMsdfText(context, displayText, textX, inputTextY,
+                            MenuStyle.withAlpha(0xFFFFFFFF, applyGlobalAlpha(textAlpha)));
                 }
 
                 scissor.pop();
@@ -224,10 +229,10 @@ public class SearchComponent extends AbstractComponent {
                 boolean focused = typing && (currentTime % 1000 < 500);
 
                 if (focused && textAlpha > 0.5F && !hasSelection()) {
-                    float cursorX = font.getStringWidth(text.substring(0, cursorPosition));
+                    float cursorX = font.getWidth(text.substring(0, cursorPosition), SEARCH_TEXT_SIZE);
                     int cursorColor = (int) (applyGlobalAlpha(textAlpha) * 255) << 24 | 0xFFFFFF;
-                    float cursorHeight = Math.max(6.0F, renderedTextHeight(font, "I") - 1.0F);
-                    rectangle.render(ShapeProperties.create(matrix, x + 13 - xOffset + cursorX, inputTextY - 2.5F, 0.5F, cursorHeight)
+                    float cursorHeight = 7.0F;
+                    rectangle.render(ShapeProperties.create(matrix, x + INPUT_TEXT_X_OFFSET - xOffset + cursorX, y + (height - cursorHeight) * 0.5F, 0.5F, cursorHeight)
                             .color(cursorColor).build());
                 }
             }
@@ -312,7 +317,7 @@ public class SearchComponent extends AbstractComponent {
     @Override
     public boolean charTyped(char chr, int modifiers) {
         float maxTextWidth = EXPANDED_WIDTH - ICON_SIZE - 17;
-        if (typing && Fonts.getSize(12).getStringWidth(text) < maxTextWidth) {
+        if (typing && MsdfFonts.medium().getWidth(text, SEARCH_TEXT_SIZE) < maxTextWidth) {
             if ((chr == '/' || chr == '.') && text.isEmpty()) {
                 return true;
             }
@@ -361,7 +366,7 @@ public class SearchComponent extends AbstractComponent {
                             deleteSelectedText();
                             float maxTextWidth = EXPANDED_WIDTH - ICON_SIZE - 17;
                             for (char c : clip.toCharArray()) {
-                                if (Fonts.getSize(12).getStringWidth(text) >= maxTextWidth) break;
+                                if (MsdfFonts.medium().getWidth(text, SEARCH_TEXT_SIZE) >= maxTextWidth) break;
                                 text = text.substring(0, cursorPosition) + c + text.substring(cursorPosition);
                                 cursorPosition++;
                             }
@@ -435,11 +440,11 @@ public class SearchComponent extends AbstractComponent {
 
     
     private int getCursorIndexAt(double mouseX) {
-        FontRenderer font = Fonts.getSize(12);
-        float relativeX = (float) mouseX - x - 13 + xOffset;
+        MsdfFont font = MsdfFonts.medium();
+        float relativeX = (float) mouseX - x - INPUT_TEXT_X_OFFSET + xOffset;
         int position = 0;
         while (position < text.length()) {
-            float textWidth = font.getStringWidth(text.substring(0, position + 1));
+            float textWidth = font.getWidth(text.substring(0, position + 1), SEARCH_TEXT_SIZE);
             if (textWidth > relativeX) {
                 break;
             }
@@ -449,14 +454,30 @@ public class SearchComponent extends AbstractComponent {
     }
 
     
-    private void updateXOffset(FontRenderer font, int cursorPosition) {
-        float cursorX = font.getStringWidth(text.substring(0, cursorPosition));
+    private void updateXOffset(MsdfFont font, int cursorPosition) {
+        float cursorX = font.getWidth(text.substring(0, cursorPosition), SEARCH_TEXT_SIZE);
         float availableWidth = width - ICON_SIZE - 17;
         if (cursorX < xOffset) {
             xOffset = cursorX;
         } else if (cursorX - xOffset > availableWidth) {
             xOffset = cursorX - availableWidth;
         }
+    }
+
+    private void drawMsdfText(DrawContext context, String value, float drawX, float drawY, int color) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        MsdfRenderer.renderText(
+                MsdfFonts.medium(),
+                value,
+                SEARCH_TEXT_SIZE,
+                color,
+                context.getMatrices().peek().getPositionMatrix(),
+                drawX,
+                drawY,
+                0.0F
+        );
     }
 
 

@@ -11,9 +11,10 @@ import net.minecraft.client.util.math.MatrixStack;
 
 public class ResetIconComponent implements QuickImports {
 
-    private static final float ICON_SIZE = 8.0f;
-    private static final float ICON_X_OFFSET = 8.0f;
-    private static final float ICON_Y_OFFSET = 6.0f;
+    private static final float BASE_ICON_SIZE = 8.0f;
+    private static final float ICON_SIZE = BASE_ICON_SIZE * (1.7f / 1.15f / 1.2f);
+    private static final float ICON_X_OFFSET = 8.0f - (ICON_SIZE - BASE_ICON_SIZE) / 2.0f;
+    private static final float ICON_Y_OFFSET = 6.0f - (ICON_SIZE - BASE_ICON_SIZE) / 2.0f;
     private static final String ICON_TEXTURE = "textures/reset.png";
 
     private float x, y;
@@ -88,7 +89,9 @@ public class ResetIconComponent implements QuickImports {
     }
 
     public static float getTextOffset() {
-        return ICON_SIZE + 2.0f;
+        // Preserve the existing label position: the enlarged icon grows
+        // around its old centre instead of pushing every setting name aside.
+        return BASE_ICON_SIZE + 2.0f;
     }
 
     public static float getXOffset() {

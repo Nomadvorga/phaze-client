@@ -160,6 +160,55 @@ public final class ChunkAnimator extends Module {
     }
 
     /**
+     * Returns whether this block position belongs to a column whose terrain is
+     * currently entering the world. Block entities are rendered separately
+     * from chunk geometry, so they cannot inherit the terrain shader's slide,
+     * fade, or scale transform. Callers use this to hide them until their
+     * chunk reaches its final position instead of leaving floating containers.
+     */
+    public boolean isColumnAnimating(BlockPos position) {
+        if (!isEnabled() || position == null) {
+            return false;
+        }
+        long key = ChunkPos.toLong(position.getX() >> 4, position.getZ() >> 4);
+        // The pending state is the animation's initial frame, before the
+        // terrain renderer consumes the event and installs its timestamp.
+        if (pendingAnimationKeys.contains(key)) {
+            return true;
+        }
+        Long startedAt = firstSeenMs.get(key);
+        if (startedAt != null
+                && System.currentTimeMillis() - startedAt < Math.max(1L, (long) duration.getInt())) {
+            return true;
+        }
+
+        // Iris/shader fallback animates an entire Sodium render region rather
+        // than each individual column. RenderRegion is 8 x 4 x 8 sections,
+        // and getRegionMagnitude stores its origin in section coordinates.
+        int chunkX = position.getX() >> 4;
+        int sectionY = position.getY() >> 4;
+        int chunkZ = position.getZ() >> 4;
+        long regionKey = ChunkSectionPos.asLong(
+                Math.floorDiv(chunkX, 8) * 8,
+                Math.floorDiv(sectionY, 4) * 4,
+                Math.floorDiv(chunkZ, 8) * 8
+        );
+        Long regionStartedAt = regionFirstSeenMs.get(regionKey);
+        if (regionStartedAt != null
+                && System.currentTimeMillis() - regionStartedAt < Math.max(1L, (long) duration.getInt())) {
+            return true;
+        }
+
+        // Sodium's block-entity pass is decoupled from its section draw list.
+        // On the first frame of an upload it can render a container before
+        // exposing the exact section/region key to the terrain path. While
+        // any World Animator transition is active, prefer a short hidden
+        // interval over a floating chest, then restore all containers as soon
+        // as the same animation clock finishes.
+        return hasActiveAnimations();
+    }
+
+    /**
      * Per-region first-seen tracker for the shadered fallback path.
      * Keyed by the region's chunk-space origin packed via
      * {@link ChunkSectionPos#asLong}. Separate from

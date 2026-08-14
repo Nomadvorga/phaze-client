@@ -27,7 +27,11 @@ float median(vec3 color) {
 void main() {
     float dist = median(texture(Sampler0, TexCoord).rgb) - 0.5 + Thickness;
     vec2 h = vec2(dFdx(TexCoord.x), dFdy(TexCoord.y)) * textureSize(Sampler0, 0);
-    float pixels = Range * inversesqrt(h.x * h.x + h.y * h.y);
+    // A sub-pixel screen range makes the nominally empty part of a tiny
+    // MSDF quad partially opaque, which shows up as a pale square behind
+    // small UI glyphs (notably the panorama-card cross). One screen pixel
+    // is the standard lower bound for stable MSDF antialiasing.
+    float pixels = max(Range * inversesqrt(h.x * h.x + h.y * h.y), 1.0);
     float alpha = smoothstep(-Smoothness, Smoothness, dist * pixels);
     vec4 color = vec4(FragColor.rgb, FragColor.a * alpha);
 

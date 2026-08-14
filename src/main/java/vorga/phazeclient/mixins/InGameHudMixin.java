@@ -59,6 +59,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
+import vorga.phazeclient.api.system.shape.implement.Rectangle;
 import vorga.phazeclient.api.system.cursor.HudCursorRelay;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
@@ -92,6 +93,7 @@ import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.menu.MenuScreen;
+import vorga.phazeclient.implement.menu.components.implement.settings.ScaleSnapOverlay;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.hud.Cooldowns;
 import vorga.phazeclient.implement.features.modules.other.Crosshair;
@@ -130,6 +132,7 @@ import java.time.format.DateTimeFormatter;
 
 @Mixin(InGameHud.class)
 public class InGameHudMixin {
+    private static final Rectangle HUD_BACKGROUND_RECTANGLE = new Rectangle();
     private static final float BASE_WIDTH = 60.0f;
     private static final float BASE_HEIGHT = 20.0f;
     private static final int HUD_TEXT_COLOR = 0xFFFFFFFF;
@@ -238,6 +241,17 @@ public class InGameHudMixin {
     private static List<String> potionDurationsCache = new ArrayList<>();
     private static boolean potionSampleCache = false;
     private static boolean potionCacheInitialized = false;
+    private static long potionSampleCycle = Long.MIN_VALUE;
+    private static int potionSampleIndex;
+    private static final Random POTION_PREVIEW_RANDOM = new Random();
+    private static final String[][] POTION_PREVIEW_SAMPLES = {
+            {"Speed II", "01:48"},
+            {"Strength", "02:31"},
+            {"Regeneration II", "00:45"},
+            {"Invisibility", "02:14"},
+            {"Fire Resistance", "04:12"},
+            {"Night Vision", "03:06"}
+    };
 
     private static boolean armorDragging = false;
     private static boolean armorResizing = false;
@@ -285,6 +299,10 @@ public class InGameHudMixin {
     /** Cached pass includes blur HUDs; the follow-up pass updates input state only. */
     private static boolean batchIncludesBlur = false;
     private static boolean inLogicOnlyPass = false;
+    /** Renders animated gradient HUDs directly after the cached HUD blit. */
+    private static boolean inGradientPass = false;
+    /** Actual blur state, separate from animated-gradient high-refresh state. */
+    private static boolean phaze$hasActiveHudBlurThisFrame = false;
     /**
      * Last observed {@link RectHudModule#hasActiveBackgroundBlur()} value per
      * HUD instance. Used to detect the exact frame a HUD migrates between the
@@ -314,6 +332,7 @@ public class InGameHudMixin {
      * surface.
      */
     private static final Map<Object, Boolean> PHAZE_LAST_BLUR_STATE = new IdentityHashMap<>();
+    private static final Map<Object, Boolean> PHAZE_LAST_GRADIENT_STATE = new IdentityHashMap<>();
     private static float directionDisplayYaw = Float.NaN;
     private static final long SESSION_START_MS = System.currentTimeMillis();
 
@@ -332,6 +351,7 @@ public class InGameHudMixin {
         inBatchPass = false;
         batchIncludesBlur = false;
         inLogicOnlyPass = false;
+        inGradientPass = false;
         HudCursorRelay.reset();
         Blur.INSTANCE.beginCachedFrame();
 
@@ -395,8 +415,8 @@ public class InGameHudMixin {
             // point shared by normal gameplay and open GUIs. Doing this before
             // any Phaze FBO capture prevents live HUD blur from sampling the
             // cleared/intermediate framebuffer used during Screen rendering.
-            boolean hasLiveBlurHud = !hudHidden && phaze$prescanBlurStateFlips();
-            if (hasLiveBlurHud) {
+            boolean hasLiveHudAnimation = !hudHidden && phaze$prescanBlurStateFlips();
+            if (!hudHidden && phaze$hasActiveHudBlurThisFrame) {
                 context.draw();
                 Blur.INSTANCE.captureBaseFrameForBlur();
             }
@@ -432,7 +452,7 @@ public class InGameHudMixin {
                 // blit shows fresh content matching what Pass 2 draws.
                 int configuredRefreshRate = HudOptimizer.getInstance().refreshRate.getInt();
                 boolean smoothGuiBackdrop = client.currentScreen instanceof MenuScreen;
-                int effectiveRefreshRate = hasLiveBlurHud || smoothGuiBackdrop
+                int effectiveRefreshRate = hasLiveHudAnimation || smoothGuiBackdrop
                         ? Math.max(60, configuredRefreshRate)
                         : configuredRefreshRate;
                 BatchedHudBuffer.INSTANCE.setTargetFps(effectiveRefreshRate);
@@ -478,6 +498,19 @@ public class InGameHudMixin {
                 }
                 BatchedHudBuffer.INSTANCE.blit();
 
+                // Gradients are intentionally kept out of the throttled HUD
+                // FBO. Draw their complete HUD once on the real framebuffer
+                // after the cached widgets were blitted, so both the text and
+                // its background update in lockstep on every display frame.
+                if (hasLiveHudAnimation) {
+                    inBatchPass = true;
+                    inGradientPass = true;
+                    renderHudInternal(context);
+                    context.draw();
+                    inGradientPass = false;
+                    inBatchPass = false;
+                }
+
                 // Keep click/drag state live without redrawing any HUD content.
                 inLogicOnlyPass = true;
                 renderHudInternal(context);
@@ -501,6 +534,13 @@ public class InGameHudMixin {
             float screenWidth = client.getWindow().getScaledWidth();
             float screenHeight = client.getWindow().getScaledHeight();
             renderZoomLevel(context, client, screenWidth, screenHeight);
+        }
+
+        // Draw the resize readout on the real final framebuffer. Rendering it
+        // inside renderHudInternal lets HudOptimizer capture it into its FBO,
+        // where it can disappear or update only at the cache refresh rate.
+        if (client != null && client.currentScreen instanceof ChatScreen) {
+            ScaleSnapOverlay.render(context);
         }
     }
 
@@ -831,8 +871,19 @@ public class InGameHudMixin {
     }
 
     private void renderBufferedHud(DrawContext context, RectHudModule module, boolean chatEditing, Runnable renderLogic) {
-        phaze$trackBlurStateChange(module, module.hasActiveBackgroundBlur());
-        if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
+        boolean liveBackground = module.hasActiveBackgroundBlur() || module.hasActiveAnimatedBackground();
+        phaze$trackBlurStateChange(module, liveBackground);
+        phaze$trackGradientStateChange(module, module.hasActiveAnimatedBackground());
+        if (inGradientPass) {
+            if (module.hasActiveAnimatedBackground()) {
+                renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
+            }
+            return;
+        }
+        if (inBatchPass && module.hasActiveAnimatedBackground()) {
+            return;
+        }
+        if (shouldSkipForCurrentPass(liveBackground)) return;
         renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
     }
 
@@ -852,6 +903,13 @@ public class InGameHudMixin {
     private static void phaze$trackBlurStateChange(Object module, boolean current) {
         Boolean prev = PHAZE_LAST_BLUR_STATE.put(module, current);
         if (prev != null && prev != current) {
+            BatchedHudBuffer.INSTANCE.invalidate();
+        }
+    }
+
+    private static void phaze$trackGradientStateChange(Object module, boolean current) {
+        Boolean previous = PHAZE_LAST_GRADIENT_STATE.put(module, current);
+        if (previous != null && previous != current) {
             BatchedHudBuffer.INSTANCE.invalidate();
         }
     }
@@ -885,34 +943,58 @@ public class InGameHudMixin {
     private static boolean phaze$prescanBlurStateFlips() {
         Main main = Main.getInstance();
         if (main == null) {
+            phaze$hasActiveHudBlurThisFrame = false;
             return false;
         }
         var provider = main.getModuleProvider();
         if (provider == null) {
+            phaze$hasActiveHudBlurThisFrame = false;
             return false;
         }
-        boolean anyActiveBlur = false;
+        boolean anyLiveBackground = false;
+        boolean anyActualBlur = false;
         for (Module module : provider.getModules()) {
             boolean current;
+            boolean animatedGradient;
             if (module instanceof RectHudModule rectModule) {
-                current = rectModule.hasActiveBackgroundBlur();
+                animatedGradient = rectModule.hasActiveAnimatedBackground();
+                current = rectModule.hasActiveBackgroundBlur() || animatedGradient;
+                anyActualBlur |= module.isEnabled() && rectModule.hasActiveBackgroundBlur();
             } else if (module instanceof ArmorHud armorModule) {
-                current = armorModule.hasActiveBackgroundBlur();
+                animatedGradient = armorModule.hasActiveAnimatedBackground();
+                current = armorModule.hasActiveBackgroundBlur() || animatedGradient;
+                anyActualBlur |= module.isEnabled() && armorModule.hasActiveBackgroundBlur();
             } else {
                 continue;
             }
-            anyActiveBlur |= module.isEnabled() && current;
+            anyLiveBackground |= module.isEnabled() && current;
             Boolean prev = PHAZE_LAST_BLUR_STATE.put(module, current);
             if (prev != null && prev != current) {
                 BatchedHudBuffer.INSTANCE.invalidate();
             }
+            Boolean previousGradient = PHAZE_LAST_GRADIENT_STATE.put(module, animatedGradient);
+            if (previousGradient != null && previousGradient != animatedGradient) {
+                BatchedHudBuffer.INSTANCE.invalidate();
+            }
         }
-        return anyActiveBlur;
+        phaze$hasActiveHudBlurThisFrame = anyActualBlur;
+        return anyLiveBackground;
     }
 
     private void renderBufferedHud(DrawContext context, ArmorHud module, boolean chatEditing, Runnable renderLogic) {
-        phaze$trackBlurStateChange(module, module.hasActiveBackgroundBlur());
-        if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
+        boolean liveBackground = module.hasActiveBackgroundBlur() || module.hasActiveAnimatedBackground();
+        phaze$trackBlurStateChange(module, liveBackground);
+        phaze$trackGradientStateChange(module, module.hasActiveAnimatedBackground());
+        if (inGradientPass) {
+            if (module.hasActiveAnimatedBackground()) {
+                renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
+            }
+            return;
+        }
+        if (inBatchPass && module.hasActiveAnimatedBackground()) {
+            return;
+        }
+        if (shouldSkipForCurrentPass(liveBackground)) return;
         renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
     }
 
@@ -999,8 +1081,8 @@ public class InGameHudMixin {
             return;
         }
 
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
 
         float hudWidth = baseWidth * scale;
         float hudHeight = baseHeight * scale;
@@ -1100,13 +1182,15 @@ public class InGameHudMixin {
                     float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5f;
 
-                    float minWidth = baseWidth * module.getMinHudScale();
-                    float maxWidth = baseWidth * module.getMaxHudScale();
+                    float minWidth = baseWidth * module.getMinHudScale() * 2.0F;
+                    float maxWidth = baseWidth * module.getMaxHudScale() * 2.0F;
                     float newWidth = MathHelper.clamp(RECT_RESIZE_START_WIDTH[hudIndex] + delta * 0.9f, minWidth, maxWidth);
-                    float newScale = newWidth / baseWidth;
+                    float newScale = snapAndAnnounceHudScale(
+                            module, newWidth / baseWidth / 2.0F,
+                            module.getMinHudScale(), module.getMaxHudScale());
 
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     hudWidth = baseWidth * scale;
                     hudHeight = baseHeight * scale;
                     maxX = Math.max(0.0f, screenWidth - hudWidth);
@@ -1174,7 +1258,7 @@ public class InGameHudMixin {
 
                 if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(), blurX, blurY, blurWidth, blurHeight)
-                            .round(0.0f)
+                            .round(getClampedHudCornerRadius(module.cornerRounding.getValue(), blurWidth, blurHeight))
                             .softness(0.0f)
                             .quality(blurQuality)
                             .color(0xFFFFFFFF)
@@ -1184,22 +1268,34 @@ public class InGameHudMixin {
         }
 
         if (module.background.isValue()) {
-            int targetBgColor = module.getResolvedBackgroundColor(client);
-            if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
-                RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
-                RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
+            if (module.isGradientPreset()) {
+                int hoverFill = chatEditing ? withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex])) : 0;
+                if (hudIndex != HUD_KEYSTROKES) {
+                    renderGradientRect(context, 0.0F, 0.0F, baseWidth, baseHeight, hoverFill,
+                            module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                            module.getGradientDirection(), module.getGradientAnimationOffset(System.currentTimeMillis()),
+                            module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
+                    context.draw();
+                }
             } else {
-                RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
-            }
+                int targetBgColor = module.getResolvedBackgroundColor(client);
+                if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
+                    RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
+                    RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
+                } else {
+                    RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
+                }
 
-            int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
-            if (chatEditing) {
-                int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
-                bgColor = blendARGB(bgColor, hoverFill);
-            }
-            if (hudIndex != HUD_KEYSTROKES) {
-                context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
-                context.draw();
+                int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
+                if (chatEditing) {
+                    int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
+                    bgColor = blendARGB(bgColor, hoverFill);
+                }
+                if (hudIndex != HUD_KEYSTROKES) {
+                    renderSolidHudBackground(context, 0.0F, 0.0F, baseWidth, baseHeight, bgColor,
+                            module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                    context.draw();
+                }
             }
         }
 
@@ -1332,8 +1428,8 @@ public class InGameHudMixin {
             maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, text, HUD_TEXT_SIZE));
         }
 
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
         float baseWidth = iconSize + textGap + maxTextWidth + numberSidePadding;
         float baseHeight = stacks.size() * rowHeight;
         float hudWidth = baseWidth * scale;
@@ -1431,10 +1527,11 @@ public class InGameHudMixin {
                     float deltaY = (float) mouseY - armorResizeStartMouseY;
                     float delta = (deltaX + deltaY) * 0.5f;
                     // Match resize feel of other rect HUDs (reference width = 64).
-                    float newScale = armorResizeStartScale + (delta * 0.9f) / BASE_WIDTH;
-                    newScale = MathHelper.clamp(newScale, module.getMinHudScale(), module.getMaxHudScale());
+                    float newScale = (armorResizeStartScale + (delta * 0.9f) / BASE_WIDTH) / 2.0F;
+                    newScale = snapAndAnnounceHudScale(
+                            module, newScale, module.getMinHudScale(), module.getMaxHudScale());
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     hudWidth = baseWidth * scale;
                     hudHeight = baseHeight * scale;
                     maxX = Math.max(0.0f, screenWidth - hudWidth);
@@ -1499,7 +1596,7 @@ public class InGameHudMixin {
 
                 if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(), blurX, blurY, blurWidth, blurHeight)
-                            .round(0.0f)
+                            .round(getClampedHudCornerRadius(module.cornerRounding.getValue(), blurWidth, blurHeight))
                             .softness(0.0f)
                             .quality(blurQuality)
                             .color(0xFFFFFFFF)
@@ -1509,21 +1606,31 @@ public class InGameHudMixin {
         }
 
         if (module.background.isValue()) {
-            int targetBgColor = module.background.isValue() ? module.getResolvedBackgroundColor(client) : 0;
-            if (!armorBackgroundColorInitialized) {
-                armorAnimatedBackgroundColor = targetBgColor;
-                armorBackgroundColorInitialized = true;
+            if (module.isGradientPreset()) {
+                int hoverFill = chatEditing ? withAlpha(0xFFFFFF, (int) (30.0f * armorHoverProgress)) : 0;
+                renderGradientRect(context, 0.0F, 0.0F, baseWidth, baseHeight, hoverFill,
+                        module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                        module.getGradientDirection(), module.getGradientAnimationOffset(System.currentTimeMillis()),
+                        module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
+                context.draw();
             } else {
-                armorAnimatedBackgroundColor = approachColorExp(armorAnimatedBackgroundColor, targetBgColor, 12.0f, deltaSeconds);
-            }
+                int targetBgColor = module.getResolvedBackgroundColor(client);
+                if (!armorBackgroundColorInitialized) {
+                    armorAnimatedBackgroundColor = targetBgColor;
+                    armorBackgroundColorInitialized = true;
+                } else {
+                    armorAnimatedBackgroundColor = approachColorExp(armorAnimatedBackgroundColor, targetBgColor, 12.0f, deltaSeconds);
+                }
 
-            int bgColor = armorAnimatedBackgroundColor;
-            if (chatEditing) {
-                int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * armorHoverProgress));
-                bgColor = blendARGB(bgColor, hoverFill);
+                int bgColor = armorAnimatedBackgroundColor;
+                if (chatEditing) {
+                    int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * armorHoverProgress));
+                    bgColor = blendARGB(bgColor, hoverFill);
+                }
+                renderSolidHudBackground(context, 0.0F, 0.0F, baseWidth, baseHeight, bgColor,
+                        module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                context.draw();
             }
-            context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
-            context.draw();
         }
 
         for (int i = 0; i < stacks.size(); i++) {
@@ -1642,8 +1749,8 @@ public class InGameHudMixin {
         float baseWidth = layout.baseWidth();
         float baseHeight = layout.baseHeight();
 
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
         float hudWidth = baseWidth * scale;
         float hudHeight = baseHeight * scale;
 
@@ -1719,10 +1826,12 @@ public class InGameHudMixin {
                     float deltaX = (float) mouseX - RECT_RESIZE_START_MOUSE_X[hudIndex];
                     float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5f;
-                    float newScale = RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9f) / BASE_WIDTH;
-                    newScale = MathHelper.clamp(newScale, module.getMinHudScale(), module.getMaxHudScale());
+                    float newScale =
+                            (RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9f) / BASE_WIDTH) / 2.0F;
+                    newScale = snapAndAnnounceHudScale(
+                            module, newScale, module.getMinHudScale(), module.getMaxHudScale());
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     hudWidth = baseWidth * scale;
                     hudHeight = baseHeight * scale;
                     maxX = Math.max(0.0f, screenWidth - hudWidth);
@@ -1784,7 +1893,7 @@ public class InGameHudMixin {
 
                 if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(), blurX, blurY, blurWidth, blurHeight)
-                            .round(0.0f)
+                            .round(getClampedHudCornerRadius(module.cornerRounding.getValue(), blurWidth, blurHeight))
                             .softness(0.0f)
                             .quality(blurQuality)
                             .color(0xFFFFFFFF)
@@ -1794,20 +1903,30 @@ public class InGameHudMixin {
         }
 
         if (module.background.isValue()) {
-            int targetBgColor = module.getResolvedBackgroundColor(client);
-            if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
-                RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
-                RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
+            if (module.isGradientPreset()) {
+                int hoverFill = chatEditing ? withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex])) : 0;
+                renderGradientRect(context, 0.0F, 0.0F, baseWidth, baseHeight, hoverFill,
+                        module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                        module.getGradientDirection(), module.getGradientAnimationOffset(System.currentTimeMillis()),
+                        module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
+                context.draw();
             } else {
-                RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
+                int targetBgColor = module.getResolvedBackgroundColor(client);
+                if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
+                    RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
+                    RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
+                } else {
+                    RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
+                }
+                int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
+                if (chatEditing) {
+                    int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
+                    bgColor = blendARGB(bgColor, hoverFill);
+                }
+                renderSolidHudBackground(context, 0.0F, 0.0F, baseWidth, baseHeight, bgColor,
+                        module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                context.draw();
             }
-            int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
-            if (chatEditing) {
-                int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
-                bgColor = blendARGB(bgColor, hoverFill);
-            }
-            context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
-            context.draw();
         }
 
         // Icon pass: drawItem internally pushes its own
@@ -1816,7 +1935,10 @@ public class InGameHudMixin {
         float padding = 3.0f;
         float itemSize = 18.0f;
         for (vorga.phazeclient.implement.features.modules.hud.Consumable.IconEntry entry : layout.entries()) {
-            int iconX = Math.round(padding + entry.col() * itemSize);
+            // The item model's visible pixels are slightly left-heavy within
+            // its 16px slot. Reserve one extra base pixel on the left so an
+            // icon (and every icon grid cell) is visually centred.
+            int iconX = Math.round(padding + 1.0F + entry.col() * itemSize);
             int iconY = Math.round(padding + entry.row() * itemSize);
             context.drawItem(entry.stack(), iconX, iconY);
             if (module.showCount.isValue()) {
@@ -1945,7 +2067,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
 
@@ -2072,7 +2194,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         float totalWidth = getHudTextWidth(client, fullText, HUD_TEXT_SIZE);
         float textX = (baseWidth - totalWidth) * 0.5f;
         float textY = (BASE_HEIGHT - 8.0f) / 2.0f;
@@ -2147,7 +2269,7 @@ public class InGameHudMixin {
         module.ensureDefaultHudPosition(screenWidth, screenHeight, baseWidth, BASE_HEIGHT);
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
 
         renderRectHud(context, client, module, "", hudIndex, chatEditing, mouseX, mouseY, mouseDown,
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, BASE_HEIGHT);
@@ -2184,7 +2306,7 @@ public class InGameHudMixin {
     ) {
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         float textWidth = client.textRenderer.getWidth(text);
         float baseWidth = Math.max(48.0f, textWidth + 16.0f);
         float baseHeight = BASE_HEIGHT;
@@ -2305,7 +2427,7 @@ public class InGameHudMixin {
         // If the HUD is still at its constructor default (0,0), place it at
         // vanilla-like sidebar position (right side, vertically centered).
         if (module.getHudX() <= 1.0f && module.getHudY() <= 1.0f) {
-            float scale = module.getHudScale();
+            float scale = module.getRenderHudScale();
             float hudWidth = baseWidth * scale;
             float hudHeight = baseHeight * scale;
             float vanillaX = Math.max(0.0f, screenWidth - hudWidth - 2.0f);
@@ -2328,12 +2450,13 @@ public class InGameHudMixin {
         // Get actual position and scale after renderRectHud
         float hudX = module.getHudX();
         float hudY = module.getHudY();
-        float hudScale = module.getHudScale();
+        float hudScale = module.getRenderHudScale();
 
         // Calculate render positions in local coordinates (relative to hudX, hudY)
         int rightEdgeLocal = Math.round(baseWidth);
         int textLeftLocal = 2;
         int verticalPosLocal = entryCount * 9;
+        boolean gradientBackground = module.isGradientPreset();
 
         // Get colors
         int targetTitleBgColor;
@@ -2398,22 +2521,18 @@ public class InGameHudMixin {
                 if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(),
                                     0.0f, backgroundTopLocal, blurWidth, blurHeight)
-                            .round(0.0f)
+                            .round(getClampedHudCornerRadius(module.cornerRounding.getValue(), blurWidth, blurHeight))
                             .softness(0.0f)
                             .quality(blurQuality)
                             .color(0xFFFFFFFF)
                             .build());
                 }
-                if (module.showTitle.isValue()) {
-                    context.fill(0, -topInset, rightEdgeLocal, -1, titleBgColor);
-                }
-                context.fill(0, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
+                renderScoreboardBackground(module, context, gradientBackground, topInset, rightEdgeLocal, verticalPosLocal,
+                        titleBgColor, rowBgColor);
                 context.draw();
             } else {
-                if (module.showTitle.isValue()) {
-                    context.fill(0, -topInset, rightEdgeLocal, -1, titleBgColor);
-                }
-                context.fill(0, -1, rightEdgeLocal, verticalPosLocal, rowBgColor);
+                renderScoreboardBackground(module, context, gradientBackground, topInset, rightEdgeLocal, verticalPosLocal,
+                        titleBgColor, rowBgColor);
             }
         }
 
@@ -2445,6 +2564,38 @@ public class InGameHudMixin {
         context.getMatrices().pop();
         context.getMatrices().pop();
 
+    }
+
+    private static void renderScoreboardBackground(
+            ScoreboardHud module,
+            DrawContext context,
+            boolean gradientBackground,
+            int topInset,
+            int rightEdgeLocal,
+            int verticalPosLocal,
+            int titleBgColor,
+            int rowBgColor
+    ) {
+        if (gradientBackground) {
+            if (module.showTitle.isValue()) {
+                renderGradientRect(context, 0.0F, -topInset, rightEdgeLocal, topInset - 1.0F, 0,
+                        module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                        module.getGradientDirection(), module.getGradientAnimationOffset(System.currentTimeMillis()),
+                        module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
+            }
+            renderGradientRect(context, 0.0F, -1.0F, rightEdgeLocal, verticalPosLocal + 1.0F, 0,
+                    module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                    module.getGradientDirection(), module.getGradientAnimationOffset(System.currentTimeMillis()),
+                    module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
+            context.draw();
+            return;
+        }
+        if (module.showTitle.isValue()) {
+            renderSolidHudBackground(context, 0.0F, -topInset, rightEdgeLocal, topInset - 1.0F,
+                    titleBgColor, module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+        }
+        renderSolidHudBackground(context, 0.0F, -1.0F, rightEdgeLocal, verticalPosLocal + 1.0F,
+                rowBgColor, module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
     }
 
     @Unique
@@ -2517,7 +2668,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         float centerX = baseWidth * 0.5f;
         float leftPadding = 8.0f;
         float rightPadding = 8.0f;
@@ -2657,7 +2808,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         int idleColor = module.background.isValue()
                 ? RECT_BG_ANIMATED_COLOR[HUD_KEYSTROKES]
                 : 0x00000000;
@@ -2669,13 +2820,23 @@ public class InGameHudMixin {
         context.getMatrices().scale(scale, scale, 1.0f);
         renderKeystrokeButtonBlur(context, module, scale);
         float cachedProgressScale = inBatchPass ? 0.0f : 1.0f;
-        renderKeyButton(context, 20, 0, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale);
-        renderKeyButton(context, 0, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale);
-        renderKeyButton(context, 19, 19, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale);
-        renderKeyButton(context, 36, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale);
-        renderKeyButton(context, 0, 38, 54, 8, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale);
-        renderKeyButton(context, 0, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale);
-        renderKeyButton(context, 28, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale);
+        if (module.background.isValue() && module.isGradientPreset()) {
+            renderGradientKeyButton(context, module, 20, 0, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale);
+            renderGradientKeyButton(context, module, 0, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale);
+            renderGradientKeyButton(context, module, 19, 19, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale);
+            renderGradientKeyButton(context, module, 36, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale);
+            renderGradientKeyButton(context, module, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale);
+            renderGradientKeyButton(context, module, 0, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale);
+            renderGradientKeyButton(context, module, 28, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale);
+        } else {
+            renderKeyButton(context, module, 20, 0, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale);
+            renderKeyButton(context, module, 0, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale);
+            renderKeyButton(context, module, 19, 19, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale);
+            renderKeyButton(context, module, 36, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale);
+            renderKeyButton(context, module, 0, 38, 54, 8, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale);
+            renderKeyButton(context, module, 0, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale);
+            renderKeyButton(context, module, 28, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale);
+        }
         context.draw();
         context.getMatrices().pop();
 
@@ -2708,18 +2869,21 @@ public class InGameHudMixin {
             return;
         }
 
-        if (!potionCacheInitialized || !chatEditing) {
-            List<StatusEffectInstance> updatedEffects = new ArrayList<>(client.player.getStatusEffects());
+        List<StatusEffectInstance> updatedEffects = new ArrayList<>(client.player.getStatusEffects());
+        boolean updatedSample = chatEditing && updatedEffects.isEmpty();
+        long previewCycle = updatedSample ? System.currentTimeMillis() / 3_000L : Long.MIN_VALUE;
+        if (updatedSample && potionSampleCycle != previewCycle) {
+            potionSampleIndex = POTION_PREVIEW_RANDOM.nextInt(POTION_PREVIEW_SAMPLES.length);
+        }
+        if (!potionCacheInitialized || !chatEditing || !updatedSample
+                || !potionSampleCache || potionSampleCycle != previewCycle) {
             updatedEffects.sort(Comparator.comparing(effect -> effect.getEffectType().value().getName().getString()));
-            boolean updatedSample = false;
             List<String> updatedNames = new ArrayList<>();
             List<String> updatedDurations = new ArrayList<>();
-            if (updatedEffects.isEmpty()) {
-                if (chatEditing) {
-                    updatedSample = true;
-                    updatedNames.add("Invisibility");
-                    updatedDurations.add("02:14");
-                }
+            if (updatedSample) {
+                String[] preview = POTION_PREVIEW_SAMPLES[potionSampleIndex];
+                updatedNames.add(preview[0]);
+                updatedDurations.add(preview[1]);
             } else {
                 for (StatusEffectInstance effect : updatedEffects) {
                     updatedNames.add(getEffectName(effect));
@@ -2730,6 +2894,7 @@ public class InGameHudMixin {
             potionNamesCache = updatedNames;
             potionDurationsCache = updatedDurations;
             potionSampleCache = updatedSample;
+            potionSampleCycle = previewCycle;
             potionCacheInitialized = true;
         }
 
@@ -2773,7 +2938,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
 
@@ -3148,20 +3313,20 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
 
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
         context.getMatrices().push();
         context.getMatrices().translate(x, y, HUD_RENDER_Z + 20.0f);
         context.getMatrices().scale(scale, scale, 1.0f);
-        renderLiveKeystrokeButton(context, 20, 0, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_W]);
-        renderLiveKeystrokeButton(context, 0, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A]);
-        renderLiveKeystrokeButton(context, 19, 19, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_S]);
-        renderLiveKeystrokeButton(context, 36, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D]);
-        renderLiveKeystrokeButton(context, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE]);
-        renderLiveKeystrokeButton(context, 0, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_LMB]);
-        renderLiveKeystrokeButton(context, 28, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_RMB]);
+        renderLiveKeystrokeButton(context, module, 20, 0, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_W]);
+        renderLiveKeystrokeButton(context, module, 0, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A]);
+        renderLiveKeystrokeButton(context, module, 19, 19, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_S]);
+        renderLiveKeystrokeButton(context, module, 36, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D]);
+        renderLiveKeystrokeButton(context, module, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE]);
+        renderLiveKeystrokeButton(context, module, 0, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_LMB]);
+        renderLiveKeystrokeButton(context, module, 28, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_RMB]);
         context.draw();
         context.getMatrices().pop();
 
@@ -3180,6 +3345,7 @@ public class InGameHudMixin {
 
     private static void renderLiveKeystrokeButton(
             DrawContext context,
+            KeystrokesHud module,
             int x,
             int y,
             int width,
@@ -3188,7 +3354,8 @@ public class InGameHudMixin {
     ) {
         int alpha = MathHelper.clamp(Math.round(185.0f * progress), 0, 185);
         if (alpha > 0) {
-            context.fill(x, y, x + width, y + height, withAlpha(0xFFFFFF, alpha));
+            renderSolidHudBackground(context, x, y, width, height, withAlpha(0xFFFFFF, alpha),
+                    module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
         }
     }
 
@@ -3229,6 +3396,8 @@ public class InGameHudMixin {
         for (ShapeProperties shape : KEYSTROKE_BLUR_RECTS) {
             shape.setMatrix(context.getMatrices());
             shape.setQuality(blurQuality);
+            shape.getRound().set(getClampedHudCornerRadius(
+                    module.cornerRounding.getValue(), shape.getWidth(), shape.getHeight()));
         }
         Blur.INSTANCE.renderCachedBatch(KEYSTROKE_BLUR_RECTS);
     }
@@ -3240,10 +3409,26 @@ public class InGameHudMixin {
                 .color(0xFFFFFFFF)
                 .build();
     }
-    private static void renderKeyButton(DrawContext context, int x, int y, int width, int height, int idleColor, float progress) {
+    private static void renderKeyButton(DrawContext context, KeystrokesHud module, int x, int y, int width, int height, int idleColor, float progress) {
         int activeOverlay = withAlpha(0xFFFFFF, Math.round(185.0f * progress));
         int color = blendARGB(idleColor, activeOverlay);
-        context.fill(x, y, x + width, y + height, color);
+        renderSolidHudBackground(context, x, y, width, height, color, module.cornerRounding.getValue(),
+                module.backgroundBlurRadius.getValue() <= 0.0F);
+    }
+
+    private static void renderGradientKeyButton(
+            DrawContext context,
+            KeystrokesHud module,
+            int x,
+            int y,
+            int width,
+            int height,
+            float progress
+    ) {
+        renderGradientRect(context, x, y, width, height, withAlpha(0xFFFFFF, Math.round(185.0F * progress)),
+                module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                module.getGradientDirection(), module.getGradientAnimationOffset(System.currentTimeMillis()),
+                module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
     }
 
     private static void renderKeyLabel(
@@ -3540,6 +3725,20 @@ public class InGameHudMixin {
                 || armorDragging || armorResizing;
     }
 
+    /**
+     * Keeps the natural resize range while making the original 1:1 HUD size
+     * easy to recover. The overlay is updated only from active chat/HUD resize
+     * paths, so ordinary GUI Scale sliders never produce this readout.
+     */
+    private static float snapAndAnnounceHudScale(Module module, float rawScale, float minScale, float maxScale) {
+        float clamped = MathHelper.clamp(rawScale, minScale, maxScale);
+        boolean canReachDefault = minScale <= 1.0F && maxScale >= 1.0F;
+        boolean snapped = canReachDefault && clamped >= 0.92F && clamped <= 1.08F;
+        float value = snapped ? 1.0F : clamped;
+        ScaleSnapOverlay.show(value, snapped, module.getVisibleName() + " Scale");
+        return value;
+    }
+
     private static void renderHudGuides(DrawContext context, float screenWidth, float screenHeight, float inverseGuiScale) {
         context.getMatrices().push();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
@@ -3745,6 +3944,455 @@ public class InGameHudMixin {
         return (a << 24) | (rgb & 0x00FFFFFF);
     }
 
+    private static float getClampedHudCornerRadius(float requestedRadius, float width, float height) {
+        return MathHelper.clamp(requestedRadius, 0.0F, Math.max(0.0F, Math.min(width, height) * 0.5F));
+    }
+
+    private static void renderSolidHudBackground(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            int color,
+            float requestedRadius,
+            boolean useSdfRenderer
+    ) {
+        float radius = getClampedHudCornerRadius(requestedRadius, width, height);
+        if (radius <= 0.01F) {
+            context.fill(Math.round(x), Math.round(y), Math.round(x + width), Math.round(y + height), color);
+            return;
+        }
+
+        if (useSdfRenderer) {
+            context.draw();
+            HUD_BACKGROUND_RECTANGLE.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
+                    .round(radius)
+                    .softness(1.0F)
+                    .color(color)
+                    .build());
+            return;
+        }
+
+        // Keep the fill inside DrawContext's GUI batch. The standalone SDF
+        // rectangle shader derives its clip position from gl_FragCoord and can
+        // therefore use the wrong framebuffer height after a cached blur pass,
+        // making the fill disappear. Only the two rounded caps are segmented;
+        // the centre remains one quad, so cost scales with radius, not HUD size.
+        float centerLeft = x + radius;
+        float centerRight = x + width - radius;
+        drawVerticalGradient(context, centerLeft, y, Math.max(0.0F, centerRight - centerLeft), height, color, color);
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        float windowScale = client == null || client.getWindow() == null
+                ? 1.0F
+                : Math.max(1.0F, (float) client.getWindow().getScaleFactor());
+        float matrixScaleX = Math.abs(context.getMatrices().peek().getPositionMatrix().m00());
+        float matrixScaleY = Math.abs(context.getMatrices().peek().getPositionMatrix().m11());
+        float physicalScaleX = Math.max(0.01F, matrixScaleX * windowScale);
+        float physicalScaleY = Math.max(0.01F, matrixScaleY * windowScale);
+        int capStrips = MathHelper.clamp((int) Math.ceil(radius * physicalScaleX * 1.5F), 8, 128);
+        float antialiasSize = Math.min(radius, 1.0F / physicalScaleY);
+        for (int strip = 0; strip < capStrips; strip++) {
+            float p0 = strip / (float) capStrips;
+            float p1 = (strip + 1.0F) / capStrips;
+            float centerProgress = (p0 + p1) * 0.5F;
+            float edgeDistance = centerProgress * radius;
+            float dx = radius - edgeDistance;
+            float inset = radius - (float) Math.sqrt(Math.max(0.0F, radius * radius - dx * dx));
+            float stripWidth = (p1 - p0) * radius;
+            float exactTop = y + inset;
+            float exactBottom = y + height - inset;
+            if (exactBottom <= exactTop) {
+                continue;
+            }
+            renderAntialiasedSolidStrip(context, x + p0 * radius, exactTop, stripWidth,
+                    exactBottom, color, antialiasSize);
+            renderAntialiasedSolidStrip(context, x + width - p1 * radius, exactTop, stripWidth,
+                    exactBottom, color, antialiasSize);
+        }
+    }
+
+    private static void renderAntialiasedSolidStrip(
+            DrawContext context,
+            float x,
+            float exactTop,
+            float width,
+            float exactBottom,
+            int color,
+            float antialiasSize
+    ) {
+        float halfAntialias = antialiasSize * 0.5F;
+        float solidTop = Math.min(exactBottom, exactTop + halfAntialias);
+        float solidBottom = Math.max(exactTop, exactBottom - halfAntialias);
+        if (solidBottom > solidTop) {
+            drawVerticalGradient(context, x, solidTop, width, solidBottom - solidTop, color, color);
+        }
+        if (antialiasSize > 0.001F) {
+            int transparent = multiplyColorAlpha(color, 0.0F);
+            drawVerticalGradient(context, x, exactTop - halfAntialias, width, antialiasSize, transparent, color);
+            drawVerticalGradient(context, x, exactBottom - halfAntialias, width, antialiasSize, color, transparent);
+        }
+    }
+
+    /**
+     * Draws the four gradient corners through DrawContext's GUI batch instead
+     * of the independent rounded-rect shader. That keeps the background in
+     * the same draw order as cached blur and avoids the white shader fallback
+     * seen on some Sodium/Iris render paths. The strips are queued into the
+     * same GUI batch, not uploaded as separate textures or framebuffers.
+     */
+    private static void renderGradientRect(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            int hoverFill,
+            int startColor,
+            int endColor,
+            String direction,
+            float animationOffset,
+            boolean animated,
+            float requestedRadius
+    ) {
+        if (hoverFill != 0) {
+            startColor = blendARGB(startColor, hoverFill);
+            endColor = blendARGB(endColor, hoverFill);
+        }
+        int left = Math.round(x);
+        int top = Math.round(y);
+        int right = Math.max(left + 1, Math.round(x + width));
+        int bottom = Math.max(top + 1, Math.round(y + height));
+        String selectedDirection = direction == null ? "Left to Right" : direction;
+        float radius = getClampedHudCornerRadius(requestedRadius, right - left, bottom - top);
+
+        if (radius > 0.01F) {
+            renderRoundedGradient(context, left, top, right, bottom, startColor, endColor,
+                    selectedDirection, animationOffset, animated, radius);
+            return;
+        }
+
+        if (!animated) {
+            renderStaticGradient(context, left, top, right, bottom, startColor, endColor, selectedDirection);
+            return;
+        }
+
+        if ("Pulse".equals(selectedDirection)) {
+            context.fill(left, top, right, bottom, movingGradientColor(startColor, endColor, animationOffset));
+            return;
+        }
+
+        if ("Top to Bottom".equals(selectedDirection) || "Bottom to Top".equals(selectedDirection)) {
+            float directionSign = "Top to Bottom".equals(selectedDirection) ? -1.0F : 1.0F;
+            renderMovingAxisGradient(context, left, top, right, bottom, startColor, endColor,
+                    directionSign * animationOffset, false);
+            return;
+        }
+
+        if ("Left to Right".equals(selectedDirection) || "Right to Left".equals(selectedDirection)) {
+            float directionSign = "Right to Left".equals(selectedDirection) ? 1.0F : -1.0F;
+            renderMovingAxisGradient(context, left, top, right, bottom, startColor, endColor,
+                    directionSign * animationOffset, true);
+            return;
+        }
+
+        int stripCount = 96;
+        for (int strip = 0; strip < stripCount; strip++) {
+            float progress = (strip + 0.5F) / stripCount;
+            float stripLeft = MathHelper.lerp(strip / (float) stripCount, left, right);
+            float stripRight = MathHelper.lerp((strip + 1.0F) / stripCount, left, right);
+
+            if ("Diagonal Down".equals(selectedDirection) || "Diagonal Up".equals(selectedDirection)) {
+                boolean down = "Diagonal Down".equals(selectedDirection);
+                float topCoordinate = down ? progress * 0.5F : 0.5F + progress * 0.5F;
+                float bottomCoordinate = down ? 0.5F + progress * 0.5F : progress * 0.5F;
+                int topColor = movingGradientColor(startColor, endColor, topCoordinate - animationOffset);
+                int bottomColor = movingGradientColor(startColor, endColor, bottomCoordinate - animationOffset);
+                drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, topColor, bottomColor);
+            } else {
+                float directionSign = "Right to Left".equals(selectedDirection) ? 1.0F : -1.0F;
+                int color = movingGradientColor(startColor, endColor, progress + directionSign * animationOffset);
+                drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, color, color);
+            }
+        }
+    }
+
+    private static void renderRoundedGradient(
+            DrawContext context,
+            float left,
+            float top,
+            float right,
+            float bottom,
+            int startColor,
+            int endColor,
+            String direction,
+            float animationOffset,
+            boolean animated,
+            float radius
+    ) {
+        float width = right - left;
+        float height = bottom - top;
+        MinecraftClient client = MinecraftClient.getInstance();
+        float windowScale = client == null || client.getWindow() == null
+                ? 1.0F
+                : Math.max(1.0F, (float) client.getWindow().getScaleFactor());
+        float matrixScaleX = Math.abs(context.getMatrices().peek().getPositionMatrix().m00());
+        float matrixScaleY = Math.abs(context.getMatrices().peek().getPositionMatrix().m11());
+        float physicalScaleX = Math.max(0.01F, matrixScaleX * windowScale);
+        float physicalScaleY = Math.max(0.01F, matrixScaleY * windowScale);
+        // Roughly 1.5 samples per physical pixel prevents the cap from
+        // turning into visible stairs when the HUD is enlarged. Small HUDs
+        // stay cheap; the cap only protects pathological scales/resolutions.
+        int stripCount = MathHelper.clamp((int) Math.ceil(width * physicalScaleX * 1.5F), 48, 512);
+        float antialiasSize = Math.min(radius, 1.0F / physicalScaleY);
+
+        for (int strip = 0; strip < stripCount; strip++) {
+            float x0Progress = strip / (float) stripCount;
+            float x1Progress = (strip + 1.0F) / stripCount;
+            float xProgress = (x0Progress + x1Progress) * 0.5F;
+            float stripLeft = MathHelper.lerp(x0Progress, left, right);
+            float stripRight = MathHelper.lerp(x1Progress, left, right);
+            float edgeDistance = Math.min(xProgress * width, (1.0F - xProgress) * width);
+            float inset = 0.0F;
+            boolean roundedCap = edgeDistance < radius;
+            if (roundedCap) {
+                float dx = radius - edgeDistance;
+                inset = radius - (float) Math.sqrt(Math.max(0.0F, radius * radius - dx * dx));
+            }
+
+            float exactTop = top + inset;
+            float exactBottom = bottom - inset;
+            float solidTop = Math.min(exactBottom, exactTop + antialiasSize * 0.5F);
+            float solidBottom = Math.max(exactTop, exactBottom - antialiasSize * 0.5F);
+            if (exactBottom <= exactTop) {
+                continue;
+            }
+            float topProgress = (solidTop - top) / height;
+            float bottomProgress = (solidBottom - top) / height;
+            int topColor = sampleHudGradientColor(startColor, endColor, direction,
+                    xProgress, topProgress, animationOffset, animated);
+            int bottomColor = sampleHudGradientColor(startColor, endColor, direction,
+                    xProgress, bottomProgress, animationOffset, animated);
+            drawVerticalGradient(context, stripLeft, solidTop, stripRight - stripLeft,
+                    solidBottom - solidTop, topColor, bottomColor);
+
+            if (roundedCap && antialiasSize > 0.001F) {
+                int exactTopColor = sampleHudGradientColor(startColor, endColor, direction,
+                        xProgress, inset / height, animationOffset, animated);
+                int exactBottomColor = sampleHudGradientColor(startColor, endColor, direction,
+                        xProgress, 1.0F - inset / height, animationOffset, animated);
+                drawVerticalGradient(context, stripLeft, exactTop - antialiasSize * 0.5F,
+                        stripRight - stripLeft, antialiasSize,
+                        multiplyColorAlpha(exactTopColor, 0.0F), exactTopColor);
+                drawVerticalGradient(context, stripLeft, exactBottom - antialiasSize * 0.5F,
+                        stripRight - stripLeft, antialiasSize,
+                        exactBottomColor, multiplyColorAlpha(exactBottomColor, 0.0F));
+            }
+        }
+    }
+
+    private static int multiplyColorAlpha(int color, float multiplier) {
+        int alpha = MathHelper.clamp(Math.round(((color >>> 24) & 0xFF) * multiplier), 0, 255);
+        return (alpha << 24) | (color & 0x00FFFFFF);
+    }
+
+    private static int sampleHudGradientColor(
+            int startColor,
+            int endColor,
+            String direction,
+            float xProgress,
+            float yProgress,
+            float animationOffset,
+            boolean animated
+    ) {
+        if ("Pulse".equals(direction)) {
+            return animated
+                    ? movingGradientColor(startColor, endColor, animationOffset)
+                    : startColor;
+        }
+
+        float coordinate;
+        float phase;
+        switch (direction) {
+            case "Right to Left" -> {
+                coordinate = 1.0F - xProgress;
+                phase = animationOffset;
+            }
+            case "Top to Bottom" -> {
+                coordinate = yProgress;
+                phase = -animationOffset;
+            }
+            case "Bottom to Top" -> {
+                coordinate = 1.0F - yProgress;
+                phase = animationOffset;
+            }
+            case "Diagonal Down" -> {
+                coordinate = (xProgress + yProgress) * 0.5F;
+                phase = -animationOffset;
+            }
+            case "Diagonal Up" -> {
+                coordinate = (xProgress + 1.0F - yProgress) * 0.5F;
+                phase = -animationOffset;
+            }
+            default -> {
+                coordinate = xProgress;
+                phase = -animationOffset;
+            }
+        }
+        return animated
+                ? movingGradientColor(startColor, endColor, coordinate + phase)
+                : lerpGradientColor(startColor, endColor, MathHelper.clamp(coordinate, 0.0F, 1.0F));
+    }
+
+    private static void renderStaticGradient(
+            DrawContext context,
+            int left,
+            int top,
+            int right,
+            int bottom,
+            int startColor,
+            int endColor,
+            String direction
+    ) {
+        if ("Top to Bottom".equals(direction)) {
+            drawVerticalGradient(context, left, top, right - left, bottom - top, startColor, endColor);
+            return;
+        }
+        if ("Bottom to Top".equals(direction)) {
+            drawVerticalGradient(context, left, top, right - left, bottom - top, endColor, startColor);
+            return;
+        }
+        if ("Pulse".equals(direction)) {
+            context.fill(left, top, right, bottom, startColor);
+            return;
+        }
+
+        if ("Left to Right".equals(direction) || "Right to Left".equals(direction)) {
+            boolean reversed = "Right to Left".equals(direction);
+            drawHorizontalGradient(context, left, top, right - left, bottom - top,
+                    reversed ? endColor : startColor, reversed ? startColor : endColor);
+            return;
+        }
+
+        int stripCount = 96;
+        for (int strip = 0; strip < stripCount; strip++) {
+            float progress = (strip + 0.5F) / stripCount;
+            float stripLeft = MathHelper.lerp(strip / (float) stripCount, left, right);
+            float stripRight = MathHelper.lerp((strip + 1.0F) / stripCount, left, right);
+            if ("Diagonal Down".equals(direction) || "Diagonal Up".equals(direction)) {
+                boolean down = "Diagonal Down".equals(direction);
+                float topProgress = down ? progress * 0.5F : 0.5F + progress * 0.5F;
+                float bottomProgress = down ? 0.5F + progress * 0.5F : progress * 0.5F;
+                drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top,
+                        lerpGradientColor(startColor, endColor, topProgress),
+                        lerpGradientColor(startColor, endColor, bottomProgress));
+            } else {
+                float colorProgress = "Right to Left".equals(direction) ? 1.0F - progress : progress;
+                int color = lerpGradientColor(startColor, endColor, colorProgress);
+                drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, color, color);
+            }
+        }
+    }
+
+    /**
+     * Renders one travelling triangular color wave with hardware-interpolated
+     * segments. At most four quads are needed for the whole HUD, regardless
+     * of its size, so there are no visible strip boundaries.
+     */
+    private static void renderMovingAxisGradient(
+            DrawContext context,
+            float left,
+            float top,
+            float right,
+            float bottom,
+            int startColor,
+            int endColor,
+            float phase,
+            boolean horizontal
+    ) {
+        float position = 0.0F;
+        for (int segment = 0; segment < 4 && position < 0.99999F; segment++) {
+            float coordinate = position + phase;
+            float nextStop = ((float) Math.floor(coordinate * 2.0F + 0.00001F) + 1.0F) * 0.5F - phase;
+            float endPosition = MathHelper.clamp(nextStop, position + 0.0001F, 1.0F);
+            int fromColor = movingLinearGradientColor(startColor, endColor, coordinate);
+            int toColor = movingLinearGradientColor(startColor, endColor, endPosition + phase);
+
+            if (horizontal) {
+                float x = MathHelper.lerp(position, left, right);
+                float width = MathHelper.lerp(endPosition, left, right) - x;
+                drawHorizontalGradient(context, x, top, width, bottom - top, fromColor, toColor);
+            } else {
+                float y = MathHelper.lerp(position, top, bottom);
+                float height = MathHelper.lerp(endPosition, top, bottom) - y;
+                drawVerticalGradient(context, left, y, right - left, height, fromColor, toColor);
+            }
+            position = endPosition;
+        }
+    }
+
+    private static void drawVerticalGradient(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            int startColor,
+            int endColor
+    ) {
+        if (width <= 0.0F || height <= 0.0F) {
+            return;
+        }
+        context.getMatrices().push();
+        context.getMatrices().translate(x, y, 0.0F);
+        context.getMatrices().scale(width, height, 1.0F);
+        context.fillGradient(0, 0, 1, 1, startColor, endColor);
+        context.getMatrices().pop();
+    }
+
+    private static void drawHorizontalGradient(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            int startColor,
+            int endColor
+    ) {
+        if (width <= 0.0F || height <= 0.0F) {
+            return;
+        }
+        context.getMatrices().push();
+        context.getMatrices().translate(x, y, 0.0F);
+        context.getMatrices().scale(width, height, 1.0F);
+        context.getMatrices().multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(-90.0F));
+        context.fillGradient(-1, 0, 0, 1, startColor, endColor);
+        context.getMatrices().pop();
+    }
+
+    /** Continuous start -> end -> start wave; shifting its phase moves it. */
+    private static int movingGradientColor(int startColor, int endColor, float coordinate) {
+        float wrapped = coordinate - (float) Math.floor(coordinate);
+        float blend = 0.5F - 0.5F * (float) Math.cos(wrapped * Math.PI * 2.0D);
+        return lerpGradientColor(startColor, endColor, blend);
+    }
+
+    private static int movingLinearGradientColor(int startColor, int endColor, float coordinate) {
+        float wrapped = coordinate - (float) Math.floor(coordinate);
+        float blend = wrapped < 0.5F ? wrapped * 2.0F : (1.0F - wrapped) * 2.0F;
+        return lerpGradientColor(startColor, endColor, blend);
+    }
+
+    private static int lerpGradientColor(int first, int second, float progress) {
+        float t = MathHelper.clamp(progress, 0.0F, 1.0F);
+        int a = Math.round(((first >>> 24) & 0xFF) + (((second >>> 24) & 0xFF) - ((first >>> 24) & 0xFF)) * t);
+        int r = Math.round(((first >>> 16) & 0xFF) + (((second >>> 16) & 0xFF) - ((first >>> 16) & 0xFF)) * t);
+        int g = Math.round(((first >>> 8) & 0xFF) + (((second >>> 8) & 0xFF) - ((first >>> 8) & 0xFF)) * t);
+        int b = Math.round((first & 0xFF) + ((second & 0xFF) - (first & 0xFF)) * t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
     private static float directionEdgeFade(float x, float width) {
         float fadeWidth = Math.max(18.0f, width * 0.16f);
         float left = MathHelper.clamp((x - 4.0f) / fadeWidth, 0.0f, 1.0f);
@@ -3935,7 +4583,7 @@ public class InGameHudMixin {
         // user's spec - "to the left of the IP, square, same size as
         // the rect Y dimension".
         if (module.displayServerIcon.isValue()) {
-            float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
+            float scale = module.getRenderHudScale();
             float hudHeight = BASE_HEIGHT * scale;
             module.renderServerIcon(context, module.getHudX(), module.getHudY(), hudHeight, inverseGuiScale);
         }
@@ -4150,7 +4798,7 @@ public class InGameHudMixin {
             float screenCenterY
     ) {
         float lineHeight = 10.0f;
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         // Nominal icon size matches the original two-line-tall sprite. We
         // clamp it down per-frame against {@code baseHeight} so a small
         // rect (e.g. block name only, every sub-toggle disabled) doesn't
@@ -4971,8 +5619,8 @@ public class InGameHudMixin {
         final int hudIndex = HUD_PLAYER_MODEL;
         ClientPlayerEntity player = mc.player;
         float baseSize = module.getBaseModelSize();
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
         float panelW = 2.0F * baseSize * scale;
         float panelH = 2.0F * baseSize * scale;
 
@@ -5066,10 +5714,14 @@ public class InGameHudMixin {
                     float deltaX = mouseX - RECT_RESIZE_START_MOUSE_X[hudIndex];
                     float deltaY = mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5F;
-                    float newScale = RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9F) / (baseSize * 2.0F);
-                    newScale = MathHelper.clamp(newScale, module.getMinHudScale(), module.getMaxHudScale());
+                    float newScale = (
+                            RECT_RESIZE_START_WIDTH[hudIndex]
+                                    + (delta * 0.9F) / (baseSize * 2.0F)
+                    ) / 2.0F;
+                    newScale = snapAndAnnounceHudScale(
+                            module, newScale, module.getMinHudScale(), module.getMaxHudScale());
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     panelW = 2.0F * baseSize * scale;
                     panelH = 2.0F * baseSize * scale;
                     maxX = Math.max(0.0F, scaledScreenW - panelW);
@@ -5234,8 +5886,8 @@ public class InGameHudMixin {
         boolean[] overlayFlags = InventoryHud.getSnapshotOverlayFlags();
 
         final int hudIndex = HUD_INVENTORY;
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
 
         float baseWidth = PHAZE_INV_BORDER * 2.0F + PHAZE_INV_SLOT * 9.0F;
         float baseHeight = PHAZE_INV_BORDER * 2.0F + PHAZE_INV_SLOT * 3.0F;
@@ -5336,13 +5988,15 @@ public class InGameHudMixin {
                     float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5F;
 
-                    float minWidth = baseWidth * module.getMinHudScale();
-                    float maxWidth = baseWidth * module.getMaxHudScale();
+                    float minWidth = baseWidth * module.getMinHudScale() * 2.0F;
+                    float maxWidth = baseWidth * module.getMaxHudScale() * 2.0F;
                     float newWidth = MathHelper.clamp(RECT_RESIZE_START_WIDTH[hudIndex] + delta * 0.9F, minWidth, maxWidth);
-                    float newScale = newWidth / baseWidth;
+                    float newScale = snapAndAnnounceHudScale(
+                            module, newWidth / baseWidth / 2.0F,
+                            module.getMinHudScale(), module.getMaxHudScale());
 
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     hudWidth = baseWidth * scale;
                     hudHeight = baseHeight * scale;
                     maxX = Math.max(0.0F, screenWidth - hudWidth);

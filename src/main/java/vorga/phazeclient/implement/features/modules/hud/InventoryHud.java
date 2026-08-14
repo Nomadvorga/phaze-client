@@ -23,7 +23,6 @@ public final class InventoryHud extends RectHudModule {
     private static final InventoryHud INSTANCE = new InventoryHud();
     private static final float MAX_INVENTORY_HUD_SCALE = 3.25F;
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
     public final BooleanSetting drawCounts = new BooleanSetting(
             "Item Counts",
             "Draw the stack count badge on each item"
@@ -65,7 +64,7 @@ public final class InventoryHud extends RectHudModule {
         colorSection.setVisible(() -> false);
 
         drawCounts.setFullWidth(true);
-        setup(otherSection, drawCounts);
+        setup(drawCounts);
     }
 
     public static InventoryHud getInstance() {

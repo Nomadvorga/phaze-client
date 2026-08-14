@@ -303,28 +303,40 @@ public final class MenuProfileManager implements QuickImports {
             }
 
             if (module instanceof RectHudModule rectHudModule) {
-                if (moduleData.has("hud_x")) {
-                    rectHudModule.setHudX(moduleData.get("hud_x").getAsFloat());
+                // Both axes and the reference screen in one call: the
+                // single-axis setters each rescale to the live screen
+                // first, so calling them in turn would rescale the value
+                // the previous call just wrote.
+                if (moduleData.has("hud_x") && moduleData.has("hud_y")) {
+                    rectHudModule.setHudPosition(
+                            moduleData.get("hud_x").getAsFloat(),
+                            moduleData.get("hud_y").getAsFloat(),
+                            moduleData.has("hud_ref_w") ? moduleData.get("hud_ref_w").getAsInt() : -1,
+                            moduleData.has("hud_ref_h") ? moduleData.get("hud_ref_h").getAsInt() : -1);
                 } else {
                     rectHudModule.resetHudTransform();
                 }
-                if (moduleData.has("hud_y")) {
-                    rectHudModule.setHudY(moduleData.get("hud_y").getAsFloat());
-                }
                 if (moduleData.has("hud_scale")) {
-                    rectHudModule.setHudScale(moduleData.get("hud_scale").getAsFloat());
+                    float savedScale = moduleData.get("hud_scale").getAsFloat();
+                    rectHudModule.setHudScale(savedScale);
                 }
             } else if (module instanceof ArmorHud armorHud) {
-                if (moduleData.has("hud_x")) {
-                    armorHud.setHudX(moduleData.get("hud_x").getAsFloat());
+                // Both axes and the reference screen in one call: the
+                // single-axis setters each rescale to the live screen
+                // first, so calling them in turn would rescale the value
+                // the previous call just wrote.
+                if (moduleData.has("hud_x") && moduleData.has("hud_y")) {
+                    armorHud.setHudPosition(
+                            moduleData.get("hud_x").getAsFloat(),
+                            moduleData.get("hud_y").getAsFloat(),
+                            moduleData.has("hud_ref_w") ? moduleData.get("hud_ref_w").getAsInt() : -1,
+                            moduleData.has("hud_ref_h") ? moduleData.get("hud_ref_h").getAsInt() : -1);
                 } else {
                     armorHud.resetHudTransform();
                 }
-                if (moduleData.has("hud_y")) {
-                    armorHud.setHudY(moduleData.get("hud_y").getAsFloat());
-                }
                 if (moduleData.has("hud_scale")) {
-                    armorHud.setHudScale(moduleData.get("hud_scale").getAsFloat());
+                    float savedScale = moduleData.get("hud_scale").getAsFloat();
+                    armorHud.setHudScale(savedScale);
                 }
             }
         }
@@ -350,10 +362,20 @@ public final class MenuProfileManager implements QuickImports {
             if (module instanceof RectHudModule rectHudModule) {
                 moduleData.addProperty("hud_x", rectHudModule.getHudX());
                 moduleData.addProperty("hud_y", rectHudModule.getHudY());
+                // Screen these pixels were measured on - without it a
+                // profile saved in a small window restores into the
+                // wrong part of a larger one.
+                moduleData.addProperty("hud_ref_w", rectHudModule.getHudRefWidth());
+                moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
             } else if (module instanceof ArmorHud armorHud) {
                 moduleData.addProperty("hud_x", armorHud.getHudX());
                 moduleData.addProperty("hud_y", armorHud.getHudY());
+                // Screen these pixels were measured on - without it a
+                // profile saved in a small window restores into the
+                // wrong part of a larger one.
+                moduleData.addProperty("hud_ref_w", armorHud.getHudRefWidth());
+                moduleData.addProperty("hud_ref_h", armorHud.getHudRefHeight());
                 moduleData.addProperty("hud_scale", armorHud.getHudScale());
             }
 

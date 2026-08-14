@@ -37,8 +37,6 @@ public class Blur implements Shape {
     private static final float HUD_GAUSSIAN_STRENGTH_MULTIPLIER = 2.5F;
     private static final int MAX_PREPARED_HUD_KAWASE_REGIONS = 32;
     private static final float HUD_FINE_KAWASE_THRESHOLD = 8.0F;
-    private static final long MAX_HUD_BLUR_REFRESH_INTERVAL_NS = 33_333_334L;
-    private static final long MIN_HUD_BLUR_REFRESH_INTERVAL_NS = 16_666_667L;
     private static final long MENU_BLUR_REFRESH_INTERVAL_NS = 16_666_667L;
     private static final long NAMETAG_BLUR_REFRESH_INTERVAL_NS = 8_333_333L;
     private static final int MENU_BLUR_CACHE_SLOTS = 4;
@@ -124,6 +122,7 @@ public class Blur implements Shape {
     private boolean hudInputValid = false;
     private long hudInputRevision = 0L;
     private long lastHudInputRefreshNs = 0L;
+    private int hudBackgroundFps = 120;
     private long lastHudBackgroundStateKey = Long.MIN_VALUE;
     private boolean stableHudCapturePoint = false;
     private Object lastObservedScreen = null;
@@ -133,6 +132,20 @@ public class Blur implements Shape {
     private final Vector3f scratchPosition = new Vector3f();
     private final Vector4f scratchRound = new Vector4f();
     private static final Vector4f ZERO_ROUND = new Vector4f();
+
+    public void setHudBackgroundFps(int fps) {
+        int clamped = MathHelper.clamp(fps, 10, 360);
+        if (hudBackgroundFps == clamped) {
+            return;
+        }
+        hudBackgroundFps = clamped;
+        lastHudInputRefreshNs = 0L;
+        forceHudRefresh = true;
+    }
+
+    public int getHudBackgroundFps() {
+        return hudBackgroundFps;
+    }
 
     public void beginCachedFrame() {
         MinecraftClient client = MinecraftClient.getInstance();
@@ -902,12 +915,7 @@ public class Blur implements Shape {
             }
             long now = System.nanoTime();
             long backgroundStateKey = computeHudBackgroundStateKey(client);
-            int targetFps = vorga.phazeclient.api.system.hud.BatchedHudBuffer.INSTANCE.getTargetFps();
-            long refreshIntervalNs = MathHelper.clamp(
-                    1_000_000_000L / Math.max(1, targetFps),
-                    MIN_HUD_BLUR_REFRESH_INTERVAL_NS,
-                    MAX_HUD_BLUR_REFRESH_INTERVAL_NS
-            );
+            long refreshIntervalNs = 1_000_000_000L / MathHelper.clamp(hudBackgroundFps, 10, 360);
             boolean backgroundChanged = backgroundStateKey != lastHudBackgroundStateKey;
             boolean refreshDue = now - lastHudInputRefreshNs >= refreshIntervalNs;
             // Opening a GUI can temporarily leave the main framebuffer in a

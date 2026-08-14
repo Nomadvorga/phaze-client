@@ -15,7 +15,6 @@ public final class MovementSpeedHud extends RectHudModule {
     public final SelectSetting roundTo = new SelectSetting("Round To", "Decimal places for speed display")
             .value("Nearest", "1 Decimal", "2 Decimals", "3 Decimals")
             .selected("2 Decimals");
-    public final SectionSetting otherSection = new SectionSetting("Other");
     /**
      * Swap the {@code Speed} label position. Default OFF preserves
      * the original {@code "1.23 m/s"} form; ON renders the labelled
@@ -28,7 +27,7 @@ public final class MovementSpeedHud extends RectHudModule {
         onlyUseGroundSpeed.setFullWidth(true);
         roundTo.setFullWidth(true);
         reverseOrder.setFullWidth(true);
-        setup(onlyUseGroundSpeed, roundTo, otherSection, reverseOrder);
+        setup(onlyUseGroundSpeed, roundTo, reverseOrder);
     }
 
     @Override

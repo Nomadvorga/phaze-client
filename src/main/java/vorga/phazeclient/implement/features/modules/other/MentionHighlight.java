@@ -84,7 +84,7 @@ public final class MentionHighlight extends Module {
     public final ColorSetting highlightColor = new ColorSetting(
             "Highlight Color",
             "Color applied to matched substrings"
-    ).setColor(0xFFFFAA00);
+    ).setColor(0xFFFFAA00).popupRow();
     public final BooleanSetting bold = new BooleanSetting(
             "Bold",
             "Render the matched substring in bold"

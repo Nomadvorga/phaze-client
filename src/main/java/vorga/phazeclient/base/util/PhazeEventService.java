@@ -63,7 +63,7 @@ public final class PhazeEventService {
      * Must exceed the server's keepalive interval (25s) or an idle but
      * healthy stream would be torn down and rebuilt every read timeout.
      */
-    private static final int READ_TIMEOUT_MS = 90_000;
+    private static final int READ_TIMEOUT_MS = 40_000;
 
     private static final long RECONNECT_MIN_MS = 5_000L;
     private static final long RECONNECT_MAX_MS = 5 * 60_000L;
@@ -220,7 +220,41 @@ public final class PhazeEventService {
                         PhazeAnnouncements.dismiss(parsed.getAsJsonObject().get("id").getAsInt());
                     }
                 }
-                case "hello", "ping" -> { /* bookkeeping only */ }
+                case "cosmetic" -> {
+                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
+                    if (parsed.isJsonObject()) {
+                        vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
+                                .getInstance()
+                                .acceptEvent(parsed.getAsJsonObject());
+                    }
+                }
+                case "pulse_cosmetic" -> {
+                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
+                    if (parsed.isJsonObject()) {
+                        vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
+                                .getInstance()
+                                .acceptPulseEvent(parsed.getAsJsonObject());
+                    }
+                }
+                case "pulse_graffiti" -> {
+                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
+                    if (parsed.isJsonObject()) {
+                        vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
+                                .getInstance()
+                                .acceptPulseGraffitiEvent(parsed.getAsJsonObject());
+                    }
+                }
+                case "hello" -> vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
+                        .getInstance()
+                        .requestRefresh();
+                case "ping" -> {
+                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
+                    if (parsed.isJsonObject()) {
+                        vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
+                                .getInstance()
+                                .acceptPushCheckpoint(parsed.getAsJsonObject());
+                    }
+                }
                 default -> LOG.debug("unknown event '{}'", event);
             }
         } catch (Throwable t) {

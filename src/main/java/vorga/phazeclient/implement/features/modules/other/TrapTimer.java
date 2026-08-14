@@ -220,7 +220,7 @@ public final class TrapTimer extends RectHudModule {
         if (getHudX() > 1.0F || getHudY() > 1.0F) {
             return;
         }
-        float scale = getHudScale();
+        float scale = getRenderHudScale();
         float hudWidth = baseWidth * scale;
         float hudHeight = baseHeight * scale;
         float crosshairCenterY = screenHeight * 0.5F;

@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import lombok.Getter;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
@@ -23,6 +24,7 @@ import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 
@@ -428,10 +430,16 @@ public class ModuleComponent extends AbstractComponent {
         );
 
         if (hasSettings) {
-            image.setTexture("textures/settings.png")
-                    .render(ShapeProperties.create(context.getMatrices(), dividerX + (iconSectionWidth - 9.0F) / 2.0F, optionsY + (OPTIONS_ROW_HEIGHT - 9.0F) / 2.0F, 9.0F, 9.0F)
-                            .color(applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, rowHoverProgress * 0.10F)))
-                            .build());
+            float iconX = dividerX + (iconSectionWidth - 9.0F) / 2.0F;
+            float iconY = optionsY + (OPTIONS_ROW_HEIGHT - 9.0F) / 2.0F;
+            int iconColor = applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, rowHoverProgress * 0.10F));
+            if (!UiMsdfIconAtlas.renderIcon(context,
+                    Identifier.of("phaze", "textures/menu/options_settings.png"),
+                    iconX, iconY, 9.0F, 9.0F, iconColor, true)) {
+                image.setTexture("textures/settings.png")
+                        .render(ShapeProperties.create(context.getMatrices(), iconX, iconY, 9.0F, 9.0F)
+                                .color(iconColor).build());
+            }
         }
     }
 

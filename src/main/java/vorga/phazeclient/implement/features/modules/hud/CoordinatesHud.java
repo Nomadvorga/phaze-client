@@ -11,7 +11,6 @@ public final class CoordinatesHud extends RectHudModule {
         boolean isValue();
     }
 
-    public final SectionSetting otherSection = new SectionSetting("Other");
     public final MultiSelectSetting displayItems = new MultiSelectSetting(
             "Display Items",
             "Pick which coordinate rows the HUD should show"
@@ -47,7 +46,7 @@ public final class CoordinatesHud extends RectHudModule {
     private CoordinatesHud() {
         super("coordinates_hud", "Coordinates", 22.0f, 124.0f, 1.0f);
         displayItems.setFullWidth(true);
-        setup(otherSection, displayItems);
+        setup(displayItems);
         // Coordinates lines are emitted as multi-line text and have
         // never round-tripped through the [] wrap path, so the parent-
         // registered Show Brackets toggle is meaningless here. Hide it

@@ -829,35 +829,11 @@ public final class Animations extends Module {
      * </ul>
      */
     public float currentTabAlpha() {
-        if (!isTabSlideEnabled()) {
-            return 1.0F;
-        }
-        if (isTabSlideStyle()) {
-            // Plain Slide always rides the decay-driven alpha because
-            // the tight 18-px translate can't carry the final dissolve
-            // by itself; the alpha drop is what makes the slide-out
-            // actually disappear instead of stopping abruptly at the
-            // 18-px stop.
-            float alpha = 1.0F + tabCurrentOffset / TAB_SLIDE_TRAVEL;
-            return smoothTabFade(alpha);
-        }
-        // Scale / Slide+Scale styles
-        float progress = currentTabProgress();
-        if (tabFade.isValue()) {
-            // Full-length fade: alpha tracks the curve, identical to
-            // the previous behaviour.
-            return smoothTabFade(progress);
-        }
-        // Tail fade: keep alpha at 1 for the main animation, only
-        // fade inside the tail window so the speck at progress=0
-        // dissolves cleanly. The same window is hit on the open
-        // direction (progress climbs through 0..TAIL on its way up)
-        // which incidentally gives the open speck a fade-in too -
-        // intentional, since a popping-in speck reads as visual noise
-        // even when the user wants no main-animation fade.
-        if (progress < TAB_TAIL_FADE_THRESHOLD) {
-            return smoothTabFade(progress / TAB_TAIL_FADE_THRESHOLD);
-        }
+        // TAB keeps vanilla opacity for every element during the whole
+        // movement. Only the existing matrix translation/scale is animated.
+        // Returning the constant also keeps the hot render path allocation-
+        // free and lets both the vanilla and Exordium renderers skip their
+        // shader-alpha flushes.
         return 1.0F;
     }
 

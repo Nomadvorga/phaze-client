@@ -14,7 +14,6 @@ public final class MemoryHud extends RectHudModule {
     public final SelectSetting displayMode = new SelectSetting("Display Mode", "Memory display format")
             .value("Percentage", "Megabytes", "Gigabytes");
     public final BooleanSetting colorBasedOnUsage = new BooleanSetting("Color Based On Usage", "Change color based on memory usage").setValue(true);
-    public final SectionSetting otherSection = new SectionSetting("Other");
     /**
      * Swap the {@code Mem} label position. Default OFF renders
      * {@code "Mem: 50%"}; ON renders {@code "50% Mem"}.
@@ -24,7 +23,7 @@ public final class MemoryHud extends RectHudModule {
     private MemoryHud() {
         super("memory_hud", "Memory HUD", 100.0f, 50.0f, 1.0f);
         reverseOrder.setFullWidth(true);
-        setup(displayMode, colorBasedOnUsage, otherSection, reverseOrder);
+        setup(displayMode, colorBasedOnUsage, reverseOrder);
     }
 
     public String getMemoryText() {

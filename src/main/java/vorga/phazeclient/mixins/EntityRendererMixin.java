@@ -5,6 +5,7 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.render.OutlineVertexConsumerProvider;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.EntityRenderer;
+import net.minecraft.client.render.entity.PlayerEntityRenderer;
 import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
@@ -23,6 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.api.system.shape.implement.Blur;
+import vorga.phazeclient.implement.cosmetics.CosmeticsRenderer;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.other.TotemTracker;
 
@@ -53,6 +55,7 @@ import java.util.Map;
 public abstract class EntityRendererMixin {
     private static boolean phaze$backgroundDrawnThisLabel = false;
     private static boolean phaze$drawBadgeThisLabel = false;
+    private static boolean phaze$drawCodeBadgeThisLabel = false;
     private static boolean phaze$depthPreparedThisLabel = false;
     private static boolean phaze$fallbackQueuedThisLabel = false;
     private static float phaze$currentLabelDistance = 0.0f;
@@ -104,6 +107,25 @@ public abstract class EntityRendererMixin {
             cancellable = true
     )
     private void phaze$controlNametagVisibility(EntityRenderState state, Text text, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+        // InventoryScreen applies the cosmetics preview yaw to everything the
+        // entity renderer draws, including its label. Undo only that yaw so
+        // the nametag remains billboarded toward the GUI camera when the
+        // player is viewed from behind.
+        Float previewBodyYaw = CosmeticsRenderer.previewBodyYaw();
+        if (previewBodyYaw != null) {
+            matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Y.rotationDegrees(-previewBodyYaw));
+        }
+
+        // renderLabelIfPresent is shared by every entity renderer. Reset all
+        // per-label state before any module-specific early return so a badge
+        // selected for one player can never leak into a later armor stand or
+        // hologram line.
+        phaze$backgroundDrawnThisLabel = false;
+        phaze$drawBadgeThisLabel = false;
+        phaze$drawCodeBadgeThisLabel = false;
+        phaze$depthPreparedThisLabel = false;
+        phaze$fallbackQueuedThisLabel = false;
+
         NametagHud module = NametagHud.getInstance();
         if (!module.isEnabled()) return;
 
@@ -120,10 +142,6 @@ public abstract class EntityRendererMixin {
             ci.cancel();
             return;
         }
-        phaze$backgroundDrawnThisLabel = false;
-        phaze$drawBadgeThisLabel = false;
-        phaze$depthPreparedThisLabel = false;
-        phaze$fallbackQueuedThisLabel = false;
     }
 
     @Redirect(
@@ -141,8 +159,7 @@ public abstract class EntityRendererMixin {
                 layerType,
                 backgroundColor
         );
-        phaze$drawNametagBadgeIfNeeded(matrix, vertexConsumers, x, y, layerType, light);
-        return textRenderer.draw(
+        int result = textRenderer.draw(
                 text,
                 x,
                 y,
@@ -154,6 +171,16 @@ public abstract class EntityRendererMixin {
                 resolvedBackground,
                 light
         );
+        phaze$drawNametagBadgeIfNeeded(
+                matrix,
+                vertexConsumers,
+                x,
+                y,
+                layerType,
+                light,
+                PhazeBadgeUtil.alphaWhite(color)
+        );
+        return result;
     }
 
     @Redirect(
@@ -171,8 +198,7 @@ public abstract class EntityRendererMixin {
                 layerType,
                 backgroundColor
         );
-        phaze$drawNametagBadgeIfNeeded(matrix, vertexConsumers, x, y, layerType, light);
-        return textRenderer.draw(
+        int result = textRenderer.draw(
                 text,
                 x,
                 y,
@@ -184,6 +210,16 @@ public abstract class EntityRendererMixin {
                 resolvedBackground,
                 light
         );
+        phaze$drawNametagBadgeIfNeeded(
+                matrix,
+                vertexConsumers,
+                x,
+                y,
+                layerType,
+                light,
+                PhazeBadgeUtil.alphaWhite(color)
+        );
+        return result;
     }
 
     @ModifyVariable(
@@ -250,14 +286,18 @@ public abstract class EntityRendererMixin {
             ordinal = 0
     )
     private Text phaze$prependBadgePadding(Text original) {
-        if (original == null) {
-            return null;
+        // Server holograms and armor-stand labels often contain a player's
+        // name, but they are not that player's nametag. Badge only the label
+        // emitted by the real player renderer.
+        if (original == null || !((Object) this instanceof PlayerEntityRenderer)) {
+            return original;
         }
         String identity = PhazeBadgeUtil.extractNametagIdentity(original.getString());
         if (identity == null || !PhazeBadgeUtil.isPhazeUser(identity)) {
             return original;
         }
         phaze$drawBadgeThisLabel = true;
+        phaze$drawCodeBadgeThisLabel = PhazeBadgeUtil.isCodeBadgeUser(identity);
         return PhazeBadgeUtil.withBadgePadding(original);
     }
 
@@ -300,12 +340,22 @@ public abstract class EntityRendererMixin {
             float x,
             float y,
             TextRenderer.TextLayerType layerType,
-            int light
+            int light,
+            int color
     ) {
         if (!phaze$drawBadgeThisLabel) {
             return;
         }
-        PhazeBadgeUtil.drawWorldBadge(matrix, vertexConsumers, layerType, x - 2.0F, y - 1.0F, 10.0F, light, 0xFFFFFFFF);
+        // The developer emblem has a visually heavier outline than the
+        // regular user badge. Keep its centre aligned with the reserved text
+        // padding, but use a slimmer footprint in world nametags only.
+        float badgeSize = phaze$drawCodeBadgeThisLabel ? 8.0F : 10.0F;
+        float inset = (10.0F - badgeSize) / 2.0F;
+        PhazeBadgeUtil.drawWorldBadge(
+                matrix, vertexConsumers, layerType, x - 2.0F + inset, y - 1.0F + inset,
+                badgeSize, light, color,
+                phaze$drawCodeBadgeThisLabel
+        );
     }
 
     private static int phaze$drawBlurBackgroundIfNeeded(
