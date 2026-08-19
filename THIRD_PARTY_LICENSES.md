@@ -76,21 +76,11 @@ TITLE, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
 NON-INFRINGEMENT, OR THE ABSENCE OF LATENT OR OTHER DEFECTS, ACCURACY,
 OR THE PRESENT OR ABSENCE OF ERRORS, WHETHER OR NOT DISCOVERABLE.
 
-Full text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
-```
+Full text: https://creativecommons.org/publicdomain/zero/1.0/
 
----
+——
 
-## Custom Glint (Cutebow)
-
-The Custom Glint runtime implementation, bloom shaders, and bundled glint
-textures are authored by Cutebow. They are included with the author's explicit
-permission to use, copy, modify, and publish the materials on Modrinth,
-provided to the Phaze project on 2026-07-13.
-
----
-
-## No Hand Sway (O3kar/no-hand-sway)
+No Hand Sway (O3kar/no-hand-sway)
 
 The No Hand Sway feature inside
 `vorga.phazeclient.implement.features.modules.other.ChangeHand`
