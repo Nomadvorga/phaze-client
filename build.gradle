@@ -1,6 +1,6 @@
 
 plugins {
-    id 'fabric-loom' version '1.11-SNAPSHOT'
+    id 'fabric-loom' version '1.11.8'
     id 'maven-publish'
 }
 
@@ -49,22 +49,17 @@ dependencies {
     // (see PhazeMixinPlugin), so users without Sodium are unaffected.
     modCompileOnly "maven.modrinth:sodium:mc1.21.4-0.6.13-fabric"
 
-    // Iris 1.8.8+mc1.21.4 - compile-only via local jar in
-    // libs-compileonly/. Modrinth's maven version slug for Iris is
-    // unstable across uploads, so the local file is the most
-    // reliable way to satisfy loom's @Mixin(targets = "...") class
-    // existence check at compile time. The jar is NEVER bundled
-    // into the output (compileOnly, not implementation, and the
-    // libImpl bundling fileTree below excludes this directory).
-    // At runtime the iris.* mixin is gated by
-    // FabricLoader.isModLoaded("iris") via PhazeMixinPlugin, so
-    // users without Iris are unaffected.
-    compileOnly fileTree(dir: 'libs-compileonly', include: ['*.jar'])
+    // Optional compatibility targets. These exact public Modrinth version IDs
+    // are compile-only and are never bundled into the published mod jar.
+    modCompileOnly "maven.modrinth:iris:Ca054sTe"
+    modCompileOnly "maven.modrinth:reeses-sodium-options:KoUrx3jJ"
 
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
 
-    libImpl fileTree(dir: 'libs', include: ['*.jar'])
+    // Clipboard image support. The exact Maven Central artifact and its
+    // transitive native-utils dependency are documented in BINARY_PROVENANCE.md.
+    libImpl 'io.github.imurx:arboard:1.1.2'
 
     configurations.libImpl.dependencies.each {
         implementation(it)
@@ -113,10 +108,12 @@ jar {
     from {
         configurations.libImpl.collect { it.isDirectory() ? it : zipTree(it) }
     }
-    from {
-        configurations.runtimeClasspath.findAll { it.name.startsWith('vlcj') || it.name.startsWith('jna') }.collect { it.isDirectory() ? it : zipTree(it) }
-    }
     duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+}
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
 }
 
 // configure the maven publication
