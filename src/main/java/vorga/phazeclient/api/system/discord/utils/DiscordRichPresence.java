@@ -1,13 +1,14 @@
 package vorga.phazeclient.api.system.discord.utils;
 
-import com.sun.jna.Structure;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-public class DiscordRichPresence extends Structure {
+public class DiscordRichPresence {
     public String largeImageKey;
     public String largeImageText;
     public String smallImageText;
@@ -29,12 +30,40 @@ public class DiscordRichPresence extends Structure {
     public String button_url_2;
     public String button_label_2;
 
-    public DiscordRichPresence() {
-        this.setStringEncoding("UTF-8");
-    }
-
-    protected List<String> getFieldOrder() {
-        return Arrays.asList("state", "details", "startTimestamp", "endTimestamp", "largeImageKey", "largeImageText", "smallImageKey", "smallImageText", "partyId", "partySize", "partyMax", "partyPrivacy", "matchSecret", "joinSecret", "spectateSecret", "button_label_1", "button_url_1", "button_label_2", "button_url_2", "instance");
+    public JsonObject toJson() {
+        JsonObject activity = new JsonObject();
+        if (state != null && !state.isEmpty()) activity.addProperty("state", state);
+        if (details != null && !details.isEmpty()) activity.addProperty("details", details);
+        if (startTimestamp > 0 || endTimestamp > 0) {
+            JsonObject timestamps = new JsonObject();
+            if (startTimestamp > 0) timestamps.addProperty("start", startTimestamp);
+            if (endTimestamp > 0) timestamps.addProperty("end", endTimestamp);
+            activity.add("timestamps", timestamps);
+        }
+        if (largeImageKey != null || smallImageKey != null) {
+            JsonObject assets = new JsonObject();
+            if (largeImageKey != null) assets.addProperty("large_image", largeImageKey);
+            if (largeImageText != null) assets.addProperty("large_text", largeImageText);
+            if (smallImageKey != null) assets.addProperty("small_image", smallImageKey);
+            if (smallImageText != null) assets.addProperty("small_text", smallImageText);
+            activity.add("assets", assets);
+        }
+        JsonArray buttons = new JsonArray();
+        if (button_label_1 != null && button_url_1 != null) {
+            JsonObject button = new JsonObject();
+            button.addProperty("label", button_label_1);
+            button.addProperty("url", button_url_1);
+            buttons.add(button);
+        }
+        if (button_label_2 != null && button_url_2 != null) {
+            JsonObject button = new JsonObject();
+            button.addProperty("label", button_label_2);
+            button.addProperty("url", button_url_2);
+            buttons.add(button);
+        }
+        if (!buttons.isEmpty()) activity.add("buttons", buttons);
+        activity.addProperty("instance", instance != 0);
+        return activity;
     }
 
     public static class Builder {

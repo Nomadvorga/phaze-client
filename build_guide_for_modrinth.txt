@@ -1,31 +1,21 @@
-Build instructions
+Phaze Client - verifiable build guide
+=====================================
 
-This project uses a standard Gradle/Fabric setup and can be built directly from source.
+Requirements: a clean clone of https://github.com/Nomadvorga/phaze-client,
+JDK 21, and internet access to the public repositories in build.gradle.
 
-Requirements
-- JDK 21
-- Internet access for Gradle dependency resolution
+Build on Windows:
 
-Build steps
+    gradlew.bat clean build --no-daemon
 
-1. Clone or download the repository source code.
-2. Open the project root directory.
-3. Run the build command:
+The publishable file is build/libs/PhazeClient-1.0.jar. The project has no
+private or local-file dependencies. GitHub Actions runs the same command from
+a clean checkout. Upload the exact workflow artifact to Modrinth and record its
+SHA-256 with:
 
-Windows:
-gradlew.bat clean build
+    Get-FileHash build/libs/PhazeClient-1.0.jar -Algorithm SHA256
 
-Linux/macOS:
-./gradlew clean build
+Optional Iris, Reese's Sodium Options, and Sodium dependencies are compile-only
+and are not bundled. Included clipboard binaries are documented in
+BINARY_PROVENANCE.md. Archive ordering is deterministic and timestamps omitted.
 
-Notes
-- No additional manual setup is required.
-- Dependencies are resolved automatically by Gradle during the build process.
-- The project targets Minecraft 1.21.4 and Java 21.
-
-Build output
-- The compiled mod JAR is generated in:
-  build/libs/
-
-Additional artifacts
-- A sources JAR is also generated in the same `build/libs/` directory.
