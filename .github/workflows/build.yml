@@ -25,12 +25,12 @@ jobs:
         run: .\gradlew.bat clean build --no-daemon
       - name: Record release checksum
         shell: pwsh
-        run: Get-FileHash build/libs/PhazeClient-1.0.jar -Algorithm SHA256
+        run: Get-FileHash build/libs/PhazeClient-1.0.1.jar -Algorithm SHA256
       - name: Upload exact Modrinth artifact
         uses: actions/upload-artifact@v4
         with:
           name: PhazeClient-Modrinth-${{ github.sha }}
-          path: build/libs/PhazeClient-1.0.jar
+          path: build/libs/PhazeClient-1.0.1.jar
           if-no-files-found: error
           retention-days: 30
 

@@ -50,11 +50,11 @@ public class TextComponent extends AbstractSettingComponent {
         updateVisibilityAnimation();
 
         // Drop focus if a different TextComponent has been clicked
-        // since we last claimed focus. Single global counter, so
-        // the most recently clicked input is always the one whose
+        // since we last claimed focus. Single global counter, so the
+        // most recently clicked input is always the one whose
         // myActivationId == ACTIVE_TEXT_COMPONENT_ID.
         if (typing && myActivationId != ACTIVE_TEXT_COMPONENT_ID) {
-            typing = false;
+            commitText();
             dragging = false;
             clearSelection();
         }
@@ -229,12 +229,33 @@ public class TextComponent extends AbstractSettingComponent {
         } else {
             // Click landed outside our input rect. Drop focus AND
             // any selection so the next char-typed event doesn't
-            // hit a stale typing=true.
-            typing = false;
+            // hit a stale typing=true. The typed text is committed
+            // here (not only on Enter) so edits made and then
+            // abandoned by clicking away still apply - without this
+            // the Discord RPC template fields silently kept their
+            // old values when the user clicked outside the field.
+            commitText();
             dragging = false;
             clearSelection();
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /** Commit the typed text to the setting if it changed and is
+     *  within [min, max]; otherwise revert the display text to the
+     *  setting's stored value. Called on Enter AND on every focus
+     *  loss (click away, another input claimed focus). */
+    private void commitText() {
+        if (!typing) {
+            return;
+        }
+        typing = false;
+        if (text.length() >= setting.getMin() && text.length() <= setting.getMax()) {
+            setting.setText(text);
+        } else {
+            text = setting.getText() != null ? setting.getText() : "";
+            cursorPosition = text.length();
+        }
     }
 
     @Override
@@ -312,10 +333,7 @@ public class TextComponent extends AbstractSettingComponent {
                 replaceText(cursorPosition - 1, cursorPosition, "");
             }
         } else if (keyCode == GLFW.GLFW_KEY_ENTER) {
-            if (text.length() >= setting.getMin() && text.length() <= setting.getMax()) {
-                setting.setText(text);
-                typing = false;
-            }
+            commitText();
         }
     }
 

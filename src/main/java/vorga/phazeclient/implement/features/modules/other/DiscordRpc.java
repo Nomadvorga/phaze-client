@@ -77,6 +77,20 @@ public final class DiscordRpc extends Module {
         setup(linesSection, detailsTemplate, stateTemplate,
                 privacySection, showServerName, hideInMenus,
                 timestampSection, elapsedMode);
+
+        // Any setting change nudges the RPC daemon to push a fresh
+        // presence immediately (see DiscordManager#requestPresenceRefresh)
+        // instead of the user waiting up to 15 seconds for the next
+        // scheduled cycle.
+        java.util.function.Consumer<String> refresh = value ->
+                vorga.phazeclient.core.Main.getInstance().getDiscordManager().requestPresenceRefresh();
+        detailsTemplate.onChange(refresh);
+        stateTemplate.onChange(refresh);
+        showServerName.onChange(value ->
+                vorga.phazeclient.core.Main.getInstance().getDiscordManager().requestPresenceRefresh());
+        hideInMenus.onChange(value ->
+                vorga.phazeclient.core.Main.getInstance().getDiscordManager().requestPresenceRefresh());
+        elapsedMode.onChange(refresh);
     }
 
     public static DiscordRpc getInstance() {
