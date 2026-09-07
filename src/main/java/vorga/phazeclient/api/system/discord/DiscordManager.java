@@ -17,12 +17,17 @@ public class DiscordManager {
     });
     private boolean running = true;
     private DiscordInfo info = new DiscordInfo("Unknown", "", "");
+    private Boolean lastModuleEnabled;
+    private String lastPresenceCard;
+    private final Object refreshLock = new Object();
+    private volatile boolean refreshRequested;
     private long startTimestamp = System.currentTimeMillis() / 1000;
     /** Reset on world-join so the "World" elapsed mode shows
      *  time-since-join rather than time-since-launch. */
     private long worldJoinTimestamp = System.currentTimeMillis() / 1000;
 
     public void init() {
+        System.out.println("[Phaze] Discord RPC initializing");
         String osName = System.getProperty("os.name").toLowerCase();
         if (!osName.contains("win")) {
             System.out.println("Discord RPC is disabled on non-Windows systems (detected OS: " + osName + ")");
@@ -62,9 +67,11 @@ public class DiscordManager {
             // legacy "Phaze Client" fallback card. Discord_ClearPresence
             // tells the daemon to drop the current activity, which
             // is what the user expects from the toggle.
+            logModuleState(false);
             clearPresence();
             return;
         }
+        logModuleState(true);
 
         // Hide-in-menus: when the user is on the title / multiplayer /
         // pause-with-no-world screen the activity is fully cleared
@@ -96,7 +103,12 @@ public class DiscordManager {
         String dimension = inWorld
                 ? mc.world.getRegistryKey().getValue().getPath()
                 : "menu";
-        String player = inWorld ? mc.player.getGameProfile().getName() : "";
+        // In the menu mc.player is null, so fall back to the session
+        // username - this keeps {player} meaningful on the title screen
+        // ("In menu as Steve") instead of an empty token.
+        String player = inWorld
+                ? mc.player.getGameProfile().getName()
+                : (mc.getSession() != null ? mc.getSession().getUsername() : "");
         String gamemode = "?";
         if (inWorld && mc.interactionManager != null && mc.interactionManager.getCurrentGameMode() != null) {
             gamemode = mc.interactionManager.getCurrentGameMode().getName();
@@ -125,8 +137,22 @@ public class DiscordManager {
 
         try {
             ipcClient.setActivity(builder.build());
+            String card = details + " | " + state;
+            if (!card.equals(lastPresenceCard)) {
+                lastPresenceCard = card;
+                System.out.println("[Phaze] Discord presence updated (details='" + details + "' state='" + state + "')");
+            }
         } catch (Exception error) {
             System.err.println("[Phaze] Discord presence update failed: " + error.getMessage());
+        }
+    }
+
+    /** Log module on/off transitions so "module enabled but no
+     *  presence" is diagnosable from latest.log. */
+    private void logModuleState(boolean enabled) {
+        if (lastModuleEnabled == null || lastModuleEnabled != enabled) {
+            lastModuleEnabled = enabled;
+            System.out.println("[Phaze] Discord RPC module " + (enabled ? "enabled - showing presence" : "disabled - clearing presence"));
         }
     }
 
@@ -165,21 +191,43 @@ public class DiscordManager {
         worldJoinTimestamp = System.currentTimeMillis() / 1000;
     }
 
+    /** Ask the daemon thread to push a presence update immediately
+     *  instead of waiting out the 15-second cycle. Called when the
+     *  user edits the DiscordRpc module settings so template changes
+     *  show up in Discord right away. */
+    public void requestPresenceRefresh() {
+        refreshRequested = true;
+        synchronized (refreshLock) {
+            refreshLock.notifyAll();
+        }
+    }
+
     private class DiscordDaemonThread extends Thread {
         @Override
         public void run() {
             this.setName("Discord-RPC");
 
-            try {
-                while (Main.getInstance().getDiscordManager().isRunning()) {
+            while (Main.getInstance().getDiscordManager().isRunning()) {
+                try {
                     if (!ipcClient.isConnected()) ipcClient.connect();
                     if (ipcClient.isConnected()) updatePresence();
-                    Thread.sleep(15000);
+                    synchronized (refreshLock) {
+                        if (!refreshRequested) {
+                            refreshLock.wait(15000);
+                        }
+                        refreshRequested = false;
+                    }
+                } catch (InterruptedException exception) {
+                    if (!isRunning()) break;
+                    Thread.currentThread().interrupt();
+                    System.err.println("Stop Discord RPC " + exception.getMessage());
+                    stopRPC();
+                } catch (Throwable error) {
+                    // One bad update (e.g. a mixin from another mod
+                    // breaking a settings getter) must never kill
+                    // the daemon thread - log and retry next cycle.
+                    System.err.println("[Phaze] Discord RPC update error: " + error);
                 }
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                System.err.println("Stop Discord RPC " + exception.getMessage());
-                stopRPC();
             }
             super.run();
         }

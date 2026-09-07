@@ -8,12 +8,12 @@ Build on Windows:
 
     gradlew.bat clean build --no-daemon
 
-The publishable file is build/libs/PhazeClient-1.0.jar. The project has no
+The publishable file is build/libs/PhazeClient-1.0.1.jar. The project has no
 private or local-file dependencies. GitHub Actions runs the same command from
 a clean checkout. Upload the exact workflow artifact to Modrinth and record its
 SHA-256 with:
 
-    Get-FileHash build/libs/PhazeClient-1.0.jar -Algorithm SHA256
+    Get-FileHash build/libs/PhazeClient-1.0.1.jar -Algorithm SHA256
 
 Optional Iris, Reese's Sodium Options, and Sodium dependencies are compile-only
 and are not bundled. Included clipboard binaries are documented in

@@ -39,4 +39,4 @@ These public artifacts are not included in the published jar:
 
 The Gradle 8.14 distribution URL and SHA-256 are pinned in
 `gradle/wrapper/gradle-wrapper.properties`. GitHub Actions builds from a clean
-checkout and uploads `build/libs/PhazeClient-1.0.jar`.
+checkout and uploads `build/libs/PhazeClient-1.0.1.jar`.
