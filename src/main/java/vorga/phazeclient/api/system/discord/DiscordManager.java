@@ -1,7 +1,5 @@
 package vorga.phazeclient.api.system.discord;
 
-import vorga.phazeclient.api.system.discord.utils.DiscordEventHandlers;
-import vorga.phazeclient.api.system.discord.utils.DiscordRPC;
 import vorga.phazeclient.api.system.discord.utils.DiscordRichPresence;
 import vorga.phazeclient.api.system.discord.utils.RPCButton;
 import vorga.phazeclient.core.Main;
@@ -11,6 +9,12 @@ import java.time.Month;
 
 public class DiscordManager {
     private final DiscordDaemonThread discordDaemonThread = new DiscordDaemonThread();
+    private final DiscordIpcClient ipcClient = new DiscordIpcClient("1500846872087105639", user -> {
+        String avatarUrl = user.avatar().isEmpty()
+                ? ""
+                : "https://cdn.discordapp.com/avatars/" + user.id() + "/" + user.avatar() + ".png";
+        setInfo(new DiscordInfo(user.username(), avatarUrl, user.id()));
+    });
     private boolean running = true;
     private DiscordInfo info = new DiscordInfo("Unknown", "", "");
     private long startTimestamp = System.currentTimeMillis() / 1000;
@@ -26,37 +30,17 @@ public class DiscordManager {
             return;
         }
 
-        // Bail out cleanly when the bundled DLL couldn't be
-        // extracted / loaded - DiscordRPC.INSTANCE returns null in
-        // that case (see DiscordRPC#loadInstance). Without this
-        // check the very next line would NPE through the entire
-        // boot path and the client would silently hang on the
-        // first time the daemon thread tries to use Discord_*.
-        if (DiscordRPC.INSTANCE == null) {
-            System.err.println("[Phaze] Discord RPC native unavailable - module disabled for this session");
-            this.running = false;
-            return;
-        }
-
-        DiscordEventHandlers handlers = new DiscordEventHandlers.Builder().ready((user) -> {
-            Main.getInstance().getDiscordManager().setInfo(
-                    new DiscordInfo(
-                            user.username,
-                            "https://cdn.discordapp.com/avatars/" + user.userId + "/" + user.avatar + ".png",
-                            user.userId
-                    )
-            );
-
-            updatePresence();
-        }).build();
-
-        DiscordRPC.INSTANCE.Discord_Initialize("1500846872087105639", handlers, true, "");
+        ipcClient.connect();
         discordDaemonThread.start();
     }
 
     public void stopRPC() {
-        DiscordRPC.INSTANCE.Discord_Shutdown();
         this.running = false;
+        try {
+            if (ipcClient.isConnected()) ipcClient.setActivity(null);
+        } catch (Exception ignored) {
+        }
+        ipcClient.close();
     }
 
     private void updatePresence() {
@@ -78,7 +62,7 @@ public class DiscordManager {
             // legacy "Phaze Client" fallback card. Discord_ClearPresence
             // tells the daemon to drop the current activity, which
             // is what the user expects from the toggle.
-            DiscordRPC.INSTANCE.Discord_ClearPresence();
+            clearPresence();
             return;
         }
 
@@ -90,7 +74,7 @@ public class DiscordManager {
         net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
         boolean inWorld = mc != null && mc.world != null && mc.player != null;
         if (rpc.hideInMenus.isValue() && !inWorld) {
-            DiscordRPC.INSTANCE.Discord_ClearPresence();
+            clearPresence();
             return;
         }
 
@@ -139,7 +123,18 @@ public class DiscordManager {
         // profile. This is a documented Rich Presence limitation.
         builder.setButtons(new RPCButton("Telegram Channel", "https://t.me/PhazeClient"));
 
-        DiscordRPC.INSTANCE.Discord_UpdatePresence(builder.build());
+        try {
+            ipcClient.setActivity(builder.build());
+        } catch (Exception error) {
+            System.err.println("[Phaze] Discord presence update failed: " + error.getMessage());
+        }
+    }
+
+    private void clearPresence() {
+        try {
+            if (ipcClient.isConnected()) ipcClient.setActivity(null);
+        } catch (Exception ignored) {
+        }
     }
 
     /** Resolve the configured DiscordRpc module instance. Defensive
@@ -177,11 +172,12 @@ public class DiscordManager {
 
             try {
                 while (Main.getInstance().getDiscordManager().isRunning()) {
-                    DiscordRPC.INSTANCE.Discord_RunCallbacks();
-                    updatePresence();
+                    if (!ipcClient.isConnected()) ipcClient.connect();
+                    if (ipcClient.isConnected()) updatePresence();
                     Thread.sleep(15000);
                 }
-            } catch (Exception exception) {
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
                 System.err.println("Stop Discord RPC " + exception.getMessage());
                 stopRPC();
             }
