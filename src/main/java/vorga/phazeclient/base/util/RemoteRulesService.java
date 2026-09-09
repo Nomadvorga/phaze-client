@@ -197,6 +197,7 @@ public final class RemoteRulesService {
      */
     private volatile Set<String> allowed = Collections.emptySet();
     private volatile String lastHost = null;          // null = "never refreshed yet"
+    private volatile String rulesHost = null;         // host owning blocked/allowed
     private volatile long lastRefreshMs = 0L;
     private volatile long lastSuccessfulFetchMs = 0L;
     private final long serviceStartMs = System.currentTimeMillis();
@@ -265,6 +266,10 @@ public final class RemoteRulesService {
         // An outage must not let a stale allow linger: without a fresh
         // answer we fall back to whatever the client ships with.
         if (isRulesApiUnavailableNow()) {
+            return false;
+        }
+        String currentHost = ServerUtil.getCurrentServerHost();
+        if (rulesHost == null || !rulesHost.equals(currentHost)) {
             return false;
         }
         return allowed.contains(moduleId.toLowerCase());
@@ -381,8 +386,19 @@ public final class RemoteRulesService {
         if (moduleId == null || moduleId.isEmpty()) {
             return false;
         }
+        String normalized = moduleId.toLowerCase();
+        String currentHost = ServerUtil.getCurrentServerHost();
+        // Never apply a completed snapshot from the main menu or the
+        // previous server to the server the player is on now. Until the
+        // matching API response arrives, mirrored modules use their local
+        // per-segment fallback and unrelated modules stay fail-open.
+        if (rulesHost == null || !rulesHost.equals(currentHost)) {
+            if (ServerUtil.hasMirroredModuleRule(normalized)) {
+                return !ServerUtil.isModuleAllowedByMirroredRules(normalized);
+            }
+            return false;
+        }
         if (shouldUseOfflineModuleFallback()) {
-            String normalized = moduleId.toLowerCase();
             if (ServerUtil.hasMirroredModuleRule(normalized)) {
                 return !ServerUtil.isModuleAllowedByMirroredRules(normalized);
             }
@@ -462,7 +478,18 @@ public final class RemoteRulesService {
         if (!enabled || !started.get()) {
             return;
         }
-        scheduler.execute(this::heartbeat);
+        String host = ServerUtil.getCurrentServerHost();
+        if (host == null) {
+            host = "";
+        }
+        // Publish the newly observed host immediately. This invalidates an
+        // older in-flight response before the single-threaded poll executor
+        // gets a chance to finish it and prevents main-menu rules from being
+        // shown for tens of seconds after joining a server.
+        lastHost = host;
+        lastRefreshMs = 0L;
+        String requestedHost = host;
+        scheduler.execute(() -> fetchAsync(requestedHost, true));
     }
 
     /** Reads a string array from the payload into a lower-cased set. */
@@ -636,6 +663,7 @@ public final class RemoteRulesService {
         if (host == null ? lastHost == null : host.equals(lastHost)) {
             blocked = Collections.unmodifiableSet(next);
             allowed = Collections.unmodifiableSet(nextAllowed);
+            rulesHost = host;
             lastRefreshMs = System.currentTimeMillis();
             lastSuccessfulFetchMs = lastRefreshMs;
         }

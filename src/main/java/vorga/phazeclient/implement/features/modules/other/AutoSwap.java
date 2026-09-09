@@ -1,15 +1,16 @@
 package vorga.phazeclient.implement.features.modules.other;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.*;
 import vorga.phazeclient.base.util.ServerUtil;
+import vorga.phazeclient.base.util.PhazeAnnouncements;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -79,10 +80,12 @@ public final class AutoSwap extends Module {
         if (!canActivateInGame()) {
             return;
         }
-        if (!ServerUtil.isAutoSwapSupported()) {
+        if (isServerLocked()) {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player != null) {
-                client.player.sendMessage(Text.literal("§cAutoSwap is not supported on this server!"), true);
+                client.player.sendMessage(PhazeAnnouncements.systemMessage(
+                        Text.literal("AutoSwap is not supported on this server!").formatted(Formatting.RED)
+                ), true);
             }
             return;
         }
@@ -113,8 +116,7 @@ public final class AutoSwap extends Module {
         }
 
         isSwapping = true;
-        client.setScreen(new InventoryScreen(client.player));
-        
+
         Thread worker = new Thread(() -> {
             sleepSwapDelay();
             client.execute(() -> performSwap(target.slotId, target.itemName));
@@ -159,15 +161,8 @@ public final class AutoSwap extends Module {
         worker.start();
     }
 
-    /**
-     * Finish swap and close inventory
-     */
+    /** Finish the invisible player-screen-handler swap. */
     private void finishSwap() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player != null) {
-            client.player.closeHandledScreen();
-        }
-        client.setScreen(null);
         isSwapping = false;
     }
 

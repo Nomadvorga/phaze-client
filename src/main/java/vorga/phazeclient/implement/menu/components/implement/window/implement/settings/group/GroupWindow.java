@@ -62,7 +62,15 @@ public class GroupWindow extends AbstractWindow {
         Fonts.getSize(15, Fonts.Type.INTER_BOLD).drawString(textPose, setting.getLocalizedName(), x + 9, y + 10, applyGlobalAlpha(ColorUtil.getText()));
 
         boolean isLimitedHeight = MathHelper.clamp(height, 0, 200) == 200;
-        if (isLimitedHeight) scissorManager.push(GuiMatrix.mat4(matrix), x, y + 23, width, height - 28);
+        if (isLimitedHeight) {
+            scissorManager.push(GuiMatrix.mat4(matrix), x, y + 23, width, height - 28);
+            context.enableScissor(
+                    (int) Math.floor(x),
+                    (int) Math.floor(y + 23),
+                    (int) Math.ceil(x + width),
+                    (int) Math.ceil(y + height - 5)
+            );
+        }
 
         float offset = 0;
         int totalHeight = 0;
@@ -85,7 +93,10 @@ public class GroupWindow extends AbstractWindow {
             totalHeight += (int) component.height;
         }
 
-        if (isLimitedHeight) scissorManager.pop();
+        if (isLimitedHeight) {
+            context.disableScissor();
+            scissorManager.pop();
+        }
 
         int maxScroll = (int) Math.max(0, totalHeight - (height - 23));
         scroll = MathHelper.clamp(scroll, -maxScroll, 0);

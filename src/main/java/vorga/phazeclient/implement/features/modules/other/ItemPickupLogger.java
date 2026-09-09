@@ -10,6 +10,7 @@ import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
+import vorga.phazeclient.base.util.PhazeAnnouncements;
 
 public final class ItemPickupLogger extends Module {
     private static final ItemPickupLogger INSTANCE = new ItemPickupLogger();
@@ -68,10 +69,10 @@ public final class ItemPickupLogger extends Module {
         }
 
         MutableText itemName = stack.getName().copy();
-        Text message = Text.literal("[Pickup] ")
-                .formatted(Formatting.GOLD)
+        Text message = Text.literal("Pickup · ")
+                .formatted(Formatting.GRAY)
                 .append(itemName)
                 .append(Text.literal(" x" + amount).formatted(Formatting.GRAY));
-        mc.inGameHud.getChatHud().addMessage(message);
+        mc.inGameHud.getChatHud().addMessage(PhazeAnnouncements.systemMessage(message));
     }
 }

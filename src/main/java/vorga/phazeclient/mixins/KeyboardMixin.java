@@ -176,7 +176,8 @@ public abstract class KeyboardMixin {
             method = "processF3(Lnet/minecraft/client/input/KeyInput;)Z",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/WorldRenderer;reload()V"
+                    target = "Lnet/minecraft/client/render/WorldRenderer;reload()V",
+                    shift = At.Shift.AFTER
             )
     )
     private void phaze$chunkAnimatorOnF3A(KeyInput input, CallbackInfoReturnable<Boolean> cir) {

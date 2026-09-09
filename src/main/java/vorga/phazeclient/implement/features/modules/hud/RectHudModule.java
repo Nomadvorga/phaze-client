@@ -9,14 +9,13 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.system.hud.HudBuffer;
+import vorga.phazeclient.api.system.hud.HudScaleLimits;
 import vorga.phazeclient.implement.menu.MenuPalettes;
 
 public abstract class RectHudModule extends Module {
     private static final float DEFAULT_HUD_X = 22.0f;
     private static final float DEFAULT_HUD_Y = 22.0f;
     private static final float DEFAULT_HUD_SCALE = 1.0f;
-    private static final float MIN_HUD_SCALE = 1.5f;
-    private static final float MAX_HUD_SCALE = 8.0f;
     private final float defaultHudX;
     private final float defaultHudY;
     private final float defaultHudScale;
@@ -141,17 +140,26 @@ public abstract class RectHudModule extends Module {
         return hudScale;
     }
 
+    /**
+     * Visual scale shared by every rectangular HUD.  Keeping the stored value
+     * independent preserves existing configs: x1.00 is now rendered at the
+     * former x2.00 size, while the former x1.00 look is selected with x0.50.
+     */
+    public float getRenderHudScale() {
+        return hudScale * HudScaleLimits.RENDER_MULTIPLIER;
+    }
+
     public void setHudScale(float hudScale) {
-        this.hudScale = MathHelper.clamp(hudScale, getMinHudScale(), getMaxHudScale());
+        this.hudScale = HudScaleLimits.normalize(hudScale);
         syncStoredHudRatios();
     }
 
     public float getMinHudScale() {
-        return MIN_HUD_SCALE;
+        return HudScaleLimits.MIN;
     }
 
     public float getMaxHudScale() {
-        return MAX_HUD_SCALE;
+        return HudScaleLimits.MAX;
     }
 
     public HudBuffer getHudBuffer() {

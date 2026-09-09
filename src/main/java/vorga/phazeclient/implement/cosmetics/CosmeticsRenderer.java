@@ -13,6 +13,7 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.RotationAxis;
@@ -98,7 +99,9 @@ public final class CosmeticsRenderer {
                     player, previewSelection, true
             );
             return;
-        } else if (localPlayer) {
+        }
+        if (!shouldRenderFor(player, state)) return;
+        if (localPlayer) {
             if (client.options.getPerspective().isFirstPerson()) return;
             if (settings.isWingEquipped()) {
                 renderBodySelection(
@@ -150,6 +153,8 @@ public final class CosmeticsRenderer {
         if (preview) {
             if (!localPlayer || !CosmeticsState.isHat(previewSelection)) return;
             selection = previewSelection;
+        } else if (!shouldRenderFor(player, state)) {
+            return;
         } else if (localPlayer) {
             if (!settings.isHatEquipped()
                     || client.options.getPerspective().isFirstPerson()) return;
@@ -527,6 +532,37 @@ public final class CosmeticsRenderer {
         Entity renderedEntity = client.world.getEntityById(state.id);
         if (!(renderedEntity instanceof PlayerEntity player)) return null;
         return capeSelectionFor(player);
+    }
+
+    /**
+     * Invisible players only expose cosmetics when their actual armour is
+     * visible too.  This keeps a fully invisible player fully hidden, while
+     * preserving the expected cosmetic attachment on visible armour.
+     */
+    public static boolean shouldRenderFor(PlayerEntityRenderState state) {
+        if (state == null || !state.invisible) return true;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) return false;
+        Entity entity = client.world.getEntityById(state.id);
+        return entity instanceof PlayerEntity player && hasVisibleArmor(player);
+    }
+
+    public static boolean shouldRenderFor(PlayerEntity player) {
+        return player == null || !player.isInvisible() || hasVisibleArmor(player);
+    }
+
+    private static boolean shouldRenderFor(PlayerEntity player, PlayerEntityRenderState state) {
+        return state == null || !state.invisible || hasVisibleArmor(player);
+    }
+
+    private static boolean hasVisibleArmor(PlayerEntity player) {
+        for (EquipmentSlot slot : EquipmentSlot.VALUES) {
+            if (slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR
+                    && !player.getEquippedStack(slot).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static String capeSelectionFor(PlayerEntity player) {

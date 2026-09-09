@@ -45,7 +45,7 @@ public class MainMenuScreen extends TitleScreen {
     private static final double MIN_OVERLAY_SCALE = 1.0D;
     private static final int DEFAULT_OVERLAY_WIDTH = 462;
     private static final int DEFAULT_OVERLAY_HEIGHT = 300;
-    private static final String FOOTER_LEFT_TEXT = "Phaze Client 1.21.11 (1.0)";
+    private static final String FOOTER_LEFT_TEXT = "Phaze Client 1.21.11 (1.1)";
     private static final String FOOTER_RIGHT_TEXT = "Not affiliated with Mojang or Microsoft. Do not distribute!";
     private static final Identifier ICON_SINGLE = Identifier.of("phaze", "textures/menu/user.png");
     private static final Identifier ICON_MULTI = Identifier.of("phaze", "textures/menu/users.png");

@@ -224,6 +224,9 @@ public class MenuScreen extends Screen implements QuickImports {
             vorga.phazeclient.api.system.shape.batched.BatchedRectangle.endScope();
         }
         context.getMatrices().popMatrix();
+        // The scale readout intentionally renders after the menu transform has
+        // been popped: it stays centred in physical screen space.
+        vorga.phazeclient.implement.menu.components.implement.settings.ScaleSnapOverlay.render(context);
     }
 
     private void renderGuiRegionBlur(DrawContext context) {
@@ -528,6 +531,9 @@ public class MenuScreen extends Screen implements QuickImports {
         double mouseX = click.x();
         double mouseY = click.y();
         int button = click.button();
+        if (button == 0) {
+            vorga.phazeclient.api.system.cursor.CursorManager.endDrag();
+        }
         updateOverlayMetrics();
         double overlayMouseX = toMenuCoordinateX(mouseX);
         double overlayMouseY = toMenuCoordinateY(mouseY);

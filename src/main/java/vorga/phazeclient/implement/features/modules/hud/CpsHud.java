@@ -20,6 +20,8 @@ public final class CpsHud extends RectHudModule {
         reverseText.setFullWidth(true);
         showCpsText.setFullWidth(true);
         rightClickCps.setFullWidth(true);
+        otherSection.visible(showCpsText::isValue);
+        reverseText.visible(showCpsText::isValue);
         // Reverse Order is grouped under the Other section, while
         // Show CPS Text and Right Click CPS stay in the Main column
         // because they're CPS-specific config rather than generic

@@ -88,9 +88,6 @@ public final class ElytraUtility extends Module {
         if (mc.currentScreen != null && !(mc.currentScreen instanceof CreativeInventoryScreen)) {
             return;
         }
-        if (!ServerUtil.isElytraUtilitySupported()) {
-            return;
-        }
         if (keybind.getKey() == GLFW.GLFW_KEY_UNKNOWN || code != keybind.getKey()) {
             return;
         }

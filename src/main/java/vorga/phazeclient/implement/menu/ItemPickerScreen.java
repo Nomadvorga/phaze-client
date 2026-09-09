@@ -15,6 +15,7 @@ import vorga.phazeclient.api.system.cursor.CursorManager;
 import vorga.phazeclient.api.system.font.FontRenderer;
 import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
@@ -63,13 +64,25 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
         panelX = width / 2.0F - panelWidth / 2.0F;
         panelY = height / 2.0F - panelHeight / 2.0F;
 
-        context.fill(0, 0, width, height, MenuStyle.detailScrim(0.92F));
+        // Do not dim or blur the complete screen here. Besides making the
+        // picker look green with the Phaze palette, a full-screen backdrop is
+        // needlessly expensive and can collide with other post effects.
+        // The only blur this screen owns is the panel-sized one below.
+        float blurRadius = Theme.getInstance().getMenuBlurRadius();
+        if (blurRadius > 0.0F) {
+            Blur.INSTANCE.renderGaussian(ShapeProperties.create(context.getMatrices(), panelX, panelY, panelWidth, panelHeight)
+                    .round(7.0F)
+                    .softness(1.2F)
+                    .quality(blurRadius * 2.0F)
+                    .color(0xFFFFFFFF)
+                    .build());
+        }
 
         rectangle.render(ShapeProperties.create(context.getMatrices(), panelX, panelY, panelWidth, panelHeight)
                 .round(7.0F)
                 .thickness(1.2F)
                 .outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER_LIGHT, 0.92F))
-                .color(MenuStyle.withAlpha(MenuStyle.PANEL_BG, 0.97F))
+                .color(MenuStyle.withAlpha(MenuStyle.PANEL_BG, 0.86F))
                 .build());
 
         FontRenderer titleFont = Fonts.getSize(15, INTER_BOLD);

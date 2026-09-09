@@ -168,11 +168,14 @@ public abstract class ChatScreenInputFieldMixin {
         phaze$wasOpenedLastFrame = false;
     }
 
+    /**
+     * Built-in Phaze HUD editor cursor. The relay only contains a request
+     * while one of our HUD elements is being moved or resized, so ordinary
+     * vanilla chat controls retain their native cursor.
+     */
     @Inject(method = "render", at = @At("TAIL"))
     private void phaze$applyHudEditorCursor(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        if (Animations.getInstance().isDynamicCursorEnabled()) {
-            HudCursorRelay.apply();
-        }
+        HudCursorRelay.apply();
     }
 
     /**

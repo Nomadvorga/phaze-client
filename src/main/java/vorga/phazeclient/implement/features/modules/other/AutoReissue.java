@@ -88,10 +88,6 @@ public final class AutoReissue extends Module {
             return;
         }
 
-        if (!isServerAllowed()) {
-            return;
-        }
-
         long now = System.currentTimeMillis();
         long delayMs = Math.max(1L, intervalSeconds.getInt()) * 1_000L;
         long timeoutMs = Math.max(MIN_STATE_TIMEOUT_MS, delayMs + 10_000L);

@@ -35,7 +35,8 @@ public final class CosmeticGuiElementRenderer
     private final ProjectionMatrix2 projection =
             new ProjectionMatrix2("PIP - phaze cosmetic", -1000.0F, 1000.0F, true);
     private long frame;
-    private long rasterFrameId = Long.MIN_VALUE;
+    private long submittedFrameId = Long.MIN_VALUE;
+    private long rasterFrame = Long.MIN_VALUE;
 
     public CosmeticGuiElementRenderer(VertexConsumerProvider.Immediate vertexConsumers) {
         super(vertexConsumers);
@@ -61,19 +62,25 @@ public final class CosmeticGuiElementRenderer
     public void render(CosmeticGuiElementState state, GuiRenderState guiState, int guiScale) {
         int width = (state.x2() - state.x1()) * guiScale;
         int height = (state.y2() - state.y1()) * guiScale;
-        if (width <= 0 || height <= 0) return;
+        // A transparent state must never allocate or rasterise a thumbnail.
+        // This also protects the cache if another screen submits a hidden
+        // cosmetic while it is being preloaded.
+        if (width <= 0 || height <= 0 || state.alpha() <= 0.001F) return;
 
-        frame++;
-        evictStale();
+        if (submittedFrameId != state.frameId()) {
+            submittedFrameId = state.frameId();
+            frame++;
+            evictStale();
+        }
         String key = state.selection().toLowerCase(Locale.ROOT) + "@" + width + "x" + height;
         Thumbnail thumbnail = thumbnails.get(key);
         if (thumbnail == null) {
             // CPU parsing happens on the cosmetic preloader. Limit the final
             // GPU allocation/raster step to one entry per menu frame.
-            if (rasterFrameId == state.frameId()) return;
+            if (rasterFrame == frame) return;
             BlockbenchWingModel model = CosmeticsRenderer.thumbnailModel(state.selection());
             if (model == null) return;
-            rasterFrameId = state.frameId();
+            rasterFrame = frame;
             thumbnail = new Thumbnail(width, height);
             thumbnails.put(key, thumbnail);
             rasterise(state, thumbnail, width, height);
@@ -122,28 +129,33 @@ public final class CosmeticGuiElementRenderer
         BlockbenchWingModel model = CosmeticsRenderer.thumbnailModel(state.selection());
         if (model == null) return;
 
-        BlockbenchWingModel.Bounds bounds = model.bounds();
-        boolean frontIsXAxis = bounds.frontIsXAxis();
-        float projectedWidth = frontIsXAxis ? bounds.depth() : bounds.width();
-        float fit = Math.min(width * 0.84F / projectedWidth,
-                height * 0.84F / bounds.height());
+        matrices.push();
+        try {
+            BlockbenchWingModel.Bounds bounds = model.bounds();
+            boolean frontIsXAxis = bounds.frontIsXAxis();
+            float projectedWidth = frontIsXAxis ? bounds.depth() : bounds.width();
+            float fit = Math.min(width * 0.84F / projectedWidth,
+                    height * 0.84F / bounds.height());
 
-        matrices.scale(fit, -fit, fit);
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(frontIsXAxis ? 90.0F : 180.0F));
-        String lower = state.selection().toLowerCase(Locale.ROOT);
-        if (lower.contains("ally") || lower.contains("birb")) {
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(45.0F));
-        } else if (lower.contains("turtle")) {
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0F));
+            matrices.scale(fit, -fit, fit);
+            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(frontIsXAxis ? 90.0F : 180.0F));
+            String lower = state.selection().toLowerCase(Locale.ROOT);
+            if (lower.contains("ally") || lower.contains("birb")) {
+                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(45.0F));
+            } else if (lower.contains("turtle")) {
+                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0F));
+            }
+            if (CosmeticsState.isWing(state.selection())
+                    && !CosmeticsState.WIMGS.equalsIgnoreCase(state.selection())
+                    && !CosmeticsState.FLUFFY_WINGS.equalsIgnoreCase(state.selection())) {
+                matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180.0F));
+            }
+            matrices.translate(-bounds.centerX(), -bounds.centerY(), -bounds.centerZ());
+            model.renderCatalog(matrices, vertexConsumers,
+                    LightmapTextureManager.MAX_LIGHT_COORDINATE, null);
+        } finally {
+            matrices.pop();
         }
-        if (CosmeticsState.isWing(state.selection())
-                && !CosmeticsState.WIMGS.equalsIgnoreCase(state.selection())
-                && !CosmeticsState.FLUFFY_WINGS.equalsIgnoreCase(state.selection())) {
-            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180.0F));
-        }
-        matrices.translate(-bounds.centerX(), -bounds.centerY(), -bounds.centerZ());
-        model.renderCatalog(matrices, vertexConsumers,
-                LightmapTextureManager.MAX_LIGHT_COORDINATE, matrices.peek());
     }
 
     private static int premultipliedWhite(float alpha) {

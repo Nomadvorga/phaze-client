@@ -209,6 +209,7 @@ public class ValueComponent extends AbstractSettingComponent {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         boolean wasDragging = dragging;
         dragging = false;
+        ScaleSnapOverlay.hide();
         if (wasDragging && isGuiScaleSetting()) {
             Theme.getInstance().endGuiScaleAdjustment();
         }
@@ -294,6 +295,11 @@ public class ValueComponent extends AbstractSettingComponent {
         BigDecimal bd = BigDecimal.valueOf(snapped).setScale(2, RoundingMode.HALF_UP);
         float newValue = bd.floatValue();
         if (setting.isInteger()) newValue = (int) newValue;
+
+        if (isGuiScaleSetting()) {
+            ScaleSnapOverlay.show(newValue, Math.abs(newValue - 1.0F) < 0.001F,
+                    setting.getName() + " Scale");
+        }
 
         if (newValue != previousValue) {
             previousValue = newValue;

@@ -59,8 +59,6 @@ import java.util.Locale;
  */
 public final class TrapTimer extends RectHudModule {
     private static final TrapTimer INSTANCE = new TrapTimer();
-    private static final float MIN_HUD_SCALE = 0.75F;
-    private static final float MAX_HUD_SCALE = 2.25F;
     public enum TrapType {
         NORMAL(15_000L),
         DRAGON(20_000L);
@@ -114,16 +112,6 @@ public final class TrapTimer extends RectHudModule {
     @Override
     public float getIconSize() {
         return 21.0F;
-    }
-
-    @Override
-    public float getMinHudScale() {
-        return MIN_HUD_SCALE;
-    }
-
-    @Override
-    public float getMaxHudScale() {
-        return MAX_HUD_SCALE;
     }
 
     /**
@@ -220,7 +208,7 @@ public final class TrapTimer extends RectHudModule {
         if (getHudX() > 1.0F || getHudY() > 1.0F) {
             return;
         }
-        float scale = getHudScale();
+        float scale = getRenderHudScale();
         float hudWidth = baseWidth * scale;
         float hudHeight = baseHeight * scale;
         float crosshairCenterY = screenHeight * 0.5F;

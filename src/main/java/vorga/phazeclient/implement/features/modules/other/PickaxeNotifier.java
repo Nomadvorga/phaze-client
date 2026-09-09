@@ -14,6 +14,7 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
+import vorga.phazeclient.base.util.PhazeAnnouncements;
 
 /**
  * Warns the player when their currently held pickaxe drops below a
@@ -176,13 +177,12 @@ public final class PickaxeNotifier extends Module {
         if (mc.inGameHud == null || mc.inGameHud.getChatHud() == null) {
             return;
         }
-        MutableText line = Text.literal("[Phaze] ").formatted(Formatting.GOLD)
-                .append(Text.literal("Pickaxe durability low ").formatted(Formatting.RED))
+        MutableText line = Text.literal("Pickaxe durability low ").formatted(Formatting.RED)
                 .append(Text.literal("(" + remaining + " left)").formatted(Formatting.GOLD));
         if (switched) {
             line.append(Text.literal(" -> slot " + clampHotbarSlot(swapSlot.getInt())).formatted(Formatting.GRAY));
         }
-        mc.inGameHud.getChatHud().addMessage(line);
+        mc.inGameHud.getChatHud().addMessage(PhazeAnnouncements.systemMessage(line));
         if (playSound.isValue() && mc.getSoundManager() != null) {
             // 1.21.11: PositionedSoundInstance.master(...) was renamed to ui(...) with the same
             // (event, pitch, volume) signature; it now files the sound under the new

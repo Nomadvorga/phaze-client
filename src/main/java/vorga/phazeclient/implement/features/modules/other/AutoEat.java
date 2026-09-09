@@ -5,8 +5,9 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
+import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import vorga.phazeclient.api.feature.module.Module;
@@ -18,6 +19,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 public final class AutoEat extends Module {
     private static final AutoEat INSTANCE = new AutoEat();
     private static final long FEED_COMMAND_COOLDOWN_MS = 2000L;
+    private static final long USE_RETRY_DELAY_MS = 250L;
+    private static final long EAT_TIMEOUT_MS = 10000L;
+    private static final long NEXT_BITE_DELAY_MS = 500L;
 
     public final SectionSetting generalSection = new SectionSetting("General");
     public final BooleanSetting useCommand = new BooleanSetting(
@@ -29,16 +33,24 @@ public final class AutoEat extends Module {
             "Auto-eat when the food bar drops to this value (out of 20)"
     ).range(1, 19).setValue(17);
 
-    private boolean eating = false;
-    private int previousSlot = -1;
-    private long lastCommandMs = 0L;
+    private boolean eating;
+    private boolean swapped;
+    private boolean startedUsingItem;
+    private int activeHotbarSlot = -1;
+    private int sourceScreenSlot = -1;
+    private Item foodItem;
+    private int foodCountBefore;
+    private int hungerBefore;
+    private long eatStartedMs;
+    private long nextUseAttemptMs;
+    private long nextBiteMs;
+    private long lastCommandMs;
 
     private AutoEat() {
         super("auto_eat", "Auto Eat", ModuleCategory.UTILITIES);
         useCommand.setFullWidth(true);
         hungerThreshold.setFullWidth(true);
         setup(generalSection, useCommand, hungerThreshold);
-
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }
 
@@ -61,12 +73,6 @@ public final class AutoEat extends Module {
         return 21.0F;
     }
 
-    /**
-     * Returns true while a physical-eating cycle is currently in progress.
-     * The {@link vorga.phazeclient.mixins.ClientPlayerInteractionManagerMixin}
-     * uses this to suppress vanilla's automatic {@code stopUsingItem} call
-     * that would otherwise fire every tick because the use-key isn't held.
-     */
     public boolean isAutoEating() {
         return isEnabled() && eating;
     }
@@ -75,47 +81,35 @@ public final class AutoEat extends Module {
     public void deactivate() {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc != null) {
-            finishEating(mc);
+            cancelEating(mc);
         }
     }
 
     private void tick(MinecraftClient mc) {
         if (mc == null || mc.player == null || mc.interactionManager == null) {
             if (eating && mc != null) {
-                finishEating(mc);
+                cancelEating(mc);
             }
             return;
         }
 
         if (!isEnabled()) {
             if (eating) {
-                finishEating(mc);
+                cancelEating(mc);
             }
             return;
         }
-
-        // Block any user-visible activity while a screen is open: vanilla
-        // GUIs (inventory, chest, ESC menu, advancements...), the chat
-        // screen, and our own ClickGui all populate mc.currentScreen, so
-        // a single null-check covers them. We still let an in-flight
-        // physical bite tick to its natural completion below - the bite
-        // is server-tick driven and would resolve weirdly if we cancelled
-        // it mid-use just because the user opened their inventory.
-        boolean screenOpen = mc.currentScreen != null;
 
         int hunger = mc.player.getHungerManager().getFoodLevel();
         int threshold = hungerThreshold.getInt();
 
         if (useCommand.isValue()) {
             if (eating) {
-                finishEating(mc);
+                cancelEating(mc);
             }
-            if (screenOpen) {
-                return;
-            }
-            if (hunger <= threshold && mc.getNetworkHandler() != null) {
+            if (mc.currentScreen == null && hunger <= threshold && mc.getNetworkHandler() != null) {
                 long now = System.currentTimeMillis();
-                if (now - lastCommandMs > FEED_COMMAND_COOLDOWN_MS) {
+                if (now - lastCommandMs >= FEED_COMMAND_COOLDOWN_MS) {
                     mc.getNetworkHandler().sendChatCommand("feed");
                     lastCommandMs = now;
                 }
@@ -123,88 +117,191 @@ public final class AutoEat extends Module {
             return;
         }
 
-        // Physical eating mode.
         if (eating) {
-            if (mc.player.isUsingItem()) {
-                // Still eating - the ClientPlayerInteractionManager mixin
-                // suppresses vanilla's stopUsingItem call so the use ticks
-                // through to natural completion.
+            tickEating(mc);
+            return;
+        }
+
+        if (mc.currentScreen != null || hunger > threshold || System.currentTimeMillis() < nextBiteMs) {
+            return;
+        }
+
+        startEating(mc, hunger);
+    }
+
+    private void startEating(MinecraftClient mc, int hunger) {
+        PlayerInventory inventory = mc.player.getInventory();
+        int selectedSlot = inventory.getSelectedSlot();
+        int foodInventorySlot = findFoodInInventory(mc.player, selectedSlot);
+        if (foodInventorySlot < 0) {
+            return;
+        }
+
+        activeHotbarSlot = selectedSlot;
+        sourceScreenSlot = -1;
+        swapped = foodInventorySlot != selectedSlot;
+
+        if (swapped) {
+            sourceScreenSlot = inventorySlotToPlayerScreenSlot(foodInventorySlot);
+            if (sourceScreenSlot < 0 || sourceScreenSlot >= mc.player.playerScreenHandler.slots.size()) {
+                resetState();
                 return;
             }
-            // Vanilla finished using the item (Item.finishUsing fired).
-            finishEating(mc);
+            // The selected hotbar index stays unchanged. Only the stacks are
+            // exchanged, so the server uses the same slot the player holds.
+            mc.interactionManager.clickSlot(
+                    mc.player.playerScreenHandler.syncId,
+                    sourceScreenSlot,
+                    activeHotbarSlot,
+                    SlotActionType.SWAP,
+                    mc.player
+            );
+        }
+
+        ItemStack heldFood = inventory.getStack(activeHotbarSlot);
+        if (!isFood(heldFood)) {
+            restoreItems(mc);
+            resetState();
             return;
         }
 
-        // Don't START a new bite while any screen is open - the user is
-        // interacting with a GUI, chat, ESC menu, or our ClickGui and
-        // wouldn't expect a hotbar-slot swap + interactItem behind the
-        // back of whatever they're doing.
-        if (screenOpen) {
-            return;
-        }
+        foodItem = heldFood.getItem();
+        foodCountBefore = heldFood.getCount();
+        hungerBefore = hunger;
+        startedUsingItem = false;
+        eatStartedMs = System.currentTimeMillis();
+        nextUseAttemptMs = eatStartedMs + 50L;
+        eating = true;
+    }
 
-        if (hunger > threshold) {
-            return;
-        }
-
-        int foodSlot = findFoodInHotbar(mc.player);
-        if (foodSlot < 0) {
-            return;
-        }
-
+    private void tickEating(MinecraftClient mc) {
+        long now = System.currentTimeMillis();
         PlayerInventory inventory = mc.player.getInventory();
-        previousSlot = inventory.getSelectedSlot();
-        selectHotbarSlot(mc, foodSlot);
-        ActionResult result = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
-        if (result.isAccepted()) {
-            eating = true;
-        } else {
-            // Item couldn't be used - swap back immediately.
-            selectHotbarSlot(mc, previousSlot);
-            previousSlot = -1;
-        }
-    }
 
-    /**
-     * Switches the player's currently held hotbar slot and syncs the change
-     * to the server, mirroring how vanilla updates the slot when the user
-     * scrolls or presses a number key.
-     */
-    private void selectHotbarSlot(MinecraftClient mc, int slot) {
-        if (mc == null || mc.player == null) {
+        if (activeHotbarSlot < 0 || activeHotbarSlot > 8
+                || inventory.getSelectedSlot() != activeHotbarSlot) {
+            cancelEating(mc);
             return;
         }
-        mc.player.getInventory().setSelectedSlot(slot);
-        if (mc.getNetworkHandler() != null) {
-            mc.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(slot));
+
+        ItemStack heldStack = inventory.getStack(activeHotbarSlot);
+        boolean consumed = mc.player.getHungerManager().getFoodLevel() > hungerBefore
+                || heldStack.isEmpty()
+                || heldStack.getItem() != foodItem
+                || heldStack.getCount() < foodCountBefore;
+        if (consumed) {
+            completeEating(mc);
+            return;
+        }
+
+        if (!isFood(heldStack) || now - eatStartedMs >= EAT_TIMEOUT_MS) {
+            cancelEating(mc);
+            return;
+        }
+
+        mc.options.useKey.setPressed(true);
+        if (mc.player.isUsingItem()) {
+            startedUsingItem = true;
+            return;
+        }
+
+        if (startedUsingItem) {
+            // Wait for the server's stack update before trying another use.
+            startedUsingItem = false;
+            nextUseAttemptMs = now + USE_RETRY_DELAY_MS;
+            return;
+        }
+
+        if (now >= nextUseAttemptMs) {
+            ActionResult result = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+            if (result.isAccepted() && mc.player.isUsingItem()) {
+                startedUsingItem = true;
+            }
+            nextUseAttemptMs = now + USE_RETRY_DELAY_MS;
         }
     }
 
-    private int findFoodInHotbar(PlayerEntity player) {
+    private void completeEating(MinecraftClient mc) {
+        releaseUseKey(mc);
+        restoreItems(mc);
+        resetState();
+        nextBiteMs = System.currentTimeMillis() + NEXT_BITE_DELAY_MS;
+    }
+
+    private void cancelEating(MinecraftClient mc) {
+        if (mc != null && mc.player != null && mc.interactionManager != null && mc.player.isUsingItem()) {
+            mc.interactionManager.stopUsingItem(mc.player);
+        }
+        releaseUseKey(mc);
+        restoreItems(mc);
+        resetState();
+        nextBiteMs = System.currentTimeMillis() + NEXT_BITE_DELAY_MS;
+    }
+
+    private void restoreItems(MinecraftClient mc) {
+        if (!swapped || mc == null || mc.player == null || mc.interactionManager == null) {
+            return;
+        }
+        if (sourceScreenSlot < 0 || activeHotbarSlot < 0
+                || sourceScreenSlot >= mc.player.playerScreenHandler.slots.size()) {
+            return;
+        }
+
+        // Reverse the original exchange: held item and remaining food both
+        // return to exactly the slots they occupied before Auto Eat started.
+        mc.interactionManager.clickSlot(
+                mc.player.playerScreenHandler.syncId,
+                sourceScreenSlot,
+                activeHotbarSlot,
+                SlotActionType.SWAP,
+                mc.player
+        );
+        swapped = false;
+    }
+
+    private void releaseUseKey(MinecraftClient mc) {
+        if (mc != null && mc.options != null) {
+            mc.options.useKey.setPressed(false);
+        }
+    }
+
+    private void resetState() {
+        eating = false;
+        swapped = false;
+        startedUsingItem = false;
+        activeHotbarSlot = -1;
+        sourceScreenSlot = -1;
+        foodItem = null;
+        foodCountBefore = 0;
+        hungerBefore = 0;
+        eatStartedMs = 0L;
+        nextUseAttemptMs = 0L;
+    }
+
+    private int findFoodInInventory(PlayerEntity player, int selectedSlot) {
         PlayerInventory inventory = player.getInventory();
-        for (int i = 0; i < 9; i++) {
-            ItemStack stack = inventory.getStack(i);
-            if (isFood(stack)) {
-                return i;
+        if (isFood(inventory.getStack(selectedSlot))) {
+            return selectedSlot;
+        }
+        for (int slot = 0; slot < 36; slot++) {
+            if (slot != selectedSlot && isFood(inventory.getStack(slot))) {
+                return slot;
             }
         }
         return -1;
     }
 
-    private boolean isFood(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
-            return false;
+    private int inventorySlotToPlayerScreenSlot(int inventorySlot) {
+        if (inventorySlot >= 0 && inventorySlot < 9) {
+            return 36 + inventorySlot;
         }
-        return stack.contains(DataComponentTypes.FOOD);
+        if (inventorySlot >= 9 && inventorySlot < 36) {
+            return inventorySlot;
+        }
+        return -1;
     }
 
-    private void finishEating(MinecraftClient mc) {
-        boolean wasEating = eating;
-        eating = false;
-        if (wasEating && previousSlot >= 0 && mc != null && mc.player != null) {
-            selectHotbarSlot(mc, previousSlot);
-        }
-        previousSlot = -1;
+    private boolean isFood(ItemStack stack) {
+        return stack != null && !stack.isEmpty() && stack.contains(DataComponentTypes.FOOD);
     }
 }

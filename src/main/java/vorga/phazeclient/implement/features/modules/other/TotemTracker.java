@@ -11,6 +11,7 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
+import vorga.phazeclient.base.util.PhazeAnnouncements;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -206,13 +207,12 @@ public final class TotemTracker extends Module {
             // Compose a coloured chat row: gold {prefix}, white name,
             // gray descriptor, red {-N}. Goes through the local
             // chat-message path so it doesn't leak to the server.
-            MutableText line = Text.literal("[Phaze] ").formatted(Formatting.GOLD)
-                    .append(Text.literal(name).formatted(Formatting.WHITE))
+            MutableText line = Text.literal(name).formatted(Formatting.WHITE)
                     .append(Text.literal(" lost a totem ").formatted(Formatting.GRAY))
                     .append(Text.literal("(-" + newCount + ")").formatted(Formatting.RED));
             client.execute(() -> {
                 if (client.inGameHud != null) {
-                    client.inGameHud.getChatHud().addMessage(line);
+                    client.inGameHud.getChatHud().addMessage(PhazeAnnouncements.systemMessage(line));
                 }
             });
         }

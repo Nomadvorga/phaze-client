@@ -19,8 +19,10 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.base.util.animation.Interpolation;
 import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
@@ -33,8 +35,10 @@ import vorga.phazeclient.implement.features.modules.other.NickHider;
 import vorga.phazeclient.implement.features.modules.other.Translator;
 
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -73,7 +77,9 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
     @Unique private float phaze$frameDy = 0.0F;
     @Unique private boolean phaze$frameActive = false;
     @Unique private boolean phaze$pendingBadgeForNextLine = false;
+    @Unique private boolean phaze$pendingCodeBadgeForNextLine = false;
     @Unique private final Set<Integer> phaze$badgedChatTicks = new LinkedHashSet<>();
+    @Unique private final Map<Integer, Boolean> phaze$codeBadgeChatTicks = new LinkedHashMap<>();
     @Unique private final Set<Integer> phaze$drawnBadgeTicksThisFrame = new HashSet<>();
 
     // ---------------------------------------------------------------
@@ -99,8 +105,11 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
     )
     private Text phaze$mentionThenHide(Text original) {
         phaze$pendingBadgeForNextLine = false;
+        phaze$pendingCodeBadgeForNextLine = false;
         if (PhazeBadgeUtil.hasBadgePadding(original)) {
             phaze$pendingBadgeForNextLine = true;
+            String paddedSender = PhazeBadgeUtil.extractChatSender(original.getString());
+            phaze$pendingCodeBadgeForNextLine = PhazeBadgeUtil.isCodeBadgeUser(paddedSender);
             return original;
         }
 
@@ -115,6 +124,7 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
 
         if (sender != null && PhazeBadgeUtil.isPhazeUser(sender)) {
             phaze$pendingBadgeForNextLine = true;
+            phaze$pendingCodeBadgeForNextLine = PhazeBadgeUtil.isCodeBadgeUser(sender);
             return PhazeBadgeUtil.withBadgePadding(result);
         }
         return result;
@@ -243,9 +253,10 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
             phaze$latestAddedTick = visibleMessages.get(0).addedTime();
         }
         if (phaze$pendingBadgeForNextLine && line != null) {
-            phaze$rememberBadgedChatTick(line.creationTick());
+            phaze$rememberBadgedChatTick(line.creationTick(), phaze$pendingCodeBadgeForNextLine);
         }
         phaze$pendingBadgeForNextLine = false;
+        phaze$pendingCodeBadgeForNextLine = false;
         // Do not wait for Exordium's component FPS cooldown: the next HUD
         // frame captures the new row once, then the animation uses that cache.
         ExordiumAnimationBridge.requestImmediateCapture(ExordiumAnimationBridge.CHAT);
@@ -335,6 +346,45 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
                 && visible.addedTime() == phaze$latestAddedTick;
     }
 
+    @Override
+    public boolean phaze$shouldShiftChatLine(ChatHudLine.Visible line) {
+        return phaze$shouldShift(line);
+    }
+
+    @Override
+    public float phaze$getChatFrameDx() {
+        return phaze$frameDx;
+    }
+
+    @Override
+    public float phaze$getChatFrameDy() {
+        return phaze$frameDy;
+    }
+
+    /**
+     * 1.21.11 emits line backgrounds from a static backend helper, before the
+     * text consumer runs. Shift its rectangle explicitly; text itself is
+     * translated by {@link ChatHudBackendMixin} while its line is active.
+     */
+    @ModifyArgs(
+            method = "method_75802",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/hud/ChatHud$Backend;fill(IIIII)V")
+    )
+    private static void phaze$shiftBackendFill(Args args, @Local(argsOnly = true) ChatHudLine.Visible visible) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.inGameHud == null
+                || !(client.inGameHud.getChatHud() instanceof ChatAnimationFrameAccess access)
+                || !access.phaze$shouldShiftChatLine(visible)) {
+            return;
+        }
+        int dx = Math.round(access.phaze$getChatFrameDx());
+        int dy = Math.round(access.phaze$getChatFrameDy());
+        args.set(0, (Integer) args.get(0) + dx);
+        args.set(1, (Integer) args.get(1) + dy);
+        args.set(2, (Integer) args.get(2) + dx);
+        args.set(3, (Integer) args.get(3) + dy);
+    }
+
     // TODO(1.21.11): INERT. 1.21.11 routes every chat draw through the new
     // {@code ChatHud$Backend} abstraction: the per-line background is now
     // {@code Backend.fill(IIIII)} emitted from the static lambda
@@ -404,7 +454,8 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
             );
             if (phaze$shouldDrawChatBadge(visible)) {
                 PhazeBadgeUtil.drawChatBadgeAsText(
-                        ctx, renderer, x - 1.0F, y - 1.0F, PhazeBadgeUtil.alphaWhite(color)
+                        ctx, renderer, x - 1.0F, y - 1.0F, PhazeBadgeUtil.alphaWhite(color),
+                        phaze$isCodeBadge(visible)
                 );
             }
             op.call(ctx, renderer, text, x, y, color);
@@ -419,25 +470,36 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         }
 
         if (phaze$shouldDrawChatBadge(visible)) {
-            PhazeBadgeUtil.drawChatBadgeAsText(ctx, renderer, drawX - 1.0F, drawY - 1.0F, PhazeBadgeUtil.alphaWhite(color));
+            PhazeBadgeUtil.drawChatBadgeAsText(
+                    ctx, renderer, drawX - 1.0F, drawY - 1.0F,
+                    PhazeBadgeUtil.alphaWhite(color), phaze$isCodeBadge(visible)
+            );
         }
 
         op.call(ctx, renderer, text, drawX, drawY, color);
     }
 
     @Unique
-    private void phaze$rememberBadgedChatTick(int tick) {
+    private void phaze$rememberBadgedChatTick(int tick, boolean codeBadge) {
         phaze$badgedChatTicks.add(tick);
+        phaze$codeBadgeChatTicks.put(tick, codeBadge);
         while (phaze$badgedChatTicks.size() > 512) {
             Integer oldest = phaze$badgedChatTicks.iterator().next();
             phaze$badgedChatTicks.remove(oldest);
+            phaze$codeBadgeChatTicks.remove(oldest);
         }
     }
 
     @Unique
-    private boolean phaze$shouldDrawChatBadge(ChatHudLine.Visible visible) {
+    @Override
+    public boolean phaze$shouldDrawChatBadge(ChatHudLine.Visible visible) {
         return visible != null
                 && phaze$badgedChatTicks.contains(visible.addedTime())
                 && phaze$drawnBadgeTicksThisFrame.add(visible.addedTime());
+    }
+
+    @Override
+    public boolean phaze$isCodeBadge(ChatHudLine.Visible visible) {
+        return visible != null && Boolean.TRUE.equals(phaze$codeBadgeChatTicks.get(visible.addedTime()));
     }
 }

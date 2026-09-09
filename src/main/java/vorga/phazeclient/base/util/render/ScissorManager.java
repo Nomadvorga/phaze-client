@@ -69,6 +69,25 @@ public class ScissorManager implements QuickImports {
         }
     }
 
+    /**
+     * Item rendering is submitted to the deferred GUI command queue, which
+     * cannot inherit this manager's immediate GL scissor. Callers can use this
+     * inexpensive bounds test to avoid submitting a half-visible item that
+     * would otherwise be drawn after the clip has been popped.
+     */
+    public boolean fullyContains(Matrix4f matrix4f, float x, float y, float width, float height) {
+        Scissor active = scissorStack.peek();
+        if (active == null) {
+            return true;
+        }
+        Vector3f pos = matrix4f.transformPosition(x, y, 0, scratchPosition);
+        Vector3f size = matrix4f.getScale(scratchSize).mul(width, height, 0);
+        return pos.x >= active.x
+                && pos.y >= active.y
+                && pos.x + size.x <= active.x + active.width
+                && pos.y + size.y <= active.y + active.height;
+    }
+
     private void setScissor(Scissor scissor) {
         int scaleFactor = (int) window().getScaleFactor();
         int x = scissor.x * scaleFactor;

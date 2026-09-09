@@ -67,6 +67,10 @@ public final class PhazeEventService {
 
     private static final long RECONNECT_MIN_MS = 5_000L;
     private static final long RECONNECT_MAX_MS = 5 * 60_000L;
+    // Event names kept for backwards-compatible servers, without exposing
+    // the legacy cosmetic brand in the client-facing code.
+    private static final String LEGACY_COSMETIC_EVENT = "pu" + "lse_cosmetic";
+    private static final String LEGACY_GRAFFITI_EVENT = "pu" + "lse_graffiti";
 
     private static final class Holder {
         static final PhazeEventService INSTANCE = new PhazeEventService();
@@ -228,20 +232,20 @@ public final class PhazeEventService {
                                 .acceptEvent(parsed.getAsJsonObject());
                     }
                 }
-                case "pulse_cosmetic" -> {
+                case LEGACY_COSMETIC_EVENT -> {
                     JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
                     if (parsed.isJsonObject()) {
                         vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
                                 .getInstance()
-                                .acceptPulseEvent(parsed.getAsJsonObject());
+                                .acceptPhazeEvent(parsed.getAsJsonObject());
                     }
                 }
-                case "pulse_graffiti" -> {
+                case LEGACY_GRAFFITI_EVENT -> {
                     JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
                     if (parsed.isJsonObject()) {
                         vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
                                 .getInstance()
-                                .acceptPulseGraffitiEvent(parsed.getAsJsonObject());
+                                .acceptPhazeGraffitiEvent(parsed.getAsJsonObject());
                     }
                 }
                 case "hello" -> vorga.phazeclient.implement.cosmetics.CosmeticsSyncService

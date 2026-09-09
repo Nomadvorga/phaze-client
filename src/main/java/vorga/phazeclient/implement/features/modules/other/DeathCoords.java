@@ -11,6 +11,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
+import vorga.phazeclient.base.util.PhazeAnnouncements;
 
 /**
  * Records the player's coordinates the moment they die so the user
@@ -135,7 +136,9 @@ public final class DeathCoords extends Module {
             // ClientPlayerEntity.sendMessage(text, false) prints a
             // client-only message - the server doesn't receive it.
             String colored = colorMessage.isValue() ? "§c" + chatLine : chatLine;
-            client.inGameHud.getChatHud().addMessage(Text.literal(colored));
+            client.inGameHud.getChatHud().addMessage(
+                    PhazeAnnouncements.systemMessage(Text.literal(colored))
+            );
         }
         if (!"Chat".equalsIgnoreCase(mode)) {
             // Clipboard variant gets just the raw coords (no prefix /

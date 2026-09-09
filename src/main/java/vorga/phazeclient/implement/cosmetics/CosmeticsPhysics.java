@@ -94,13 +94,13 @@ final class CosmeticsPhysics {
 
         // Render-state age already contains the interpolated tick age.
         float age = state.age;
-        float stepPulse = MathHelper.sin(age * 0.72F) * movement * 1.8F;
+        float stepPhaze = MathHelper.sin(age * 0.72F) * movement * 1.8F;
         float idle = MathHelper.sin(age * 0.12F) * idleAmplitude;
 
         simulation.rootPitch.update(-movement * 2.2F - sprint * 6.8F + airbornePitch, dt, 82.0F, 13.0F);
         simulation.rootYaw.update(turnLag, dt, 95.0F, 14.0F);
         simulation.segmentPitch.update(
-                idle + movement * 2.4F + sprint * 4.5F + airborneFlex + stepPulse,
+                idle + movement * 2.4F + sprint * 4.5F + airborneFlex + stepPhaze,
                 dt, 72.0F, 11.0F
         );
         simulation.segmentYaw.update(turnLag * 0.82F, dt, 86.0F, 12.0F);

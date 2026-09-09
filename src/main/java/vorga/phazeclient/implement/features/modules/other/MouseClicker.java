@@ -87,11 +87,6 @@ public final class MouseClicker extends Module {
             return;
         }
 
-        if (!ServerUtil.isMouseClickerSupported()) {
-            stopBlockBreaking(client);
-            return;
-        }
-
         if (HAND_LEFT.equalsIgnoreCase(hand.getSelected())
                 && client.crosshairTarget != null
                 && client.crosshairTarget.getType() == HitResult.Type.BLOCK) {

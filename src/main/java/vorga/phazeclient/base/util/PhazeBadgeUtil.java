@@ -1,17 +1,16 @@
 package vorga.phazeclient.base.util;
 
 import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderLayers;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.text.OrderedText;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
-import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -22,17 +21,25 @@ import java.util.regex.Pattern;
  * actual glyph stream into a custom font/icon character.
  */
 public final class PhazeBadgeUtil {
-    public static final Identifier BADGE_ICON = Identifier.of("phaze", "textures/menu/phaze_brand.png");
-    public static final String BADGE_GLYPH = "\uE000";
+    public static final Identifier BADGE_ICON =
+            Identifier.of("phaze", "textures/gui/phaze_user_badge.png");
+    public static final Identifier CODE_BADGE_ICON =
+            Identifier.of("phaze", "textures/gui/phaze_code_badge.png");
+    private static final int CODE_BADGE_RGB = 0xFF0000;
     private static final String BADGE_PADDING = "  ";
     private static final Pattern LEADING_TAGS = Pattern.compile("^(?:\\[[^\\]]*]\\s*)+");
-    private static final OrderedText CHAT_BADGE_TEXT = Text.literal(BADGE_GLYPH).asOrderedText();
 
     private PhazeBadgeUtil() {
     }
 
     public static boolean isPhazeUser(String username) {
         return RemoteRulesService.getInstance().isKnownClientUser(username);
+    }
+
+    public static boolean isCodeBadgeUser(String username) {
+        return username != null
+                && ("nomadvorgayt".equalsIgnoreCase(username)
+                || "nomadvorga".equalsIgnoreCase(username));
     }
 
     public static boolean hasBadgePadding(Text text) {
@@ -128,18 +135,37 @@ public final class PhazeBadgeUtil {
     }
 
     public static void drawGuiBadge(DrawContext context, float x, float y, float size, int color) {
-        UiMsdfIconAtlas.renderIcon(context, BADGE_ICON, x, y, size, size, color, true);
+        drawGuiBadge(context, x, y, size, color, false);
+    }
+
+    public static void drawGuiBadge(DrawContext context, float x, float y, float size, int color, boolean codeBadge) {
+        int drawSize = Math.max(1, Math.round(size));
+        context.drawTexture(
+                RenderPipelines.GUI_TEXTURED,
+                badgeIcon(codeBadge),
+                Math.round(x),
+                Math.round(y),
+                0.0F,
+                0.0F,
+                drawSize,
+                drawSize,
+                64,
+                64,
+                64,
+                64,
+                badgeColor(color, codeBadge)
+        );
     }
 
     public static void drawChatBadgeAsText(DrawContext context, TextRenderer renderer, float x, float y, int color) {
-        float scale = 1.0F / 1.1F;
-        // 1.21.11: DrawContext.getMatrices() is a 2D Matrix3x2fStack - the Z argument of
-        // translate/scale is gone. Both were no-ops here (z == 0 / z == 1), so behaviour is identical.
-        context.getMatrices().pushMatrix();
-        context.getMatrices().translate((float) Math.round(x), (float) Math.round(y + 1.0F));
-        context.getMatrices().scale(scale, scale);
-        context.drawText(renderer, CHAT_BADGE_TEXT, 0, 0, color, false);
-        context.getMatrices().popMatrix();
+        drawChatBadgeAsText(context, renderer, x, y, color, false);
+    }
+
+    public static void drawChatBadgeAsText(
+            DrawContext context, TextRenderer renderer, float x, float y, int color, boolean codeBadge
+    ) {
+        float size = renderer == null ? 8.0F : Math.max(8.0F, renderer.fontHeight - 1.0F);
+        drawGuiBadge(context, Math.round(x), Math.round(y + 1.0F), size, color, codeBadge);
     }
 
     public static void drawWorldBadge(
@@ -150,13 +176,15 @@ public final class PhazeBadgeUtil {
             float y,
             float size,
             int light,
-            int color
+            int color,
+            boolean codeBadge
     ) {
-        VertexConsumer vertexConsumer = vertexConsumers.getBuffer(resolveTextRenderLayer(layerType));
-        vertexConsumer.vertex(matrix, x, y, 0.0F).color(color).texture(0.0F, 0.0F).light(light);
-        vertexConsumer.vertex(matrix, x, y + size, 0.0F).color(color).texture(0.0F, 1.0F).light(light);
-        vertexConsumer.vertex(matrix, x + size, y + size, 0.0F).color(color).texture(1.0F, 1.0F).light(light);
-        vertexConsumer.vertex(matrix, x + size, y, 0.0F).color(color).texture(1.0F, 0.0F).light(light);
+        VertexConsumer vertexConsumer = vertexConsumers.getBuffer(resolveTextRenderLayer(layerType, codeBadge));
+        int badgeColor = badgeColor(color, codeBadge);
+        vertexConsumer.vertex(matrix, x, y, 0.0F).color(badgeColor).texture(0.0F, 0.0F).light(light);
+        vertexConsumer.vertex(matrix, x, y + size, 0.0F).color(badgeColor).texture(0.0F, 1.0F).light(light);
+        vertexConsumer.vertex(matrix, x + size, y + size, 0.0F).color(badgeColor).texture(1.0F, 1.0F).light(light);
+        vertexConsumer.vertex(matrix, x + size, y, 0.0F).color(badgeColor).texture(1.0F, 0.0F).light(light);
     }
 
     private static String stripBadgePadding(String text) {
@@ -213,13 +241,21 @@ public final class PhazeBadgeUtil {
         return c == '_' || Character.isLetterOrDigit(c);
     }
 
-    private static RenderLayer resolveTextRenderLayer(TextRenderer.TextLayerType layerType) {
+    private static Identifier badgeIcon(boolean codeBadge) {
+        return codeBadge ? CODE_BADGE_ICON : BADGE_ICON;
+    }
+
+    private static int badgeColor(int color, boolean codeBadge) {
+        return codeBadge ? (color & 0xFF000000) | CODE_BADGE_RGB : color;
+    }
+
+    private static RenderLayer resolveTextRenderLayer(TextRenderer.TextLayerType layerType, boolean codeBadge) {
         // 1.21.11: the RenderLayer static factories moved to net.minecraft.client.render.RenderLayers
         // (getTextX -> textX). Same memoized instances, same blend/depth semantics.
         return switch (layerType) {
-            case SEE_THROUGH -> RenderLayers.textSeeThrough(BADGE_ICON);
-            case POLYGON_OFFSET -> RenderLayers.textPolygonOffset(BADGE_ICON);
-            case NORMAL -> RenderLayers.text(BADGE_ICON);
+            case SEE_THROUGH -> RenderLayers.textSeeThrough(badgeIcon(codeBadge));
+            case POLYGON_OFFSET -> RenderLayers.textPolygonOffset(badgeIcon(codeBadge));
+            case NORMAL -> RenderLayers.text(badgeIcon(codeBadge));
         };
     }
 }

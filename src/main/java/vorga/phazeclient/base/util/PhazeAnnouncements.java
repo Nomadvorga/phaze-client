@@ -251,6 +251,19 @@ public final class PhazeAnnouncements {
         return result;
     }
 
+    /** Applies the announcement brand style to a local module message. */
+    public static MutableText systemMessage(Text body) {
+        MutableText result = brandPrefix();
+        if (body != null) {
+            result.append(body.copy());
+        }
+        return result;
+    }
+
+    public static MutableText systemMessage(String body) {
+        return systemMessage(Text.literal(body == null ? "" : body));
+    }
+
     /**
      * "Phaze Client · " in an emerald gradient, prepended to every
      * announcement in chat.

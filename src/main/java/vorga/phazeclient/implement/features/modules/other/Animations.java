@@ -159,47 +159,6 @@ public final class Animations extends Module {
             "Easing curve for the camera zoom-out animation"
     ).value(Interpolations.getAllNames()).selected("Default");
 
-    public final SectionSetting cursorSection = new SectionSetting("Cursor");
-    /**
-     * 1.21.11+-style dynamic mouse cursor: while the toggle is on, the
-     * GLFW pointer flips to a hand on hovered buttons and to an
-     * I-beam on hovered text inputs (search bar, color picker hex,
-     * the menu's chat-style inputs, vanilla GUIs). Turning it off
-     * restores the system arrow and short-circuits all per-frame
-     * request bookkeeping. Implementation lives in
-     * {@link vorga.phazeclient.api.system.cursor.CursorManager} +
-     * {@code ScreenCursorMixin} / {@code ClickableWidgetCursorMixin} /
-     * {@code TextFieldWidgetCursorMixin}; the menu's own components
-     * (SearchComponent, ModuleComponent, BindWindow, color sliders)
-     * call into the manager directly because they don't extend the
-     * vanilla widget hierarchy.
-     */
-    public final BooleanSetting dynamicCursor = new BooleanSetting(
-            "Dynamic Cursor",
-            "Switch the mouse pointer to a hand on buttons and an I-beam on text inputs (1.21.11-style)"
-    ).setValue(true);
-
-    /**
-     * Comfortable text selection: when on, every vanilla
-     * {@code TextFieldWidget} (chat, server list, world search,
-     * Sodium Extra search, Reese's search, etc.) gets ALL of its
-     * input handling forced into the "the field is currently
-     * selected" branch the moment the cursor enters its bbox - so
-     * mouse-drag selection works even when the field hasn't been
-     * formally focused. Without it, vanilla only updates the
-     * selection cursor while {@code selected = true}, which
-     * requires a separate click first.
-     *
-     * <p>Hooks into {@link vorga.phazeclient.mixins.TextFieldWidgetMixin}'s
-     * {@code mouseClicked} / {@code mouseDragged} pre-checks. Disabled
-     * by default because the change is opt-in - it slightly alters the
-     * "to type into a field you must click it first" muscle memory.
-     */
-    public final BooleanSetting comfortableTextSelection = new BooleanSetting(
-            "Comfortable Text Selection",
-            "Drag-select text in any input field with the mouse - chat, search bars, Sodium options, etc."
-    ).setValue(true);
-
     public final SectionSetting listsSection = new SectionSetting("Lists");
     public final BooleanSetting listSmoothScroll = new BooleanSetting(
             "List Smooth Scroll",
@@ -335,36 +294,13 @@ public final class Animations extends Module {
         smoothF5Interpolation.setFullWidth(true);
         smoothF5Interpolation.visible(smoothF5::isValue);
 
-        dynamicCursor.setFullWidth(true);
-        comfortableTextSelection.setFullWidth(true);
-
         setup(
                 tabSection, tabSlide, tabAnimationType, tabFade, tabSlideSpeed, tabInterpolationOpen, tabInterpolationClose,
                 chatSection, chatFade, chatSmoothScroll, chatMessageAnimationType, chatSmoothSpeed, chatLeftInterpolation, smoothInputField,
                 hotbarSection, hotbarSlide, hotbarRollover, hotbarSpeed,
                 cameraSection, smoothF5, smoothF5Speed, smoothF5Interpolation,
-                cursorSection, dynamicCursor, comfortableTextSelection,
                 listsSection, listSmoothScroll, listSpeed, listLinesPerScroll
         );
-    }
-
-    /**
-     * True while the Dynamic Cursor toggle is on AND the module itself
-     * is enabled. Read by the cursor mixins to short-circuit per-frame
-     * cursor bookkeeping when the user hasn't opted in.
-     */
-    public boolean isDynamicCursorEnabled() {
-        return isEnabled() && dynamicCursor.isValue();
-    }
-
-    /**
-     * True while the comfortable-text-selection toggle is on AND
-     * the module itself is enabled. Read by
-     * {@link vorga.phazeclient.mixins.TextFieldWidgetMixin} to
-     * decide whether to force-select on hover.
-     */
-    public boolean isComfortableTextSelectionEnabled() {
-        return isEnabled() && comfortableTextSelection.isValue();
     }
 
     public static Animations getInstance() {

@@ -90,7 +90,7 @@ public final class PotionAuto extends Module {
         MinecraftClient mc = MinecraftClient.getInstance();
         
         if (drinkState != DrinkState.IDLE) {
-            if (!isEnabled() || !ServerUtil.isAutoPotionSupported() || mc.player == null || mc.world == null || mc.interactionManager == null) {
+            if (!isEnabled() || mc.player == null || mc.world == null || mc.interactionManager == null) {
                 cancelCurrentDrink();
                 return;
             }
@@ -105,10 +105,6 @@ public final class PotionAuto extends Module {
         }
         
         if (!isEnabled()) {
-            return;
-        }
-        
-        if (!ServerUtil.isAutoPotionSupported()) {
             return;
         }
         

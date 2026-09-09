@@ -52,8 +52,8 @@ public class ClientMain implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         MenuPanoramaRegistry.ensureDirectoryExists();
-        vorga.phazeclient.implement.cosmetics.bridge.PhazePulsePetRenderer.register();
-        vorga.phazeclient.implement.cosmetics.bridge.PhazePulseGraffitiRenderer.register();
+        vorga.phazeclient.implement.cosmetics.bridge.PhazeCosmeticPetRenderer.register();
+        vorga.phazeclient.implement.cosmetics.bridge.PhazeCosmeticGraffitiRenderer.register();
         SpecialGuiElementRegistry.register(context ->
                 new vorga.phazeclient.implement.cosmetics.CosmeticGuiElementRenderer(
                         context.vertexConsumers()));
