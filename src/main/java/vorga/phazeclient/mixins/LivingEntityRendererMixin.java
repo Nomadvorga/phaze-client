@@ -105,7 +105,7 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
                 playerModel.body.applyTransform(matrices);
                 CosmeticsRenderer.renderLocalPlayer(
                         matrices, consumers, playerState, state.light, stableLightingEntry);
-                vorga.phazeclient.implement.cosmetics.bridge.PhazePulseRenderer.renderBody(
+                vorga.phazeclient.implement.cosmetics.bridge.PhazeCosmeticRenderer.renderBody(
                         matrices, consumers, playerState, state.light);
                 matrices.pop();
 
@@ -113,7 +113,7 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
                 playerModel.head.applyTransform(matrices);
                 CosmeticsRenderer.renderHeadCosmetic(
                         matrices, consumers, playerState, state.light, stableLightingEntry);
-                vorga.phazeclient.implement.cosmetics.bridge.PhazePulseRenderer.renderHead(
+                vorga.phazeclient.implement.cosmetics.bridge.PhazeCosmeticRenderer.renderHead(
                         matrices, consumers, playerState, state.light);
                 matrices.pop();
             } else {

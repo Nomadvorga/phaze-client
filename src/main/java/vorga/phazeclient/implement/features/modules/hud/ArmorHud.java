@@ -8,6 +8,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.system.hud.HudBuffer;
+import vorga.phazeclient.api.system.hud.HudScaleLimits;
 import vorga.phazeclient.implement.menu.MenuPalettes;
 
 public final class ArmorHud extends Module {
@@ -15,8 +16,6 @@ public final class ArmorHud extends Module {
     private static final float DEFAULT_HUD_X = 22.0f;
     private static final float DEFAULT_HUD_Y = 60.0f;
     private static final float DEFAULT_HUD_SCALE = 1.0f;
-    private static final float MIN_HUD_SCALE = 0.5f;
-    private static final float MAX_HUD_SCALE = 5.0f;
 
     public final SectionSetting mainSection = new SectionSetting("General");
     public final BooleanSetting textShadow = new BooleanSetting("Text Shadow", "Draw text with vanilla shadow").setValue(true);
@@ -174,17 +173,22 @@ public final class ArmorHud extends Module {
         return hudScale;
     }
 
+    /** See {@link RectHudModule#getRenderHudScale()}. */
+    public float getRenderHudScale() {
+        return hudScale * HudScaleLimits.RENDER_MULTIPLIER;
+    }
+
     public void setHudScale(float hudScale) {
-        this.hudScale = MathHelper.clamp(hudScale, MIN_HUD_SCALE, MAX_HUD_SCALE);
+        this.hudScale = HudScaleLimits.normalize(hudScale);
         syncStoredHudRatios();
     }
 
     public float getMinHudScale() {
-        return MIN_HUD_SCALE;
+        return HudScaleLimits.MIN;
     }
 
     public float getMaxHudScale() {
-        return MAX_HUD_SCALE;
+        return HudScaleLimits.MAX;
     }
 
     public String formatDurability(int remaining, int max) {

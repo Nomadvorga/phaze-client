@@ -60,7 +60,10 @@ public final class AutoNear extends Module {
     public void tick() {
         MinecraftClient mc = MinecraftClient.getInstance();
 
-        if (!isEnabled() || mc.player == null || mc.getNetworkHandler() == null || !isServerAllowed()) {
+        if (!isEnabled()
+                || mc.player == null
+                || mc.getNetworkHandler() == null
+                || mc.currentScreen != null) {
             return;
         }
 

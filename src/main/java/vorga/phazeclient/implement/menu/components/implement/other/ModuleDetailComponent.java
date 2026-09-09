@@ -238,6 +238,15 @@ public class ModuleDetailComponent extends AbstractComponent {
         Matrix4f positionMatrix = GuiMatrix.mat4(matrices);
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
         scissorManager.push(positionMatrix, scissorX, scissorY, scissorWidth, scissorHeight);
+        // DrawContext keeps its own scissor stack for deferred GUI elements
+        // such as item models. Mirror the exact same bounds there so item
+        // icons and immediate text disappear at one shared edge.
+        context.enableScissor(
+                (int) Math.floor(scissorX),
+                (int) Math.floor(scissorY),
+                (int) Math.ceil(scissorX + scissorWidth),
+                (int) Math.ceil(scissorY + scissorHeight)
+        );
 
         float[] columnOffsets = new float[]{0.0F, 0.0F};
         // Visible-band cull: any setting whose row strip falls
@@ -295,6 +304,7 @@ public class ModuleDetailComponent extends AbstractComponent {
             }
         }
 
+        context.disableScissor();
         scissorManager.pop();
 
         // {@code columnOffsets} carries an extra trailing

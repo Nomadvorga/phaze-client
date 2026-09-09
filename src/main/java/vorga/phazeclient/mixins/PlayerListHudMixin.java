@@ -375,8 +375,18 @@ public class PlayerListHudMixin {
         );
         int fadedColor = phaze$applyTabAlpha(color);
         if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().name())) {
-            float size = PhazeBadgeUtil.guiBadgeSize(renderer);
-            PhazeBadgeUtil.drawGuiBadge(context, x - 2.5F, y - 2.5F, size, PhazeBadgeUtil.alphaWhite(fadedColor));
+            boolean codeBadge = PhazeBadgeUtil.isCodeBadgeUser(entry.getProfile().name());
+            float regularSize = PhazeBadgeUtil.guiBadgeSize(renderer);
+            float size = codeBadge ? regularSize / 1.3F : regularSize;
+            float inset = (regularSize - size) / 2.0F;
+            PhazeBadgeUtil.drawGuiBadge(
+                    context,
+                    x - 2.5F + inset,
+                    y - 2.5F + inset,
+                    size,
+                    PhazeBadgeUtil.alphaWhite(fadedColor),
+                    codeBadge
+            );
         }
         operation.call(context, renderer, text, x, y, fadedColor);
     }

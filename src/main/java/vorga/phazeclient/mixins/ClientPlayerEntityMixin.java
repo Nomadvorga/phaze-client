@@ -50,7 +50,6 @@ public class ClientPlayerEntityMixin {
         PotionAuto.getInstance().tick();
         FreeLook.getInstance().tick();
         AutoReissue.getInstance().tick();
-        ColorCorrection.getInstance().tick();
         MouseClicker.getInstance().onTick();
         // Totem Tracker prunes stale per-player counters once per
         // tick. Also a no-op when disabled or when the user-set

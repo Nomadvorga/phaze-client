@@ -9,6 +9,7 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
+import vorga.phazeclient.base.util.PhazeAnnouncements;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -202,8 +203,9 @@ public final class Binds extends Module {
                 // bind didn't fire instead of silent failure.
                 if (mc.player != null) {
                     mc.player.sendMessage(
-                            Text.literal("[Phaze Binds] failed: " + t.getMessage())
-                                    .formatted(Formatting.RED),
+                            PhazeAnnouncements.systemMessage(
+                                    Text.literal("Binds failed: " + t.getMessage()).formatted(Formatting.RED)
+                            ),
                             false
                     );
                 }

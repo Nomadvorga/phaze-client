@@ -68,7 +68,7 @@ public final class CosmeticModelLoader {
             Map<String, Animation> animations = parseAnimations(root);
             return new ParsedCosmeticModel(texW, texH, globalScale, globalOffset, globalRotation, bones, animations);
         } catch (Exception e) {
-            System.err.println("[PulseCosmetics] Failed loading " + entry.name() + ": " + e);
+            System.err.println("[PhazeCosmetics] Failed loading " + entry.name() + ": " + e);
             return null;
         }
     }

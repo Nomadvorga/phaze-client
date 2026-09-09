@@ -16,6 +16,7 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
+import vorga.phazeclient.base.util.PhazeAnnouncements;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -348,9 +349,8 @@ public final class ArmorNotifier extends Module {
         if (mc.inGameHud == null) {
             return;
         }
-        MutableText prefix = Text.literal("[Phaze] ").formatted(Formatting.AQUA, Formatting.BOLD);
         MutableText body = Text.literal(pieceName + " almost broke!").formatted(Formatting.WHITE);
-        mc.inGameHud.getChatHud().addMessage(prefix.append(body));
+        mc.inGameHud.getChatHud().addMessage(PhazeAnnouncements.systemMessage(body));
     }
 
     /**
@@ -365,9 +365,8 @@ public final class ArmorNotifier extends Module {
         if (mc.inGameHud == null) {
             return;
         }
-        MutableText prefix = Text.literal("[Phaze] ").formatted(Formatting.AQUA, Formatting.BOLD);
         MutableText body = Text.literal(pieceName + " broke!").formatted(Formatting.RED);
-        mc.inGameHud.getChatHud().addMessage(prefix.append(body));
+        mc.inGameHud.getChatHud().addMessage(PhazeAnnouncements.systemMessage(body));
     }
 
     /**

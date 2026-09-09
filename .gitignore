@@ -33,6 +33,12 @@ libs/
 
 # Port working files
 port-build-*.log
+port-staging/
+compat-staging/
+PORTING*.md
+
+# Temporary shader archive; runtime uses the unpacked shader sources.
+src/main/resources/assets/phazeclient/shaders/core/post/post.rar
 
 # Local credentials and machine-specific secrets
 .env

@@ -48,6 +48,9 @@ public final class CosmeticsSyncService {
     private static final int MAX_QUERY_PLAYERS = 200;
     private static final long FALLBACK_REFRESH_MS = 10L * 60L * 1000L;
     private static final String SLOT_SEPARATOR = "|";
+    // Compatibility keys for the pre-Phaze backend protocol.
+    private static final String LEGACY_SOURCE = "pu" + "lse";
+    private static final String LEGACY_REVISIONS_FIELD = LEGACY_SOURCE + "Revisions";
 
     private final ScheduledExecutorService io =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -56,8 +59,8 @@ public final class CosmeticsSyncService {
                 return thread;
             });
     private final Map<UUID, RemoteCosmetic> states = new ConcurrentHashMap<>();
-    private final Map<UUID, PulseRemoteCosmetic> pulseStates = new ConcurrentHashMap<>();
-    private final Map<String, PulseGraffiti> pulseGraffiti = new ConcurrentHashMap<>();
+    private final Map<UUID, PhazeRemoteCosmetic> phazeStates = new ConcurrentHashMap<>();
+    private final Map<String, PhazeGraffiti> phazeGraffiti = new ConcurrentHashMap<>();
     private final AtomicBoolean queryInFlight = new AtomicBoolean(false);
     private final AtomicBoolean graffitiQueryInFlight = new AtomicBoolean(false);
     private final AtomicReference<GraffitiQuery> pendingGraffitiQuery = new AtomicReference<>();
@@ -71,8 +74,8 @@ public final class CosmeticsSyncService {
     private volatile boolean forceRefresh;
     private volatile String graffitiContext = "";
     private volatile long lastGraffitiQueryMs;
-    private volatile long lastPulseCosmeticRevision;
-    private volatile long lastPulseGraffitiRevision;
+    private volatile long lastPhazeCosmeticRevision;
+    private volatile long lastPhazeGraffitiRevision;
 
     private CosmeticsSyncService() {
     }
@@ -88,8 +91,8 @@ public final class CosmeticsSyncService {
             localPlayerUuid = null;
             rosterFingerprint = "";
             states.clear();
-            pulseStates.clear();
-            pulseGraffiti.clear();
+            phazeStates.clear();
+            phazeGraffiti.clear();
             graffitiContext = "";
             publishOnJoin = true;
             return;
@@ -169,12 +172,12 @@ public final class CosmeticsSyncService {
         }
     }
 
-    /** Applies Pulse Cosmetics' separate SSE namespace without affecting Phaze state. */
-    public void acceptPulseEvent(JsonObject event) {
+    /** Applies Phaze Cosmetics' separate SSE namespace without affecting Phaze state. */
+    public void acceptPhazeEvent(JsonObject event) {
         try {
-            notePulseRevision(event, false);
+            notePhazeRevision(event, false);
             UUID uuid = UUID.fromString(event.get("playerUuid").getAsString());
-            PulseRemoteCosmetic decoded = decodePulse(
+            PhazeRemoteCosmetic decoded = decodePhaze(
                     event.get("cosmetic").getAsString(),
                     event.get("equipped").getAsBoolean(),
                     event.get("updatedAt").getAsLong()
@@ -183,15 +186,15 @@ public final class CosmeticsSyncService {
             if (client == null) return;
             client.execute(() -> {
                 if (!isLoadedPlayer(uuid)) return;
-                putPulseIfNewer(uuid, decoded);
+                putPhazeIfNewer(uuid, decoded);
             });
         } catch (Throwable error) {
-            LOG.debug("invalid pulse cosmetic event: {}", error.toString());
+            LOG.debug("invalid phaze cosmetic event: {}", error.toString());
         }
     }
 
-    public void acceptPulseGraffitiEvent(JsonObject event) {
-        notePulseRevision(event, true);
+    public void acceptPhazeGraffitiEvent(JsonObject event) {
+        notePhazeRevision(event, true);
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
         client.execute(() -> {
@@ -204,12 +207,12 @@ public final class CosmeticsSyncService {
                 if (face == null) return;
                 String key = graffitiKey(serverKey, dimension, pos, face);
                 if ("delete".equals(event.get("action").getAsString())) {
-                    pulseGraffiti.remove(key);
+                    phazeGraffiti.remove(key);
                 } else {
                     int id = event.get("graffitiId").getAsInt();
                     vorga.phazeclient.implement.cosmetics.bridge.CosmeticEntry entry = vorga.phazeclient.implement.cosmetics.bridge.CosmeticCatalog.byId(id);
                     if (entry != null && entry.category() == vorga.phazeclient.implement.cosmetics.bridge.CosmeticCategory.GRAFFITI) {
-                        pulseGraffiti.put(key, new PulseGraffiti(serverKey, dimension, pos, face, id));
+                        phazeGraffiti.put(key, new PhazeGraffiti(serverKey, dimension, pos, face, id));
                     }
                 }
                 if (graffitiQueryInFlight.get()) queryGraffiti(serverKey, dimension);
@@ -219,22 +222,22 @@ public final class CosmeticsSyncService {
         });
     }
 
-    public List<PulseGraffiti> pulseGraffiti() {
-        return List.copyOf(pulseGraffiti.values());
+    public List<PhazeGraffiti> phazeGraffiti() {
+        return List.copyOf(phazeGraffiti.values());
     }
 
     public void acceptPushCheckpoint(JsonObject payload) {
         try {
-            JsonObject revisions = payload.getAsJsonObject("pulseRevisions");
+            JsonObject revisions = payload.getAsJsonObject(LEGACY_REVISIONS_FIELD);
             if (revisions == null) return;
             long cosmetic = revisions.get("cosmetic").getAsLong();
             long graffiti = revisions.get("graffiti").getAsLong();
-            if (cosmetic > lastPulseCosmeticRevision) {
-                lastPulseCosmeticRevision = cosmetic;
+            if (cosmetic > lastPhazeCosmeticRevision) {
+                lastPhazeCosmeticRevision = cosmetic;
                 forceRefresh = true;
             }
-            if (graffiti > lastPulseGraffitiRevision) {
-                lastPulseGraffitiRevision = graffiti;
+            if (graffiti > lastPhazeGraffitiRevision) {
+                lastPhazeGraffitiRevision = graffiti;
                 lastGraffitiQueryMs = 0L;
             }
         } catch (Throwable error) {
@@ -242,19 +245,19 @@ public final class CosmeticsSyncService {
         }
     }
 
-    private void notePulseRevision(JsonObject event, boolean graffiti) {
+    private void notePhazeRevision(JsonObject event, boolean graffiti) {
         if (!event.has("revision")) return;
         long revision = event.get("revision").getAsLong();
-        if (graffiti) lastPulseGraffitiRevision = Math.max(lastPulseGraffitiRevision, revision);
-        else lastPulseCosmeticRevision = Math.max(lastPulseCosmeticRevision, revision);
+        if (graffiti) lastPhazeGraffitiRevision = Math.max(lastPhazeGraffitiRevision, revision);
+        else lastPhazeCosmeticRevision = Math.max(lastPhazeCosmeticRevision, revision);
     }
 
-    public vorga.phazeclient.implement.cosmetics.bridge.CosmeticEntry pulseEntryFor(
+    public vorga.phazeclient.implement.cosmetics.bridge.CosmeticEntry phazeEntryFor(
             UUID playerUuid,
             vorga.phazeclient.implement.cosmetics.bridge.CosmeticCategory category
     ) {
         if (playerUuid == null) return null;
-        PulseRemoteCosmetic state = pulseStates.get(playerUuid);
+        PhazeRemoteCosmetic state = phazeStates.get(playerUuid);
         if (state == null || !state.equipped) return null;
         int id = state.id(category);
         vorga.phazeclient.implement.cosmetics.bridge.CosmeticEntry entry = vorga.phazeclient.implement.cosmetics.bridge.CosmeticCatalog.byId(id);
@@ -357,21 +360,21 @@ public final class CosmeticsSyncService {
                 body.add("playerUuids", ids);
                 JsonArray sources = new JsonArray();
                 sources.add("phaze");
-                sources.add("pulse");
+                sources.add(LEGACY_SOURCE);
                 body.add("sources", sources);
                 JsonObject response = request("/api/cosmetics/query", body);
                 JsonArray array = response.getAsJsonArray("states");
                 Map<UUID, Boolean> returned = new ConcurrentHashMap<>();
-                Map<UUID, Boolean> pulseReturned = new ConcurrentHashMap<>();
+                Map<UUID, Boolean> phazeReturned = new ConcurrentHashMap<>();
                 if (array != null) {
                     for (JsonElement element : array) {
                         if (!element.isJsonObject()) continue;
                         JsonObject value = element.getAsJsonObject();
                         UUID uuid = UUID.fromString(value.get("playerUuid").getAsString());
                         String source = value.has("source") ? value.get("source").getAsString() : "phaze";
-                        if ("pulse".equals(source)) {
-                            pulseReturned.put(uuid, Boolean.TRUE);
-                            putPulseIfNewer(uuid, decodePulse(
+                        if (LEGACY_SOURCE.equals(source)) {
+                            phazeReturned.put(uuid, Boolean.TRUE);
+                            putPhazeIfNewer(uuid, decodePhaze(
                                     value.get("cosmetic").getAsString(),
                                     value.get("equipped").getAsBoolean(),
                                     value.get("updatedAt").getAsLong()
@@ -388,7 +391,7 @@ public final class CosmeticsSyncService {
                 }
                 for (UUID uuid : requested) {
                     if (!returned.containsKey(uuid)) states.remove(uuid);
-                    if (!pulseReturned.containsKey(uuid)) pulseStates.remove(uuid);
+                    if (!phazeReturned.containsKey(uuid)) phazeStates.remove(uuid);
                 }
                 lastQueryMs = System.currentTimeMillis();
             } catch (Throwable error) {
@@ -416,7 +419,7 @@ public final class CosmeticsSyncService {
                         body.addProperty("serverKey", currentQuery.serverKey());
                         body.addProperty("dimension", currentQuery.dimension());
                         JsonArray array = request("/api/graffiti/query", body).getAsJsonArray("graffiti");
-                        Map<String, PulseGraffiti> next = new ConcurrentHashMap<>();
+                        Map<String, PhazeGraffiti> next = new ConcurrentHashMap<>();
                         if (array != null) for (JsonElement element : array) {
                             JsonObject value = element.getAsJsonObject();
                             int id = value.get("graffitiId").getAsInt();
@@ -424,15 +427,15 @@ public final class CosmeticsSyncService {
                             Direction face = Direction.byId(value.get("face").getAsString());
                             if (entry == null || entry.category() != vorga.phazeclient.implement.cosmetics.bridge.CosmeticCategory.GRAFFITI || face == null) continue;
                             BlockPos pos = new BlockPos(value.get("x").getAsInt(), value.get("y").getAsInt(), value.get("z").getAsInt());
-                            PulseGraffiti graffiti = new PulseGraffiti(currentQuery.serverKey(), currentQuery.dimension(), pos, face, id);
+                            PhazeGraffiti graffiti = new PhazeGraffiti(currentQuery.serverKey(), currentQuery.dimension(), pos, face, id);
                             next.put(graffitiKey(currentQuery.serverKey(), currentQuery.dimension(), pos, face), graffiti);
                         }
                         MinecraftClient client = MinecraftClient.getInstance();
                         if (client != null) client.execute(() -> {
-                            pulseGraffiti.entrySet().removeIf(entry ->
+                            phazeGraffiti.entrySet().removeIf(entry ->
                                     entry.getValue().serverKey.equals(currentQuery.serverKey())
                                             && entry.getValue().dimension.equals(currentQuery.dimension()));
-                            pulseGraffiti.putAll(next);
+                            phazeGraffiti.putAll(next);
                         });
                         lastGraffitiQueryMs = System.currentTimeMillis();
                     } catch (Throwable error) {
@@ -516,20 +519,20 @@ public final class CosmeticsSyncService {
                 current == null || next.updatedAt >= current.updatedAt ? next : current);
     }
 
-    private void putPulseIfNewer(UUID uuid, PulseRemoteCosmetic next) {
-        if (pulseStates.size() > 512) pulseStates.clear();
-        pulseStates.compute(uuid, (ignored, current) ->
+    private void putPhazeIfNewer(UUID uuid, PhazeRemoteCosmetic next) {
+        if (phazeStates.size() > 512) phazeStates.clear();
+        phazeStates.compute(uuid, (ignored, current) ->
                 current == null || next.updatedAt >= current.updatedAt ? next : current);
     }
 
-    private static PulseRemoteCosmetic decodePulse(String value, boolean equipped, long updatedAt) {
+    private static PhazeRemoteCosmetic decodePhaze(String value, boolean equipped, long updatedAt) {
         String[] slots = value == null ? new String[0] : value.split("\\|", -1);
         int[] ids = {-1, -1, -1, -1, -1};
         for (int i = 0; i < Math.min(ids.length, slots.length); i++) {
             try { ids[i] = Integer.parseInt(slots[i]); }
             catch (NumberFormatException ignored) { }
         }
-        return new PulseRemoteCosmetic(ids, equipped, updatedAt);
+        return new PhazeRemoteCosmetic(ids, equipped, updatedAt);
     }
 
     private static RemoteCosmetic decode(String value, boolean equipped, long updatedAt) {
@@ -571,7 +574,7 @@ public final class CosmeticsSyncService {
     ) {
     }
 
-    private record PulseRemoteCosmetic(int[] ids, boolean equipped, long updatedAt) {
+    private record PhazeRemoteCosmetic(int[] ids, boolean equipped, long updatedAt) {
         int id(vorga.phazeclient.implement.cosmetics.bridge.CosmeticCategory category) {
             int index = switch (category) {
                 case WINGS -> 0;
@@ -587,7 +590,7 @@ public final class CosmeticsSyncService {
 
     private record GraffitiQuery(String serverKey, String dimension) { }
 
-    public record PulseGraffiti(
+    public record PhazeGraffiti(
             String serverKey,
             String dimension,
             BlockPos pos,

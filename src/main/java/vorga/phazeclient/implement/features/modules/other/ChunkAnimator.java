@@ -160,6 +160,24 @@ public final class ChunkAnimator extends Module {
     }
 
     /**
+     * Fast render-thread gate for the compatibility Sodium path. It avoids any
+     * region work once all animations have settled, but still admits the first
+     * frame after a newly received chunk is queued.
+     */
+    public boolean shouldEvaluateSodiumFallback() {
+        return isEnabled() && (hasActiveAnimations() || !pendingAnimationKeys.isEmpty());
+    }
+
+    /** Consumes a newly received chunk batch after the fallback starts it. */
+    public boolean consumeSodiumFallbackRequest() {
+        if (pendingAnimationKeys.isEmpty()) {
+            return false;
+        }
+        pendingAnimationKeys.clear();
+        return true;
+    }
+
+    /**
      * Block entities render outside the chunk mesh pass, so they cannot use
      * the terrain shader transform. Hide them for exactly the same window as
      * their column, preventing floating chests and barrels during entry.
@@ -412,42 +430,11 @@ public final class ChunkAnimator extends Module {
     }
 
     /**
-     * Companion to {@link #writeAnimationDirection(float[])} for the
-     * per-section Sodium path. The Sodium per-section upload writes
-     * SIGNED Y deltas into {@code u_PhazeChunkAnimOffset[slot]} -
-     * positive for Top (section ABOVE final), negative for Bottom
-     * (section BELOW final) - so the direction uniform must always
-     * be {@code (0, 1, 0)} on the vertical axes. The shader does
-     * {@code _vert_position += offset * dir}; if we let dir be
-     * {@code (0, -1, 0)} for Bottom (the old "magnitude" convention)
-     * the negative offset gets flipped to positive Y, lifting the
-     * section ABOVE its target instead of below.
-     *
-     * <p>Side animations don't have the player-Y semantic at all
-     * (horizontal slide-in isn't relative to player altitude), so
-     * the per-section upload still uses constant magnitude in those
-     * cases and we delegate to the original
-     * {@link #writeAnimationDirection(float[])} for the horizontal
-     * unit vector.
+     * Direction used by Sodium's native chunk-timing shader path. The shader
+     * receives an always-positive distance uniform, so the direction itself
+     * must retain the sign: Top is +Y and Bottom is -Y.
      */
     public void writeAnimationDirectionPerSection(float[] out) {
-        if (out == null || out.length < 3) return;
-        // Fade uses the dither-discard fragment path and Scale uses
-        // the mix-to-centre vertex path - neither touches the
-        // per-section position-offset path, so the direction
-        // multiplier must be a no-op. See {@link #writeAnimationDirection}.
-        if (animationType.isSelected("Fade") || animationType.isSelected("Scale")) {
-            out[0] = 0.0F; out[1] = 0.0F; out[2] = 0.0F;
-            return;
-        }
-        if (animationType.isSelected("Top") || animationType.isSelected("Bottom")) {
-            out[0] = 0.0F; out[1] = 1.0F; out[2] = 0.0F;
-            return;
-        }
-        // Side / unknown - fall through to the magnitude-based
-        // direction vector. For Side this returns a horizontal unit
-        // vector that pairs correctly with the constant-magnitude
-        // offset written by writeRegionSectionYOffsets' Side branch.
         writeAnimationDirection(out);
     }
 
@@ -546,6 +533,40 @@ public final class ChunkAnimator extends Module {
             offset = 0.0;
         }
         return (float) offset;
+    }
+
+    /**
+     * Vanilla 1.21.11 scale progress for one complete 16x16 chunk column.
+     * All vertical BuiltChunk sections share the X/Z key and therefore grow
+     * from zero to full size in lock-step.
+     */
+    public float getScale(BlockPos origin) {
+        if (!isEnabled() || !isScaleMode() || origin == null) {
+            return 1.0F;
+        }
+
+        long key = ChunkPos.toLong(origin.getX() >> 4, origin.getZ() >> 4);
+        long now = System.currentTimeMillis();
+        long total = Math.max(1L, (long) duration.getInt());
+        Long start = firstSeenMs.get(key);
+
+        if (start == null) {
+            if (!pendingAnimationKeys.remove(key)) {
+                return 1.0F;
+            }
+            if (firstSeenMs.size() >= MAX_TRACKED) {
+                evictExpired(now, total);
+            }
+            firstSeenMs.put(key, now);
+            lastAnimRegisterMs = now;
+            return 0.0F;
+        }
+
+        long elapsed = now - start;
+        if (elapsed >= total) {
+            return 1.0F;
+        }
+        return Math.max(0.0F, Math.min(1.0F, (float) elapsed / (float) total));
     }
 
     /** Drops sections whose animation finished comfortably in the past. */
@@ -746,19 +767,13 @@ public final class ChunkAnimator extends Module {
                 firstSeenMs.put(key, now);
                 lastAnimRegisterMs = now;
                 if (verticalMode) {
-                    playerYAtRegister.put(key, currentPlayerY);
-                    // Initial offset: section needs to start at
-                    // (playerY + sign*dist) in world space, so its
-                    // additive Y delta is (start - sectionWorldY).
-                    // Sign of the result encodes direction:
-                    //   Top: positive (section appears above)
-                    //   Bottom: negative (section appears below)
-                    // The shader applies this with u_PhazeChunkAnimDir
-                    // forced to (0,1,0) - see writeAnimationDirection
-                    // PerSection - so the sign rides cleanly through
-                    // the multiplication.
-                    float startWorldY = currentPlayerY + verticalSign * (float) dist;
-                    offset = startWorldY - (float) sectionWorldY;
+                    // Sodium gives us one slot for each vertical section, but
+                    // World Animator is intentionally a CHUNK-column effect:
+                    // every Y section of this X/Z chunk must receive exactly
+                    // the same translation. Basing it on sectionWorldY made
+                    // tall chunks split apart and could push lower sections
+                    // through the world while their upper neighbours stayed.
+                    offset = verticalSign * (float) dist;
                 } else {
                     // Side mode keeps the constant-magnitude semantics:
                     // every section shifts by `dist` along the chosen
@@ -778,17 +793,10 @@ public final class ChunkAnimator extends Module {
                 double progress = (double) elapsed / (double) total;
                 double eased = curve.interpolate(progress);
                 if (verticalMode) {
-                    Float storedPy = playerYAtRegister.get(key);
-                    float py = storedPy != null ? storedPy : currentPlayerY;
-                    float startWorldY = py + verticalSign * (float) dist;
-                    float initial = startWorldY - (float) sectionWorldY;
-                    offset = initial * (float) (1.0 - eased);
+                    offset = verticalSign * (float) (dist * (1.0 - eased));
                     // Don't clamp at 0 - in vertical mode the sign of
-                    // `offset` IS direction, so a negative value is
-                    // valid (Bottom: section currently below final).
-                    if (offset == 0.0F) {
-                        continue;
-                    }
+                    // `offset` IS direction, so a negative value is valid.
+                    if (offset == 0.0F) continue;
                 } else {
                     double off = dist * (1.0 - eased);
                     offset = off < 0.0 ? 0.0F : (float) off;
@@ -859,9 +867,6 @@ public final class ChunkAnimator extends Module {
     public int getAnimationModeIndex() {
         if (!isEnabled()) {
             return 0;
-        }
-        if (isFadeMode()) {
-            return 2;
         }
         if (isScaleMode()) {
             return 3;
@@ -1241,6 +1246,7 @@ public final class ChunkAnimator extends Module {
         // actually see yet, while still covering the entire view
         // frustum in every direction.
         int viewDistance = mc.options.getViewDistance().getValue() + 1;
+        boolean queued = false;
         for (int dx = -viewDistance; dx <= viewDistance; dx++) {
             for (int dz = -viewDistance; dz <= viewDistance; dz++) {
                 int cx = playerChunkX + dx;
@@ -1251,8 +1257,10 @@ public final class ChunkAnimator extends Module {
                 // sections built yet.
                 if (mc.world.getChunk(cx, cz, net.minecraft.world.chunk.ChunkStatus.FULL, false) != null) {
                     pendingAnimationKeys.add(ChunkPos.toLong(cx, cz));
+                    queued = true;
                 }
             }
         }
+        if (queued) lastAnimRegisterMs = System.currentTimeMillis();
     }
 }

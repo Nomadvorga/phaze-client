@@ -15,6 +15,7 @@ public class ColorCorrectionShader {
         this.shader = new PostEffectShader(
                 Identifier.of("phazeclient", "color_correction")
         );
+        this.shader.useCopyOutput(Identifier.of("phazeclient", "color_output"));
         // Must match, in order, the "ColorCorrectionConfig" list in
         // assets/phazeclient/post_effect/color_correction.json and the block in
         // assets/phazeclient/shaders/core/post/colorcorrection/color_correction.fsh.

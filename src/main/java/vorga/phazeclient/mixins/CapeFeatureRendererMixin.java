@@ -44,7 +44,11 @@ public abstract class CapeFeatureRendererMixin
         String selection = CosmeticsRenderer.capeSelectionFor(state);
         if (!CosmeticsState.isCape(selection)) return;
         ci.cancel();
-        if (state.invisible || !state.capeVisible) return;
+        if (!CosmeticsRenderer.shouldRenderFor(state)) return;
+        // Vanilla clears capeVisible for an invisible render state.  Our
+        // policy above already verified that the player has visible armour,
+        // so don't suppress the cosmetic cape a second time in that case.
+        if (!state.capeVisible && !state.invisible) return;
         Identifier texture = CosmeticsRenderer.capeTexture(selection);
         if (texture == null) return;
 

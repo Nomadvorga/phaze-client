@@ -114,17 +114,9 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
      * without it.
      */
     private static final Set<String> SODIUM_ONLY = Set.of(
-            "vorga.phazeclient.mixins.sodium.DefaultFluidRendererWorldColorMixin",
-            "vorga.phazeclient.mixins.sodium.SodiumGlProgramWorldColorMixin",
-            "vorga.phazeclient.mixins.sodium.SodiumGlShaderWorldColorMixin",
             "vorga.phazeclient.mixins.sodium.DefaultChunkRendererChunkAnimatorMixin",
             "vorga.phazeclient.mixins.sodium.ShaderParserChunkAnimatorMixin",
-            "vorga.phazeclient.mixins.sodium.SodiumGlShaderChunkAnimatorMixin",
-            "vorga.phazeclient.mixins.sodium.SodiumCloudRendererWorldColorMixin",
-            "vorga.phazeclient.mixins.sodium.SodiumFlatButtonCursorMixin",
-            "vorga.phazeclient.mixins.sodium.SodiumControlElementCursorMixin",
-            "vorga.phazeclient.mixins.sodium.SodiumSliderDragCursorMixin",
-            "vorga.phazeclient.mixins.sodium.ReesesSearchFieldCursorMixin"
+            "vorga.phazeclient.mixins.sodium.SodiumGlShaderChunkAnimatorMixin"
     );
 
     /**
@@ -138,9 +130,7 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
      * machine without Sodium also won't have Reese's, and the
      * Sodium gate filters out those cases first.
      */
-    private static final Set<String> REESES_ONLY = Set.of(
-            "vorga.phazeclient.mixins.sodium.ReesesSearchFieldCursorMixin"
-    );
+    private static final Set<String> REESES_ONLY = Set.of();
 
     /**
      * Mixins that must NOT load when Iris is absent. Their
@@ -148,10 +138,7 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
      * which don't exist on classpath unless Iris is installed.
      */
     private static final Set<String> IRIS_ONLY = Set.of(
-            "vorga.phazeclient.mixins.iris.IrisGlShaderChunkAnimatorMixin",
-            "vorga.phazeclient.mixins.iris.IrisElementWidgetCursorMixin",
-            "vorga.phazeclient.mixins.iris.IrisSkyColorUniformMixin",
-            "vorga.phazeclient.mixins.iris.IrisProgramWorldColorMixin"
+            "vorga.phazeclient.mixins.iris.IrisGlShaderChunkAnimatorMixin"
     );
 
     private static final Set<String> EXORDIUM_ONLY = Set.of(

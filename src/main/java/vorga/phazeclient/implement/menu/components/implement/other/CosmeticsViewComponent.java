@@ -283,9 +283,11 @@ public final class CosmeticsViewComponent extends AbstractComponent {
             );
         }
 
-        // Parse files and decode capes away from the render thread. Invisible
-        // submissions then populate at most one cached 3D thumbnail per frame,
-        // so scrolling never has to build a whole newly exposed row at once.
+        // Parse files and decode capes away from the render thread. Do not
+        // submit invisible 3D cards here: an alpha-zero special element still
+        // rasterises its FBO, which turned the warm-up loop into one costly
+        // model render every frame. A newly visible card is populated under
+        // the renderer's one-thumbnail-per-frame budget instead.
         for (CatalogItem item : items) {
             if (cosmeticWarmupRequested.add(item.id)) {
                 if (CosmeticsState.isCape(item.id)) {
@@ -296,12 +298,6 @@ public final class CosmeticsViewComponent extends AbstractComponent {
             }
             if (CosmeticsState.isCape(item.id)) {
                 CosmeticsRenderer.capePreviewTextureIfReady(item.id);
-            } else if (!CosmeticsRenderer.hasCachedCatalogThumbnail(item.id)) {
-                CosmeticsRenderer.renderCatalogModel(
-                        context, item.id,
-                        layout.catalogX + 4.0F, layout.cardsTop + 3.0F,
-                        cardW - 8.0F, cardH - 21.0F,
-                        0.0F, frameId);
             }
         }
         // Submit text and markers after models so thumbnails cannot cover UI.

@@ -4,8 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Per-frame GLFW cursor switcher backing the Animations ➔ Dynamic Cursor
- * toggle. Modeled after the way modern UIs (1.21.11+ included) flip the
+ * Per-frame GLFW cursor switcher used by Phaze-owned interfaces. It flips the
  * pointer to a hand on clickable elements and an I-beam on text inputs:
  * each frame the renderer "requests" what cursor the hovered element
  * should display, and at end-of-frame we apply the most recent request.
@@ -39,11 +38,9 @@ import org.lwjgl.glfw.GLFW;
  * to normal" once the user stops scrolling, fixing the original
  * "анимация зависает и не возвращается" symptom.
  *
- * <h3>Disabled / non-screen state</h3>
- * When {@link vorga.phazeclient.implement.features.modules.other.Animations#dynamicCursor}
- * is off, or when there's no screen open (in-game without GUI), we
- * fall back to the system arrow so the in-world crosshair / camera-
- * grab UX is untouched.
+ * <h3>Non-Phaze state</h3>
+ * The lifecycle is opened only for Phaze menu surfaces and HUD editing in
+ * chat. Vanilla and third-party interfaces are therefore left untouched.
  */
 public final class CursorManager {
 
@@ -220,19 +217,6 @@ public final class CursorManager {
      * shape doesn't reset mid-spin.
      */
     public static void notifyScroll(double horizontal, double vertical) {
-        // Defence-in-depth: even though every call site checks
-        // {@code Animations.isDynamicCursorEnabled()} before calling
-        // here, there's a race where the toggle can flip OFF between
-        // the call-site check and the {@code applyShape} invocation
-        // below. The user reported "при выключенном Animations всё
-        // равно появляется на 1 кадр" - that one frame is precisely
-        // this race plus the following {@code applyShape} call. A
-        // second guard inside the manager closes the gap: if the
-        // toggle is off right now, we drop the scroll notification
-        // entirely.
-        if (!vorga.phazeclient.implement.features.modules.other.Animations.getInstance().isDynamicCursorEnabled()) {
-            return;
-        }
         double absH = Math.abs(horizontal);
         double absV = Math.abs(vertical);
         if (absH == 0.0 && absV == 0.0) {
@@ -253,11 +237,8 @@ public final class CursorManager {
     }
 
     /**
-     * Commit the most-recent request to GLFW. Called at the end of
-     * {@code Screen.render}; if the {@code Dynamic Cursor} animation
-     * setting is off, callers should pass {@code false} for
-     * {@code dynamicEnabled} so we restore the system default and
-     * stop interfering.
+     * Commit the most-recent request to GLFW. Callers pass whether the current
+     * surface is owned by Phaze; {@code false} restores the system arrow.
      */
     public static void endFrame(boolean dynamicEnabled) {
         if (!screenActive) {

@@ -366,7 +366,6 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Cloud Height", "Высота облаков");
         SETTING_TRANSLATIONS.put("Clouds", "Облака");
         SETTING_TRANSLATIONS.put("Collapse Repeats", "Сворачивать повторы");
-        SETTING_TRANSLATIONS.put("Comfortable Text Selection", "Комфортное выделение текста");
         SETTING_TRANSLATIONS.put("Drag-select text in any input field with the mouse - chat, search bars, Sodium options, etc.", "Выделение текста мышью в любых полях ввода: чат, поиск, настройки Sodium и т.д.");
         SETTING_TRANSLATIONS.put("Color", "Цвет");
         SETTING_TRANSLATIONS.put("Color By Shulker", "Цвет по шалкеру");
@@ -459,7 +458,6 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Durability Threshold", "Порог прочности");
         SETTING_TRANSLATIONS.put("Duration", "Длительность");
         SETTING_TRANSLATIONS.put("Dynamic", "Динамический");
-        SETTING_TRANSLATIONS.put("Dynamic Cursor", "Динамический курсор");
         SETTING_TRANSLATIONS.put("Dynamic Ping Color", "Динамический цвет пинга");
         SETTING_TRANSLATIONS.put("Easing", "Сглаживание");
         SETTING_TRANSLATIONS.put("Effect Duration", "Длительность эффекта");

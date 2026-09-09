@@ -58,7 +58,6 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         enabledAnimation.setDirection(setting.isEnabled() ? Direction.FORWARDS : Direction.BACKWARDS);
         float enabledProgress = enabledAnimation.getOutputFloat();
         float activeProgress = 0.08F + enabledProgress * 0.76F;
-
         height = (int) ROW_HEIGHT;
         renderSettingCard(context, activeProgress, hoverProgress);
 
@@ -75,6 +74,9 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         float textWidth = Math.max(12.0F, toggleX - textX - 8.0F);
 
         ItemStack previewStack = setting.createPreviewStack();
+        // drawItem is deferred in 1.21.11. The parent mirrors its text scissor
+        // into DrawContext, so this item render state captures the exact same
+        // clip rectangle and can be partially clipped instead of popping out.
         if (!previewStack.isEmpty()) {
             renderPreviewItem(context, previewStack, iconX, iconY);
         } else {

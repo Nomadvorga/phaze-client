@@ -49,10 +49,16 @@ layout(location = 0) out vec4 color;
 vec3 reproject(vec3 screen_pos) {
     vec3 ndc = screen_pos * 2.0 - 1.0;
     vec4 view_pos4 = projInverse * vec4(ndc, 1.0);
+    if (abs(view_pos4.w) < 0.00001) {
+        return vec3(screen_pos.xy, -1.0);
+    }
     vec3 view_pos = view_pos4.xyz / view_pos4.w;
 
     vec3 world_pos = (mvInverse * vec4(view_pos, 1.0)).xyz + (cameraPos - prevCameraPos);
     vec4 prev_proj = prevProjection * (prevModelView * vec4(world_pos, 1.0));
+    if (abs(prev_proj.w) < 0.00001) {
+        return vec3(screen_pos.xy, -1.0);
+    }
 
     return (prev_proj.xyz / prev_proj.w) * 0.5 + 0.5;
 }
@@ -68,6 +74,7 @@ float noise(vec2 pos) {
 
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
+    vec4 source = texture(MainSampler, texCoord);
 
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
     
@@ -75,11 +82,21 @@ void main() {
     // Руки рендерятся с depth близким к 0 (очень близко к камере)
     // Используем настраиваемый порог для точной настройки
     if (depth < handDepthThreshold) {
-        color = texture(MainSampler, texCoord);
+        color = source;
         return;
     }
     
-    vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
+    vec3 previousPosition = reproject(vec3(texCoord, depth));
+    // A post-effect can be scheduled before its history buffer has received a
+    // first frame (resource reload, world join, or another renderer). Never
+    // turn that transient state into a black frame: pass the source through
+    // until the next valid history sample arrives.
+    if (previousPosition.z < 0.0) {
+        color = source;
+        return;
+    }
+
+    vec2 velocity = texCoord - previousPosition.xy;
     velocity = clampLength(velocity);
 
     vec2 totalOffset = BlendFactor * velocity;
@@ -92,19 +109,24 @@ void main() {
     // sqrt(sum(c*c) / N) == c. Порог намеренно консервативный - разница
     // заведомо ниже кванта 1/255, поэтому качество не страдает, а
     // неподвижная камера перестаёт стоить целого прохода с выборками.
-    vec2 spanPixels = totalOffset * view_res;
+    vec2 safeResolution = max(view_res, vec2(1.0));
+    vec2 spanPixels = totalOffset * safeResolution;
     if (dot(spanPixels, spanPixels) < 0.0625) {
-        color = vec4(texture(MainSampler, texCoord).rgb, 1.0);
+        color = source;
         return;
     }
 
-    vec2 baseStep = totalOffset * inverseSamples;
+    int samples = clamp(motionBlurSamples, 1, 32);
+    float safeInverseSamples = (inverseSamples > 0.0)
+            ? inverseSamples
+            : 1.0 / float(samples);
+    vec2 baseStep = totalOffset * safeInverseSamples;
 
     vec3 color_sum = vec3(0.0);
-    vec2 seed = texCoord * view_res;
+    vec2 seed = texCoord * safeResolution;
 
     bool centerBlur = blurAlgorithm != 0;
-    for (int i = 0; i < motionBlurSamples; ++i) {
+    for (int i = 0; i < samples; ++i) {
         float fi = float(i);
 
         float jitter = noise(seed + vec2(fi, fi * 1.4));
@@ -117,5 +139,5 @@ void main() {
 
         color_sum += color * color;
     }
-    color = vec4(sqrt(color_sum * inverseSamples), 1.0);
+    color = vec4(sqrt(color_sum * safeInverseSamples), 1.0);
 }

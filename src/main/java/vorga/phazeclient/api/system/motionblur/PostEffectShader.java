@@ -78,6 +78,13 @@ public class PostEffectShader {
     private String uniformBlockName;
     private String[] uniformBlockMembers;
     private boolean uniformsDirty = false;
+    private Identifier copyOutput;
+
+    /** Use a pooled color-only target followed by an exact GPU texture copy. */
+    public void useCopyOutput(Identifier output) {
+        if (initialized) throw new IllegalStateException("Output must be configured before initialization");
+        copyOutput = output;
+    }
 
     public PostEffectShader(Identifier location, Consumer<PostEffectShader> initCallback) {
         this.location = location;
@@ -94,11 +101,14 @@ public class PostEffectShader {
             MinecraftClient client = MinecraftClient.getInstance();
             ShaderLoader shaderLoader = client.getShaderLoader();
             ShaderLoader.Cache cache = ((ShaderLoaderAccessor) shaderLoader).getCache();
-            this.processor = cache.getOrLoadProcessor(location, DefaultFramebufferSet.MAIN_ONLY);
+            this.processor = cache.getOrLoadProcessor(location, copyOutput == null
+                    ? DefaultFramebufferSet.MAIN_ONLY : java.util.Set.of(PostEffectProcessor.MAIN, copyOutput));
+            this.uniformsDirty = true;
             this.initialized = true;
             this.initCallback.accept(this);
         } catch (Exception e) {
             this.errored = true;
+            LOGGER.error("Failed to initialize post effect {}", location, e);
         }
     }
 
@@ -119,10 +129,47 @@ public class PostEffectShader {
         // one.
         uploadUniforms();
 
-        processor.render(client.getFramebuffer(), ((GameRendererAccessor) client.gameRenderer).getPool());
+        if (copyOutput == null) {
+            processor.render(client.getFramebuffer(), ((GameRendererAccessor) client.gameRenderer).getPool());
+        } else {
+            renderWithCopyOutput(client);
+        }
+    }
+
+    private void renderWithCopyOutput(MinecraftClient client) {
+        net.minecraft.client.gl.Framebuffer main = client.getFramebuffer();
+        int width = main.textureWidth;
+        int height = main.textureHeight;
+        if (width <= 0 || height <= 0) return;
+        net.minecraft.client.render.FrameGraphBuilder graph = new net.minecraft.client.render.FrameGraphBuilder();
+        Map<Identifier, net.minecraft.client.util.Handle<net.minecraft.client.gl.Framebuffer>> targets = new LinkedHashMap<>();
+        targets.put(PostEffectProcessor.MAIN, graph.createObjectNode("phaze/main", main));
+        targets.put(copyOutput, graph.createResourceHandle("phaze/post_output",
+                new net.minecraft.client.gl.SimpleFramebufferFactory(width, height, false, 0)));
+        PostEffectProcessor.FramebufferSet set = new PostEffectProcessor.FramebufferSet() {
+            public void set(Identifier id, net.minecraft.client.util.Handle<net.minecraft.client.gl.Framebuffer> handle) {
+                targets.put(id, handle);
+            }
+            public net.minecraft.client.util.Handle<net.minecraft.client.gl.Framebuffer> get(Identifier id) {
+                return targets.get(id);
+            }
+        };
+        processor.render(graph, width, height, set);
+        net.minecraft.client.render.FramePass copy = graph.createPass("phaze/copy_post_output");
+        var source = set.getOrThrow(copyOutput);
+        copy.dependsOn(source);
+        var destination = copy.transfer(set.getOrThrow(PostEffectProcessor.MAIN));
+        set.set(PostEffectProcessor.MAIN, destination);
+        copy.setRenderer(() -> RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(
+                source.get().getColorAttachment(), destination.get().getColorAttachment(),
+                0, 0, 0, 0, 0, width, height));
+        graph.run(((GameRendererAccessor) client.gameRenderer).getPool());
     }
 
     public void setUniformValue(String name, float value) {
+        RequestedUniform previous = requestedUniforms.get(name);
+        if (previous != null && previous.kind() == UniformKind.FLOAT
+                && previous.data().length == 1 && previous.data()[0] == value) return;
         record(name, UniformKind.FLOAT, value);
     }
 
@@ -139,6 +186,9 @@ public class PostEffectShader {
     }
 
     public void setUniformValue(String name, int value) {
+        RequestedUniform previous = requestedUniforms.get(name);
+        if (previous != null && previous.kind() == UniformKind.INT
+                && previous.data().length == 1 && previous.data()[0] == value) return;
         record(name, UniformKind.INT, value);
     }
 
@@ -155,6 +205,7 @@ public class PostEffectShader {
         this.processor = null;
         this.initialized = false;
         this.errored = false;
+        this.uniformsDirty = true;
         // Deliberately NOT clearing requestedUniforms: it is the record of what
         // Phaze wants applied, not of what has been uploaded, and callers reset
         // their own change-detection guards on reload anyway.
@@ -175,8 +226,9 @@ public class PostEffectShader {
 
     private void record(String name, UniformKind kind, float... data) {
         ensureInitialized();
-        RequestedUniform previous = requestedUniforms.put(name, new RequestedUniform(kind, data));
+        RequestedUniform previous = requestedUniforms.get(name);
         if (previous == null || previous.kind() != kind || !java.util.Arrays.equals(previous.data(), data)) {
+            requestedUniforms.put(name, new RequestedUniform(kind, data));
             uniformsDirty = true;
         }
     }

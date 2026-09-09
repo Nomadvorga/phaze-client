@@ -488,7 +488,7 @@ final class BlockbenchWingModel {
                        MatrixStack.Entry stableLightingEntry) {
         renderInternal(
                 matrices, consumers, light, CosmeticsRenderer.STATIC_POSE,
-                true, false, stableLightingEntry, false
+                false, false, stableLightingEntry, false
         );
     }
 

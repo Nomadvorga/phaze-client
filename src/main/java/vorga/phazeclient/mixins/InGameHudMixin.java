@@ -93,11 +93,13 @@ import vorga.phazeclient.implement.features.modules.hud.TimeHud;
 import vorga.phazeclient.implement.features.modules.hud.TpsHud;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.api.system.hud.HudBuffer;
+import vorga.phazeclient.api.system.hud.HudScaleLimits;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.menu.MenuScreen;
+import vorga.phazeclient.implement.menu.components.implement.settings.ScaleSnapOverlay;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.hud.Cooldowns;
 import vorga.phazeclient.implement.features.modules.other.Crosshair;
@@ -200,6 +202,12 @@ public class InGameHudMixin {
     private static final int HUD_INVENTORY = 26;
     private static final int RECT_HUD_COUNT = 27;
     private static final int HUD_ARMOR_BLUR_SLOT = 27;
+    /**
+     * Per-HUD text alignment applied by the common scaled-text render path.
+     * It is restored after every HUD render so nested/direct render calls cannot
+     * leak their alignment into another widget.
+     */
+    private static float phaze$currentHudTextYOffset = 0.0F;
     private static final int HUD_SNAP_ARMOR = RECT_HUD_COUNT;
     private static final int HUD_SNAP_COUNT = RECT_HUD_COUNT + 1;
     private static final int KEYSTROKE_W = 0;
@@ -558,6 +566,9 @@ public class InGameHudMixin {
             float screenHeight = client.getWindow().getScaledHeight();
             renderZoomLevel(context, client, screenWidth, screenHeight);
         }
+        if (client != null && client.currentScreen instanceof ChatScreen) {
+            ScaleSnapOverlay.render(context);
+        }
     }
 
     private void renderHudInternal(DrawContext context) {
@@ -891,7 +902,29 @@ public class InGameHudMixin {
     private void renderBufferedHud(DrawContext context, RectHudModule module, boolean chatEditing, Runnable renderLogic) {
         phaze$trackBlurStateChange(module, module.hasActiveBackgroundBlur());
         if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
-        renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
+        renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing,
+                () -> phaze$withHudTextAlignment(module, renderLogic));
+    }
+
+    /**
+     * Keeps text optically centered against HUD icons and backgrounds. The
+     * optical correction is expressed in the HUD's local coordinate space,
+     * so it remains stable while the whole HUD is scaled.
+     */
+    private static void phaze$withHudTextAlignment(RectHudModule module, Runnable renderLogic) {
+        float previousOffset = phaze$currentHudTextYOffset;
+        phaze$currentHudTextYOffset = phaze$usesDefaultTextAlignment(module) ? 0.3F : 0.0F;
+        try {
+            renderLogic.run();
+        } finally {
+            phaze$currentHudTextYOffset = previousOffset;
+        }
+    }
+
+    private static boolean phaze$usesDefaultTextAlignment(RectHudModule module) {
+        return !(module instanceof ScoreboardHud)
+                && !(module instanceof WailaHud)
+                && !(module instanceof PlayerModelHud);
     }
 
     /**
@@ -971,7 +1004,15 @@ public class InGameHudMixin {
     private void renderBufferedHud(DrawContext context, ArmorHud module, boolean chatEditing, Runnable renderLogic) {
         phaze$trackBlurStateChange(module, module.hasActiveBackgroundBlur());
         if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
-        renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
+        renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, () -> {
+            float previousOffset = phaze$currentHudTextYOffset;
+            phaze$currentHudTextYOffset = 0.0F;
+            try {
+                renderLogic.run();
+            } finally {
+                phaze$currentHudTextYOffset = previousOffset;
+            }
+        });
     }
 
     /**
@@ -1057,8 +1098,8 @@ public class InGameHudMixin {
             return;
         }
 
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
 
         float hudWidth = baseWidth * scale;
         float hudHeight = baseHeight * scale;
@@ -1158,13 +1199,13 @@ public class InGameHudMixin {
                     float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5f;
 
-                    float minWidth = baseWidth * module.getMinHudScale();
-                    float maxWidth = baseWidth * module.getMaxHudScale();
+                    float minWidth = baseWidth * module.getMinHudScale() * 2.0F;
+                    float maxWidth = baseWidth * module.getMaxHudScale() * 2.0F;
                     float newWidth = MathHelper.clamp(RECT_RESIZE_START_WIDTH[hudIndex] + delta * 0.9f, minWidth, maxWidth);
-                    float newScale = newWidth / baseWidth;
+                    float newScale = snapAndAnnounceHudScale(module, newWidth / baseWidth / 2.0F);
 
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     hudWidth = baseWidth * scale;
                     hudHeight = baseHeight * scale;
                     maxX = Math.max(0.0f, screenWidth - hudWidth);
@@ -1391,8 +1432,8 @@ public class InGameHudMixin {
             maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, text, HUD_TEXT_SIZE));
         }
 
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
         float baseWidth = iconSize + textGap + maxTextWidth + numberSidePadding;
         float baseHeight = stacks.size() * rowHeight;
         float hudWidth = baseWidth * scale;
@@ -1441,7 +1482,7 @@ public class InGameHudMixin {
             } else if (!wasMouseDown && !isAnyHudInteractionActive()) {
                 if (hoveredHandle) {
                     armorResizing = true;
-                    armorResizeStartScale = scale;
+                    armorResizeStartScale = module.getHudScale();
                     armorResizeStartMouseX = (float) mouseX;
                     armorResizeStartMouseY = (float) mouseY;
                 } else if (hovered) {
@@ -1490,10 +1531,10 @@ public class InGameHudMixin {
                     float deltaY = (float) mouseY - armorResizeStartMouseY;
                     float delta = (deltaX + deltaY) * 0.5f;
                     // Match resize feel of other rect HUDs (reference width = 64).
-                    float newScale = armorResizeStartScale + (delta * 0.9f) / BASE_WIDTH;
-                    newScale = MathHelper.clamp(newScale, module.getMinHudScale(), module.getMaxHudScale());
+                    float newScale = armorResizeStartScale + (delta * 0.9f) / (BASE_WIDTH * 2.0F);
+                    newScale = snapAndAnnounceHudScale(module, newScale);
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     hudWidth = baseWidth * scale;
                     hudHeight = baseHeight * scale;
                     maxX = Math.max(0.0f, screenWidth - hudWidth);
@@ -1618,7 +1659,7 @@ public class InGameHudMixin {
                 textX = iconSize + textGap;
             }
 
-            float textY = rowY + 4.0f;
+            float textY = rowY + 5.0f;
 
             // Color By Durability: pick a stoplight colour from the
             // remaining vs max ratio of THIS row's stack. Falls back
@@ -1703,8 +1744,8 @@ public class InGameHudMixin {
         float baseWidth = layout.baseWidth();
         float baseHeight = layout.baseHeight();
 
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
         float hudWidth = baseWidth * scale;
         float hudHeight = baseHeight * scale;
 
@@ -1736,7 +1777,7 @@ public class InGameHudMixin {
             } else if (!wasMouseDown && !isAnyHudInteractionActive()) {
                 if (hoveredHandle) {
                     RECT_RESIZING[hudIndex] = true;
-                    RECT_RESIZE_START_WIDTH[hudIndex] = scale;
+                    RECT_RESIZE_START_WIDTH[hudIndex] = module.getHudScale();
                     RECT_RESIZE_START_MOUSE_X[hudIndex] = (float) mouseX;
                     RECT_RESIZE_START_MOUSE_Y[hudIndex] = (float) mouseY;
                 } else if (hovered) {
@@ -1780,10 +1821,10 @@ public class InGameHudMixin {
                     float deltaX = (float) mouseX - RECT_RESIZE_START_MOUSE_X[hudIndex];
                     float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5f;
-                    float newScale = RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9f) / BASE_WIDTH;
-                    newScale = MathHelper.clamp(newScale, module.getMinHudScale(), module.getMaxHudScale());
+                    float newScale = RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9f) / (BASE_WIDTH * 2.0F);
+                    newScale = snapAndAnnounceHudScale(module, newScale);
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     hudWidth = baseWidth * scale;
                     hudHeight = baseHeight * scale;
                     maxX = Math.max(0.0f, screenWidth - hudWidth);
@@ -2008,7 +2049,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         context.getMatrices().pushMatrix();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
@@ -2135,7 +2176,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         float totalWidth = getHudTextWidth(client, fullText, HUD_TEXT_SIZE);
         float textX = (baseWidth - totalWidth) * 0.5f;
         float textY = (BASE_HEIGHT - 8.0f) / 2.0f;
@@ -2210,7 +2251,7 @@ public class InGameHudMixin {
         module.ensureDefaultHudPosition(screenWidth, screenHeight, baseWidth, BASE_HEIGHT);
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
 
         renderRectHud(context, client, module, "", hudIndex, chatEditing, mouseX, mouseY, mouseDown,
                 deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY, baseWidth, BASE_HEIGHT);
@@ -2246,7 +2287,7 @@ public class InGameHudMixin {
     ) {
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         float textWidth = client.textRenderer.getWidth(text);
         float baseWidth = Math.max(48.0f, textWidth + 16.0f);
         float baseHeight = BASE_HEIGHT;
@@ -2366,7 +2407,7 @@ public class InGameHudMixin {
         // If the HUD is still at its constructor default (0,0), place it at
         // vanilla-like sidebar position (right side, vertically centered).
         if (module.getHudX() <= 1.0f && module.getHudY() <= 1.0f) {
-            float scale = module.getHudScale();
+            float scale = module.getRenderHudScale();
             float hudWidth = baseWidth * scale;
             float hudHeight = baseHeight * scale;
             float vanillaX = Math.max(0.0f, screenWidth - hudWidth - 2.0f);
@@ -2389,7 +2430,7 @@ public class InGameHudMixin {
         // Get actual position and scale after renderRectHud
         float hudX = module.getHudX();
         float hudY = module.getHudY();
-        float hudScale = module.getHudScale();
+        float hudScale = module.getRenderHudScale();
 
         // Calculate render positions in local coordinates (relative to hudX, hudY)
         int rightEdgeLocal = Math.round(baseWidth);
@@ -2576,7 +2617,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         float centerX = baseWidth * 0.5f;
         float leftPadding = 8.0f;
         float rightPadding = 8.0f;
@@ -2716,7 +2757,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         int idleColor = module.background.isValue()
                 ? RECT_BG_ANIMATED_COLOR[HUD_KEYSTROKES]
                 : 0x00000000;
@@ -2831,7 +2872,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         context.getMatrices().pushMatrix();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
@@ -3232,7 +3273,7 @@ public class InGameHudMixin {
 
         float x = module.getHudX();
         float y = module.getHudY();
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
 
         context.getMatrices().pushMatrix();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
@@ -3497,7 +3538,7 @@ public class InGameHudMixin {
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(hudX, hudY);
         context.getMatrices().scale(scale, scale);
-        renderHudText(context, client, text, textX, textY, textSize, shadow);
+        renderHudText(context, client, text, textX, textY + phaze$currentHudTextYOffset, textSize, shadow);
         context.getMatrices().popMatrix();
     }
 
@@ -3517,7 +3558,7 @@ public class InGameHudMixin {
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(hudX, hudY);
         context.getMatrices().scale(scale, scale);
-        renderHudTextWithAlpha(context, client, text, textX, textY, textSize, shadow, alpha);
+        renderHudTextWithAlpha(context, client, text, textX, textY + phaze$currentHudTextYOffset, textSize, shadow, alpha);
         context.getMatrices().popMatrix();
     }
 
@@ -3537,7 +3578,7 @@ public class InGameHudMixin {
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(hudX, hudY);
         context.getMatrices().scale(scale, scale);
-        renderHudTextColored(context, client, text, textX, textY, textSize, shadow, rgbColor);
+        renderHudTextColored(context, client, text, textX, textY + phaze$currentHudTextYOffset, textSize, shadow, rgbColor);
         context.getMatrices().popMatrix();
     }
 
@@ -3627,6 +3668,15 @@ public class InGameHudMixin {
                 || RECT_DRAGGING[HUD_PLAYER_MODEL] || RECT_RESIZING[HUD_PLAYER_MODEL]
                 || RECT_DRAGGING[HUD_TRAP_TIMER] || RECT_RESIZING[HUD_TRAP_TIMER]
                 || armorDragging || armorResizing;
+    }
+
+    /** Restores the 1:1 size reliably while dragging any HUD resize handle. */
+    private static float snapAndAnnounceHudScale(Module module, float rawScale) {
+        float clamped = HudScaleLimits.clamp(rawScale);
+        boolean snapped = HudScaleLimits.snapsToDefault(clamped);
+        float value = snapped ? 1.0F : clamped;
+        ScaleSnapOverlay.show(value, snapped, module.getVisibleName() + " Scale");
+        return value;
     }
 
     private static void renderHudGuides(DrawContext context, float screenWidth, float screenHeight, float inverseGuiScale) {
@@ -4024,7 +4074,8 @@ public class InGameHudMixin {
         // user's spec - "to the left of the IP, square, same size as
         // the rect Y dimension".
         if (module.displayServerIcon.isValue()) {
-            float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
+            module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+            float scale = module.getRenderHudScale();
             float hudHeight = BASE_HEIGHT * scale;
             module.renderServerIcon(context, module.getHudX(), module.getHudY(), hudHeight, inverseGuiScale);
         }
@@ -4239,7 +4290,7 @@ public class InGameHudMixin {
             float screenCenterY
     ) {
         float lineHeight = 10.0f;
-        float scale = module.getHudScale();
+        float scale = module.getRenderHudScale();
         // Nominal icon size matches the original two-line-tall sprite. We
         // clamp it down per-frame against {@code baseHeight} so a small
         // rect (e.g. block name only, every sub-toggle disabled) doesn't
@@ -5045,8 +5096,8 @@ public class InGameHudMixin {
         final int hudIndex = HUD_PLAYER_MODEL;
         ClientPlayerEntity player = mc.player;
         float baseSize = module.getBaseModelSize();
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
         float panelW = 2.0F * baseSize * scale;
         float panelH = 2.0F * baseSize * scale;
 
@@ -5089,7 +5140,7 @@ public class InGameHudMixin {
             } else if (!phaze$pmWasMouseDown && !isAnyHudInteractionActive()) {
                 if (hoveredHandle) {
                     RECT_RESIZING[hudIndex] = true;
-                    RECT_RESIZE_START_WIDTH[hudIndex] = scale;
+                    RECT_RESIZE_START_WIDTH[hudIndex] = module.getHudScale();
                     RECT_RESIZE_START_MOUSE_X[hudIndex] = mouseX;
                     RECT_RESIZE_START_MOUSE_Y[hudIndex] = mouseY;
                 } else if (hoveredHud) {
@@ -5140,10 +5191,10 @@ public class InGameHudMixin {
                     float deltaX = mouseX - RECT_RESIZE_START_MOUSE_X[hudIndex];
                     float deltaY = mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5F;
-                    float newScale = RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9F) / (baseSize * 2.0F);
-                    newScale = MathHelper.clamp(newScale, module.getMinHudScale(), module.getMaxHudScale());
+                    float newScale = RECT_RESIZE_START_WIDTH[hudIndex] + (delta * 0.9F) / (baseSize * 4.0F);
+                    newScale = snapAndAnnounceHudScale(module, newScale);
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     panelW = 2.0F * baseSize * scale;
                     panelH = 2.0F * baseSize * scale;
                     maxX = Math.max(0.0F, scaledScreenW - panelW);
@@ -5360,8 +5411,8 @@ public class InGameHudMixin {
         boolean[] overlayFlags = InventoryHud.getSnapshotOverlayFlags();
 
         final int hudIndex = HUD_INVENTORY;
-        float scale = MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale());
-        module.setHudScale(scale);
+        module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
+        float scale = module.getRenderHudScale();
 
         float baseWidth = PHAZE_INV_BORDER * 2.0F + PHAZE_INV_SLOT * 9.0F;
         float baseHeight = PHAZE_INV_BORDER * 2.0F + PHAZE_INV_SLOT * 3.0F;
@@ -5462,13 +5513,13 @@ public class InGameHudMixin {
                     float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5F;
 
-                    float minWidth = baseWidth * module.getMinHudScale();
-                    float maxWidth = baseWidth * module.getMaxHudScale();
+                    float minWidth = baseWidth * module.getMinHudScale() * 2.0F;
+                    float maxWidth = baseWidth * module.getMaxHudScale() * 2.0F;
                     float newWidth = MathHelper.clamp(RECT_RESIZE_START_WIDTH[hudIndex] + delta * 0.9F, minWidth, maxWidth);
-                    float newScale = newWidth / baseWidth;
+                    float newScale = snapAndAnnounceHudScale(module, newWidth / baseWidth / 2.0F);
 
                     module.setHudScale(newScale);
-                    scale = newScale;
+                    scale = module.getRenderHudScale();
                     hudWidth = baseWidth * scale;
                     hudHeight = baseHeight * scale;
                     maxX = Math.max(0.0F, screenWidth - hudWidth);

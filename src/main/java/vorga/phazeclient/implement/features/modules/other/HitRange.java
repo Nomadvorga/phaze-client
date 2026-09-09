@@ -123,7 +123,7 @@ public final class HitRange extends Module {
     public final ValueSetting circleSegments = new ValueSetting(
             "Circle Segments",
             "Polygon edge count of the circle. Lower = more polygonal, higher = smoother."
-    ).range(3, 180).step(1.0f).setValue(60);
+    ).range(5, 180).step(1.0f).setValue(60);
 
     /**
      * Result of the most recent {@code World#getClosestPlayer} call from

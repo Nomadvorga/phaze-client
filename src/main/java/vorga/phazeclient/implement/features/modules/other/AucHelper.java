@@ -3,11 +3,13 @@ package vorga.phazeclient.implement.features.modules.other;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
+import vorga.phazeclient.base.util.PhazeAnnouncements;
 
 /**
  * Auc Helper. On the configured bind, sends
@@ -101,7 +103,9 @@ public final class AucHelper extends Module {
 
         ItemStack stack = mc.player.getMainHandStack();
         if (stack == null || stack.isEmpty()) {
-            mc.player.sendMessage(Text.literal("§c[Auc Helper] hand is empty"), true);
+            mc.player.sendMessage(PhazeAnnouncements.systemMessage(
+                    Text.literal("Auc Helper · hand is empty").formatted(Formatting.RED)
+            ), true);
             return;
         }
 

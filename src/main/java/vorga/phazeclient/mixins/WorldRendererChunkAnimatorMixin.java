@@ -3,6 +3,8 @@ package vorga.phazeclient.mixins;
 import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.spongepowered.asm.mixin.Mixin;
@@ -97,6 +99,32 @@ public abstract class WorldRendererChunkAnimatorMixin {
         if (animator == null || !animator.isEnabled() || builtChunk == null) {
             return modelView;
         }
+
+        if (animator.isScaleMode()) {
+            float scale = animator.getScale(builtChunk.getOrigin());
+            if (scale >= 1.0F) {
+                return modelView;
+            }
+
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null || client.gameRenderer == null
+                    || client.gameRenderer.getCamera() == null) {
+                return modelView;
+            }
+            Vec3d camera = client.gameRenderer.getCamera().getCameraPos();
+            float pivotX = (float) (builtChunk.getOrigin().getX() + 8.0 - camera.x);
+            float pivotY = (float) (builtChunk.getOrigin().getY() + 8.0 - camera.y);
+            float pivotZ = (float) (builtChunk.getOrigin().getZ() + 8.0 - camera.z);
+
+            // ModelViewMat transforms the already camera-relative terrain
+            // position. Conjugating the scale around that section centre
+            // keeps the centre fixed while vertices grow out from it.
+            return new Matrix4f(modelView)
+                    .translate(pivotX, pivotY, pivotZ)
+                    .scale(scale)
+                    .translate(-pivotX, -pivotY, -pivotZ);
+        }
+
         float magnitude = animator.getYOffset(builtChunk.getOrigin());
         if (magnitude == 0.0F) {
             // Not animating: hand vanilla's own matrix straight back so

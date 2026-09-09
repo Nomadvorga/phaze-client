@@ -330,7 +330,7 @@ public abstract class EntityRendererMixin {
         if (!phaze$drawBadgeThisLabel) {
             return;
         }
-        PhazeBadgeUtil.drawWorldBadge(matrix, vertexConsumers, layerType, x - 2.0F, y - 1.0F, 10.0F, light, 0xFFFFFFFF);
+        PhazeBadgeUtil.drawWorldBadge(matrix, vertexConsumers, layerType, x - 2.0F, y - 1.0F, 10.0F, light, 0xFFFFFFFF, false);
     }
 
     @SuppressWarnings("unused")

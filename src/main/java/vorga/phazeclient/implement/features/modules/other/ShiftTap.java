@@ -97,7 +97,7 @@ public final class ShiftTap extends Module {
     }
 
     private boolean isWorldSupported() {
-        return ServerUtil.isShiftTapSupported();
+        return !isServerLocked();
     }
 
     protected void onDisable() {
