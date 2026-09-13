@@ -16,13 +16,34 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.debug.gizmo.GizmoDrawing;
 import net.minecraft.world.debug.gizmo.VisibilityConfigurable;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.features.modules.other.HitboxCustomizer;
 
 @Mixin(EntityHitboxDebugRenderer.class)
 public class EntityHitboxDebugRendererMixin {
+
+    /**
+     * Remembers which entity {@code drawHitbox} is currently drawing. The
+     * style hook below may not capture the enclosing method's arguments -
+     * a Mixin {@code @ModifyArg} handler must match the arguments of the
+     * INVOKED method ({@code box(Box, DrawStyle)}) - so the entity is
+     * relayed through this field instead.
+     */
+    @Unique
+    private static Entity phaze$currentHitboxEntity;
+
+    @Inject(
+            method = "drawHitbox(Lnet/minecraft/entity/Entity;FZ)V",
+            at = @At("HEAD")
+    )
+    private void phaze$captureHitboxEntity(Entity entity, float tickDelta, boolean highlighted, CallbackInfo ci) {
+        phaze$currentHitboxEntity = entity;
+    }
 
     @ModifyArg(
             method = "drawHitbox",
@@ -34,7 +55,8 @@ public class EntityHitboxDebugRendererMixin {
             index = 1,
             require = 0
     )
-    private DrawStyle phaze$styleHitbox(Entity entity, float tickDelta, boolean highlighted, DrawStyle original) {
+    private DrawStyle phaze$styleHitbox(DrawStyle original) {
+        Entity entity = phaze$currentHitboxEntity;
         HitboxCustomizer module = HitboxCustomizer.getInstance();
         if (module == null || !module.isEnabled()) {
             return original;
@@ -65,7 +87,7 @@ public class EntityHitboxDebugRendererMixin {
             ),
             require = 0
     )
-    private VisibilityConfigurable phaze$hideVanillaLookLine(Vec3d from, Vec3d to, int color) {
+    private static VisibilityConfigurable phaze$hideVanillaLookLine(Vec3d from, Vec3d to, int color) {
         HitboxCustomizer module = HitboxCustomizer.getInstance();
         if (module != null && module.isEnabled() && !module.showLookLine.isValue()) {
             return null;
