@@ -95,6 +95,23 @@ public class EntityHitboxDebugRendererMixin {
         return GizmoDrawing.arrow(from, to, color);
     }
 
+    @Redirect(
+            method = "drawHitbox",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/world/debug/gizmo/GizmoDrawing;box(Lnet/minecraft/util/math/Box;Lnet/minecraft/client/render/DrawStyle;)Lnet/minecraft/world/debug/gizmo/VisibilityConfigurable;",
+                    ordinal = 2
+            ),
+            require = 0
+    )
+    private static VisibilityConfigurable phaze$hideVanillaEyeLineBox(net.minecraft.util.math.Box box, DrawStyle style) {
+        HitboxCustomizer module = HitboxCustomizer.getInstance();
+        if (module != null && module.isEnabled() && !module.showLookLine.isValue()) {
+            return null;
+        }
+        return GizmoDrawing.box(box, style);
+    }
+
     private static boolean phaze$isCrosshairEntity(Entity entity) {
         if (entity == null) {
             return false;
