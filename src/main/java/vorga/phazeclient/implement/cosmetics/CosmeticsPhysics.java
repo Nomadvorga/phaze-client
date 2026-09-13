@@ -8,17 +8,12 @@ import net.minecraft.util.math.Vec3d;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Generic client-side spring simulation for hierarchical back cosmetics.
- * It consumes player motion only; no packets or server state are required.
- */
 final class CosmeticsPhysics {
     private static final CosmeticsPhysics INSTANCE = new CosmeticsPhysics();
     private static final long PREVIEW_EPOCH_NANOS = System.nanoTime();
 
-    /** One tiny spring state per rendered player; never shared across entities. */
     private final Map<Integer, Simulation> simulations = new HashMap<>();
-    /** Independent root-position springs for companion pets. */
+
     private final Map<Integer, CompanionSimulation> companionSimulations = new HashMap<>();
 
     private CosmeticsPhysics() {
@@ -31,9 +26,7 @@ final class CosmeticsPhysics {
     Pose sample(PlayerEntity player, PlayerEntityRenderState state,
                 boolean preview, float idleAmplitude) {
         if (preview) {
-            // Keep the phase close to zero. Converting the JVM's absolute
-            // nano time to float loses enough precision after a long session
-            // to make this advance in visible ~5 FPS steps.
+
             double time = (System.nanoTime() - PREVIEW_EPOCH_NANOS) / 1_000_000_000.0D;
             return new Pose(
                     0.0F, 0.0F,
@@ -64,15 +57,11 @@ final class CosmeticsPhysics {
         float rawMovement = MathHelper.clamp(horizontalSpeed / 0.28F, 0.0F, 1.65F);
         float sprint = player.isSprinting() ? 1.0F : 0.0F;
 
-        // bodyYaw is already interpolated for this render frame. Sampling the
-        // entity's tick yaw here produced a 20 Hz staircase during fast turns.
         float yaw = state.bodyYaw;
         float yawDelta = MathHelper.wrapDegrees(yaw - simulation.lastYaw);
         simulation.lastYaw = yaw;
         float rawTurnLag = MathHelper.clamp(-yawDelta * 0.82F, -13.0F, 13.0F);
 
-        // Velocity is still updated by game ticks. These input springs remove
-        // the 20 Hz target steps before they reach the visible wing springs.
         simulation.movementInput.update(rawMovement, dt, 58.0F, 13.0F);
         simulation.verticalInput.update((float) velocity.y, dt, 62.0F, 14.0F);
         simulation.turnInput.update(rawTurnLag, dt, 74.0F, 15.0F);
@@ -92,7 +81,6 @@ final class CosmeticsPhysics {
             }
         }
 
-        // Render-state age already contains the interpolated tick age.
         float age = state.age;
         float stepPhaze = MathHelper.sin(age * 0.72F) * movement * 1.8F;
         float idle = MathHelper.sin(age * 0.12F) * idleAmplitude;
@@ -145,9 +133,6 @@ final class CosmeticsPhysics {
         float sin = MathHelper.sin(yawRadians);
         float cos = MathHelper.cos(yawRadians);
 
-        // Convert world velocity to the already-rotated body coordinate
-        // system. The target moves opposite to velocity, so the companion
-        // visibly trails behind walking, strafing and creative flight.
         float localSide = (float) velocity.x * cos
                 + (float) velocity.z * sin;
         float localForward = -(float) velocity.x * sin
@@ -159,15 +144,11 @@ final class CosmeticsPhysics {
         float targetY = -0.40F - MathHelper.clamp(
                 (float) velocity.y * 0.72F * strength, -0.34F, 0.34F
         );
-        // Positive body-local Z is the player's back. Forward movement must
-        // therefore increase Z so the companion visibly trails behind.
+
         float targetZ = 0.08F + MathHelper.clamp(
                 localForward * 1.55F * strength, -0.48F, 0.48F
         );
 
-        // Slightly softer than the wing springs: this gives pets a readable
-        // delayed follow without tick-rate stepping and costs three scalar
-        // spring updates per rendered pet.
         float stiffness = MathHelper.lerp(strength, 55.0F, 27.0F);
         float damping = MathHelper.lerp(strength, 11.0F, 7.0F);
         simulation.x.update(targetX, dt, stiffness, damping);

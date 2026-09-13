@@ -6,46 +6,6 @@ import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.MultiSelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
-/**
- * Replaces vanilla F3 debug overlay with a compact custom layout.
- * Vanilla's overlay dumps ~40 lines on the left and another ~30
- * on the right - useful for chunk debugging but overwhelming for
- * normal play. This module renders a curated, color-coded subset
- * with an optional FPS history bar.
- *
- * <h3>Color semantics</h3>
- * Most lines follow a {@code Name: Value} layout where the name
- * stays gray-blue (label color) and the value picks from a
- * dynamic palette based on what it represents:
- * <ul>
- *   <li>FPS / TPS - tier-colored (green=high, yellow=medium,
- *       red=low). Thresholds match the standalone TPS HUD.</li>
- *   <li>X / Y / Z coords - red / green / blue respectively, the
- *       standard convention BetterF3 / Lunar / vanilla F3 all use
- *       so users instantly read which axis is which.</li>
- *   <li>Memory percentage - tier-colored same as FPS but with
- *       inverted thresholds (high used = red).</li>
- *   <li>Static labels (biome, dimension, server brand) - simple
- *       white value text.</li>
- * </ul>
- * The {@code Color Coding} toggle disables the dynamic recoloring
- * and reverts to a uniform white value text for users who prefer
- * the vanilla-monochrome look.
- *
- * <h3>Backdrop</h3>
- * Each line gets a per-line vanilla-style backdrop using the same
- * {@code GameOptions.getTextBackgroundColor()} call vanilla's chat
- * uses. That way the F3 overlay reads alongside chat at the same
- * visual weight regardless of the user's text-background-opacity
- * preference.
- *
- * <h3>Mixin coupling</h3>
- * {@code DebugHudBetterF3Mixin} cancels vanilla's
- * {@code DebugHud.render(DrawContext)} when this module is on and
- * delegates to {@link BetterF3Renderer#render}. Vanilla's chunk
- * profiler hooks (right column "DimensionType" etc.) are not
- * displayed here.
- */
 public final class BetterF3 extends Module {
     private static final BetterF3 INSTANCE = new BetterF3();
 
@@ -62,17 +22,6 @@ public final class BetterF3 extends Module {
             "Light", "Dimension", "Server", "Memory"
     );
 
-    /** {@code BooleanSetting}-style accessors so the renderer code can
-     *  keep its existing {@code module.showXxx.isValue()} call sites
-     *  unchanged. Each delegates to {@link MultiSelectSetting#getSelected()}.
-     *  Marked private + paired with a tiny inner record for the renderer
-     *  consumers below.
-     *
-     *  <p>{@code showFpsBar} and {@code showTargeted} were removed
-     *  from the picker but the renderer still references them; the
-     *  shims now return a hard {@code false} so the corresponding
-     *  blocks short-circuit out of the F3 overlay entirely.
-     */
     public final BooleanLike showFps = () -> sectionToggles.getSelected().contains("FPS");
     public final BooleanLike showFpsBar = () -> false;
     public final BooleanLike showCoords = () -> sectionToggles.getSelected().contains("Coordinates");
@@ -86,9 +35,6 @@ public final class BetterF3 extends Module {
     public final BooleanLike showSystem = () -> sectionToggles.getSelected().contains("System");
     public final BooleanLike showTargeted = () -> false;
 
-    /** Functional shim mimicking {@link BooleanSetting#isValue()} so all
-     *  the renderer's existing {@code module.showFps.isValue()} call
-     *  sites compile unchanged after the migration to MultiSelect. */
     @FunctionalInterface
     public interface BooleanLike {
         boolean isValue();

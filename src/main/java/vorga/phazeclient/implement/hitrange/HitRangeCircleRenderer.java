@@ -57,17 +57,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Draws the configurable hit-range circle around an entity, in three
- * geometric flavours (line / thick ring / filled disc).
- *
- * <p>Geometry is cached in {@link #angles}; the cache is recomputed
- * whenever a geometry-impacting Phaze setting (radius / thickness /
- * segments / render mode) fires its {@code onChange} - see
- * {@link HitRange}'s constructor wiring. Reading from a pre-computed
- * list keeps the per-frame cost to a tight {@code for} over the
- * segment count, with no per-vertex trig.
- */
 public final class HitRangeCircleRenderer {
     private static final float FILLED_OUTLINE_Y_EPSILON = 0.0015F;
     private static final RenderLayer DEBUG_LINES = makeLayer(VertexFormat.DrawMode.DEBUG_LINES);
@@ -83,12 +72,6 @@ public final class HitRangeCircleRenderer {
     private HitRangeCircleRenderer() {
     }
 
-    /**
-     * Emits the configured circle around the given player state.
-     * Caller must have transformed {@code matrices} to the player's
-     * render position; the renderer only walks the cached angle list
-     * and lays down vertices at {@code (dx, dy, dz)}.
-     */
     public static void drawCircle(MatrixStack matrices, VertexConsumerProvider vertexConsumers, PlayerEntityRenderState state) {
         HitRange config = HitRange.getInstance();
         ClientPlayerEntity player = MinecraftClient.getInstance().player;
@@ -100,24 +83,17 @@ public final class HitRangeCircleRenderer {
 
         int color = config.color.getColor();
         if (config.randomColors.isValue()) {
-            // Hash the display name into an opaque-ARGB color. Same name
-            // -> same color across frames -> visually stable per player.
-            // 1.21.11: PlayerEntityRenderState.name (String) was replaced by
-            // playerName (Text); hash its plain-text form so the derived
-            // color stays identical to the pre-port one for a given name.
+
             color = playerNameHash(state) | 0xFF000000;
         } else if (
                 config.colorWhenInRange.isValue()
                         && state.id != player.getId()
-                        // 1.21.11: Entity.getPos() -> getEntityPos().
+
                         && entityPos.isInRange(player.getEntityPos(), config.radius.getValue())
         ) {
             color = config.inRangeColor.getColor();
         }
 
-        // Sneaking lifts the visual model by 1/8 block; mirror that here
-        // so the ring stays anchored to the visible feet, not the
-        // hitbox feet, when the target is sneaking.
         float dy = (state.sneaking ? 0.125f : 0.0f) + config.height.getValue();
 
         HitRange.Mode mode = config.mode();
@@ -139,12 +115,6 @@ public final class HitRangeCircleRenderer {
         matrices.pop();
     }
 
-    /**
-     * 1.21.11 replacement for the removed {@code PlayerEntityRenderState.name}
-     * String field. Falls back to the generic display name and finally to the
-     * entity id so a missing name still yields a stable, per-player value
-     * instead of an NPE.
-     */
     private static int playerNameHash(PlayerEntityRenderState state) {
         Text name = state.playerName != null ? state.playerName : state.displayName;
         return name != null ? name.getString().hashCode() : state.id;
@@ -164,12 +134,6 @@ public final class HitRangeCircleRenderer {
     private static void drawCircleLines(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
-        // DEBUG_LINES (not DEBUG_LINE_STRIP) so the vertex stream is
-        // pairs of independent line segments. Strip mode connects the
-        // last vertex of one player's ring to the first vertex of the
-        // next player's ring when both render in the same batch,
-        // producing the spurious "cones" that fan out from each player
-        // toward the local player.
         int n = angles.size();
         for (int i = 0; i < n; i++) {
             Angle a = angles.get(i);
@@ -196,14 +160,6 @@ public final class HitRangeCircleRenderer {
     private static void drawCircleTriangles(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
-        // TRIANGLES (not TRIANGLE_FAN) so each disc is independent.
-        // Fan mode shares the first emitted vertex as the pivot for
-        // every subsequent triangle in the entire batch, which means
-        // the second player's first vertex becomes part of triangles
-        // anchored on the FIRST player's centre - the source of the
-        // "cones" the user sees on a server with many ranged rings.
-        // Emitting (centre, A, B) for each segment as an explicit
-        // triangle list makes every disc self-contained and cone-free.
         int n = angles.size();
         for (int i = 0; i < n; i++) {
             Angle a = angles.get(i);
@@ -214,11 +170,6 @@ public final class HitRangeCircleRenderer {
         }
     }
 
-    /**
-     * Rebuilds the cached angle table. Invoked at class load and from
-     * every geometry-impacting setting's {@code onChange} on
-     * {@link HitRange}.
-     */
     public static void computeAngles() {
         angles.clear();
         HitRange config = HitRange.getInstance();
@@ -253,18 +204,6 @@ public final class HitRangeCircleRenderer {
         }
     }
 
-    /**
-     * 1.21.11: {@code RenderPhase} and {@code MultiPhaseParameters} were
-     * removed. The GPU state that used to be assembled from phase objects
-     * (program, transparency, cull, write mask, depth test) now lives on a
-     * {@link RenderPipeline}; lightmap / overlay / layering stayed on the
-     * render-graph side and move to {@link RenderSetup}.
-     *
-     * <p>Same intent as the upstream mod: POSITION_COLOR verts, translucent
-     * blending, depth-tested LEQUAL so the ring is clipped by world
-     * geometry, and the view-offset layering that nudges it forward
-     * fractionally to avoid z-fighting against the ground plane.
-     */
     private static RenderLayer makeLayer(VertexFormat.DrawMode mode) {
         String name = "phaze_hitrange_" + mode.name().toLowerCase(Locale.ROOT);
 
@@ -272,12 +211,7 @@ public final class HitRangeCircleRenderer {
                 .withLocation(Identifier.of("phaze", "pipeline/hitrange_" + mode.name().toLowerCase(Locale.ROOT)))
                 .withVertexShader(Identifier.of("minecraft", "core/position_color"))
                 .withFragmentShader(Identifier.of("minecraft", "core/position_color"))
-                // core/position_color reads both std140 blocks. Vanilla supplies them
-                // through the private RenderPipelines.TRANSFORMS_AND_PROJECTION_SNIPPET,
-                // which is not reachable from a mod, so declare them by hand - the
-                // names must match exactly or the draw renders nothing.
-                // RenderLayer.draw() fills DynamicTransforms via RenderSystem's
-                // DynamicUniforms; Projection is bound globally for the frame.
+
                 .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
                 .withUniform("Projection", UniformType.UNIFORM_BUFFER)
                 .withVertexFormat(VertexFormats.POSITION_COLOR, mode)
@@ -298,11 +232,6 @@ public final class HitRangeCircleRenderer {
                         .build());
     }
 
-    /**
-     * Per-segment cached angle. {@code (dx, dz)} is the on-radius point;
-     * {@code (farDx, farDz)} is the outer-radius point used only by the
-     * THICK render mode (= 0 for LINE / FILLED).
-     */
     private record Angle(float dx, float dz, float farDx, float farDz) {
         Angle(float dx, float dz) {
             this(dx, dz, 0.0f, 0.0f);

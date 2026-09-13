@@ -47,10 +47,6 @@ public class CheckboxComponent extends AbstractSettingComponent {
 
         renderSettingCard(context, activeProgress, hoverProgress);
 
-        // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack. ResetIconComponent.render and
-        // ShapeProperties.create take that 2D pose directly; FontRenderer still wants a
-        // world-style MatrixStack, so promote once per render() and reuse it below.
-        // TODO(1.21.11): drop textPose once FontRenderer takes a Matrix3x2fc directly.
         Matrix3x2fStack matrix = context.getMatrices();
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));

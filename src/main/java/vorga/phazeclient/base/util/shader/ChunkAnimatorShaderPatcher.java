@@ -3,7 +3,6 @@ package vorga.phazeclient.base.util.shader;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Patches Sodium 0.8.x terrain vertices using Sodium's own per-draw timing table. */
 public final class ChunkAnimatorShaderPatcher {
     private static final String PATCH_MARKER = "u_PhazeChunkAnimMode";
 
@@ -42,8 +41,6 @@ public final class ChunkAnimatorShaderPatcher {
     public static String patch(String original) {
         if (original == null || original.contains(PATCH_MARKER)) return original;
 
-        // These tokens uniquely identify Sodium 0.8.x's fully-expanded terrain
-        // vertex shader. Iris or a future Sodium version safely falls through.
         if (!original.contains("_draw_id")
                 || !original.contains("u_chunkFades")
                 || !original.contains("u_CurrentTime")
@@ -62,7 +59,6 @@ public final class ChunkAnimatorShaderPatcher {
         return patched.equals(withUniforms) ? original : patched;
     }
 
-    /** Inserts after #version / preprocessor directives, before declarations. */
     private static int findDeclarationInsertionPoint(String source) {
         int cursor = 0;
         while (cursor < source.length()) {

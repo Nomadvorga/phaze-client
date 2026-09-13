@@ -45,10 +45,7 @@ public class GroupComponent extends AbstractSettingComponent {
         renderSettingCard(context, activeProgress, hoverProgress);
 
         float textX = x + 10 + textOffset;
-        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
-        // draws through a 4x4 MatrixStack, so promote the pose once per row.
-        // Nothing above mutates the GUI pose, so the bake matches 1.21.4 geometry.
-        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));
         labelFont.drawString(textPose, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());

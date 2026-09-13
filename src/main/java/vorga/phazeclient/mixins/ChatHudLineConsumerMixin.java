@@ -12,7 +12,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.hud.ChatHudBadgeRenderAccess;
 import vorga.phazeclient.api.system.hud.ChatMessageAnimationRenderState;
 
-/** Marks the visible line currently being submitted to ChatHud's 1.21.11 backend. */
 @Mixin(targets = "net.minecraft.client.gui.hud.ChatHud$1")
 abstract class ChatHudLineConsumerMixin {
     @Inject(method = "accept(Lnet/minecraft/client/gui/hud/ChatHudLine$Visible;IF)V", at = @At("HEAD"))
@@ -25,11 +24,6 @@ abstract class ChatHudLineConsumerMixin {
         ChatMessageAnimationRenderState.end();
     }
 
-    /**
-     * The text backend stores its own pose. Alter that pose around the exact
-     * text submission, rather than DrawContext's current matrix, so every
-     * glyph (including styled runs) receives the line offset.
-     */
     @WrapOperation(
             method = "accept(Lnet/minecraft/client/gui/hud/ChatHudLine$Visible;IF)V",
             at = @At(

@@ -32,14 +32,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Lightweight cross-server cosmetic presence.
- *
- * <p>The backend stores and pushes only a UUID, catalog id and enabled bit.
- * Models, textures, physics and rendering remain client-side. Initial state is
- * fetched once for the currently loaded player entities; later selection
- * changes arrive over the existing Phaze SSE connection.
- */
 public final class CosmeticsSyncService {
     private static final Logger LOG = LoggerFactory.getLogger("PhazeCosmeticsSync");
     private static final CosmeticsSyncService INSTANCE = new CosmeticsSyncService();
@@ -48,7 +40,7 @@ public final class CosmeticsSyncService {
     private static final int MAX_QUERY_PLAYERS = 200;
     private static final long FALLBACK_REFRESH_MS = 10L * 60L * 1000L;
     private static final String SLOT_SEPARATOR = "|";
-    // Compatibility keys for the pre-Phaze backend protocol.
+
     private static final String LEGACY_SOURCE = "pu" + "lse";
     private static final String LEGACY_REVISIONS_FIELD = LEGACY_SOURCE + "Revisions";
 
@@ -84,7 +76,6 @@ public final class CosmeticsSyncService {
         return INSTANCE;
     }
 
-    /** Called from the regular client tick; it never performs network I/O. */
     public void tick(MinecraftClient client) {
         if (client == null || client.player == null || client.world == null
                 || client.getNetworkHandler() == null) {
@@ -138,22 +129,16 @@ public final class CosmeticsSyncService {
         }
     }
 
-    /**
-     * Coalesces setSelected + setEquipped into one write. A quick series of UI
-     * clicks replaces the pending task instead of producing one request each.
-     */
     public synchronized void publishLocalState() {
         if (pendingPublish != null) pendingPublish.cancel(false);
         pendingPublish = io.schedule(this::postLocalState, 120L, TimeUnit.MILLISECONDS);
     }
 
-    /** Used after SSE reconnect/hello to repair any event missed while offline. */
     public void requestRefresh() {
         forceRefresh = true;
         lastGraffitiQueryMs = 0L;
     }
 
-    /** Applies an immediate cosmetic SSE event. */
     public void acceptEvent(JsonObject event) {
         try {
             UUID uuid = UUID.fromString(event.get("playerUuid").getAsString());
@@ -172,7 +157,6 @@ public final class CosmeticsSyncService {
         }
     }
 
-    /** Applies Phaze Cosmetics' separate SSE namespace without affecting Phaze state. */
     public void acceptPhazeEvent(JsonObject event) {
         try {
             notePhazeRevision(event, false);
@@ -552,7 +536,7 @@ public final class CosmeticsSyncService {
                     updatedAt
             );
         }
-        // Backward compatibility with states written by 1.0 clients.
+
         boolean cape = CosmeticsState.isCape(raw);
         return new RemoteCosmetic(
                 cape ? CosmeticsState.NONE : raw,

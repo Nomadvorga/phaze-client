@@ -22,25 +22,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
-/**
- * Optional, reflection-backed bridge for Exordium 1.4.x.
- *
- * <p>Exordium already does the expensive part well: it renders each vanilla
- * HUD component into a framebuffer only when its data changes. The problem is
- * that a cached component's vanilla render method is skipped, so animations
- * implemented inside that method advance only at Exordium's component FPS.
- *
- * <p>This bridge keeps Exordium's framebuffer and invalidation logic intact.
- * During an active animation it removes only the affected cached component
- * from Exordium's multi-texture batch and draws that already-built texture with
- * a live transform. No player-list rebuilding, item rendering, text layout, or
- * chat wrapping is repeated per display frame.
- *
- * <p>There is intentionally no compile-time dependency on Exordium. All
- * external objects enter through optional pseudo-mixins and private fields are
- * resolved once. Without Exordium installed this class is just a few inert
- * state setters.
- */
 public final class ExordiumAnimationBridge {
     public static final String HOTBAR = "minecraft:hotbar";
     public static final String PLAYER_LIST = "minecraft:player_list";
@@ -158,11 +139,6 @@ public final class ExordiumAnimationBridge {
         }
     }
 
-    /**
-     * Called at BufferInstance#renderBuffer HEAD. Registers a one-shot update
-     * listener and releases Exordium's pacing cooldown only when Phaze needs a
-     * clean, unanimated source texture.
-     */
     public static void beforeBufferRender(Object instance, DrawContext context) {
         if (instance == null || reflectionFailed) {
             return;
@@ -208,11 +184,6 @@ public final class ExordiumAnimationBridge {
         }
     }
 
-    /**
-     * Called at BufferInstance#renderBuffer RETURN. A false return is not
-     * sufficient to identify capture (disabled components also return false),
-     * so the real private isCapturing flag is sampled.
-     */
     public static void afterBufferRender(Object instance) {
         if (instance == null || reflectionFailed) {
             return;
@@ -226,9 +197,7 @@ public final class ExordiumAnimationBridge {
             if (id == null) {
                 id = readId(instance);
             }
-            // A screen-size change can force capture before Exordium evaluates
-            // update listeners. Consume the one-shot here as well so the next
-            // frame does not perform a redundant second capture.
+
             FORCE_CAPTURE.remove(id);
             CAPTURING.set(id);
             if (HOTBAR.equals(id)) {
@@ -273,23 +242,13 @@ public final class ExordiumAnimationBridge {
         return isCapturing(CHAT) && lastChatAnimationEnabled;
     }
 
-    /**
-     * Called from BufferedComponent#renderBuffer HEAD. Returning true removes
-     * this one cached texture from Exordium's delayed multi-texture batch; it
-     * will be drawn after that batch with a live transform.
-     */
     public static boolean deferBufferedComponent(Object buffer) {
         String id = COMPONENT_BY_BUFFER.get(buffer);
         if (id == null) {
             return false;
         }
         if (SCOREBOARD.equals(id) && shouldSuppressVanillaScoreboard()) {
-            // Exordium can serve an older cached vanilla sidebar without
-            // entering InGameHud#renderScoreboardSidebar, so the regular
-            // cancellable mixin never gets a chance to hide it. Dropping just
-            // this cached component keeps the custom Phaze scoreboard as the
-            // only visible sidebar while every other Exordium buffer remains
-            // batched normally.
+
             return true;
         }
 
@@ -313,17 +272,12 @@ public final class ExordiumAnimationBridge {
         return defer;
     }
 
-    /**
-     * Called after Exordium has drawn its normal batch. Only cached textures
-     * collected by {@link #deferBufferedComponent(Object)} are submitted.
-     */
     public static void renderDeferredComponents() {
         DrawContext context = frameContext;
         if (context == null || DEFERRED.isEmpty() || reflectionFailed) {
             DEFERRED.clear();
             return;
         }
-
 
         try {
             for (Map.Entry<Object, String> entry : DEFERRED.entrySet()) {
@@ -346,18 +300,10 @@ public final class ExordiumAnimationBridge {
             }
         } finally {
             DEFERRED.clear();
-            // This hook runs immediately before Exordium's own
-            // MultiStateHolder#apply. Let that captured state restore
-            // blend/depth exactly as they were before the delayed HUD pass.
-            // Unconditionally disabling blend here poisoned the next
-            // component capture and baked opaque black TAB/chat backgrounds
-            // into their cached framebuffers.
+
         }
     }
 
-    // 1.21.11: DrawContext.drawGuiTexture takes a RenderPipeline; the
-    // Function<Identifier, RenderLayer> overload is gone, so the captured
-    // selector now carries the pipeline InGameHud used for that sprite.
     public static void recordHotbarSelection(
             RenderPipeline pipeline,
             Identifier texture,
@@ -383,12 +329,7 @@ public final class ExordiumAnimationBridge {
                 screenHeight
         );
         Rect clip = new Rect(hotbarLeft, screenHeight - 22.0F, hotbarLeft + 182.0F, screenHeight);
-        // Keep an absolute slot-zero origin. The cached selector may have
-        // been captured for the previous selected slot because Exordium
-        // intentionally rate-limits hotbar refreshes. Applying
-        // (current-target) to that stale X causes a one-frame jump in the
-        // wrong direction. The slot-zero origin stays valid across selection
-        // changes, so only Phaze's display-FPS animation position is added.
+
         int baseX = x - Math.round(hotbarTargetSlotX);
         hotbarSelector = new HotbarSelector(pipeline, texture, baseX, y, width, height, component, clip);
     }
@@ -522,12 +463,6 @@ public final class ExordiumAnimationBridge {
                 || animations.currentTabAlpha() < 0.999F;
     }
 
-    /**
-     * Draws the already-captured Exordium player-list texture during Phaze's
-     * close animation. This avoids calling PlayerListHud#render every display
-     * frame after the key is released, which is especially expensive on
-     * servers with large player lists.
-     */
     public static boolean renderClosingPlayerListFromCache() {
         DrawContext context = frameContext;
         Object buffer = playerListBuffer;
@@ -553,9 +488,7 @@ public final class ExordiumAnimationBridge {
             renderPlayerList(context, texture);
             return true;
         } finally {
-            // Player-list close can run outside Exordium's delayed pass.
-            // Leave GUI blending enabled for subsequent HUD captures instead
-            // of leaking a disabled blend state into the next frame.
+
         }
     }
 
@@ -591,15 +524,6 @@ public final class ExordiumAnimationBridge {
                 new Rect(clippedHole.right, clippedHole.top, component.right, clippedHole.bottom));
     }
 
-    /**
-     * Uses Exordium's own full-screen model and shader for transformed cache
-     * draws. Its framebuffer textures are authored for that exact
-     * premultiplied-alpha path. Sampling a cropped quad with Minecraft's
-     * generic POSITION_TEX_COLOR program made the transparent clear area
-     * behave as opaque black on some drivers, which was visible while TAB or
-     * a new chat row was moving. Scissoring the proven Exordium pass keeps the
-     * cached rendering and only changes its display transform.
-     */
     private static void drawExordiumTextureClipped(
             DrawContext context,
             int texture,
@@ -610,10 +534,7 @@ public final class ExordiumAnimationBridge {
         if (clip == null || clip.isEmpty() || alpha <= 0.001F) {
             return;
         }
-        // 1.21.11: DrawContext.enableScissor now transforms its rect by the
-        // context pose. These clip rects are already in screen space (they came
-        // out of transformRect), so this stays correct only while the pose is
-        // identity - which it is at Exordium's delayed-batch hook.
+
         context.enableScissor(
                 (int) Math.floor(clip.left),
                 (int) Math.floor(clip.top),
@@ -640,14 +561,6 @@ public final class ExordiumAnimationBridge {
                 return;
             }
 
-            // TODO(1.21.11): loose shader uniforms were removed. The objects are
-            // no longer typed as ShaderProgram/GlUniform here because
-            // net.minecraft.client.gl.GlUniform is now a bare marker interface
-            // with no set(...) - per-draw values live in a std140 block owned by
-            // the RenderPipeline. Exordium's own texture-count handle is still
-            // poked reflectively when its 1.21.11 build exposes a set(int); when
-            // it does not, the draw runs with whatever count the shader manager
-            // already had bound (Exordium binds 1 for a single cached component).
             setExordiumTextureCount(uniformObject, 1);
             exordiumModelDrawMethod.invoke(model, matrix);
         } catch (Throwable ignored) {
@@ -665,9 +578,7 @@ public final class ExordiumAnimationBridge {
             }
             exordiumTextureCountSetMethod.invoke(uniform, count);
         } catch (Throwable ignored) {
-            // Non-fatal: only the texture count is missing, the cached draw is
-            // still valid. Latch so the lookup is not retried every frame, and
-            // deliberately do NOT set reflectionFailed.
+
             textureCountSetUnavailable = true;
         }
     }

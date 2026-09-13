@@ -55,10 +55,10 @@ public final class MenuProfileManager implements QuickImports {
 
         loadProfilesFromDisk();
         loadActiveProfile();
-        
+
         System.out.println("[MenuProfileManager] Loaded profiles: " + profiles);
         System.out.println("[MenuProfileManager] Active profile before check: " + activeProfile);
-        
+
         if (profiles.isEmpty()) {
             profiles.add(DEFAULT_PROFILE_NAME);
             activeProfile = DEFAULT_PROFILE_NAME;
@@ -198,12 +198,10 @@ public final class MenuProfileManager implements QuickImports {
             return false;
         }
 
-        // Prevent deletion of DEFAULT profile
         if (existing.equalsIgnoreCase(DEFAULT_PROFILE_NAME)) {
             return false;
         }
 
-        // Prevent deletion of active profile
         if (activeProfile != null && activeProfile.equalsIgnoreCase(existing)) {
             return false;
         }

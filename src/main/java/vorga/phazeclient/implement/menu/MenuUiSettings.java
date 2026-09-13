@@ -8,7 +8,7 @@ import vorga.phazeclient.implement.config.ConfigManager;
 public final class MenuUiSettings {
     public static final int PANORAMA_SPEED_SCALE_VERSION = 3;
     public static final double DEFAULT_PANORAMA_SPEED = 10.0D;
-    public static final int DEFAULT_GUI_FPS_LIMIT = 60;
+    public static final int DEFAULT_GUI_FPS_LIMIT = 240;
     public static final int MIN_GUI_FPS_LIMIT = 10;
     public static final int MAX_GUI_FPS_LIMIT = 260;
     public static final float DEFAULT_GUI_SCALE = 1.0F;

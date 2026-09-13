@@ -54,7 +54,7 @@ public abstract class AbstractWindow extends AbstractComponent {
         }
         return false;
     }
-    
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         if (dragging && draggable) {
@@ -69,9 +69,7 @@ public abstract class AbstractWindow extends AbstractComponent {
 
         float scale = scaleAnimation.getOutputFloat();
         float alpha = alphaAnimation.getOutputFloat();
-        // 1.21.11: the GUI pose is a 2D Matrix3x2fStack and every GUI pipeline is NO_DEPTH_TEST,
-        // so the old translate z=280 tier cannot exist. Windows instead open their own root layer,
-        // which keeps them above everything the menu submitted before them.
+
         context.createNewRootLayer();
         context.getMatrices().pushMatrix();
         MathUtil.scale(context.getMatrices(), x + width / 2, y + height / 2, scale, () -> {

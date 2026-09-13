@@ -85,8 +85,6 @@ final class PhazeSourceModel {
     String chooseAnimation(boolean gliding, boolean swimming, boolean sneaking, boolean moving) {
         if (animations.isEmpty()) return null;
 
-        // Phaze contains several naming generations. Prefer a state-specific
-        // variant first, then the generic animation for that state.
         if (gliding) {
             String s = find("elytra", "flying", "fly");
             if (s != null) return s;

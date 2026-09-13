@@ -41,18 +41,11 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
 
 public final class HitRange extends Module {
-    /**
-     * Decoupled from the {@code Render Mode} {@link SelectSetting}
-     * string so the renderer doesn't have to know about localisation.
-     */
+
     public enum Mode { LINE, THICK, FILLED }
 
     private static final HitRange INSTANCE = new HitRange();
 
-    // ---------- Appearance ----------
-    // What the circle looks like geometrically: how big, what shape,
-    // how thick, how high. The most-tweaked block of settings, kept
-    // first so the user lands on it when opening the module.
     public final SectionSetting appearanceSection = new SectionSetting("Appearance");
     public final ValueSetting radius = new ValueSetting(
             "Radius",
@@ -71,10 +64,6 @@ public final class HitRange extends Module {
             "Vertical offset above the entity's feet, in blocks. 0 sits flat on the ground."
     ).range(0.0f, 5.0f).step(0.01f).setValue(0.0f);
 
-    // ---------- Targeting ----------
-    // Who the circle is drawn AROUND - ranks above colors because
-    // there's no point picking the perfect colour if you don't
-    // actually see the rings on the entities you care about.
     public final SectionSetting targetingSection = new SectionSetting("Targeting");
     public final BooleanSetting nearestOnly = new BooleanSetting(
             "Nearest Only",
@@ -93,7 +82,6 @@ public final class HitRange extends Module {
             "Skip drawing for entities farther than this many blocks (culling)."
     ).range(1, 200).step(1.0f).setValue(100);
 
-    // ---------- Colors ----------
     public final SectionSetting colorsSection = new SectionSetting("Colors");
     public final ColorSetting color = new ColorSetting(
             "Color",
@@ -118,21 +106,12 @@ public final class HitRange extends Module {
             "Hash each player's display name into a stable random color (overrides Color / In Range Color)."
     ).setValue(false);
 
-    // ---------- Advanced ----------
     public final SectionSetting advancedSection = new SectionSetting("Advanced");
     public final ValueSetting circleSegments = new ValueSetting(
             "Circle Segments",
             "Polygon edge count of the circle. Lower = more polygonal, higher = smoother."
     ).range(5, 180).step(1.0f).setValue(60);
 
-    /**
-     * Result of the most recent {@code World#getClosestPlayer} call from
-     * the per-tick nearest-tracking mixin. Read by the per-entity render
-     * inject to skip every non-nearest player when {@link #nearestOnly}
-     * is on. Volatile-free because the value is only read on the render
-     * thread and only written on the client thread, and the render path
-     * runs strictly after the tick path.
-     */
     private PlayerEntity nearest;
 
     private HitRange() {
@@ -140,8 +119,7 @@ public final class HitRange extends Module {
 
         radius.setFullWidth(true);
         renderMode.setFullWidth(true);
-        // Thickness is meaningful only in THICK mode - hide it in
-        // Line / Filled to keep the panel clean.
+
         thickness.setFullWidth(true);
         thickness.visible(() -> "Thick".equals(renderMode.getSelected()));
         height.setFullWidth(true);
@@ -149,12 +127,10 @@ public final class HitRange extends Module {
         showSelf.setFullWidth(true);
 
         color.setFullWidth(true);
-        // Static color is irrelevant when Random Colors hijacks every
-        // entity's color from the name hash.
+
         color.visible(() -> !randomColors.isValue());
         inRangeColor.setFullWidth(true);
-        // In Range Color is only consulted when Color When In Range is
-        // on AND Random Colors is off.
+
         inRangeColor.visible(() -> colorWhenInRange.isValue() && !randomColors.isValue());
         outlineOpacity.setFullWidth(true);
         outlineOpacity.visible(() -> mode() == Mode.FILLED);
@@ -164,14 +140,10 @@ public final class HitRange extends Module {
 
         circleSegments.setFullWidth(true);
         maxSearchDistance.setFullWidth(true);
-        // Max Search Distance is the cap for the nearest-player query;
-        // it has no observable effect unless Nearest Only is on.
+
         maxSearchDistance.visible(nearestOnly::isValue);
         maxDistance.setFullWidth(true);
 
-        // Every geometry-impacting setting punts to the same recompute.
-        // Color / boolean settings are read fresh each frame and don't
-        // need cached-angle invalidation.
         radius.onChange(v -> HitRangeCircleRenderer.computeAngles());
         thickness.onChange(v -> HitRangeCircleRenderer.computeAngles());
         circleSegments.onChange(v -> HitRangeCircleRenderer.computeAngles());
@@ -189,11 +161,6 @@ public final class HitRange extends Module {
         return INSTANCE;
     }
 
-    /**
-     * Resolves the localised {@link #renderMode} {@code SelectSetting}
-     * value into the renderer-friendly enum so the renderer never has
-     * to know what label the dropdown is currently showing.
-     */
     public Mode mode() {
         return switch (renderMode.getSelected()) {
             case "Line" -> Mode.LINE;

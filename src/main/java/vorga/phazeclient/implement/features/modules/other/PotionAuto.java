@@ -88,26 +88,26 @@ public final class PotionAuto extends Module {
 
     public void tick() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        
+
         if (drinkState != DrinkState.IDLE) {
             if (!isEnabled() || mc.player == null || mc.world == null || mc.interactionManager == null) {
                 cancelCurrentDrink();
                 return;
             }
-            
+
             if (mc.currentScreen != null) {
                 cancelCurrentDrink();
                 return;
             }
-            
+
             tickActiveDrink();
             return;
         }
-        
+
         if (!isEnabled()) {
             return;
         }
-        
+
         if (mc.player == null || mc.world == null || mc.interactionManager == null) {
             return;
         }
@@ -133,11 +133,11 @@ public final class PotionAuto extends Module {
 
         startDrinking(potionType, potionSlot, now);
     }
-    
+
     public boolean isDrinking() {
         return drinkState != DrinkState.IDLE;
     }
-    
+
     public int getLockedHotbarSlot() {
         return activeHotbarSlot;
     }
@@ -190,7 +190,7 @@ public final class PotionAuto extends Module {
 
     private void startDrinking(PotionType potionType, PotionSlot potionSlot, long now) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        // 1.21.11: PlayerInventory.selectedSlot is private -> getSelectedSlot()/setSelectedSlot(int)
+
         originalSelectedSlot = mc.player.getInventory().getSelectedSlot();
         activeHotbarSlot = potionSlot.hotbarSlot() ? potionSlot.hotbarIndex() : originalSelectedSlot;
         sourceScreenSlot = potionSlot.hotbarSlot() ? -1 : potionSlot.screenSlotId();

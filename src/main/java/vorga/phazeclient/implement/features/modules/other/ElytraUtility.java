@@ -21,10 +21,6 @@ import vorga.phazeclient.base.util.ServerUtil;
 
 import java.lang.reflect.Method;
 
-/**
- * Quick-swap chestplate <-> elytra utility. Triggered by a dedicated keybind
- * (default R). Restricted to the supported FunTime-family servers and singleplayer.
- */
 public final class ElytraUtility extends Module {
     private static final ElytraUtility INSTANCE = new ElytraUtility();
     private static final int CHEST_SLOT_ID = 6;
@@ -39,8 +35,7 @@ public final class ElytraUtility extends Module {
     private long lastActionMs;
 
     private ElytraUtility() {
-        // Internal id stays as "elytrautility" so existing user configs that
-        // reference the module by id continue to load without migration.
+
         super("elytrautility", "Elytra Swap", ModuleCategory.UTILITIES);
         keybind.setFullWidth(true);
         setup(generalSection, keybind);
@@ -75,16 +70,12 @@ public final class ElytraUtility extends Module {
         return ServerUtil.isElytraUtilitySupported();
     }
 
-    /**
-     * Called by the keyboard mixin when a key is pressed/released.
-     */
     public void onBindStateChanged(int code, int action) {
         if (!isEnabled() || action != GLFW.GLFW_PRESS) {
             return;
         }
         MinecraftClient mc = MinecraftClient.getInstance();
-        // Allow ElytraSwap inside Creative inventory. For all other
-        // screens keep the old guard to avoid accidental swaps in UI.
+
         if (mc.currentScreen != null && !(mc.currentScreen instanceof CreativeInventoryScreen)) {
             return;
         }
@@ -156,8 +147,7 @@ public final class ElytraUtility extends Module {
                     }
                 }
             } catch (Throwable ignored) {
-                // Fail-safe: if mappings/mods change this method, we still
-                // continue with swap attempt instead of hard-failing.
+
             }
         }
     }

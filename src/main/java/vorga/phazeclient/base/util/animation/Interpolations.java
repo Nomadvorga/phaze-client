@@ -161,17 +161,6 @@ public class Interpolations {
         }
     };
 
-    /**
-     * Sentinel name reserved for the per-module legacy behaviour. The
-     * {@link #getByName(String)} switch maps it to {@link #LINEAR}
-     * because that's the safe identity transform (consumers that
-     * receive {@code Default} unrecognised still get a sensible
-     * pass-through), but modules that had a non-linear pre-
-     * interpolation behaviour (eg exp-decay tab / F5) recognise this
-     * name BEFORE calling {@code getByName} and short-circuit to their
-     * legacy code path instead. See Animations.tickTabSlide /
-     * Animations.tickSmoothF5 for the actual decoding.
-     */
     public static final String DEFAULT_NAME = "Default";
 
     public static Interpolation getByName(String name) {
@@ -193,9 +182,7 @@ public class Interpolations {
     }
 
     public static String[] getAllNames() {
-        // "Default" listed first so the dropdown opens on the safe,
-        // pre-interpolation behaviour by convention. Modules use this
-        // exact name to detect "no easing curve, use legacy path".
+
         return new String[]{
             "Default",
             "Linear", "Smooth", "Fast", "Balanced",

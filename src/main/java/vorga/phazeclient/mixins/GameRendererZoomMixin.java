@@ -18,10 +18,22 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.base.util.animation.Interpolation;
 import vorga.phazeclient.base.util.animation.Interpolations;
+import vorga.phazeclient.api.system.shape.implement.Blur;
+import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 
 @Mixin(GameRenderer.class)
 public abstract class GameRendererZoomMixin {
+
+    @Inject(method = "renderWorld", at = @At("HEAD"))
+    private void phaze$beginNametagBlurFrame(RenderTickCounter tickCounter, CallbackInfo ci) {
+        NametagHud nametag = NametagHud.getInstance();
+        boolean blurEnabled = nametag != null
+                && nametag.isEnabled()
+                && nametag.background.isValue()
+                && nametag.backgroundBlurRadius.getValue() > 0.0F;
+        Blur.INSTANCE.beginWorldSpaceFrame(blurEnabled);
+    }
 
     @Unique
     private static double zoom$lastZoomDivisor = 1;
@@ -30,34 +42,16 @@ public abstract class GameRendererZoomMixin {
     @Unique
     private static boolean zoom$isZoomingIn = false;
 
-    /** Animation start point captured the moment a transition flips
-     *  direction. Used by the eased branch to lerp between this and
-     *  the live target through the configured curve. The legacy
-     *  Default branch ignores this field entirely - it falls back to
-     *  the original exponential-approach formula that was in place
-     *  before any easing options existed. */
     @Unique
     private static double zoom$animStart = 1.0;
     @Unique
     private static long zoom$animStartedAtMs = 0L;
-    /** Last target the eased branch was animating toward. Tracked
-     *  so we can detect mid-zoom target changes (the player is
-     *  scrolling the wheel to dial zoom in/out further) and restart
-     *  the easing curve from the current divisor toward the new
-     *  target. Without this, scrolling during an active zoom would
-     *  snap instantly because t was already at 1.0 from the
-     *  previous animation completion. */
+
     @Unique
     private static double zoom$lastTarget = 1.0;
 
     @ModifyVariable(method = "getFov", at = @At(value = "RETURN", shift = At.Shift.BEFORE), ordinal = 1)
     private float injectZoom(float fov) {
-        // No GUI early-return: when a screen opens we DO want the
-        // unzoom animation to play out via the normal targetZoom=1
-        // path. Releasing the bind on GUI open is handled in
-        // {@link ScreenOpenMixin} which flips {@link Zoom#zoomActive}
-        // off, so the rest of this method already drives the
-        // zoom-out curve correctly.
 
         float targetZoom;
 
@@ -89,10 +83,6 @@ public abstract class GameRendererZoomMixin {
             directionFlipped = true;
         }
 
-        // Mid-zoom target change (scroll wheel adjustment): restart
-        // the eased animation from the current visible position
-        // toward the new target. Tolerance keeps frame-to-frame FP
-        // jitter from triggering a needless restart.
         boolean targetChanged = active
                 && Math.abs(targetZoom - zoom$lastTarget) > 0.001;
 
@@ -107,9 +97,7 @@ public abstract class GameRendererZoomMixin {
                 : Zoom.getInstance().getZoomOutInterpolation();
 
         if (Interpolations.DEFAULT_NAME.equals(curve)) {
-            // Legacy "exponential approach" branch - matches the
-            // pre-interpolations behaviour byte-for-byte. The user
-            // explicitly asked for Default to be the original feel.
+
             float duration = zoom$isZoomingIn
                     ? Zoom.getInstance().getZoomInDuration()
                     : Zoom.getInstance().getZoomOutDuration();
@@ -128,22 +116,7 @@ public abstract class GameRendererZoomMixin {
             }
             zoom$lastZoomDivisor += 0.45 * (targetZoom - zoom$lastZoomDivisor) * zoom$frameStep(animationSpeed);
         } else {
-            // Time-based eased branch. Progress runs 0..1 through
-            // the configured easing curve; the lerp is on the
-            // divisor (not the FOV) so animations across different
-            // zoom levels feel consistent.
-            //
-            // <p>Perceived-duration matching: the legacy Default
-            // branch uses duration as an exponential-approach
-            // coefficient that hits ~95% of the target in roughly
-            // {@code duration * 0.35} seconds, not the full
-            // duration itself. Without scaling, switching from
-            // Default to any other curve would feel ~3x slower for
-            // the same slider value, which the user reported as
-            // "интерполяция увеличивает время зума". The 0.35
-            // factor was eyeballed against the Default curve and
-            // gives a near-identical feel at matching duration
-            // values.
+
             float duration = zoom$isZoomingIn
                     ? Zoom.getInstance().getZoomInDuration()
                     : Zoom.getInstance().getZoomOutDuration();
@@ -168,14 +141,12 @@ public abstract class GameRendererZoomMixin {
 
     @Inject(method = "render", at = @At("RETURN"))
     private void onRender(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
-        // Smooth transition handled in injectZoom
+
     }
 
     @Unique
     private static float zoom$frameStep(float animationSpeed) {
-        // 1.21.11: RenderTickCounter.getLastFrameDuration() was renamed to
-        // getDynamicDeltaTicks() - same value (ticks elapsed since the last
-        // frame), so the animation timing is unchanged.
+
         return MinecraftClient.getInstance().getRenderTickCounter().getDynamicDeltaTicks() * animationSpeed;
     }
 }

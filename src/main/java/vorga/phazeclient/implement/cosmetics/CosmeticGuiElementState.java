@@ -4,7 +4,6 @@ import net.minecraft.client.gui.ScreenRect;
 import net.minecraft.client.gui.render.state.special.SpecialGuiElementRenderState;
 import org.joml.Matrix3x2f;
 
-/** Deferred 3D catalog thumbnail submitted to the 1.21.11 GUI renderer. */
 public record CosmeticGuiElementState(
         String selection,
         int x1,

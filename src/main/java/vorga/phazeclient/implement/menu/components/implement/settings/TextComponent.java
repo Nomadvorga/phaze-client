@@ -22,12 +22,7 @@ import vorga.phazeclient.implement.menu.MenuStyle;
 
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class TextComponent extends AbstractSettingComponent {
-    /** Globally-incrementing activation counter. Each click on a
-     *  TextComponent bumps {@link #ACTIVE_TEXT_COMPONENT_ID} and
-     *  records the new value into {@link #myActivationId}. The
-     *  render path then drops focus when our id no longer matches
-     *  the latest, which gives the "only one input typing at a time"
-     *  contract without an explicit sibling list. */
+
     static int ACTIVE_TEXT_COMPONENT_ID = 0;
     int myActivationId = -1;
 
@@ -53,10 +48,6 @@ public class TextComponent extends AbstractSettingComponent {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
 
-        // Drop focus if a different TextComponent has been clicked
-        // since we last claimed focus. Single global counter, so
-        // the most recently clicked input is always the one whose
-        // myActivationId == ACTIVE_TEXT_COMPONENT_ID.
         if (typing && myActivationId != ACTIVE_TEXT_COMPONENT_ID) {
             typing = false;
             dragging = false;
@@ -69,13 +60,7 @@ public class TextComponent extends AbstractSettingComponent {
         float textOffset = animatedTextOffset(isModified);
 
         Matrix3x2fStack matrix = context.getMatrices();
-        // 1.21.11: DrawContext.getMatrices() is a Matrix3x2fStack, but FontRenderer still
-        // consumes a world-style MatrixStack. Bake the GUI pose into one MatrixStack per
-        // render() and feed that to every drawString below - identical geometry, one
-        // promotion instead of one per glyph run. Nothing in this method mutates the GUI
-        // pose (ShapeProperties.create copies it, ScissorManager only reads it), so a
-        // single bake at the top stays valid for the whole frame.
-        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
 
@@ -86,10 +71,6 @@ public class TextComponent extends AbstractSettingComponent {
         height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
-        // Dynamic cursor: the input rect inside this component is a
-        // text input, request the I-beam while the pointer is over
-        // that specific rectangle (or while typing). The end-of-frame
-        // commit lives in ScreenCursorMixin.
         boolean overInputRect = MathUtil.isHovered(mouseX, mouseY,
                 x + width - 61.5F, y + height / 2.0F - 6.0F, 53.0F, 12.0F);
         if (overInputRect || typing) {
@@ -109,20 +90,11 @@ public class TextComponent extends AbstractSettingComponent {
                 .color(MenuStyle.withAlpha(MenuStyle.PANEL_CHIP, currentAlpha))
                 .build());
 
-        // 1.21.11: ResetIconComponent.render() now takes the GUI pose (Matrix3x2fc) directly -
-        // it only feeds ShapeProperties.create, which is Matrix3x2fc-based since the port.
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context);
 
         float textX = x + 10 + textOffset;
         labelFont.drawString(textPose, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
 
-        // Drag-to-move-cursor: ONLY the component that was clicked
-        // first holds the {@link #dragging} flag (set inside
-        // mouseClicked + mouseDragged). Other components reset their
-        // own flag to false in mouseDragged when they didn't
-        // actually receive the press, so a single drag gesture only
-        // ever updates one input's cursor. Mouse-released clears
-        // the flag.
         if (dragging) {
             cursorPosition = getCursorIndexAt(mouseX);
             if (selectionStart == -1) selectionStart = cursorPosition;
@@ -136,16 +108,6 @@ public class TextComponent extends AbstractSettingComponent {
         float cursorTop = inputTextY - 2.5F;
         float cursorHeight = Math.max(7.0F, renderedTextHeight(font, "I"));
 
-        // Scissor-clip everything we draw inside the input box so
-        // text + cursor + selection never bleed outside the rect
-        // when the cursor walks past the right edge. Use the
-        // stack-based {@link ScissorManager} (push/pop) instead of
-        // {@code DrawContext.enableScissor} - the DrawContext API
-        // calls {@code RenderSystem.disableScissorForRenderTypeDraws()} on disable
-        // which would clobber the parent panel's clip and let
-        // sibling rows render past the panel boundary. Stack
-        // intersection guarantees the input box never escapes the
-        // already-clipped panel band.
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
         scissorManager.push(GuiMatrix.mat4(matrix),
                 rectX + 1, rectY + 1, rectWidth - 2, rectHeight - 2);
@@ -158,10 +120,6 @@ public class TextComponent extends AbstractSettingComponent {
                 float selectionXEnd = rectX + 3 - xOffset + font.getStringWidth(text.substring(0, end));
                 float selectionWidth = selectionXEnd - selectionXStart;
 
-                // Center the highlight on the rect itself; using
-                // the baseline-shifted {@code cursorTop} pinned the
-                // band low because baselines aren't symmetric in
-                // the rect's line box.
                 float selSelH = Math.max(8.0F, cursorHeight + 2.0F);
                 float selSelY = rectY + (rectHeight - selSelH) * 0.5F;
                 rectangle.render(ShapeProperties.create(matrix, selectionXStart, selSelY, selectionWidth, selSelH)
@@ -190,22 +148,15 @@ public class TextComponent extends AbstractSettingComponent {
         scissorManager.pop();
     }
 
-
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        // Only continue drag if THIS component is the one whose
-        // input rect originally received the mousedown. Without
-        // this every visible TextComponent would treat every
-        // dragged mouse motion as an in-progress text selection,
-        // so dragging text in one input would also slide cursor
-        // in every other input on the same module.
+
         if (!dragging) {
             return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
-    
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0 && resetIcon.isHovered(mouseX, mouseY)) {
@@ -219,13 +170,7 @@ public class TextComponent extends AbstractSettingComponent {
         boolean insideRect = MathUtil.isHovered(mouseX, mouseY, rectX, rectY, rectWidth, rectHeight);
         if (insideRect && button == 0) {
             playButtonClickSound();
-            // Tell every OTHER text component to drop focus before
-            // we claim it. Otherwise a fresh click on input B while
-            // input A is still {@code typing} leaves both flagged
-            // typing=true and char input goes into both at once.
-            // Implemented as a static notification because
-            // AbstractSettingComponent doesn't expose a sibling-
-            // iteration API.
+
             ACTIVE_TEXT_COMPONENT_ID++;
             myActivationId = ACTIVE_TEXT_COMPONENT_ID;
             long currentTime = System.currentTimeMillis();
@@ -242,9 +187,7 @@ public class TextComponent extends AbstractSettingComponent {
             }
             return true;
         } else {
-            // Click landed outside our input rect. Drop focus AND
-            // any selection so the next char-typed event doesn't
-            // hit a stale typing=true.
+
             typing = false;
             dragging = false;
             clearSelection();
@@ -280,15 +223,10 @@ public class TextComponent extends AbstractSettingComponent {
         return super.charTyped(chr, modifiers);
     }
 
-    
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (typing) {
-            // 1.21.11: Screen.hasControlDown()/hasShiftDown() were removed - modifier
-            // state now travels with the event instead of being polled from the window.
-            // net.minecraft.client.input.KeyInput(key, scancode, modifiers) wraps the
-            // triple and its hasCtrlOrCmd() keeps the old Screen.hasControlDown()
-            // semantics (Cmd on macOS, Ctrl elsewhere) that the polling helper had.
+
             KeyInput input = new KeyInput(keyCode, scanCode, modifiers);
             if (input.hasCtrlOrCmd()) switch (keyCode) {
                 case GLFW.GLFW_KEY_A -> selectAllText();
@@ -303,7 +241,6 @@ public class TextComponent extends AbstractSettingComponent {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-
     private void pasteFromClipboard() {
         String clipboardText = GLFW.glfwGetClipboardString(window().getHandle());
         if (clipboardText != null) {
@@ -311,20 +248,17 @@ public class TextComponent extends AbstractSettingComponent {
         }
     }
 
-
     private void copyToClipboard() {
         if (hasSelection()) {
             GLFW.glfwSetClipboardString(window().getHandle(), getSelectedText());
         }
     }
 
-
     private void selectAllText() {
         selectionStart = 0;
         selectionEnd = text.length();
     }
 
-    
     private void handleTextModification(int keyCode) {
         if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
             if (hasSelection()) {
@@ -340,9 +274,6 @@ public class TextComponent extends AbstractSettingComponent {
         }
     }
 
-    
-    // 1.21.11: shift state is threaded down from the KeyInput of the event that
-    // triggered the move, because Screen.hasShiftDown() (a window poll) is gone.
     private void moveCursor(int keyCode, boolean shiftDown) {
         if (keyCode == GLFW.GLFW_KEY_LEFT && cursorPosition > 0) {
             cursorPosition--;
@@ -351,7 +282,6 @@ public class TextComponent extends AbstractSettingComponent {
         }
         updateSelectionAfterCursorMove(shiftDown);
     }
-
 
     private void updateSelectionAfterCursorMove(boolean shiftDown) {
         if (shiftDown) {
@@ -362,7 +292,6 @@ public class TextComponent extends AbstractSettingComponent {
         }
     }
 
-    
     private void replaceText(int start, int end, String replacement) {
         if (start < 0) start = 0;
         if (end > text.length()) end = text.length();
@@ -373,33 +302,27 @@ public class TextComponent extends AbstractSettingComponent {
         clearSelection();
     }
 
-    
     private boolean hasSelection() {
         return selectionStart != -1 && selectionEnd != -1 && selectionStart != selectionEnd;
     }
-
 
     private String getSelectedText() {
         return text.substring(getStartOfSelection(), getEndOfSelection());
     }
 
-
     private int getStartOfSelection() {
         return Math.min(selectionStart, selectionEnd);
     }
 
-
     private int getEndOfSelection() {
         return Math.max(selectionStart, selectionEnd);
     }
-
 
     private void clearSelection() {
         selectionStart = -1;
         selectionEnd = -1;
     }
 
-    
     private int getCursorIndexAt(double mouseX) {
         FontRenderer font = Fonts.getSize(12, Fonts.Type.INTER_BOLD);
         float relativeX = (float) mouseX - rectX - 3 + xOffset;
@@ -414,7 +337,6 @@ public class TextComponent extends AbstractSettingComponent {
         return position;
     }
 
-    
     private void updateXOffset(FontRenderer font, int cursorPosition) {
         float cursorX = font.getStringWidth(text.substring(0, cursorPosition));
         if (cursorX < xOffset) {
@@ -424,7 +346,6 @@ public class TextComponent extends AbstractSettingComponent {
         }
     }
 
-    
     private void deleteSelectedText() {
         if (hasSelection()) {
             replaceText(getStartOfSelection(), getEndOfSelection(), "");

@@ -44,7 +44,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Client-only entry point for attached cosmetics. */
 public final class CosmeticsRenderer {
     public static final Identifier PHAZE_CAPE_TEXTURE =
             Identifier.of("phaze", "textures/cosmetics/phaze_cape.png");
@@ -54,6 +53,8 @@ public final class CosmeticsRenderer {
     private static final Map<ModelKey, CompletableFuture<PreparedModel>> PREPARING_MODELS = new HashMap<>();
     private static final Map<Path, CachedCape> CAPES = new HashMap<>();
     private static final Map<Path, CompletableFuture<PreparedCape>> PREPARING_CAPES = new HashMap<>();
+
+    private static final Map<String, Identifier> RESOLVED_CAPE_PREVIEW = new HashMap<>();
     private static final ExecutorService MODEL_PRELOADER = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "Phaze cosmetic preloader");
         thread.setDaemon(true);
@@ -63,14 +64,7 @@ public final class CosmeticsRenderer {
     private static final ThreadLocal<String> PREVIEW_SELECTION = new ThreadLocal<>();
     private static final ThreadLocal<Float> PREVIEW_ALPHA = new ThreadLocal<>();
     private static final ThreadLocal<Float> PREVIEW_BODY_YAW = new ThreadLocal<>();
-    /*
-     * EntityGuiElementRenderer switches RenderSystem's output target to its
-     * own framebuffer while it invokes the entity renderer.  The normal world
-     * entity provider is flushed later, after that target has been restored,
-     * which used to draw cosmetic glow outside of the player preview.  Keep a
-     * separate immediate provider for the current preview and flush it before
-     * the entity renderer returns.
-     */
+
     private static final ThreadLocal<PreviewVertexConsumers> PREVIEW_VERTEX_CONSUMERS =
             ThreadLocal.withInitial(PreviewVertexConsumers::new);
     static final CosmeticsPhysics.Pose STATIC_POSE =
@@ -200,9 +194,7 @@ public final class CosmeticsRenderer {
             String lowerSelection = selection.toLowerCase(
                     java.util.Locale.ROOT
             );
-            // The Goldfish mesh is authored facing the opposite direction
-            // from the cube-based companions. Allay/Birb use the regular
-            // half-turn so their face (and Allay's eyes) points forward.
+
             float companionYaw = lowerSelection.contains("goldfish")
                     ? 0.0F
                     : 180.0F;
@@ -223,45 +215,26 @@ public final class CosmeticsRenderer {
                 player, state, preview,
                 CosmeticsState.getInstance().getWingMotion()
         );
-        // Figura models use a feet-up Y axis (shoulders around Y=22-24),
-        // while vanilla's player model uses a head-down model axis. Move the
-        // imported pivot into the upper-back region before drawing it inside
-        // LivingEntityRenderer's already-established body transform.
+
         boolean isWimgs = CosmeticsState.WIMGS.equalsIgnoreCase(selection);
         boolean isFluffyWings = CosmeticsState.FLUFFY_WINGS.equalsIgnoreCase(selection);
         boolean isCodexWings = selection.toLowerCase(java.util.Locale.ROOT).startsWith("ayldwt");
-        // Every imported project uses different absolute Blockbench
-        // coordinates. Normalize its real central wing hinge onto the same
-        // point at the rear face of the vanilla torso. The surrounding matrix
-        // already contains PlayerEntityModel.body's live pose.
-        // LivingEntityRenderer's player-body transform presents its rear face
-        // on positive local Z here. Wimgs and Fluffy previously used negative
-        // Z and therefore crossed the torso onto the chest. Keep their hinge
-        // just outside the actual back; Fluffy is authored slightly too high,
-        // so lower only that model without changing its rotation or spread.
+
         float attachmentY = isFluffyWings ? 0.19F : 0.10F;
         float attachmentZ = (isWimgs || isFluffyWings || isCodexWings) ? 0.128F : -0.132F;
         model.translateAttachmentTo(matrices, 0.0F, attachmentY, attachmentZ);
         if (isWimgs) {
-            // The supplied Wimgs project faces the opposite direction from
-            // vanilla's back-feature convention. Rotate around the authored
-            // wing root, not the body-space origin: a global Y rotation moves
-            // the already-attached pivot through the torso and makes the
-            // model appear on the chest or float away from the player.
+
             model.rotateAroundRootY(matrices, 180.0F);
-            // Generic Blockbench uses an up-facing Y axis. Turn the supplied
-            // project around its authored spine pivot so its feathers hang
-            // down without moving the attachment point.
+
             model.rotateAroundRootZ(matrices, 180.0F);
-            // Keep the lower feathers clear of the ground while preserving
-            // the exact attachment position.
+
             model.scaleAroundRoot(matrices, 0.90F);
         }
-        // Root inertia follows movement, flight and sharp body turns.
+
         model.rotateAroundRootX(matrices, physics.rootPitch());
         model.rotateAroundRootY(matrices, physics.rootYaw());
-        // Segment flex is distributed by hierarchy depth in the loader,
-        // therefore future grouped models receive physics automatically.
+
         model.render(
                 matrices, consumers, light, physics,
                 true, false, stableLightingEntry
@@ -295,8 +268,7 @@ public final class CosmeticsRenderer {
         }
         matrices.push();
         if (lowerSelection.contains("ice hat")) {
-            // Keep the brim just clear of the vanilla head surface so the two
-            // coplanar faces do not flicker (z-fighting).
+
             matrices.translate(0.0F, 0.10F, -0.015625F);
         } else if (lowerSelection.contains("sprint hat")) {
             matrices.translate(0.0F, 0.11F, 0.0F);
@@ -326,11 +298,6 @@ public final class CosmeticsRenderer {
         renderPreview(selection, alpha, 0.0F, renderer);
     }
 
-    /**
-     * Renders a cosmetic preview while exposing the model's GUI yaw to
-     * renderer hooks. World-space labels inherit that GUI rotation, whereas
-     * their billboard must remain facing the preview camera.
-     */
     public static void renderPreview(String selection, float alpha, float bodyYaw, Runnable renderer) {
         String previous = PREVIEW_SELECTION.get();
         Float previousAlpha = PREVIEW_ALPHA.get();
@@ -364,40 +331,35 @@ public final class CosmeticsRenderer {
         return alpha == null ? 1.0F : alpha;
     }
 
-    /**
-     * @return the yaw applied by the cosmetics GUI, or {@code null} outside
-     * a live player preview.
-     */
     public static Float previewBodyYaw() {
         return PREVIEW_BODY_YAW.get();
     }
 
-    /**
-     * Draws only the imported cosmetic model in GUI space. No player entity,
-     * feature renderer or physics participates in this path.
-     */
     public static boolean renderCatalogModel(DrawContext context, String selection,
                                              float x, float y, float width, float height,
                                              float alpha, long frameId) {
         if (CosmeticsState.isCape(selection)) {
-            // Catalog cards intentionally stay static, even for animated GIF
-            // capes. The full player preview and actual cape use capeTexture.
-            Identifier texture = capePreviewTextureIfReady(selection);
-            if (texture == null) return false;
+
+            Identifier texture = RESOLVED_CAPE_PREVIEW.get(selection);
+            if (texture == null) {
+                texture = capePreviewTextureIfReady(selection);
+                if (texture == null) return false;
+                RESOLVED_CAPE_PREVIEW.put(selection, texture);
+            }
             int drawHeight = Math.max(1, Math.round(height * 0.88F));
             int drawWidth = Math.max(1, Math.round(drawHeight * (10.0F / 16.0F)));
             int drawX = Math.round(x + (width - drawWidth) * 0.5F);
             int drawY = Math.round(y + (height - drawHeight) * 0.5F);
             int color = ((int) (Math.max(0.0F, Math.min(1.0F, alpha)) * 255.0F) << 24)
                     | 0x00FFFFFF;
-            // The HD file is a 4x standard 64x32 cape. Draw the outer
-            // 10x16 face (logical UV 1,1) from its real 256x128 pixels.
+
             context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED,
                     texture, drawX, drawY, 4.0F, 4.0F, drawWidth, drawHeight,
                     40, 64, 256, 128, color);
             return true;
         }
-        if (thumbnailModel(selection) == null || width <= 1.0F || height <= 1.0F) return false;
+
+        if (width <= 1.0F || height <= 1.0F) return false;
         int x1 = Math.round(x);
         int y1 = Math.round(y);
         int x2 = Math.round(x + width);
@@ -418,13 +380,9 @@ public final class CosmeticsRenderer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
         client.getBufferBuilders().getEntityVertexConsumers().draw();
-        // 1.21.11 bakes blend/depth state into RenderLayers.
+
     }
 
-    /**
-     * Queues one wing-only catalog thumbnail. The caller owns a matching
-     * begin/end pair so every visible card can share one entity-buffer flush.
-     */
     public static boolean renderCatalogWingBatched(DrawContext context, String selection,
                                                    float x, float y, float width, float height) {
         if (CosmeticsState.isCape(selection)) return false;
@@ -442,49 +400,8 @@ public final class CosmeticsRenderer {
                 height * 0.84F / bounds.height()
         );
 
-        // DrawContext is 2D in 1.21.11. Model cards use a registered special
-        // GUI element renderer; this legacy immediate path is intentionally
-        // disabled and retained only as a compatibility API for the view.
         return false;
-        /* MatrixStack matrices = context.getMatrices();
-        VertexConsumerProvider.Immediate consumers =
-                client.getBufferBuilders().getEntityVertexConsumers();
 
-        matrices.push();
-        matrices.translate(x + width * 0.5F, y + height * 0.5F, 260.0F);
-        matrices.scale(scale, -scale, scale);
-        if (frontIsXAxis) {
-            // A flat YZ-authored cosmetic is viewed along X.
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(90.0F));
-        } else {
-            // Standard Blockbench front: camera looks at the model's Z face.
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0F));
-        }
-        String lowerSelection = selection.toLowerCase(
-                java.util.Locale.ROOT
-        );
-        if (lowerSelection.contains("ally")
-                || lowerSelection.contains("birb")) {
-            // Three-quarter view keeps the face readable in a static card.
-            matrices.multiply(
-                    RotationAxis.POSITIVE_Y.rotationDegrees(45.0F)
-            );
-        } else if (lowerSelection.contains("turtle")) {
-            matrices.multiply(
-                    RotationAxis.POSITIVE_Y.rotationDegrees(180.0F)
-            );
-        }
-        if (CosmeticsState.isWing(selection)
-                && !CosmeticsState.WIMGS.equalsIgnoreCase(selection)
-                && !CosmeticsState.FLUFFY_WINGS.equalsIgnoreCase(selection)) {
-            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180.0F));
-        }
-        matrices.translate(-bounds.centerX(), -bounds.centerY(), -bounds.centerZ());
-        if (!model.renderCatalogBuffers(matrices)) {
-            model.renderCatalog(matrices, consumers, 0x00F000F0, matrices.peek());
-        }
-        matrices.pop();
-        return true; */
     }
 
     public static void endCatalogModelBatch() {
@@ -492,7 +409,7 @@ public final class CosmeticsRenderer {
         if (client != null) {
             client.getBufferBuilders().getEntityVertexConsumers().draw();
         }
-        // No global render state to restore on 1.21.11.
+
     }
 
     public static boolean isRenderingPreview() {
@@ -513,11 +430,6 @@ public final class CosmeticsRenderer {
         private final VertexConsumerProvider.Immediate consumers = VertexConsumerProvider.immediate(allocator);
     }
 
-    /**
-     * Resolves the cosmetic represented by a player render state. Shared by
-     * wings and the native cape feature so local previews and remote sync use
-     * exactly the same selection rules.
-     */
     public static String capeSelectionFor(PlayerEntityRenderState state) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.world == null || state == null) {
@@ -534,11 +446,6 @@ public final class CosmeticsRenderer {
         return capeSelectionFor(player);
     }
 
-    /**
-     * Invisible players only expose cosmetics when their actual armour is
-     * visible too.  This keeps a fully invisible player fully hidden, while
-     * preserving the expected cosmetic attachment on visible armour.
-     */
     public static boolean shouldRenderFor(PlayerEntityRenderState state) {
         if (state == null || !state.invisible) return true;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -587,12 +494,10 @@ public final class CosmeticsRenderer {
         return resolveCapeTexture(selection, true);
     }
 
-    /** Returns the first GIF frame so catalog cards never animate. */
     public static synchronized Identifier capePreviewTexture(String selection) {
         return resolveCapeTexture(selection, false);
     }
 
-    /** Starts PNG/GIF decoding away from the render thread. */
     public static synchronized void requestCapeWarmup(String selection) {
         try {
             CosmeticsState.CosmeticEntry entry = CosmeticsState.getInstance().resolveEntry(selection);
@@ -618,7 +523,6 @@ public final class CosmeticsRenderer {
         }
     }
 
-    /** Finishes an asynchronously decoded cape without blocking on file IO. */
     public static synchronized Identifier capePreviewTextureIfReady(String selection) {
         try {
             CosmeticsState.CosmeticEntry entry = CosmeticsState.getInstance().resolveEntry(selection);
@@ -655,11 +559,6 @@ public final class CosmeticsRenderer {
         }
     }
 
-    /**
-     * Loads static PNG capes and every GIF frame from the same local catalog.
-     * Animated capes advance only in live player renders; the catalog uses the
-     * first frame through {@link #capePreviewTexture(String)}.
-     */
     private static Identifier resolveCapeTexture(String selection, boolean animated) {
         try {
             CosmeticsState.CosmeticEntry entry =
@@ -867,8 +766,7 @@ public final class CosmeticsRenderer {
     }
 
     private static NativeImage toNativeCapeImage(BufferedImage source) throws Exception {
-        // The catalogue preview uses the same 4x 64x32 cape UV layout as
-        // bundled capes (256x128), including the outer 10x16 face crop.
+
         BufferedImage cape = new BufferedImage(256, 128, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = cape.createGraphics();
         try {
@@ -887,7 +785,6 @@ public final class CosmeticsRenderer {
         }
     }
 
-    /** Starts file parsing away from the render thread; GPU upload stays deferred. */
     public static synchronized void requestModelWarmup(String selection) {
         try {
             CosmeticsState.CosmeticEntry entry = CosmeticsState.getInstance().resolveEntry(selection);
@@ -987,7 +884,7 @@ public final class CosmeticsRenderer {
             cached.checkedAtNanos = now;
             return cached.model;
         } catch (Throwable error) {
-            // Do not make a malformed cosmetic capable of taking down the renderer.
+
             LOG.error("Failed to resolve cosmetic '{}'", selection, error);
             return null;
         }

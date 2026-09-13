@@ -14,7 +14,6 @@ import org.joml.Matrix4f;
 import vorga.phazeclient.implement.cosmetics.CosmeticsSyncService;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 
-/** Renders shared graffiti received over the existing Phaze event stream. */
 public final class PhazeCosmeticGraffitiRenderer {
     private static final double MAX_DISTANCE_SQ = 96.0 * 96.0;
     private static final int MAX_PER_FRAME = 512;

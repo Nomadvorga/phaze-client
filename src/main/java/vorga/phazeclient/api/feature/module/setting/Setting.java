@@ -40,9 +40,6 @@ public class Setting {
         return vorga.phazeclient.base.util.Lang.translate(nameKey);
     }
 
-    /** Raw English key (the value passed to the constructor). The
-     *  config save/load path keys settings by THIS string so a
-     *  language switch never reshuffles the JSON layout. */
     public String getRawName() {
         return nameKey;
     }
@@ -54,7 +51,6 @@ public class Setting {
         return vorga.phazeclient.base.util.Lang.translate(descriptionKey);
     }
 
-    /** See {@link #getRawName}. */
     public String getRawDescription() {
         return descriptionKey == null ? "" : descriptionKey;
     }

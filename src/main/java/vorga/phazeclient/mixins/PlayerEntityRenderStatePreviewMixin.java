@@ -6,7 +6,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import vorga.phazeclient.implement.cosmetics.PreviewMarker;
 
-/** Persists GUI preview data until 1.21.11's deferred entity pass runs. */
 @Mixin(PlayerEntityRenderState.class)
 public abstract class PlayerEntityRenderStatePreviewMixin implements PreviewMarker {
     @Unique private @Nullable String phaze$previewSelection;

@@ -10,46 +10,18 @@ public class Shader {
     private final MotionBlur config;
     private final PostEffectShader motionBlurShader;
 
-    /**
-     * Smoothing factor for the frame-rate estimate.
-     *
-     * <p>{@code currentFPS} used to be the reciprocal of a single frame's
-     * delta, which is extremely noisy - one hitched frame was enough to move
-     * it across a sample-count threshold. Since the sample count drives the
-     * shader's loop length, that showed up as the blur visibly changing
-     * quality from frame to frame. An exponential moving average over
-     * roughly ten frames removes the jitter without adding perceptible lag.
-     */
     private static final float FPS_SMOOTHING = 0.1f;
-    /** Fractional dead-band around each sample tier boundary. */
+
     private static final float TIER_GUARD = 0.06f;
 
     private long lastNano = System.nanoTime();
     private float currentBlur = 0.0f;
     private float currentFPS = 0.0f;
     private int sampleTier = -1;
-    /**
-     * Consecutive frames whose camera matrices matched the previous frame's.
-     *
-     * <p>A single-frame test is not usable here: at high frame rates the
-     * render loop outruns the mouse polling rate, so while the player is
-     * actively turning there are still plenty of individual frames with an
-     * unchanged camera. Gating the pass on that made it run every other
-     * frame, and in 1.21.4 - where the pass rebound the framebuffer and
-     * normalised depth / blend state right before the hand was drawn - the
-     * hand visibly blinked. The pass is only dropped after the camera has
-     * genuinely been at rest for {@link #STATIC_FRAMES_TO_SKIP} frames, and
-     * resumes on the first frame that moves. The blink is gone in 1.21.11
-     * (there is no global state for the pass to leave behind any more), but
-     * the hysteresis is still worth keeping: it is what stops the blur from
-     * flickering on and off while the camera drifts.
-     */
+
     private int staticFrames = 0;
     private static final int STATIC_FRAMES_TO_SKIP = 8;
 
-    // Last values pushed to the shader. The uniform setters walk every pass
-    // and look the uniform up by name, so re-sending a value that has not
-    // changed is pure overhead once per frame per uniform.
     private int lastSampleAmount = -1;
     private float lastViewWidth = -1.0f;
     private float lastViewHeight = -1.0f;
@@ -67,9 +39,7 @@ public class Shader {
                 Identifier.of("phazeclient", "motion_blur"),
                 shader -> shader.setUniformValue("BlendFactor", config.getStrength())
         );
-        // Must match, in order, the "MotionBlurConfig" list in
-        // assets/phazeclient/post_effect/motion_blur.json and the block in
-        // assets/phazeclient/shaders/core/post/motionblur/motion_blur.fsh.
+
         motionBlurShader.declareUniformBlock("MotionBlurConfig",
                 "mvInverse", "projInverse", "prevModelView", "prevProjection",
                 "cameraPos", "prevCameraPos", "view_res",
@@ -96,17 +66,7 @@ public class Shader {
         }
 
         if (staticFrames >= STATIC_FRAMES_TO_SKIP) {
-            // Camera at rest: the pass would write back exactly what it read,
-            // so skip the work.
-            //
-            // 1.21.11: this used to call leaveRenderStateAsPassWould(), which
-            // re-bound the main framebuffer (Framebuffer.beginWrite) and reset
-            // the depth function (RenderSystem.depthFunc) so that renderHand,
-            // which runs straight after this, saw the same global GL state a
-            // completed pass would have left behind. Both of those APIs are
-            // gone: the render target is chosen per render pass and depth
-            // state lives on the RenderPipeline, so a skipped pass leaks
-            // nothing and there is nothing left to reproduce. Method deleted.
+
             return;
         }
 
@@ -140,10 +100,6 @@ public class Shader {
             lastSampleAmount = sampleAmount;
         }
 
-        // 1.21.11: Framebuffer no longer carries a viewport size - the viewport
-        // is a property of the render pass' target now. textureWidth/Height are
-        // the attachment's real dimensions and are what the old viewport fields
-        // were initialised to for the main framebuffer, so view_res is unchanged.
         float viewWidth = client.getFramebuffer().textureWidth;
         float viewHeight = client.getFramebuffer().textureHeight;
         if (viewWidth != lastViewWidth || viewHeight != lastViewHeight) {
@@ -164,9 +120,7 @@ public class Shader {
         }
 
         motionBlurShader.render(0.0f);
-        // 1.21.11: the trailing RenderSystem.depthFunc(GL_LEQUAL) is gone. Depth
-        // state is a RenderPipeline property, so the post-effect pass cannot
-        // disturb what the hand renderer's pipeline asks for.
+
     }
 
     private int getSampleAmountForFPS(float fps) {
@@ -190,17 +144,6 @@ public class Shader {
         };
     }
 
-    /**
-     * Picks the quality tier for the current frame rate, with a dead-band
-     * around each boundary.
-     *
-     * <p>The tier used to be recomputed from scratch with hard comparisons,
-     * so a frame rate sitting on 60 or 144 flipped it constantly and the
-     * blur's sample count - and therefore its look - oscillated. The tier now
-     * only moves once the smoothed frame rate has cleared the boundary by
-     * {@link #TIER_GUARD}, and only one step at a time, which the smoothing
-     * makes sufficient.
-     */
     private int resolveSampleTier(float fps) {
         if (sampleTier < 0) {
             return fps < 30.0f ? 0 : fps < 60.0f ? 1 : fps > 144.0f ? 3 : 2;
@@ -235,12 +178,7 @@ public class Shader {
     public void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView,
                                    Matrix4f projection, Matrix4f prevProjection,
                                    Vector3f cameraPos, Vector3f prevCameraPos) {
-        // With both matrices and the camera position unchanged, reproject()
-        // maps every pixel back onto itself, so the velocity is exactly zero
-        // across the frame and the pass would write back what it read. The
-        // shader has a per-pixel guard for this too, but detecting it here
-        // skips the framebuffer bind, the blit and the fragment work
-        // altogether.
+
         boolean unchanged = modelView.equals(prevModelView)
                 && projection.equals(prevProjection)
                 && cameraPos.equals(prevCameraPos);
@@ -261,9 +199,7 @@ public class Shader {
 
     public void reload() {
         motionBlurShader.reload();
-        // The processor is rebuilt from scratch, so every uniform is back at
-        // its default. Drop the "already sent" state or the skip-if-unchanged
-        // guards above would suppress the values the new program needs.
+
         lastSampleAmount = -1;
         lastViewWidth = -1.0f;
         lastViewHeight = -1.0f;

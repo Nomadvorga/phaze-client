@@ -25,7 +25,6 @@ import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 
-/** Rasterises and caches imported Blockbench cosmetics for catalog cards. */
 public final class CosmeticGuiElementRenderer
         extends SpecialGuiElementRenderer<CosmeticGuiElementState> {
     private static final int EVICT_AFTER_FRAMES = 600;
@@ -62,9 +61,7 @@ public final class CosmeticGuiElementRenderer
     public void render(CosmeticGuiElementState state, GuiRenderState guiState, int guiScale) {
         int width = (state.x2() - state.x1()) * guiScale;
         int height = (state.y2() - state.y1()) * guiScale;
-        // A transparent state must never allocate or rasterise a thumbnail.
-        // This also protects the cache if another screen submits a hidden
-        // cosmetic while it is being preloaded.
+
         if (width <= 0 || height <= 0 || state.alpha() <= 0.001F) return;
 
         if (submittedFrameId != state.frameId()) {
@@ -75,11 +72,9 @@ public final class CosmeticGuiElementRenderer
         String key = state.selection().toLowerCase(Locale.ROOT) + "@" + width + "x" + height;
         Thumbnail thumbnail = thumbnails.get(key);
         if (thumbnail == null) {
-            // CPU parsing happens on the cosmetic preloader. Limit the final
-            // GPU allocation/raster step to one entry per menu frame.
+
             if (rasterFrame == frame) return;
-            BlockbenchWingModel model = CosmeticsRenderer.thumbnailModel(state.selection());
-            if (model == null) return;
+            if (CosmeticsRenderer.thumbnailModel(state.selection()) == null) return;
             rasterFrame = frame;
             thumbnail = new Thumbnail(width, height);
             thumbnails.put(key, thumbnail);

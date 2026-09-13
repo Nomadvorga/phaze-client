@@ -93,8 +93,6 @@ public class SelectComponent extends AbstractSettingComponent {
         renderSettingCard(context, 0.0f, hoverProgress);
         renderArrowSelector(matrices, mouseX, mouseY);
 
-        // 1.21.11: ResetIconComponent.render() takes the GUI pose (Matrix3x2fc) directly -
-        // it only feeds ShapeProperties.create, which is Matrix3x2fc-based since the port.
         resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(context);
 
         float textX = x + 10 + animatedTextOffset;
@@ -134,10 +132,6 @@ public class SelectComponent extends AbstractSettingComponent {
         return MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
     }
 
-    // 1.21.11: the GUI pose is org.joml.Matrix3x2f now, not MatrixStack.
-    // Read-only in here (ShapeProperties copies it, GuiMatrix promotes it),
-    // so the read-only interface type is enough and it binds directly to the
-    // Matrix3x2fStack handed out by DrawContext.getMatrices().
     private void renderArrowSelector(Matrix3x2fc matrices, int mouseX, int mouseY) {
         float boxX = selectedBoxX();
         float boxY = selectedBoxY();
@@ -195,13 +189,7 @@ public class SelectComponent extends AbstractSettingComponent {
         float textY = MenuStyle.centerMsdfTextY(VALUE_TEXT_SIZE, boxY, SELECT_BOX_HEIGHT);
 
         String selectedName = setting.getSelected();
-        // Display values are localized through Lang while the
-        // underlying storage stays English. Settings still write
-        // and compare against canonical English keys (e.g.
-        // "Sphere -> Totem"), but the user reading Russian sees
-        // the translated label. The cycler's previousValue is
-        // also localized so the cross-fade animation mid-transition
-        // shows two localized labels rather than one raw key.
+
         String selectedDisplay = Lang.translate(selectedName);
         String previousDisplay = previousValue == null ? null : Lang.translate(previousValue);
 
@@ -276,7 +264,6 @@ public class SelectComponent extends AbstractSettingComponent {
         setting.setSelected(list.get(newIndex));
     }
 
-    // 1.21.11: same pose-type change as renderArrowSelector above.
     private void renderLabelText(Matrix3x2fc matrices, String wrapped, float textX, int color) {
         String[] lines = wrapped.split("\n");
         float lineHeight = LABEL_TEXT_SIZE + 1.5F;

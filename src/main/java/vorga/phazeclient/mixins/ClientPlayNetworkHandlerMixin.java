@@ -31,28 +31,13 @@ import vorga.phazeclient.implement.features.modules.other.TotemTracker;
 
 import java.util.Iterator;
 
-/**
- * Consolidated mixin for {@link ClientPlayNetworkHandler}, merging the
- * previous seven sibling mixins (ChunkAnimatorReset, AntiCaps, TotemTracker,
- * SnowballTracker, ProjectileTrail, MentionSelfSkip, ItemPickup). Each
- * original injector is preserved with a unique {@code phaze$} method name.
- * Shadow fields and unique state are merged at the top of the class.
- */
 @Mixin(ClientPlayNetworkHandler.class)
 public abstract class ClientPlayNetworkHandlerMixin {
-
-    // ---------------------------------------------------------------
-    // Shared shadow / unique state
-    // ---------------------------------------------------------------
 
     @Shadow private ClientWorld world;
 
     @Unique private static final long PHAZE_DUP_WINDOW_MS = 2000L;
     @Unique private final Int2LongOpenHashMap phaze$recentEntityIds = new Int2LongOpenHashMap();
-
-    // ---------------------------------------------------------------
-    // ChunkAnimatorReset
-    // ---------------------------------------------------------------
 
     @Inject(method = "onGameJoin", at = @At("HEAD"))
     private void phaze$chunkAnimatorOnGameJoin(GameJoinS2CPacket packet, CallbackInfo ci) {
@@ -63,10 +48,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
     private void phaze$chunkAnimatorOnPlayerRespawn(PlayerRespawnS2CPacket packet, CallbackInfo ci) {
         ChunkAnimator.getInstance().resetTracker();
     }
-
-    // ---------------------------------------------------------------
-    // AntiCaps (outgoing chat)
-    // ---------------------------------------------------------------
 
     @ModifyVariable(
             method = "sendChatMessage(Ljava/lang/String;)V",
@@ -81,10 +62,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
         }
         return helper.maybeAntiCaps(content);
     }
-
-    // ---------------------------------------------------------------
-    // MentionSelfSkip (arm latch on outgoing)
-    // ---------------------------------------------------------------
 
     @Inject(
             method = "sendChatMessage(Ljava/lang/String;)V",
@@ -103,10 +80,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
         MentionHighlight.getInstance().markOutgoing();
     }
 
-    // ---------------------------------------------------------------
-    // TotemTracker
-    // ---------------------------------------------------------------
-
     @Inject(method = "onEntityStatus", at = @At("HEAD"))
     private void phaze$captureTotemPop(EntityStatusS2CPacket packet, CallbackInfo ci) {
         if (packet.getStatus() != TotemTracker.STATUS_USE_TOTEM) {
@@ -120,8 +93,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
         if (mc == null) {
             return;
         }
-        // Filter to the client thread to avoid the double-fire that
-        // NetworkThreadUtils.forceMainThread induces at HEAD.
+
         if (!mc.isOnThread()) {
             return;
         }
@@ -134,10 +106,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
             tracker.recordTotemUse(living);
         }
     }
-
-    // ---------------------------------------------------------------
-    // SnowballTracker / ProjectileTrail (share onEntitySpawn TAIL)
-    // ---------------------------------------------------------------
 
     @Inject(method = "onEntitySpawn", at = @At("TAIL"))
     private void phaze$captureSnowballSpawn(EntitySpawnS2CPacket packet, CallbackInfo ci) {
@@ -170,10 +138,6 @@ public abstract class ClientPlayNetworkHandlerMixin {
             module.trackProjectile(projectile);
         }
     }
-
-    // ---------------------------------------------------------------
-    // ItemPickupLogger
-    // ---------------------------------------------------------------
 
     @Inject(method = "onItemPickupAnimation", at = @At("HEAD"))
     private void phaze$logPickup(ItemPickupAnimationS2CPacket packet, CallbackInfo ci) {

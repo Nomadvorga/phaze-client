@@ -4,6 +4,7 @@ import net.minecraft.util.math.MathHelper;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
@@ -44,18 +45,44 @@ public final class ArmorHud extends Module {
                     "Jade",
                     "Sunset",
                     "Violet",
-                    "Ocean"
+                    "Ocean",
+                    "Custom Color",
+                    "Gradient"
             )
             .selected("Vanilla")
             .visible(() -> background.isValue());
     public final ValueSetting colorBrightness = new ValueSetting("Color Brightness", "Adjust main color brightness")
             .range(0, 200)
             .setValue(100)
-            .visible(() -> background.isValue() && !isVanillaPreset());
+            .visible(() -> background.isValue() && !isVanillaPreset() && !isCustomColorPreset() && !isGradientPreset());
     public final ValueSetting backgroundOpacity = new ValueSetting("Background Opacity", "Custom background opacity")
             .range(0, 100)
             .setValue(30)
             .visible(() -> background.isValue() && !isVanillaPreset());
+    public final ColorSetting customBackgroundColor = new ColorSetting("Custom Background Color", "Color used by the custom HUD background")
+            .value(0xFF203447)
+            .noAlpha()
+            .popupRow()
+            .visible(() -> background.isValue() && isCustomColorPreset());
+    public final ColorSetting gradientStartColor = new ColorSetting("Gradient Start Color", "First color of the HUD gradient")
+            .value(0xFF1B4965)
+            .noAlpha()
+            .popupRow()
+            .visible(() -> background.isValue() && isGradientPreset());
+    public final ColorSetting gradientEndColor = new ColorSetting("Gradient End Color", "Second color of the HUD gradient")
+            .value(0xFF5FA8D3)
+            .noAlpha()
+            .popupRow()
+            .visible(() -> background.isValue() && isGradientPreset());
+    public final ValueSetting gradientSpeed = new ValueSetting("Gradient Speed", "How quickly the gradient flows between its colors")
+            .range(0.0f, 4.0f)
+            .step(0.05f)
+            .setValue(0.75f)
+            .visible(() -> background.isValue() && isGradientPreset());
+    public final SelectSetting gradientDirection = new SelectSetting("Gradient Direction", "Direction of the animated HUD gradient")
+            .value("Left to Right", "Right to Left", "Top to Bottom", "Bottom to Top", "Diagonal Down", "Diagonal Up", "Pulse")
+            .selected("Left to Right")
+            .visible(() -> background.isValue() && isGradientPreset());
     public final ValueSetting backgroundBlurRadius = new ValueSetting("Background Blur Radius", "Blur radius for HUD background")
             .range(0.0f, 32.0f)
             .step(0.25f)
@@ -64,29 +91,23 @@ public final class ArmorHud extends Module {
     public final SectionSetting colorSection = new SectionSetting("Color Settings")
             .visible(() -> background.isValue());
     public final SectionSetting otherSection = new SectionSetting("Other");
+    public final ValueSetting cornerRounding = new ValueSetting("Corner Rounding", "Round this HUD background's corners")
+            .range(0.0F, 10.0F)
+            .step(0.5F)
+            .setValue(0.0F)
+            .visible(() -> background.isValue());
     public final SelectSetting durabilityMode = new SelectSetting("Durability Mode", "How to display armor durability")
             .value("Units", "Percent")
             .selected("Units");
 
-    /**
-     * Color the durability number red/yellow/green based on remaining
-     * percentage. Boundaries match the user spec exactly:
-     * <ul>
-     *   <li>&gt; 75% durability: green - "fresh"</li>
-     *   <li>26-75% durability: yellow - "halfway"</li>
-     *   <li>&le; 25% durability: red - "needs replacement"</li>
-     * </ul>
-     * Default OFF so users get the historical white-on-background
-     * look unless they opt in. Note that the directionality is the
-     * inverse of the Cooldowns module (high = good for armor, high
-     * = bad for cooldown), so the colour stops are reversed.
-     */
     public final BooleanSetting colorByDurability = new BooleanSetting(
             "Color By Durability",
             "Color the durability number red/yellow/green based on remaining armor percentage"
     ).setValue(false);
 
     private final HudBuffer hudBuffer = new HudBuffer();
+    private long gradientLastUpdateNanos = -1L;
+    private float gradientAnimationOffset = 0.0F;
 
     private float hudX = DEFAULT_HUD_X;
     private float hudY = DEFAULT_HUD_Y;
@@ -106,10 +127,18 @@ public final class ArmorHud extends Module {
         backgroundPreset.setFullWidth(true);
         colorBrightness.setFullWidth(true);
         backgroundOpacity.setFullWidth(true);
+        customBackgroundColor.setFullWidth(true);
+        gradientStartColor.setFullWidth(true);
+        gradientEndColor.setFullWidth(true);
+        gradientSpeed.setFullWidth(true);
+        gradientDirection.setFullWidth(true);
         backgroundBlurRadius.setFullWidth(true);
+        cornerRounding.setFullWidth(true);
         durabilityMode.setFullWidth(true);
         colorByDurability.setFullWidth(true);
-        setup(mainSection, textShadow, background, colorSection, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius, otherSection, durabilityMode, colorByDurability);
+        setup(mainSection, textShadow, background, colorSection, backgroundPreset, colorBrightness, backgroundOpacity,
+                customBackgroundColor, gradientStartColor, gradientEndColor, gradientSpeed, gradientDirection, backgroundBlurRadius,
+                otherSection, cornerRounding, durabilityMode, colorByDurability);
     }
 
     @Override
@@ -131,16 +160,8 @@ public final class ArmorHud extends Module {
         return hudBuffer;
     }
 
-    /**
-     * Whether this HUD currently renders a live blur backdrop. Used by the
-     * HUD batching to force unlimited refresh, since a throttled blur would
-     * freeze the world behind it between refreshes.
-     */
     public boolean hasActiveBackgroundBlur() {
-        // Float comparison instead of getInt(): mirrors RectHudModule -
-        // see that class's javadoc for why aligning with the renderer's
-        // getValue() > 0.0f gate is required to avoid the imprinted-HUD
-        // ghost.
+
         return background.isValue() && backgroundBlurRadius.getValue() > 0.0f;
     }
 
@@ -173,7 +194,6 @@ public final class ArmorHud extends Module {
         return hudScale;
     }
 
-    /** See {@link RectHudModule#getRenderHudScale()}. */
     public float getRenderHudScale() {
         return hudScale * HudScaleLimits.RENDER_MULTIPLIER;
     }
@@ -199,14 +219,6 @@ public final class ArmorHud extends Module {
         return String.valueOf(remaining);
     }
 
-    /**
-     * Returns the colour the durability number should render in for
-     * the given (remaining, max) pair. Returns {@code 0xFFFFFFFF}
-     * when {@link #colorByDurability} is off so the caller can use
-     * the result unconditionally as the text colour. The thresholds
-     * are read on a 0..100 scale to match the user-supplied spec
-     * verbatim.
-     */
     public int colorForDurability(int remaining, int max) {
         if (!colorByDurability.isValue()) {
             return 0xFFFFFFFF;
@@ -216,17 +228,23 @@ public final class ArmorHud extends Module {
         }
         float ratio = (float) remaining / (float) max;
         if (ratio > 0.75F) {
-            return 0xFF55FF55; // green
+            return 0xFF55FF55;
         }
         if (ratio > 0.25F) {
-            return 0xFFFFAA00; // yellow
+            return 0xFFFFAA00;
         }
-        return 0xFFFF5555; // red
+        return 0xFFFF5555;
     }
 
     public int getResolvedBackgroundColor(net.minecraft.client.MinecraftClient client) {
         if (isVanillaPreset()) {
             return client.options.getTextBackgroundColor(0.3F);
+        }
+        if (isCustomColorPreset()) {
+            return applyColorOptions(customBackgroundColor.getColor());
+        }
+        if (isGradientPreset()) {
+            return getResolvedGradientStartColor();
         }
         var palette = MenuPalettes.byName(backgroundPreset.getSelected());
         int presetColor = adjustBrightness(palette.chipActive(), colorBrightness.getValue() / 100.0f);
@@ -236,6 +254,90 @@ public final class ArmorHud extends Module {
 
     private boolean isVanillaPreset() {
         return "Vanilla".equalsIgnoreCase(backgroundPreset.getSelected());
+    }
+
+    public boolean isCustomColorPreset() {
+        return "Custom Color".equalsIgnoreCase(backgroundPreset.getSelected());
+    }
+
+    public boolean isGradientPreset() {
+        return "Gradient".equalsIgnoreCase(backgroundPreset.getSelected());
+    }
+
+    public boolean hasActiveAnimatedBackground() {
+        return background.isValue() && isGradientPreset() && gradientSpeed.getValue() > 0.0F;
+    }
+
+    public int getResolvedGradientStartColor() {
+        return applyColorOptions(gradientStartColor.getColor());
+    }
+
+    public int getResolvedGradientEndColor() {
+        return applyColorOptions(gradientEndColor.getColor());
+    }
+
+    public String getGradientDirection() {
+        return gradientDirection.getSelected();
+    }
+
+    public float getGradientAnimationOffset(long nowMs) {
+        long nowNanos = System.nanoTime();
+        if (gradientLastUpdateNanos < 0L) {
+            gradientLastUpdateNanos = nowNanos;
+            return gradientAnimationOffset;
+        }
+        float deltaSeconds = MathHelper.clamp((nowNanos - gradientLastUpdateNanos) / 1_000_000_000.0F, 0.0F, 0.10F);
+        gradientLastUpdateNanos = nowNanos;
+        float speed = Math.max(0.0F, gradientSpeed.getValue());
+        gradientAnimationOffset = (gradientAnimationOffset + deltaSeconds * speed * 0.5F) % 1.0F;
+        return gradientAnimationOffset;
+    }
+
+    public void writeGradientColors(int[] colors, long nowMs) {
+        if (colors == null || colors.length < 4) {
+            return;
+        }
+        if (!isGradientPreset()) {
+            int color = getResolvedBackgroundColor(net.minecraft.client.MinecraftClient.getInstance());
+            colors[0] = color;
+            colors[1] = color;
+            colors[2] = color;
+            colors[3] = color;
+            return;
+        }
+        int first = getResolvedGradientStartColor();
+        int second = getResolvedGradientEndColor();
+        int midpoint = blend(first, second, 0.5F);
+        switch (gradientDirection.getSelected()) {
+            case "Right to Left" -> setGradientCorners(colors, second, second, first, first);
+            case "Top to Bottom" -> setGradientCorners(colors, first, second, first, second);
+            case "Bottom to Top" -> setGradientCorners(colors, second, first, second, first);
+            case "Diagonal Down" -> setGradientCorners(colors, first, midpoint, midpoint, second);
+            case "Diagonal Up" -> setGradientCorners(colors, midpoint, second, first, midpoint);
+            case "Pulse" -> setGradientCorners(colors, first, first, first, first);
+            default -> setGradientCorners(colors, first, first, second, second);
+        }
+    }
+
+    private int applyColorOptions(int color) {
+        int alpha = MathHelper.clamp(Math.round(((color >>> 24) & 0xFF) * (backgroundOpacity.getValue() / 100.0F)), 0, 255);
+        return (alpha << 24) | (color & 0x00FFFFFF);
+    }
+
+    private static void setGradientCorners(int[] colors, int topLeft, int bottomLeft, int topRight, int bottomRight) {
+        colors[0] = topLeft;
+        colors[1] = bottomLeft;
+        colors[2] = topRight;
+        colors[3] = bottomRight;
+    }
+
+    private static int blend(int first, int second, float progress) {
+        float t = MathHelper.clamp(progress, 0.0F, 1.0F);
+        int a = Math.round(((first >>> 24) & 0xFF) + (((second >>> 24) & 0xFF) - ((first >>> 24) & 0xFF)) * t);
+        int r = Math.round(((first >>> 16) & 0xFF) + (((second >>> 16) & 0xFF) - ((first >>> 16) & 0xFF)) * t);
+        int g = Math.round(((first >>> 8) & 0xFF) + (((second >>> 8) & 0xFF) - ((first >>> 8) & 0xFF)) * t);
+        int b = Math.round((first & 0xFF) + ((second & 0xFF) - (first & 0xFF)) * t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     private static int adjustBrightness(int color, float multiplier) {

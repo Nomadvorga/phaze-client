@@ -59,7 +59,7 @@ public class PlayerListHudMixin {
         UUID selfUuid = client.player.getUuid();
         int selfIndex = -1;
         for (int i = 0; i < original.size(); i++) {
-            // 1.21.11: authlib 9 made GameProfile a record - getId()/getName() are now id()/name().
+
             if (original.get(i).getProfile().id().equals(selfUuid)) {
                 selfIndex = i;
                 break;
@@ -75,7 +75,6 @@ public class PlayerListHudMixin {
         reordered.add(0, self);
         return reordered;
     }
-
 
     @Inject(method = "renderLatencyIcon", at = @At("HEAD"), cancellable = true)
     private void phaze$renderPingAsNumber(DrawContext context, int width, int x, int y, PlayerListEntry entry, CallbackInfo ci) {
@@ -108,19 +107,6 @@ public class PlayerListHudMixin {
         ci.cancel();
     }
 
-    /**
-     * Push a translation matrix at the start of the tab list render so the
-     * whole list slides up/down. The offset itself is computed once per
-     * frame inside {@link InGameHudTabSlideMixin} so the open and close
-     * branches share the same interpolated value.
-     *
-     * We also flush prior batches before pushing and again at the matching
-     * pop so DrawContext doesn't merge our translated text/icons with HUDs
-     * rendered immediately before/after the tab list - that's the source
-     * of the "text seems to lag behind the background" effect, since text
-     * runs through a deferred font batch that previously inherited a stale
-     * matrix.
-     */
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$resetTabAnimationState(DrawContext context, int scaledWindowWidth,
                                               net.minecraft.scoreboard.Scoreboard scoreboard,
@@ -197,8 +183,7 @@ public class PlayerListHudMixin {
         if (module.isTabSlideStyle()) {
             float offsetY = module.currentTabSlideOffset();
             if (offsetY != 0.0F) {
-                // 1.21.11: the GUI pose is a Matrix3x2fStack - translate/scale are 2D only.
-                // The old Z argument was always 0 here, so nothing is lost.
+
                 context.getMatrices().translate(0.0F, offsetY);
             }
             return;
@@ -206,18 +191,12 @@ public class PlayerListHudMixin {
 
         float progress = module.currentTabProgress();
         float scale = Math.max(0.01F, progress);
-        // Vanilla always centers the final TAB rectangle (including a wider
-        // server header/footer) on the screen. "left" only belongs to the
-        // player grid calculated before that widening, so combining it with
-        // totalWidth shifts the animation pivot to the right on such servers.
+
         float pivotX = scaledWindowWidth * 0.5F;
         float pivotY = module.isTabSlideScaleStyle()
                 ? top
                 : top + rowsPerColumn * 9.0F * 0.5F;
-        // 1.21.11: Matrix3x2fStack - 2D translate/scale. All three Z/depth arguments were
-        // identity (0 / 0 / 1) so this is the same transform, just without the unused axis.
-        // NOTE: do NOT collapse this into scaleAround(scale, scale, 1.0F) - that binds to
-        // scaleAround(factor, originX, originY) and silently means something else.
+
         context.getMatrices().translate(pivotX, pivotY);
         context.getMatrices().scale(scale, scale);
         context.getMatrices().translate(-pivotX, -pivotY);
@@ -259,20 +238,6 @@ public class PlayerListHudMixin {
         cir.setReturnValue(styled);
     }
 
-    /**
-     * Rewrite the tab list display name through {@link NickHider} so the
-     * configured replacement string surfaces in the vanilla TAB overlay.
-     * Chained at RETURN so it observes the value set by
-     * {@link #phaze$styleOwnName} - if highlightOwn is on we still want
-     * the AQUA/BOLD styling, just with the username swapped to the
-     * replacement. {@link NickHider#rewrite} preserves style per-fragment
-     * via {@link Text#visit}, so the highlight survives intact.
-     *
-     * <p>The hider short-circuits when the module is disabled or the
-     * decorated name doesn't contain the local username (e.g. a server
-     * that hides usernames in tab and only shows ranks), so the per-tick
-     * cost on a vanilla server is a single {@code String.contains}.
-     */
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
     private void phaze$nickHideTabName(PlayerListEntry entry, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Text> cir) {
         NickHider hider = NickHider.getInstance();
@@ -346,8 +311,7 @@ public class PlayerListHudMixin {
         if (ExordiumAnimationBridge.isCapturingPlayerList()) {
             ExordiumAnimationBridge.recordTabElement(context, x, y, x + size, y + size);
         }
-        // 1.21.11: the RenderSystem.setShaderColor wrapper this used to sit inside is gone.
-        // PlayerSkinDrawer.draw already takes an ARGB tint, which phaze$applyTabAlpha fades.
+
         operation.call(context, texture, x, y, size, drawHat, upsideDown, phaze$applyTabAlpha(color));
     }
 
@@ -355,7 +319,7 @@ public class PlayerListHudMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    // 1.21.11: DrawContext.drawTextWithShadow now returns void (was int).
+
                     target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)V"
             ),
             require = 0
@@ -395,7 +359,7 @@ public class PlayerListHudMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    // 1.21.11: DrawContext.drawTextWithShadow now returns void (was int).
+
                     target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/OrderedText;III)V"
             ),
             require = 0
@@ -419,8 +383,7 @@ public class PlayerListHudMixin {
             method = {"renderScoreboardObjective", "renderLatencyIcon"},
             at = @At(
                     value = "INVOKE",
-                    // 1.21.11: drawGuiTexture's first argument is a RenderPipeline value, not a
-                    // Function<Identifier, RenderLayer> factory.
+
                     target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/util/Identifier;IIII)V"
             ),
             require = 0
@@ -436,9 +399,7 @@ public class PlayerListHudMixin {
             Operation<Void> operation
     ) {
         ExordiumAnimationBridge.recordTabElement(context, x, y, x + width, y + height);
-        // Was RenderSystem.setShaderColor(1,1,1,alpha) around the draw. There is no global
-        // shader colour in 1.21.11, so the fade now rides the ARGB-tint overload of
-        // drawGuiTexture (the 6-arg form vanilla calls just forwards -1 as that tint).
+
         int tint = phaze$applyTabAlpha(0xFFFFFFFF);
         if (tint == 0xFFFFFFFF) {
             operation.call(context, pipeline, texture, x, y, width, height);
@@ -451,7 +412,7 @@ public class PlayerListHudMixin {
             method = "renderScoreboardObjective",
             at = @At(
                     value = "INVOKE",
-                    // 1.21.11: DrawContext.drawTextWithShadow now returns void (was int).
+
                     target = "Lnet/minecraft/client/gui/DrawContext;drawTextWithShadow(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;III)V"
             ),
             require = 0
@@ -529,4 +490,3 @@ public class PlayerListHudMixin {
     }
 
 }
-

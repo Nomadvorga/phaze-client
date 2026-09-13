@@ -22,7 +22,6 @@ public class HueComponent extends AbstractComponent {
 
     private float X, Y, W, H;
 
-    
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         Matrix3x2fStack matrix = context.getMatrices();
@@ -73,13 +72,11 @@ public class HueComponent extends AbstractComponent {
         }
     }
 
-    
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         hueDragging = button == 0 && MathUtil.isHovered(mouseX, mouseY, X, Y, W, H);
         return super.mouseClicked(mouseX, mouseY, button);
     }
-
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {

@@ -46,11 +46,6 @@ public final class ItemPickupLogger extends Module {
         return 21.0F;
     }
 
-    /**
-     * Posts a client-side chat message describing the pickup. Called from the
-     * mixin on {@code ClientPlayNetworkHandler.onItemPickupAnimation} after it
-     * has confirmed the local player is the collector.
-     */
     public void onPickup(ItemStack stack, int amount) {
         if (!isEnabled() || stack == null || stack.isEmpty()) {
             return;
@@ -69,10 +64,16 @@ public final class ItemPickupLogger extends Module {
         }
 
         MutableText itemName = stack.getName().copy();
-        Text message = Text.literal("Pickup · ")
-                .formatted(Formatting.GRAY)
-                .append(itemName)
-                .append(Text.literal(" x" + amount).formatted(Formatting.GRAY));
-        mc.inGameHud.getChatHud().addMessage(PhazeAnnouncements.systemMessage(message));
+        int count = amount;
+        mc.execute(() -> {
+            if (mc.inGameHud == null) {
+                return;
+            }
+            Text message = Text.literal("Pickup · ")
+                    .formatted(Formatting.GRAY)
+                    .append(itemName)
+                    .append(Text.literal(" x" + count).formatted(Formatting.GRAY));
+            mc.inGameHud.getChatHud().addMessage(PhazeAnnouncements.systemMessage(message));
+        });
     }
 }

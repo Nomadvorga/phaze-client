@@ -95,6 +95,10 @@ import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.api.system.hud.HudScaleLimits;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
+import vorga.phazeclient.api.system.shape.implement.Rectangle;
+import vorga.phazeclient.base.util.render.Render2DUtil;
+import net.minecraft.client.texture.NativeImageBackedTexture;
+import org.joml.Vector4i;
 import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
@@ -141,14 +145,7 @@ public class InGameHudMixin {
     private static final float BASE_HEIGHT = 20.0f;
     private static final int HUD_TEXT_COLOR = 0xFFFFFFFF;
     private static final float HUD_TEXT_SIZE = 8.0f;
-    // 1.21.11: GUI depth is gone - every GUI pipeline is NO_DEPTH_TEST and
-    // Matrix3x2f has no Z component, so the old HUD_RENDER_Z / HANDLE_RENDER_Z /
-    // HUD_TEXT_RENDER_Z tiers cannot be expressed as a translate any more.
-    // They are no longer needed either: GuiRenderState promotes an element into a
-    // new sub-layer whenever its bounds intersect something already submitted
-    // (findAndGoToLayerIntersecting), so "submitted later" == "drawn on top",
-    // which is exactly what the three tiers encoded. The constants are kept as
-    // documentation of the original ordering for the visual-parity pass.
+
     @SuppressWarnings("unused")
     private static final float HUD_TEXT_RENDER_Z = 1000.0f;
     private static final int HANDLE_COLOR = 0xFF72F7D4;
@@ -163,12 +160,7 @@ public class InGameHudMixin {
     private static final int GUIDE_MAX_ALPHA = 140;
     private static final long HUD_TEXT_THROTTLE_MS = 50L;
     private static final Identifier DIRECTION_TRIANGLE_TEXTURE = Identifier.of("phaze", "textures/down_triangle.png");
-    /**
-     * 1.21.11 removed {@code PlayerInventory.getArmorStack(int)} - armour is
-     * held by {@code EntityEquipment} and read through
-     * {@code LivingEntity.getEquippedStack(EquipmentSlot)}. This is the same
-     * visual order the old index walk (slot 3 down to 0) produced.
-     */
+
     private static final EquipmentSlot[] PHAZE_ARMOR_SLOTS = {
             EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
     };
@@ -202,11 +194,7 @@ public class InGameHudMixin {
     private static final int HUD_INVENTORY = 26;
     private static final int RECT_HUD_COUNT = 27;
     private static final int HUD_ARMOR_BLUR_SLOT = 27;
-    /**
-     * Per-HUD text alignment applied by the common scaled-text render path.
-     * It is restored after every HUD render so nested/direct render calls cannot
-     * leak their alignment into another widget.
-     */
+
     private static float phaze$currentHudTextYOffset = 0.0F;
     private static final int HUD_SNAP_ARMOR = RECT_HUD_COUNT;
     private static final int HUD_SNAP_COUNT = RECT_HUD_COUNT + 1;
@@ -217,15 +205,8 @@ public class InGameHudMixin {
     private static final int KEYSTROKE_LMB = 4;
     private static final int KEYSTROKE_RMB = 5;
     private static final int KEYSTROKE_SPACE = 6;
-    private static final List<ShapeProperties> KEYSTROKE_BLUR_RECTS = List.of(
-            createKeystrokeBlurRect(20.0f, 0.0f, 16.0f, 18.0f),
-            createKeystrokeBlurRect(0.0f, 19.0f, 18.0f, 18.0f),
-            createKeystrokeBlurRect(19.0f, 19.0f, 16.0f, 18.0f),
-            createKeystrokeBlurRect(36.0f, 19.0f, 18.0f, 18.0f),
-            createKeystrokeBlurRect(0.0f, 38.0f, 54.0f, 8.0f),
-            createKeystrokeBlurRect(0.0f, 47.0f, 26.0f, 16.0f),
-            createKeystrokeBlurRect(28.0f, 47.0f, 26.0f, 16.0f)
-    );
+    private static List<ShapeProperties> KEYSTROKE_BLUR_RECTS = rebuildKeystrokeBlurRects(3.0f);
+    private static float PHAZE_KEYSTROKE_BLUR_ROUND = 3.0f;
 
     private static final boolean[] RECT_DRAGGING = new boolean[RECT_HUD_COUNT];
     private static final boolean[] RECT_RESIZING = new boolean[RECT_HUD_COUNT];
@@ -313,40 +294,24 @@ public class InGameHudMixin {
     private static float hudHorizontalGuideY = 0.0f;
     private static float hudHorizontalGuideLeft = 0.0f;
     private static float hudHorizontalGuideRight = 0.0f;
-    /** When true, blur HUDs are skipped in the current renderHudInternal call (batch FBO pass). */
+
     private static boolean inBatchPass = false;
-    /** Cached pass includes blur HUDs; the follow-up pass updates input state only. */
+
+    private static boolean inGradientPass = false;
+
     private static boolean batchIncludesBlur = false;
     private static boolean inLogicOnlyPass = false;
-    /**
-     * Last observed {@link RectHudModule#hasActiveBackgroundBlur()} value per
-     * HUD instance. Used to detect the exact frame a HUD migrates between the
-     * batched-FBO pass and the direct-blur pass (or vice-versa) so we can
-     * force-invalidate {@link BatchedHudBuffer} and avoid the 1-frame
-     * disappear / black flash the user reported:
-     *
-     * <ul>
-     *   <li>Blur turned ON: the HUD was inside the cached FBO this frame
-     *       but is excluded from the next Pass 1 because it now belongs to
-     *       Pass 2. Without invalidation the cache keeps blitting the
-     *       no-blur version while Pass 2 also draws the blurred version on
-     *       top - briefly stamping two copies until the cache naturally
-     *       expires (up to {@code 1000/refreshRate} ms).</li>
-     *   <li>Blur turned OFF: the HUD just moved from Pass 2 (direct draw)
-     *       into Pass 1 (cache). Pass 1 may not run this frame because the
-     *       cache is still fresh from before the toggle, so the HUD is
-     *       absent from the cache AND skipped by Pass 2 -> 1 frame of
-     *       nothing.</li>
-     * </ul>
-     *
-     * <p>Identity-keyed because every HUD module is a process-wide
-     * singleton; we never want to coalesce two distinct HUD instances.
-     * {@code Object} key (not {@code RectHudModule}) so the same path
-     * also catches {@code ArmorHud}, which extends {@code Module}
-     * directly but exposes the same {@code hasActiveBackgroundBlur}
-     * surface.
-     */
+
     private static final Map<Object, Boolean> PHAZE_LAST_BLUR_STATE = new IdentityHashMap<>();
+    private static final Map<Object, Boolean> PHAZE_LAST_GRADIENT_STATE = new IdentityHashMap<>();
+
+    private static final int[] PHAZE_GRADIENT_COLORS = new int[4];
+
+    private static final Rectangle HUD_BACKGROUND_RECTANGLE = new Rectangle();
+
+    private static final net.minecraft.util.Identifier PHAZE_GRADIENT_TEXTURE_ID =
+            net.minecraft.util.Identifier.of("phaze", "hud/hud_gradient");
+    private static NativeImageBackedTexture phaze$gradientTexture;
     private static float directionDisplayYaw = Float.NaN;
     private static final long SESSION_START_MS = System.currentTimeMillis();
 
@@ -363,9 +328,6 @@ public class InGameHudMixin {
         HudCursorRelay.reset();
         Blur.INSTANCE.beginCachedFrame();
 
-        // Animation clocks must advance at the display FPS, even when
-        // Exordium serves renderHotbar/ChatHud from a cached framebuffer and
-        // therefore skips those vanilla methods for this frame.
         ExordiumAnimationBridge.beginHudFrame(context);
         phaze$advanceHotbarSlide();
         if (this.client != null && this.client.inGameHud != null
@@ -374,16 +336,6 @@ public class InGameHudMixin {
         }
     }
 
-    /**
-     * Replace the vanilla top-right status-effect overlay whenever the
-     * client's own {@link PotionHud} module is enabled. Without this
-     * the user would see two effect lists at once - the new draggable
-     * Phaze HUD AND the stock icons baked into the top-right corner -
-     * which is confusing and steals corner real estate. Cancelling at
-     * HEAD short-circuits both the active-effect iteration and the
-     * sprite/text rendering, so this is also slightly cheaper than
-     * letting vanilla draw and then occluding on top.
-     */
     @Inject(method = "renderStatusEffectOverlay", at = @At("HEAD"), cancellable = true)
     private void phaze$suppressVanillaStatusEffectOverlay(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         if (PotionHud.getInstance().isEnabled()) {
@@ -400,7 +352,6 @@ public class InGameHudMixin {
         }
     }
 
-    // 1.21.11: InGameHud.renderBossBar was renamed renderBossBarHud.
     @Inject(method = "renderBossBarHud", at = @At("HEAD"), cancellable = true, require = 0)
     private void phaze$suppressVanillaBossBar(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         NoRender noRender = NoRender.getInstance();
@@ -414,29 +365,18 @@ public class InGameHudMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         boolean hudHidden = client == null || client.options == null || client.options.hudHidden;
 
-        // 1.21.11 stores DrawContext text, items and textures in one deferred
-        // GuiRenderState which is flushed after Screen#render. Phaze's ClickGUI
-        // draws its cards immediately, so keeping this HUD pass alive makes the
-        // deferred part of a HUD appear above those cards. Do not queue HUD
-        // elements while the ClickGUI is open; its opaque canvas therefore
-        // correctly stays above the in-game HUD. HUD layout editing uses
-        // ChatScreen and remains fully interactive.
         if (client != null && client.currentScreen instanceof MenuScreen) {
             BatchedHudBuffer.INSTANCE.invalidate();
             Blur.INSTANCE.endCachedFrame();
             return;
         }
 
-        // Operator announcements sit above the HUD and remain visible
-        // with F1 so realtime server notices are not silently hidden.
         vorga.phazeclient.implement.menu.AnnouncementOverlay.render(context);
 
         if (!renderedThisFrame) {
-            // Capture the clean world/vanilla-HUD framebuffer at the one safe
-            // point shared by normal gameplay and open GUIs. Doing this before
-            // any Phaze FBO capture prevents live HUD blur from sampling the
-            // cleared/intermediate framebuffer used during Screen rendering.
+
             boolean hasLiveBlurHud = !hudHidden && phaze$prescanBlurStateFlips();
+            boolean hasLiveHudAnimation = !hudHidden && phaze$prescanAnimatedGradientFlips();
             if (hasLiveBlurHud) {
                 Blur.INSTANCE.captureBaseFrameForBlur();
             }
@@ -447,102 +387,53 @@ public class InGameHudMixin {
                 BatchedHudBuffer.INSTANCE.invalidate();
                 renderHudInternal(context);
             } else if (phaze$shouldBypassHudBatchingForCurrentScreen(client)) {
-                // Vanilla pause/inventory/options screens with background blur
-                // run additional framebuffer passes after InGameHud. Rendering
-                // our HUDs directly on those screens avoids the cached-HUD FBO
-                // colliding with vanilla's blur pipeline while keeping every
-                // HUD feature visible and functional.
+
                 BatchedHudBuffer.INSTANCE.invalidate();
                 renderHudInternal(context);
             } else {
-                // Pre-scan EVERY HUD's blur state BEFORE we decide whether
-                // Pass 1 needs to refresh. The per-renderBufferedHud
-                // trackBlurStateChange that lives inside Pass 1 / Pass 2
-                // is too late to repair the THIS-frame visual: by the
-                // time it invalidates the cache, blit() has already
-                // stamped the previous frame's pre-flip HUD onto the
-                // main framebuffer, while Pass 2 then redraws the
-                // post-flip (blurred) version on top - that's the
-                // "imprinted" ghost the user reports across every HUD
-                // the first frame after a blur toggle (or any other
-                // setting change that crosses the hasActiveBackgroundBlur
-                // boundary). Walking the module list once here flips
-                // BatchedHudBuffer to dirty BEFORE shouldRefresh is
-                // sampled, so the cache is rebuilt on this frame and
-                // blit shows fresh content matching what Pass 2 draws.
+
                 int configuredRefreshRate = HudOptimizer.getInstance().refreshRate.getInt();
-                boolean smoothGuiBackdrop = client.currentScreen instanceof MenuScreen;
-                int effectiveRefreshRate = hasLiveBlurHud || smoothGuiBackdrop
-                        ? Math.max(60, configuredRefreshRate)
-                        : configuredRefreshRate;
-                BatchedHudBuffer.INSTANCE.setTargetFps(effectiveRefreshRate);
+                int blurBackgroundRefreshRate = HudOptimizer.getInstance().blurRefreshRate.getInt();
+
+                int backgroundRefreshRate = hasLiveBlurHud ? blurBackgroundRefreshRate : configuredRefreshRate;
+                BatchedHudBuffer.INSTANCE.setTargetFps(backgroundRefreshRate);
                 boolean chatEditing = client.currentScreen instanceof ChatScreen;
 
-                // 1.21.11: the throttle has to be disabled, or the HUD blinks
-                // at exactly the refresh interval.
-                //
-                // The whole design assumes a capture window can contain the
-                // frame's HUD drawing. That held through 1.21.4, where
-                // DrawContext issued real draws that landed in whatever
-                // framebuffer was bound. In 1.21.11 DrawContext only appends to
-                // a GuiRenderState, and GuiRenderer flushes it later, onto the
-                // main framebuffer - after endCapture(). So the FBO receives
-                // ONLY Phaze's own immediate draws (shapes, MSDF text), while
-                // every vanilla-drawn part (text, item stacks, sprites) misses
-                // it entirely.
-                //
-                // The visible result: on a refresh frame renderHudInternal runs
-                // and its deferred half reaches the screen; on a cached frame it
-                // does not run at all, so that half vanishes and only the blit
-                // remains. Half the HUD strobing on and off at the throttle rate
-                // is exactly the reported flicker.
-                //
-                // Capturing every frame keeps the HUD correct and costs what
-                // an unthrottled HUD costs. The single-blit batching still
-                // applies. Re-enabling the throttle needs a way to flush the
-                // GuiRenderState into an arbitrary target mid-frame; there is
-                // no such hook today.
-                // TODO(1.21.11): restore throttling once GuiRenderState can be
-                //  flushed into the capture FBO.
-                boolean shouldRefresh = true;
+                boolean shouldRefresh = BatchedHudBuffer.INSTANCE.shouldRefresh(chatEditing);
 
-                // Pass 1 — refresh frames only: render NON-blur HUDs into the
-                // batched FBO at the throttled refresh rate.
                 if (shouldRefresh) {
-                    // Flush vanilla's pending deferred draws onto the
-                    // REAL main framebuffer before we switch the bound
-                    // framebuffer to our FBO. {@code InGameHud.render}
-                    // is just {@code layeredDrawer.render}; each layer
-                    // (renderChat in particular) queues
-                    // {@code drawTextWithShadow} / {@code fill} into the
-                    // shared {@code DrawContext} buffer but never
-                    // flushes them itself - vanilla relies on a later
-                    // implicit flush. Without this explicit flush our
-                    // {@code context.draw()} inside the capture phase
-                    // (below) would dump ALL of vanilla's accumulated
-                    // chat draws into the captured FBO, where they get
-                    // stamped onto the throttled cache. On subsequent
-                    // frames the {@code BLIT} overlays that frozen chat
-                    // state - producing the dark "phantom rows" the
-                    // user reported above the live chat and the blink
-                    // when the cache rebuilds at the throttle interval
-                    // (30 ms by default) while real chat updates every
-                    // frame. Flushing here pushes vanilla's chat onto
-                    // the main framebuffer where it belongs, and the
-                    // FBO ends up containing ONLY our own HUD widgets.
+
                     inBatchPass = true;
                     batchIncludesBlur = true;
                     BatchedHudBuffer.INSTANCE.beginCapture();
                     renderHudInternal(context);
-                    // Flush deferred DrawContext draws into the FBO before unbinding,
-                    // otherwise vanilla flushes them later into the main framebuffer.
+
                     BatchedHudBuffer.INSTANCE.endCapture();
                     batchIncludesBlur = false;
                     inBatchPass = false;
+                } else {
+
+                    inBatchPass = true;
+                    batchIncludesBlur = true;
+                    Blur.hudImmediateDrawsSuppressed = true;
+                    try {
+                        renderHudInternal(context);
+                    } finally {
+                        Blur.hudImmediateDrawsSuppressed = false;
+                        batchIncludesBlur = false;
+                        inBatchPass = false;
+                    }
                 }
                 BatchedHudBuffer.INSTANCE.blit();
 
-                // Keep click/drag state live without redrawing any HUD content.
+                if (hasLiveHudAnimation) {
+                    inBatchPass = true;
+                    inGradientPass = true;
+                    renderHudInternal(context);
+                    inGradientPass = false;
+                    inBatchPass = false;
+                }
+
                 inLogicOnlyPass = true;
                 renderHudInternal(context);
                 inLogicOnlyPass = false;
@@ -550,18 +441,8 @@ public class InGameHudMixin {
         }
         Blur.INSTANCE.endCachedFrame();
 
-        // Render zoom level outside of HUD check (always fresh, not batched)
         if (client != null && client.options != null && !client.options.hudHidden) {
-            // {@code Window.getScaledWidth/Height} returns the
-            // GUI-scale-aware coordinate space that {@code drawText}
-            // renders in. The previous version passed the raw
-            // framebuffer pixels which only happened to land in the
-            // right place at GUI scale 1; on scale 2/3/4 the text
-            // drifted off-centre and below the visible area. The
-            // user explicitly reported "show current zoom uezzhaet
-            // на 2 и более". Using the scaled coords keeps the
-            // overlay centred horizontally and 50px above the bottom
-            // edge regardless of the active GUI scale.
+
             float screenWidth = client.getWindow().getScaledWidth();
             float screenHeight = client.getWindow().getScaledHeight();
             renderZoomLevel(context, client, screenWidth, screenHeight);
@@ -572,19 +453,7 @@ public class InGameHudMixin {
     }
 
     private void renderHudInternal(DrawContext context) {
-        // First call within the current frame is responsible for global state
-        // updates that must run once per frame BEFORE per-HUD logic
-        // (delta-time, click tracking, guide reset). A second call (the
-        // blur-only pass after the batch blit) reuses the values computed
-        // during the first call to avoid double-tracking clicks / halving
-        // animation deltas.
-        //
-        // Last call is responsible for state updates that must run AFTER all
-        // HUD drag/resize detection has completed (wasMouseDown edge tracking
-        // and guide rendering). Because blur HUDs only run their drag logic in
-        // pass 2 (inBlurPass), updating wasMouseDown in pass 1 would short-
-        // circuit the press-edge detection for blur HUDs and prevent dragging
-        // them while chat is open.
+
         boolean firstCallThisFrame = !renderedThisFrame;
         boolean lastCallThisFrame = !inBatchPass;
         renderedThisFrame = true;
@@ -668,9 +537,9 @@ public class InGameHudMixin {
             CpsHud cpsHud = CpsHud.getInstance();
             int leftCps = LEFT_CLICKS.size();
             int rightCps = RIGHT_CLICKS.size();
-            
+
             if (cpsHud.rightClickCps.isValue()) {
-                // Show both left and right CPS: *left* | *right*
+
                 if (cpsHud.showCpsText.isValue()) {
                     if (cpsHud.reverseText.isValue()) {
                         return leftCps + " | " + rightCps + " CPS";
@@ -681,7 +550,7 @@ public class InGameHudMixin {
                     return leftCps + " | " + rightCps;
                 }
             } else {
-                // Show only left CPS
+
                 if (cpsHud.showCpsText.isValue()) {
                     if (cpsHud.reverseText.isValue()) {
                         return leftCps + " CPS";
@@ -705,12 +574,7 @@ public class InGameHudMixin {
                         BASE_WIDTH + 6.0f, BASE_HEIGHT));
         renderBufferedHud(context, ArmorHud.getInstance(), chatEditing, () ->
                 renderArmorHud(context, client, ArmorHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown, getHudDelta(ArmorHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
-        // InventoryHud routes through the same buffered pipeline so
-        // HudOptimizer can park its 27-slot draw inside Pass 1's
-        // throttled FBO cache instead of redrawing every frame -
-        // the user reported it was the heaviest HUD on their
-        // machine, and the icon pass (drawItem x 27 + overlay
-        // submit) is exactly what the cache is meant to absorb.
+
         renderBufferedHud(context, InventoryHud.getInstance(), chatEditing, () ->
                 renderInventoryHud(context, client, InventoryHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
                         getHudDelta(InventoryHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale,
@@ -735,8 +599,7 @@ public class InGameHudMixin {
                 renderRectHud(context, client, DayCounterHud.getInstance(), dayTextWrapped, HUD_DAY_COUNTER,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(DayCounterHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
                         getTextHudBaseWidth(client, dayTextWrapped), BASE_HEIGHT));
-        // Direction HUD temporarily disabled by request.
-        // TabHud/NametagHud now affect vanilla TAB list and world nametags directly via dedicated mixins.
+
         String timeText = getTimeHudText(TimeHud.getInstance(), client);
         final String timeTextWrapped = wrapTextWithBrackets(timeText, TimeHud.getInstance());
         renderBufferedHud(context, TimeHud.getInstance(), chatEditing, () ->
@@ -785,35 +648,25 @@ public class InGameHudMixin {
 
         String speedText = getCachedHudText(MovementSpeedHud.getInstance(), HUD_MOVEMENT_SPEED, chatEditing, () -> {
             if (client.player == null) return "0.00 m/s";
-            
+
             MovementSpeedHud module = MovementSpeedHud.getInstance();
-            
-            // Calculate speed using distance between current and previous position (like soup)
-            // 1.21.11: Entity.prevX/prevY/prevZ were renamed lastX/lastY/lastZ
-            // (same fields, same meaning - previous-tick position).
+
             double speed = Math.sqrt(client.player.squaredDistanceTo(new Vec3d(client.player.lastX, client.player.lastY, client.player.lastZ))) * 20.0;
 
-            // If using ground speed only, calculate horizontal component
             if (module.onlyUseGroundSpeed.isValue()) {
                 double dx = client.player.getX() - client.player.lastX;
                 double dz = client.player.getZ() - client.player.lastZ;
                 speed = Math.sqrt(dx * dx + dz * dz) * 20.0;
             }
-            
-            // If standing still, show 0
+
             if (speed < 0.01) speed = 0.0;
-            
+
             String value = module.getSpeedText(speed) + " m/s";
-            // Optional "Speed:" prefix when the user wants the
-            // labelled variant. Default OFF preserves the original
-            // value-only display.
+
             return module.reverseOrder.isValue() ? "Speed: " + value : value;
         });
         final String speedTextWrapped = wrapTextWithBrackets(speedText, MovementSpeedHud.getInstance());
-        // Pass an explicit baseWidth derived from the actual text - the
-        // earlier 12-arg overload defaulted to {@code BASE_WIDTH} which
-        // is sized for short numeric HUDs and clipped longer strings
-        // such as "Speed: 1.23 m/s" once Reverse Order was enabled.
+
         renderBufferedHud(context, MovementSpeedHud.getInstance(), chatEditing, () ->
                 renderRectHud(context, client, MovementSpeedHud.getInstance(), speedTextWrapped, HUD_MOVEMENT_SPEED,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(MovementSpeedHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
@@ -829,14 +682,6 @@ public class InGameHudMixin {
                 renderWailaHud(context, client, WailaHud.getInstance(), wailaTextWrapped, wailaIcon, HUD_WAILA,
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(WailaHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
 
-        // Health Indicator: lives in ModuleCategory.OTHER but extends
-        // RectHudModule, so it rides the exact same renderRectHud
-        // pipeline as every other draggable widget. The render lambda
-        // returns early when there's nothing to show so an idle
-        // indicator doesn't steal mouse interactions during normal
-        // gameplay - in chatEditing mode we substitute the static
-        // placeholder "20" so the rect stays visible and grabbable
-        // even when the player isn't currently in a fight.
         final HealthIndicator healthIndicator = HealthIndicator.getInstance();
         renderBufferedHud(context, healthIndicator, chatEditing, () -> {
             String hpText;
@@ -855,22 +700,6 @@ public class InGameHudMixin {
                     getTextHudBaseWidth(client, wrappedHpText), BASE_HEIGHT);
         });
 
-        // Battle Info: same single-line text-rect path as the health
-        // indicator. Per-frame {@code getDisplayText()} build is cheap
-        // (just stitches a handful of cached String.format outputs)
-        // so we don't bother caching at the {@code getCachedHudText}
-        // layer; the rect-render lambda short-circuits on empty text
-        // when no metric is enabled.
-        // BattleInfo HUD removed in a later cleanup. The combo /
-        // reach / damage rolling averages it provided are no longer
-        // surfaced; standalone HUDs (Combo Counter, Reach, Cps)
-        // remain available for users who want individual metrics.
-
-        // Consumable: dedicated render path (icons-not-text) wired
-        // through the same buffered pipeline so it gets the cached
-        // FBO / direct-blur split for free. The custom path knows
-        // how to size itself from the icon grid layout the module
-        // computes.
         final vorga.phazeclient.implement.features.modules.hud.Consumable consumable =
                 vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance();
         renderBufferedHud(context, consumable, chatEditing, () ->
@@ -900,17 +729,22 @@ public class InGameHudMixin {
     }
 
     private void renderBufferedHud(DrawContext context, RectHudModule module, boolean chatEditing, Runnable renderLogic) {
+        boolean animatedBackground = module.hasActiveAnimatedBackground();
         phaze$trackBlurStateChange(module, module.hasActiveBackgroundBlur());
+        phaze$trackGradientStateChange(module, animatedBackground);
+        if (inGradientPass) {
+            if (animatedBackground) {
+                renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing,
+                        () -> phaze$withHudTextAlignment(module, renderLogic));
+            }
+            return;
+        }
+        if (inBatchPass && animatedBackground) return;
         if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
         renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing,
                 () -> phaze$withHudTextAlignment(module, renderLogic));
     }
 
-    /**
-     * Keeps text optically centered against HUD icons and backgrounds. The
-     * optical correction is expressed in the HUD's local coordinate space,
-     * so it remains stable while the whole HUD is scaled.
-     */
     private static void phaze$withHudTextAlignment(RectHudModule module, Runnable renderLogic) {
         float previousOffset = phaze$currentHudTextYOffset;
         phaze$currentHudTextYOffset = phaze$usesDefaultTextAlignment(module) ? 0.3F : 0.0F;
@@ -927,19 +761,6 @@ public class InGameHudMixin {
                 && !(module instanceof PlayerModelHud);
     }
 
-    /**
-     * Drops the batched-HUD cache the first frame a module's blur-state
-     * flips. Otherwise the cache from the previous frame still believes
-     * the HUD was in / out of Pass 1, and the visual lags by one full
-     * refresh cycle - manifesting as the disappear/black-flash reported
-     * by the user when they toggled blur on a HUD.
-     *
-     * <p>Cheap enough to call from every {@code renderBufferedHud}
-     * invocation: the map probe is O(1) identity-hash, the put is a
-     * single-slot rewrite, and the {@code !=} comparison is two
-     * autoboxed-bool reads (the JIT will inline-eliminate the autobox
-     * after warm-up).
-     */
     private static void phaze$trackBlurStateChange(Object module, boolean current) {
         Boolean prev = PHAZE_LAST_BLUR_STATE.put(module, current);
         if (prev != null && prev != current) {
@@ -947,32 +768,6 @@ public class InGameHudMixin {
         }
     }
 
-    /**
-     * Walks every registered HUD module BEFORE Pass 1 decides whether to
-     * refresh the batched FBO, comparing the current
-     * {@code hasActiveBackgroundBlur()} value against the last value that
-     * was recorded in {@link #PHAZE_LAST_BLUR_STATE}. Any HUD whose blur
-     * state has crossed the Pass-1/Pass-2 boundary forces an immediate
-     * cache invalidation, so the very next {@code shouldRefresh} check
-     * resolves to {@code true} and Pass 1 rebuilds the FBO with the
-     * post-flip pass split.
-     *
-     * <p>The per-{@code renderBufferedHud} {@link #phaze$trackBlurStateChange}
-     * call still exists as a defence in depth, but it runs AFTER the
-     * frame's {@code blit()} - too late to repair this frame's visual.
-     * The pre-scan here is what actually prevents the user-visible
-     * "imprinted HUD" ghost on the first frame after any blur toggle:
-     * without it, the stale cache (rendered with the old pass split)
-     * blits to the screen and Pass 2 then redraws the post-flip HUD on
-     * top, stamping every affected HUD twice for one frame.
-     *
-     * <p>Filtering by {@code instanceof} restricts the walk to the two
-     * HUD types that surface {@code hasActiveBackgroundBlur}
-     * ({@link RectHudModule} + {@link ArmorHud}). Modules without a
-     * blur surface (e.g. {@code TabHud}, {@code NametagHud},
-     * {@code Animations}) don't participate in the Pass split, so
-     * skipping them costs nothing and keeps the per-frame walk cheap.
-     */
     private static boolean phaze$prescanBlurStateFlips() {
         Main main = Main.getInstance();
         if (main == null) {
@@ -1001,8 +796,486 @@ public class InGameHudMixin {
         return anyActiveBlur;
     }
 
+    private static boolean phaze$prescanAnimatedGradientFlips() {
+        Main main = Main.getInstance();
+        if (main == null) {
+            return false;
+        }
+        var provider = main.getModuleProvider();
+        if (provider == null) {
+            return false;
+        }
+        boolean anyAnimated = false;
+        for (Module module : provider.getModules()) {
+            boolean current;
+            if (module instanceof RectHudModule rectModule) {
+                current = rectModule.hasActiveAnimatedBackground();
+            } else if (module instanceof ArmorHud armorModule) {
+                current = armorModule.hasActiveAnimatedBackground();
+            } else {
+                continue;
+            }
+            anyAnimated |= module.isEnabled() && current;
+            Boolean prev = PHAZE_LAST_GRADIENT_STATE.put(module, current);
+            if (prev != null && prev != current) {
+                BatchedHudBuffer.INSTANCE.invalidate();
+            }
+        }
+        return anyAnimated;
+    }
+
+    private static void phaze$trackGradientStateChange(Object module, boolean current) {
+        Boolean previous = PHAZE_LAST_GRADIENT_STATE.put(module, current);
+        if (previous != null && previous != current) {
+            BatchedHudBuffer.INSTANCE.invalidate();
+        }
+    }
+
+    private static float phaze$getClampedHudCornerRadius(float requestedRadius, float width, float height) {
+        return net.minecraft.util.math.MathHelper.clamp(requestedRadius, 0.0F, Math.max(0.0F, Math.min(width, height) * 0.5F));
+    }
+
+    private static void phaze$renderGradientRect(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            int hoverFill,
+            int startColor,
+            int endColor,
+            String direction,
+            float animationOffset,
+            boolean animated,
+            float requestedRadius
+    ) {
+        if (hoverFill != 0) {
+            startColor = blendARGB(startColor, hoverFill);
+            endColor = blendARGB(endColor, hoverFill);
+        }
+        int left = Math.round(x);
+        int top = Math.round(y);
+        int right = Math.max(left + 1, Math.round(x + width));
+        int bottom = Math.max(top + 1, Math.round(y + height));
+        String selectedDirection = direction == null ? "Left to Right" : direction;
+        float radius = phaze$getClampedHudCornerRadius(requestedRadius, right - left, bottom - top);
+
+        if (radius > 0.01F) {
+
+            if (phaze$renderTexturedRoundedGradient(context, x, y, width, height, startColor, endColor,
+                    selectedDirection, animationOffset, animated, radius)) {
+                return;
+            }
+            phaze$renderRoundedGradient(context, left, top, right, bottom, startColor, endColor,
+                    selectedDirection, animationOffset, animated, radius);
+            return;
+        }
+
+        if (!animated) {
+            phaze$renderStaticGradient(context, left, top, right, bottom, startColor, endColor, selectedDirection);
+            return;
+        }
+
+        if ("Pulse".equals(selectedDirection)) {
+            context.fill(left, top, right, bottom, phaze$movingGradientColor(startColor, endColor, animationOffset));
+            return;
+        }
+
+        if ("Top to Bottom".equals(selectedDirection) || "Bottom to Top".equals(selectedDirection)) {
+            float directionSign = "Top to Bottom".equals(selectedDirection) ? -1.0F : 1.0F;
+            phaze$renderMovingAxisGradient(context, left, top, right, bottom, startColor, endColor,
+                    directionSign * animationOffset, false);
+            return;
+        }
+
+        if ("Left to Right".equals(selectedDirection) || "Right to Left".equals(selectedDirection)) {
+            float directionSign = "Right to Left".equals(selectedDirection) ? 1.0F : -1.0F;
+            phaze$renderMovingAxisGradient(context, left, top, right, bottom, startColor, endColor,
+                    directionSign * animationOffset, true);
+            return;
+        }
+
+        int stripCount = 96;
+        for (int strip = 0; strip < stripCount; strip++) {
+            float progress = (strip + 0.5F) / stripCount;
+            float stripLeft = MathHelper.lerp(strip / (float) stripCount, left, right);
+            float stripRight = MathHelper.lerp((strip + 1.0F) / stripCount, left, right);
+
+            if ("Diagonal Down".equals(selectedDirection) || "Diagonal Up".equals(selectedDirection)) {
+                boolean down = "Diagonal Down".equals(selectedDirection);
+                float topCoordinate = down ? progress * 0.5F : 0.5F + progress * 0.5F;
+                float bottomCoordinate = down ? 0.5F + progress * 0.5F : progress * 0.5F;
+                int topColor = phaze$movingGradientColor(startColor, endColor, topCoordinate - animationOffset);
+                int bottomColor = phaze$movingGradientColor(startColor, endColor, bottomCoordinate - animationOffset);
+                phaze$drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, topColor, bottomColor);
+            } else {
+                float directionSign = "Right to Left".equals(selectedDirection) ? 1.0F : -1.0F;
+                int color = phaze$movingGradientColor(startColor, endColor, progress + directionSign * animationOffset);
+                phaze$drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, color, color);
+            }
+        }
+    }
+
+    private static void phaze$renderStaticGradient(
+            DrawContext context,
+            int left,
+            int top,
+            int right,
+            int bottom,
+            int startColor,
+            int endColor,
+            String direction
+    ) {
+        if ("Top to Bottom".equals(direction)) {
+            phaze$drawVerticalGradient(context, left, top, right - left, bottom - top, startColor, endColor);
+            return;
+        }
+        if ("Bottom to Top".equals(direction)) {
+            phaze$drawVerticalGradient(context, left, top, right - left, bottom - top, endColor, startColor);
+            return;
+        }
+        if ("Pulse".equals(direction)) {
+            context.fill(left, top, right, bottom, startColor);
+            return;
+        }
+        if ("Left to Right".equals(direction) || "Right to Left".equals(direction)) {
+            boolean reversed = "Right to Left".equals(direction);
+            phaze$drawHorizontalGradient(context, left, top, right - left, bottom - top,
+                    reversed ? endColor : startColor, reversed ? startColor : endColor);
+            return;
+        }
+        int stripCount = 96;
+        for (int strip = 0; strip < stripCount; strip++) {
+            float progress = (strip + 0.5F) / stripCount;
+            float stripLeft = MathHelper.lerp(strip / (float) stripCount, left, right);
+            float stripRight = MathHelper.lerp((strip + 1.0F) / stripCount, left, right);
+            if ("Diagonal Down".equals(direction) || "Diagonal Up".equals(direction)) {
+                boolean down = "Diagonal Down".equals(direction);
+                float topProgress = down ? progress * 0.5F : 0.5F + progress * 0.5F;
+                float bottomProgress = down ? 0.5F + progress * 0.5F : progress * 0.5F;
+                phaze$drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top,
+                        phaze$lerpGradientColor(startColor, endColor, topProgress),
+                        phaze$lerpGradientColor(startColor, endColor, bottomProgress));
+            } else {
+                float colorProgress = "Right to Left".equals(direction) ? 1.0F - progress : progress;
+                int color = phaze$lerpGradientColor(startColor, endColor, colorProgress);
+                phaze$drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, color, color);
+            }
+        }
+    }
+
+    private static void phaze$renderMovingAxisGradient(
+            DrawContext context,
+            float left,
+            float top,
+            float right,
+            float bottom,
+            int startColor,
+            int endColor,
+            float phase,
+            boolean horizontal
+    ) {
+        float position = 0.0F;
+        for (int segment = 0; segment < 4 && position < 0.99999F; segment++) {
+            float coordinate = position + phase;
+            float nextStop = ((float) Math.floor(coordinate * 2.0F + 0.00001F) + 1.0F) * 0.5F - phase;
+            float endPosition = MathHelper.clamp(nextStop, position + 0.0001F, 1.0F);
+            int fromColor = phaze$movingLinearGradientColor(startColor, endColor, coordinate);
+            int toColor = phaze$movingLinearGradientColor(startColor, endColor, endPosition + phase);
+
+            if (horizontal) {
+                float segX = MathHelper.lerp(position, left, right);
+                float segWidth = MathHelper.lerp(endPosition, left, right) - segX;
+                phaze$drawHorizontalGradient(context, segX, top, segWidth, bottom - top, fromColor, toColor);
+            } else {
+                float segY = MathHelper.lerp(position, top, bottom);
+                float segHeight = MathHelper.lerp(endPosition, top, bottom) - segY;
+                phaze$drawVerticalGradient(context, left, segY, right - left, segHeight, fromColor, toColor);
+            }
+            position = endPosition;
+        }
+    }
+
+    private static boolean phaze$renderTexturedRoundedGradient(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            int startColor,
+            int endColor,
+            String direction,
+            float animationOffset,
+            boolean animated,
+            float radius
+    ) {
+        if (inBatchPass && !BatchedHudBuffer.INSTANCE.isCaptureActive() && !inGradientPass) {
+            return true;
+        }
+        try {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null || client.getTextureManager() == null) {
+                return false;
+            }
+            if (phaze$gradientTexture == null) {
+                phaze$gradientTexture = new NativeImageBackedTexture("phaze/hud_gradient", 64, 64, false);
+                client.getTextureManager().registerTexture(PHAZE_GRADIENT_TEXTURE_ID, phaze$gradientTexture);
+            }
+            NativeImageBackedTexture texture = phaze$gradientTexture;
+            var image = texture.getImage();
+            if (image == null) {
+                return false;
+            }
+            for (int py = 0; py < 64; py++) {
+                float yProgress = py / 63.0F;
+                for (int px = 0; px < 64; px++) {
+                    float xProgress = px / 63.0F;
+                    image.setColorArgb(px, py, phaze$sampleHudGradientColor(startColor, endColor, direction,
+                            xProgress, yProgress, animationOffset, animated));
+                }
+            }
+            texture.upload();
+            Render2DUtil.drawRoundedTexturedQuad(context.getMatrices(),
+                    PHAZE_GRADIENT_TEXTURE_ID,
+                    x, y, width, height, -1.0E9F, 1.0E9F, radius,
+                    0.0F, 1.0F, 0.0F, 1.0F, 0xFFFFFFFF);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static void phaze$renderRoundedGradient(
+            DrawContext context,
+            float left,
+            float top,
+            float right,
+            float bottom,
+            int startColor,
+            int endColor,
+            String direction,
+            float animationOffset,
+            boolean animated,
+            float radius
+    ) {
+        float width = right - left;
+        float height = bottom - top;
+        MinecraftClient client = MinecraftClient.getInstance();
+        float windowScale = client == null || client.getWindow() == null
+                ? 1.0F
+                : Math.max(1.0F, (float) client.getWindow().getScaleFactor());
+        var matrices = context.getMatrices();
+        float physicalScaleX = Math.max(0.01F, Math.abs(matrices.m00()) * windowScale);
+        float physicalScaleY = Math.max(0.01F, Math.abs(matrices.m11()) * windowScale);
+        float antialiasSize = Math.min(radius, 1.0F / physicalScaleY);
+
+        float capSpan = Math.min(radius, width * 0.5F);
+        int capStrips = MathHelper.clamp((int) Math.ceil(capSpan * physicalScaleX * 2.5F), 12, 128);
+        int midStrips = 24;
+        float capProgress = capSpan / width;
+        boolean hasMiddle = capProgress < 0.4999F;
+        int totalStrips = capStrips * 2 + (hasMiddle ? midStrips : capStrips);
+
+        for (int strip = 0; strip < totalStrips; strip++) {
+            float x0Progress;
+            float x1Progress;
+            if (strip < capStrips) {
+
+                x0Progress = strip / (float) capStrips * capProgress;
+                x1Progress = (strip + 1) / (float) capStrips * capProgress;
+            } else if (hasMiddle && strip < capStrips + midStrips) {
+
+                float m = strip - capStrips;
+                x0Progress = capProgress + m / (float) midStrips * (1.0F - 2.0F * capProgress);
+                x1Progress = capProgress + (m + 1) / (float) midStrips * (1.0F - 2.0F * capProgress);
+            } else {
+
+                int r = hasMiddle ? strip - capStrips - midStrips : strip - capStrips;
+                x1Progress = 1.0F - r / (float) capStrips * capProgress;
+                x0Progress = 1.0F - (r + 1) / (float) capStrips * capProgress;
+            }
+            float xProgress = (x0Progress + x1Progress) * 0.5F;
+            float stripLeft = MathHelper.lerp(x0Progress, left, right);
+            float stripRight = MathHelper.lerp(x1Progress, left, right);
+            float edgeDistance = Math.min(xProgress * width, (1.0F - xProgress) * width);
+            float inset = 0.0F;
+            boolean roundedCap = edgeDistance < radius;
+            if (roundedCap) {
+                float dx = radius - edgeDistance;
+                inset = radius - (float) Math.sqrt(Math.max(0.0F, radius * radius - dx * dx));
+            }
+
+            float exactTop = top + inset;
+            float exactBottom = bottom - inset;
+            float solidTop = Math.min(exactBottom, exactTop + antialiasSize * 0.5F);
+            float solidBottom = Math.max(exactTop, exactBottom - antialiasSize * 0.5F);
+            if (exactBottom <= exactTop) {
+                continue;
+            }
+            float topProgress = (solidTop - top) / height;
+            float bottomProgress = (solidBottom - top) / height;
+            int topColor = phaze$sampleHudGradientColor(startColor, endColor, direction,
+                    xProgress, topProgress, animationOffset, animated);
+            int bottomColor = phaze$sampleHudGradientColor(startColor, endColor, direction,
+                    xProgress, bottomProgress, animationOffset, animated);
+            phaze$drawVerticalGradient(context, stripLeft, solidTop, stripRight - stripLeft,
+                    solidBottom - solidTop, topColor, bottomColor);
+
+            if (roundedCap && antialiasSize > 0.001F) {
+                int exactTopColor = phaze$sampleHudGradientColor(startColor, endColor, direction,
+                        xProgress, inset / height, animationOffset, animated);
+                int exactBottomColor = phaze$sampleHudGradientColor(startColor, endColor, direction,
+                        xProgress, 1.0F - inset / height, animationOffset, animated);
+                phaze$drawVerticalGradient(context, stripLeft, exactTop - antialiasSize * 0.5F,
+                        stripRight - stripLeft, antialiasSize,
+                        phaze$multiplyColorAlpha(exactTopColor, 0.0F), exactTopColor);
+                phaze$drawVerticalGradient(context, stripLeft, exactBottom - antialiasSize * 0.5F,
+                        stripRight - stripLeft, antialiasSize,
+                        exactBottomColor, phaze$multiplyColorAlpha(exactBottomColor, 0.0F));
+            }
+        }
+    }
+
+    private static int phaze$sampleHudGradientColor(
+            int startColor,
+            int endColor,
+            String direction,
+            float xProgress,
+            float yProgress,
+            float animationOffset,
+            boolean animated
+    ) {
+        if ("Pulse".equals(direction)) {
+            return animated
+                    ? phaze$movingGradientColor(startColor, endColor, animationOffset)
+                    : startColor;
+        }
+
+        float coordinate;
+        float phase;
+        switch (direction) {
+            case "Right to Left" -> {
+                coordinate = 1.0F - xProgress;
+                phase = animationOffset;
+            }
+            case "Top to Bottom" -> {
+                coordinate = yProgress;
+                phase = -animationOffset;
+            }
+            case "Bottom to Top" -> {
+                coordinate = 1.0F - yProgress;
+                phase = animationOffset;
+            }
+            case "Diagonal Down" -> {
+                coordinate = (xProgress + yProgress) * 0.5F;
+                phase = -animationOffset;
+            }
+            case "Diagonal Up" -> {
+                coordinate = (xProgress + 1.0F - yProgress) * 0.5F;
+                phase = -animationOffset;
+            }
+            default -> {
+                coordinate = xProgress;
+                phase = -animationOffset;
+            }
+        }
+        return animated
+                ? phaze$movingGradientColor(startColor, endColor, coordinate + phase)
+                : phaze$lerpGradientColor(startColor, endColor, MathHelper.clamp(coordinate, 0.0F, 1.0F));
+    }
+
+    private static void phaze$drawVerticalGradient(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            int startColor,
+            int endColor
+    ) {
+        if (width <= 0.0F || height <= 0.0F) {
+            return;
+        }
+        if (startColor == endColor) {
+            context.fill(Math.round(x), Math.round(y), Math.round(x + width), Math.round(y + height), startColor);
+            return;
+        }
+        context.getMatrices().pushMatrix();
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(width, height);
+        context.fillGradient(0, 0, 1, 1, startColor, endColor);
+        context.getMatrices().popMatrix();
+    }
+
+    private static void phaze$drawHorizontalGradient(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            int startColor,
+            int endColor
+    ) {
+        if (width <= 0.0F || height <= 0.0F) {
+            return;
+        }
+        if (startColor == endColor) {
+            context.fill(Math.round(x), Math.round(y), Math.round(x + width), Math.round(y + height), startColor);
+            return;
+        }
+        context.getMatrices().pushMatrix();
+        context.getMatrices().translate(x, y);
+        context.getMatrices().scale(width, height);
+        context.getMatrices().rotate((float) Math.toRadians(-90.0D));
+        context.fillGradient(-1, 0, 0, 1, startColor, endColor);
+        context.getMatrices().popMatrix();
+    }
+
+    private static int phaze$movingLinearGradientColor(int startColor, int endColor, float coordinate) {
+        float wrapped = coordinate - (float) Math.floor(coordinate);
+        float blend = wrapped < 0.5F ? wrapped * 2.0F : (1.0F - wrapped) * 2.0F;
+        return phaze$lerpGradientColor(startColor, endColor, blend);
+    }
+
+    private static int phaze$multiplyColorAlpha(int color, float multiplier) {
+        int alpha = MathHelper.clamp(Math.round(((color >>> 24) & 0xFF) * multiplier), 0, 255);
+        return (alpha << 24) | (color & 0x00FFFFFF);
+    }
+
+    private static int phaze$movingGradientColor(int startColor, int endColor, float coordinate) {
+        float wrapped = coordinate - (float) Math.floor(coordinate);
+        float blend = 0.5F - 0.5F * (float) Math.cos(wrapped * Math.PI * 2.0D);
+        return phaze$lerpGradientColor(startColor, endColor, blend);
+    }
+
+    private static int phaze$lerpGradientColor(int first, int second, float progress) {
+        float t = net.minecraft.util.math.MathHelper.clamp(progress, 0.0F, 1.0F);
+        int a = Math.round(((first >>> 24) & 0xFF) + (((second >>> 24) & 0xFF) - ((first >>> 24) & 0xFF)) * t);
+        int r = Math.round(((first >>> 16) & 0xFF) + (((second >>> 16) & 0xFF) - ((first >>> 16) & 0xFF)) * t);
+        int g = Math.round(((first >>> 8) & 0xFF) + (((second >>> 8) & 0xFF) - ((first >>> 8) & 0xFF)) * t);
+        int b = Math.round((first & 0xFF) + ((second & 0xFF) - (first & 0xFF)) * t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
     private void renderBufferedHud(DrawContext context, ArmorHud module, boolean chatEditing, Runnable renderLogic) {
+        boolean animatedBackground = module.hasActiveAnimatedBackground();
         phaze$trackBlurStateChange(module, module.hasActiveBackgroundBlur());
+        phaze$trackGradientStateChange(module, animatedBackground);
+        if (inGradientPass) {
+            if (animatedBackground) {
+                renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, () -> {
+                    float previousOffset = phaze$currentHudTextYOffset;
+                    phaze$currentHudTextYOffset = 0.0F;
+                    try {
+                        renderLogic.run();
+                    } finally {
+                        phaze$currentHudTextYOffset = previousOffset;
+                    }
+                });
+            }
+            return;
+        }
+        if (inBatchPass && animatedBackground) return;
         if (shouldSkipForCurrentPass(module.hasActiveBackgroundBlur())) return;
         renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, () -> {
             float previousOffset = phaze$currentHudTextYOffset;
@@ -1015,11 +1288,6 @@ public class InGameHudMixin {
         });
     }
 
-    /**
-     * Two-pass filter: blur HUDs are skipped during the batched FBO pass, and
-     * non-blur HUDs are skipped during the direct blur-only pass. In the
-     * normal (un-batched) path both passes are inactive and all HUDs render.
-     */
     private static boolean shouldSkipForCurrentPass(boolean hasBlur) {
         if (inLogicOnlyPass) return true;
         if (inBatchPass && hasBlur && !batchIncludesBlur) return true;
@@ -1039,14 +1307,21 @@ public class InGameHudMixin {
             return;
         }
 
-        // Per-HUD caching is unused; the entire HUD is batched into BatchedHudBuffer
-        // at the InGameHudMixin#render TAIL injection level (Exordium-style).
         renderLogic.run();
+    }
+
+    private static long hudTextThrottleMs() {
+        HudOptimizer optimizer = HudOptimizer.getInstance();
+        if (optimizer != null && optimizer.isEnabled()) {
+            return Math.max(4L, 1000L / Math.max(1, optimizer.refreshRate.getInt()));
+        }
+        return HUD_TEXT_THROTTLE_MS;
     }
 
     private String getCachedHudText(RectHudModule module, int hudIndex, boolean chatEditing, Supplier<String> supplier) {
         long now = System.currentTimeMillis();
-        boolean throttledDue = now - HUD_TEXT_CACHE_TIME_MS[hudIndex] >= HUD_TEXT_THROTTLE_MS;
+        long throttleMs = hudTextThrottleMs();
+        boolean throttledDue = now - HUD_TEXT_CACHE_TIME_MS[hudIndex] >= throttleMs;
         if (HUD_TEXT_CACHE[hudIndex] == null || throttledDue) {
             HUD_TEXT_CACHE[hudIndex] = supplier.get();
             HUD_TEXT_CACHE_TIME_MS[hudIndex] = now;
@@ -1127,8 +1402,7 @@ public class InGameHudMixin {
         RECT_LAYOUT_INITIALIZED[hudIndex] = true;
 
         int handleSize = Math.max(4, Math.min(10, Math.round(5.0f * scale)));
-        // Place resize handle diagonally on the bottom-right corner:
-        // half inside the HUD and half outside, like a corner grip.
+
         float handleX = x + hudWidth - handleSize / 2.0f;
         float handleY = y + hudHeight - handleSize / 2.0f;
 
@@ -1273,7 +1547,7 @@ public class InGameHudMixin {
 
                 if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(), blurX, blurY, blurWidth, blurHeight)
-                            .round(0.0f)
+                            .round(phaze$getClampedHudCornerRadius(module.cornerRounding.getValue(), blurWidth, blurHeight))
                             .softness(0.0f)
                             .quality(blurQuality)
                             .color(0xFFFFFFFF)
@@ -1283,27 +1557,52 @@ public class InGameHudMixin {
         }
 
         if (module.background.isValue()) {
-            int targetBgColor = module.getResolvedBackgroundColor(client);
-            if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
-                RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
-                RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
-            } else {
-                RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
-            }
+            float cornerRadius = phaze$getClampedHudCornerRadius(module.cornerRounding.getValue(), baseWidth, baseHeight);
+            if (module.isGradientPreset()) {
 
-            int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
-            if (chatEditing) {
-                int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
-                bgColor = blendARGB(bgColor, hoverFill);
-            }
-            if (hudIndex != HUD_KEYSTROKES) {
-                context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
+                RECT_BG_ANIMATED_COLOR[hudIndex] = module.getResolvedGradientStartColor();
+                if (hudIndex != HUD_KEYSTROKES) {
+                    int hoverFill = chatEditing
+                            ? withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]))
+                            : 0;
+
+                    phaze$renderGradientRect(context, 0.0F, 0.0F, baseWidth, baseHeight, hoverFill,
+                            module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                            module.getGradientDirection(),
+                            module.getGradientAnimationOffset(System.currentTimeMillis()),
+                            module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
+                }
+            } else {
+                int targetBgColor = module.getResolvedBackgroundColor(client);
+                if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
+                    RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
+                    RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
+                } else {
+                    RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
+                }
+
+                int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
+                if (chatEditing) {
+                    int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
+                    bgColor = blendARGB(bgColor, hoverFill);
+                }
+                if (hudIndex != HUD_KEYSTROKES) {
+                    if (cornerRadius <= 0.01F) {
+                        context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
+                    } else if (!inBatchPass || BatchedHudBuffer.INSTANCE.isCaptureActive()) {
+
+                        HUD_BACKGROUND_RECTANGLE.render(ShapeProperties.create(context.getMatrices(), 0.0F, 0.0F, baseWidth, baseHeight)
+                                .round(cornerRadius)
+                                .softness(1.0F)
+                                .color(bgColor)
+                                .build());
+                    }
+                }
             }
         }
 
         context.getMatrices().popMatrix();
 
-        // Use custom color for MemoryHud if Color Based On Usage is enabled
         int textColor = resolveHudTextColor();
         if (module instanceof MemoryHud) {
             MemoryHud memoryHud = (MemoryHud) module;
@@ -1312,19 +1611,13 @@ public class InGameHudMixin {
                 textColor = memoryColor;
             }
         } else if (module instanceof HealthIndicator) {
-            // HealthIndicator picks its colour from the victim's current
-            // HP (matching the original mod's red/gold/yellow/green/dark-
-            // green table). The method internally returns the white
-            // sentinel HUD_TEXT_COLOR when Color By HP is off OR when no
-            // target is tracked, so this branch transparently degrades
-            // to the inherited default in those cases.
+
             int healthColor = ((HealthIndicator) module).getCurrentHpColor();
             if (healthColor != HUD_TEXT_COLOR) {
                 textColor = healthColor;
             }
         } else if (module instanceof TpsHud) {
-            // TPS HUD: green / yellow / red tier color when the user
-            // has Color By TPS on. Off = white sentinel.
+
             int tpsColor = ((TpsHud) module).getColor();
             if (tpsColor != HUD_TEXT_COLOR) {
                 textColor = tpsColor;
@@ -1341,10 +1634,7 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
-            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
-            // because GuiRenderState promotes an intersecting element into a new
-            // sub-layer, and the handle is submitted after the panel it sits on.
+
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -1379,13 +1669,6 @@ public class InGameHudMixin {
             return;
         }
 
-        // Rebuild the armor list every frame. Caching it across frames was
-        // causing the HUD to stay invisible if the player joined the world
-        // without armor: the cache was only invalidated on world change, so
-        // equipping a piece of armor mid-game never refreshed it and the
-        // empty-list early return below kept the HUD permanently hidden.
-        // The list has at most 5 entries (4 armor + 1 shield) so the
-        // per-frame cost is negligible.
         List<ItemStack> updatedStacks = new ArrayList<>();
         List<String> updatedDurabilityTexts = new ArrayList<>();
 
@@ -1530,7 +1813,7 @@ public class InGameHudMixin {
                     float deltaX = (float) mouseX - armorResizeStartMouseX;
                     float deltaY = (float) mouseY - armorResizeStartMouseY;
                     float delta = (deltaX + deltaY) * 0.5f;
-                    // Match resize feel of other rect HUDs (reference width = 64).
+
                     float newScale = armorResizeStartScale + (delta * 0.9f) / (BASE_WIDTH * 2.0F);
                     newScale = snapAndAnnounceHudScale(module, newScale);
                     module.setHudScale(newScale);
@@ -1599,7 +1882,7 @@ public class InGameHudMixin {
 
                 if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(), blurX, blurY, blurWidth, blurHeight)
-                            .round(0.0f)
+                            .round(phaze$getClampedHudCornerRadius(module.cornerRounding.getValue(), blurWidth, blurHeight))
                             .softness(0.0f)
                             .quality(blurQuality)
                             .color(0xFFFFFFFF)
@@ -1609,20 +1892,41 @@ public class InGameHudMixin {
         }
 
         if (module.background.isValue()) {
-            int targetBgColor = module.background.isValue() ? module.getResolvedBackgroundColor(client) : 0;
-            if (!armorBackgroundColorInitialized) {
-                armorAnimatedBackgroundColor = targetBgColor;
-                armorBackgroundColorInitialized = true;
+            float cornerRadius = phaze$getClampedHudCornerRadius(module.cornerRounding.getValue(), baseWidth, baseHeight);
+            if (module.isGradientPreset()) {
+                int hoverFill = chatEditing
+                        ? withAlpha(0xFFFFFF, (int) (30.0f * armorHoverProgress))
+                        : 0;
+                phaze$renderGradientRect(context, 0.0F, 0.0F, baseWidth, baseHeight, hoverFill,
+                        module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                        module.getGradientDirection(),
+                        module.getGradientAnimationOffset(System.currentTimeMillis()),
+                        module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
             } else {
-                armorAnimatedBackgroundColor = approachColorExp(armorAnimatedBackgroundColor, targetBgColor, 12.0f, deltaSeconds);
-            }
+                int targetBgColor = module.background.isValue() ? module.getResolvedBackgroundColor(client) : 0;
+                if (!armorBackgroundColorInitialized) {
+                    armorAnimatedBackgroundColor = targetBgColor;
+                    armorBackgroundColorInitialized = true;
+                } else {
+                    armorAnimatedBackgroundColor = approachColorExp(armorAnimatedBackgroundColor, targetBgColor, 12.0f, deltaSeconds);
+                }
 
-            int bgColor = armorAnimatedBackgroundColor;
-            if (chatEditing) {
-                int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * armorHoverProgress));
-                bgColor = blendARGB(bgColor, hoverFill);
+                int bgColor = armorAnimatedBackgroundColor;
+                if (chatEditing) {
+                    int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * armorHoverProgress));
+                    bgColor = blendARGB(bgColor, hoverFill);
+                }
+                if (cornerRadius <= 0.01F) {
+                    context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
+                } else if (!inBatchPass || BatchedHudBuffer.INSTANCE.isCaptureActive()) {
+
+                    HUD_BACKGROUND_RECTANGLE.render(ShapeProperties.create(context.getMatrices(), 0.0F, 0.0F, baseWidth, baseHeight)
+                            .round(cornerRadius)
+                            .softness(1.0F)
+                            .color(bgColor)
+                            .build());
+                }
             }
-            context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
         }
 
         for (int i = 0; i < stacks.size(); i++) {
@@ -1661,11 +1965,6 @@ public class InGameHudMixin {
 
             float textY = rowY + 5.0f;
 
-            // Color By Durability: pick a stoplight colour from the
-            // remaining vs max ratio of THIS row's stack. Falls back
-            // to white when the toggle is off (the inherited
-            // {@code renderScaledHudText} default), so the visual is
-            // unchanged on disabled.
             int stackMax = stackForColor.getMaxDamage();
             int stackRemaining = stackForColor.isDamageable()
                     ? Math.max(0, stackMax - stackForColor.getDamage())
@@ -1686,10 +1985,7 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (armorResizing || hoveredHandle || hovered || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
-            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
-            // because GuiRenderState promotes an intersecting element into a new
-            // sub-layer, and the handle is submitted after the panel it sits on.
+
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = armorResizing ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -1705,17 +2001,6 @@ public class InGameHudMixin {
         context.getMatrices().popMatrix();
     }
 
-    /**
-     * Custom render path for the {@code Consumable} module - rect HUD
-     * background reused via {@link RectHudModule#getResolvedBackgroundColor}
-     * but populated with {@link DrawContext#drawItem} icons rather
-     * than text. Mirrors the structure of
-     * {@link #renderArmorHud} (drag / resize / hover outline /
-     * resize handle) but compresses the parts that don't apply to
-     * a fixed-grid icon list (no text-on-left flip, no per-row
-     * durability strings, no armor blur slot - Consumable uses its
-     * own RECT_DRAGGING slot instead).
-     */
     private void renderConsumableHud(
             DrawContext context,
             MinecraftClient client,
@@ -1886,7 +2171,7 @@ public class InGameHudMixin {
 
                 if (blurQuality > 0.0f && blurWidth > 1.5f && blurHeight > 1.5f) {
                     Blur.INSTANCE.renderCached(ShapeProperties.create(context.getMatrices(), blurX, blurY, blurWidth, blurHeight)
-                            .round(0.0f)
+                            .round(phaze$getClampedHudCornerRadius(module.cornerRounding.getValue(), blurWidth, blurHeight))
                             .softness(0.0f)
                             .quality(blurQuality)
                             .color(0xFFFFFFFF)
@@ -1896,24 +2181,42 @@ public class InGameHudMixin {
         }
 
         if (module.background.isValue()) {
-            int targetBgColor = module.getResolvedBackgroundColor(client);
-            if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
-                RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
-                RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
+            float cornerRadius = phaze$getClampedHudCornerRadius(module.cornerRounding.getValue(), baseWidth, baseHeight);
+            if (module.isGradientPreset()) {
+                int hoverFill = chatEditing
+                        ? withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]))
+                        : 0;
+                phaze$renderGradientRect(context, 0.0F, 0.0F, baseWidth, baseHeight, hoverFill,
+                        module.getResolvedGradientStartColor(), module.getResolvedGradientEndColor(),
+                        module.getGradientDirection(),
+                        module.getGradientAnimationOffset(System.currentTimeMillis()),
+                        module.hasActiveAnimatedBackground(), module.cornerRounding.getValue());
             } else {
-                RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
+                int targetBgColor = module.getResolvedBackgroundColor(client);
+                if (!RECT_BG_COLOR_INITIALIZED[hudIndex]) {
+                    RECT_BG_ANIMATED_COLOR[hudIndex] = targetBgColor;
+                    RECT_BG_COLOR_INITIALIZED[hudIndex] = true;
+                } else {
+                    RECT_BG_ANIMATED_COLOR[hudIndex] = approachColorExp(RECT_BG_ANIMATED_COLOR[hudIndex], targetBgColor, 12.0f, deltaSeconds);
+                }
+                int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
+                if (chatEditing) {
+                    int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
+                    bgColor = blendARGB(bgColor, hoverFill);
+                }
+                if (cornerRadius <= 0.01F) {
+                    context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
+                } else if (!inBatchPass || BatchedHudBuffer.INSTANCE.isCaptureActive()) {
+
+                    HUD_BACKGROUND_RECTANGLE.render(ShapeProperties.create(context.getMatrices(), 0.0F, 0.0F, baseWidth, baseHeight)
+                            .round(cornerRadius)
+                            .softness(1.0F)
+                            .color(bgColor)
+                            .build());
+                }
             }
-            int bgColor = RECT_BG_ANIMATED_COLOR[hudIndex];
-            if (chatEditing) {
-                int hoverFill = withAlpha(0xFFFFFF, (int) (30.0f * RECT_HOVER_PROGRESS[hudIndex]));
-                bgColor = blendARGB(bgColor, hoverFill);
-            }
-            context.fill(0, 0, Math.round(baseWidth), Math.round(baseHeight), bgColor);
         }
 
-        // Icon pass: drawItem internally pushes its own
-        // model-view stack so we don't have to translate per-icon.
-        // Padding mirrors the value computeLayout sized the rect to.
         float padding = 3.0f;
         float itemSize = 18.0f;
         for (vorga.phazeclient.implement.features.modules.hud.Consumable.IconEntry entry : layout.entries()) {
@@ -1921,12 +2224,7 @@ public class InGameHudMixin {
             int iconY = Math.round(padding + entry.row() * itemSize);
             context.drawItem(entry.stack(), iconX, iconY);
             if (module.showCount.isValue()) {
-                // drawItemInSlot is the vanilla helper that paints
-                // the small bottom-right stack count number with
-                // the correct shadow / scale baked in. Passing a
-                // null label uses the stack's own count, which is
-                // already pre-baked into the IconEntry's stack
-                // copy.
+
                 context.drawStackOverlay(client.textRenderer, entry.stack(), iconX, iconY);
             }
         }
@@ -1940,10 +2238,7 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hovered || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
-            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
-            // because GuiRenderState promotes an intersecting element into a new
-            // sub-layer, and the handle is submitted after the panel it sits on.
+
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -1977,23 +2272,9 @@ public class InGameHudMixin {
             return;
         }
 
-        // Rebuild the line set every frame. Caching the list across
-        // frames silently broke the per-axis toggles (Show X / Y / Z /
-        // Biome): once initialised the cache was reused regardless of
-        // setting changes AND it never picked up the player's new
-        // position. The computations here are cheap enough (a single
-        // BlockPos read + at most one biome registry lookup) that
-        // recomputing per frame stays well under the HUD's frame
-        // budget while letting the toggles take immediate effect.
         List<String> updatedLines = new ArrayList<>();
         BlockPos pos = client.player.getBlockPos();
-        // Streamer Mode suppresses only the position-revealing rows
-        // (X / Y / Z / Chunk). Biome and Direction stay visible because
-        // they do not leak the player's absolute location - biome is a
-        // world-type hint and the direction indicator is just yaw. The
-        // rect keeps rendering with whatever remains, instead of
-        // collapsing entirely, so the user still sees the HUD during a
-        // stream just without the coord axes.
+
         boolean hideCoords = StreamerMode.getInstance().isHideCoordinatesEnabled();
         if (module.showX.isValue() && !hideCoords) {
             updatedLines.add("X: " + pos.getX());
@@ -2007,10 +2288,7 @@ public class InGameHudMixin {
         if (module.showChunk.isValue() && !hideCoords) {
             updatedLines.add("C: " + ChunkSectionPos.getLocalCoord(pos.getX()) + "/" + ChunkSectionPos.getLocalCoord(pos.getZ()));
         }
-        // When Show Biome is OFF the row is omitted entirely - the
-        // earlier behaviour kept emitting an empty Biome line in a
-        // dimmed colour, which the user reasonably read as "the toggle
-        // is broken". Now the row only exists when the toggle is on.
+
         coordinatesBiomeNameCache = "";
         coordinatesBiomeColorCache = 0xFFFF55;
         if (module.showBiome.isValue()) {
@@ -2053,13 +2331,6 @@ public class InGameHudMixin {
         context.getMatrices().pushMatrix();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
-        // Vertically centre the text block inside the rect. For the
-        // normal multi-row layout {@code (baseHeight - textBlockHeight)
-        // / 2} equals {@code paddingY}, so nothing changes; the
-        // difference only matters when Streamer Mode strips the X/Y/Z/C
-        // rows and a single Biome line is left rattling around in a
-        // 20 px tall rect - without this fix the line stayed glued to
-        // the top of the rect with a 6 px gap below it.
         float textBlockHeight = lines.size() * lineHeight;
         float textOffsetY = (baseHeight - textBlockHeight) * 0.5f;
         if (textOffsetY < paddingY) {
@@ -2087,31 +2358,13 @@ public class InGameHudMixin {
             if (module.showAxisSigns.isValue()) {
                 String topSign = coordinatesTopSignCache;
                 String bottomSign = coordinatesBottomSignCache;
-                // The +/- axis-sign trio (top sign / facing / bottom
-                // sign) is normally laid out at a fixed 10 px offset
-                // above and below the facing letter, which produces a
-                // ~28 px tall stack that visibly overshoots a short
-                // rect (eg the 20 px Streamer Mode rect with just
-                // Biome + compass). Scale the offset so the stack
-                // always fits inside the rect with one pixel of
-                // breathing room top and bottom; for the normal tall
-                // layout we still cap at the original 10 px so the
-                // signs don't drift apart further than designed.
+
                 float maxStackHalf = baseHeight * 0.5f - 5.0f;
                 if (maxStackHalf < 0.0f) {
                     maxStackHalf = 0.0f;
                 }
                 float signOffset = Math.min(10.0f, maxStackHalf);
-                // Streamer Mode also shrinks the actual glyph size of
-                // the +/- signs (not just their spacing). The default
-                // HUD_TEXT_SIZE is calibrated for the ~50 px tall
-                // four-row rect; shrinking the rect to just Biome +
-                // compass leaves the +/- looking comically large
-                // relative to the column. 5 px (≈63% of 8) keeps the
-                // glyphs visibly recognisable as +/- without
-                // dominating the column. The central facing letter
-                // stays at HUD_TEXT_SIZE because it carries the
-                // primary semantic.
+
                 float signTextSize = hideCoords ? 5.0f : HUD_TEXT_SIZE;
                 if (!topSign.isEmpty()) {
                     float signWidth = getHudTextWidth(client, topSign, signTextSize);
@@ -2150,11 +2403,7 @@ public class InGameHudMixin {
         }
 
         boolean local = client.isIntegratedServerRunning() || client.getCurrentServerEntry() == null;
-        // {@code reverseOrder} swaps the HUD between the labelled
-        // "Ping: 50 ms" and the value-first "50 ms Ping" forms. The
-        // value half (the actual ping number with " ms" unit) is the
-        // colorised segment in both layouts; only its X anchor and the
-        // surrounding label string change.
+
         boolean reversed = module.reverseOrder.isValue();
         String label = reversed ? " Ping" : "Ping: ";
         String value = getCachedHudText(module, HUD_PING, chatEditing, () -> {
@@ -2199,10 +2448,7 @@ public class InGameHudMixin {
                 pingColor = resolveHudTextColor();
             }
         }
-        // In reversed layout the value segment leads the line, so it
-        // sits flush at {@code textX}. In default layout the label
-        // takes the leading position and the value lives just after
-        // it (offset by {@code labelWidth}).
+
         float valueX = reversed ? textX : textX + labelWidth;
         renderScaledHudTextColored(context, client, value, x, y, valueX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), pingColor);
         context.getMatrices().popMatrix();
@@ -2326,7 +2572,6 @@ public class InGameHudMixin {
             return;
         }
 
-        // Get scoreboard data
         var scoreboard = client.world.getScoreboard();
         var objective = scoreboard.getObjectiveForSlot(net.minecraft.scoreboard.ScoreboardDisplaySlot.SIDEBAR);
         if (objective == null) {
@@ -2358,8 +2603,7 @@ public class InGameHudMixin {
             if (shouldHideNick) {
                 decoratedName = nickHider.rewrite(decoratedName);
             }
-            // Respect server-provided number rendering. If the server omits
-            // right-side numbers, do not force-draw them.
+
             net.minecraft.text.Text formattedScore = net.minecraft.text.Text.empty();
             boolean hasScore = false;
             try {
@@ -2374,12 +2618,12 @@ public class InGameHudMixin {
             sidebarEntries.add(new ScoreboardSidebarEntry(decoratedName, formattedScore, hasScore, scoreWidth));
         }
 
-        // Calculate dimensions
         net.minecraft.text.Text title = objective.getDisplayName();
         if (shouldHideNick) {
             title = nickHider.rewrite(title);
         }
         int titleWidth = (int)getHudTextWidth(client, title.getString(), HUD_TEXT_SIZE);
+        int colonWidth = (int)getHudTextWidth(client, ":", HUD_TEXT_SIZE);
         int maxContentWidth = titleWidth;
         int entryCount = sidebarEntries.size();
 
@@ -2391,21 +2635,17 @@ public class InGameHudMixin {
                     && phaze$isZeroScoreText(sidebarEntry.score());
             int scoreWidth = (sidebarEntry.hasScore() && !hideZeroScore) ? sidebarEntry.scoreWidth() : 0;
             if (scoreWidth > 0) {
-                // Vanilla sidebar aligns score to the right edge with a small
-                // fixed gap; no extra ": " separator is rendered.
-                maxContentWidth = Math.max(maxContentWidth, textWidth + scoreWidth + 2);
+
+                maxContentWidth = Math.max(maxContentWidth, textWidth + colonWidth + scoreWidth);
             } else {
                 maxContentWidth = Math.max(maxContentWidth, textWidth);
             }
         }
 
-        int vanillaHorizontalPadding = 3;
-        float baseWidth = maxContentWidth + vanillaHorizontalPadding + 2;
+        float baseWidth = maxContentWidth + 4;
         int topInset = module.showTitle.isValue() ? 10 : 1;
         float baseHeight = entryCount * 9.0f + topInset;
 
-        // If the HUD is still at its constructor default (0,0), place it at
-        // vanilla-like sidebar position (right side, vertically centered).
         if (module.getHudX() <= 1.0f && module.getHudY() <= 1.0f) {
             float scale = module.getRenderHudScale();
             float hudWidth = baseWidth * scale;
@@ -2416,8 +2656,6 @@ public class InGameHudMixin {
             module.setHudY(vanillaY);
         }
 
-        // Keep drag/resize logic from RectHud, but prevent its own background
-        // from drawing here: scoreboard renders a vanilla-style background below.
         boolean prevBackground = module.background.isValue();
         module.background.setValue(false);
         try {
@@ -2427,17 +2665,14 @@ public class InGameHudMixin {
             module.background.setValue(prevBackground);
         }
 
-        // Get actual position and scale after renderRectHud
         float hudX = module.getHudX();
         float hudY = module.getHudY();
         float hudScale = module.getRenderHudScale();
 
-        // Calculate render positions in local coordinates (relative to hudX, hudY)
         int rightEdgeLocal = Math.round(baseWidth);
         int textLeftLocal = 2;
         int verticalPosLocal = entryCount * 9;
 
-        // Get colors
         int targetTitleBgColor;
         int targetRowBgColor;
         if (module.shouldUseVanillaColors()) {
@@ -2461,27 +2696,21 @@ public class InGameHudMixin {
         titleBgColor = scoreboardAnimatedTitleColor;
         rowBgColor = scoreboardAnimatedRowColor;
 
-        // Push matrices and use local coordinates like renderRectHud
         context.getMatrices().pushMatrix();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(hudX, hudY);
         context.getMatrices().scale(hudScale, hudScale);
-        // Keep all drawable pixels inside RectHud bounds so selection/resize
-        // area always matches, including the title strip.
+
         context.getMatrices().translate(0.0f, topInset);
 
-        // Render blur and background
         if (module.background.isValue()) {
             int backgroundTopLocal = -topInset;
             int backgroundBottomLocal = verticalPosLocal;
 
             float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
             if (blurRadius > 0.0f) {
-                // Match the shared RectHud blur path exactly. The old
-                // scoreboard-only path fed the raw radius through a scaled
-                // matrix, so enlarging the scoreboard also multiplied its
-                // apparent blur strength.
+
                 float safeScale = Math.max(hudScale, 1.0f);
                 float normalizedBlurRadius = blurRadius / safeScale;
                 float blurQuality = getOptimizedHudBlurQuality(normalizedBlurRadius);
@@ -2517,14 +2746,12 @@ public class InGameHudMixin {
             }
         }
 
-        // Render title (in local coordinates)
         if (module.showTitle.isValue()) {
             float titleX = (rightEdgeLocal - titleWidth) / 2.0f;
             var textRenderer = client.textRenderer;
             context.drawText(textRenderer, title, (int)titleX, -topInset + 1, -1, false);
         }
 
-        // Render entries (in local coordinates)
         for (int i = 0; i < entryCount; i++) {
             var sidebarEntry = sidebarEntries.get(i);
             int rowY = verticalPosLocal - (entryCount - i) * 9;
@@ -2537,7 +2764,8 @@ public class InGameHudMixin {
                     continue;
                 }
                 float scoreWidth = sidebarEntry.scoreWidth();
-                float scoreX = rightEdgeLocal - 2.0f - scoreWidth;
+
+                float scoreX = rightEdgeLocal - scoreWidth;
                 context.drawText(textRenderer, sidebarEntry.score(), (int)scoreX, rowY, -1, false);
             }
         }
@@ -2624,7 +2852,6 @@ public class InGameHudMixin {
         float visibleWidth = Math.max(64.0f, baseWidth - leftPadding - rightPadding);
         float degreesPerPixel = 90.0f / visibleWidth;
 
-        // Final layout rows (relative to HUD Y):
         float yawNumberY = 1.0f;
         float triangleY = 11.0f;
         float majorTickTop = 14.0f;
@@ -2638,7 +2865,6 @@ public class InGameHudMixin {
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
         context.fill(Math.round(x + leftPadding), Math.round(y + baselineY), Math.round(x + baseWidth - rightPadding), Math.round(y + baselineY + 1.0f), withAlpha(0xFFFFFF, 30));
 
-        // Pass 1: ticks only on fixed world marks.
         for (int deg = 0; deg < 360; deg += 15) {
             float markYaw = deg;
             float delta = shortestAngleDeg(markYaw, directionDisplayYaw);
@@ -2672,7 +2898,6 @@ public class InGameHudMixin {
             }
         }
 
-        // Pass 2: labels.
         for (int deg = 0; deg < 360; deg += 15) {
             float markYaw = deg;
             float delta = shortestAngleDeg(markYaw, directionDisplayYaw);
@@ -2769,22 +2994,23 @@ public class InGameHudMixin {
         context.getMatrices().scale(scale, scale);
         renderKeystrokeButtonBlur(context, module, scale);
         float cachedProgressScale = inBatchPass ? 0.0f : 1.0f;
-        renderKeyButton(context, 20, 0, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale);
-        renderKeyButton(context, 0, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale);
-        renderKeyButton(context, 19, 19, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale);
-        renderKeyButton(context, 36, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale);
-        renderKeyButton(context, 0, 38, 54, 8, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale);
-        renderKeyButton(context, 0, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale);
-        renderKeyButton(context, 28, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale);
+        float keystrokeCornerRadius = Math.min(module.cornerRounding.getValue(), 8.0f);
+        renderKeyButton(context, 19, 0, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale, keystrokeCornerRadius);
+        renderKeyButton(context, 0, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale, keystrokeCornerRadius);
+        renderKeyButton(context, 19, 19, 16, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale, keystrokeCornerRadius);
+        renderKeyButton(context, 36, 19, 18, 18, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale, keystrokeCornerRadius);
+        renderKeyButton(context, 0, 38, 54, 8, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale, keystrokeCornerRadius);
+        renderKeyButton(context, 0, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale, keystrokeCornerRadius);
+        renderKeyButton(context, 28, 47, 26, 16, idleColor, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale, keystrokeCornerRadius);
         context.getMatrices().popMatrix();
 
-        renderKeyLabel(context, client, "W", x, y, 20, 4, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale, scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "A", x, y, 0, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale, scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "S", x, y, 19, 23, 16, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale, scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "D", x, y, 36, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale, scale, module.textShadow.isValue());
-        renderSpacebarLabel(context, x, y, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale, scale);
-        renderKeyLabel(context, client, "LMB", x, y, 0, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale, scale, module.textShadow.isValue());
-        renderKeyLabel(context, client, "RMB", x, y, 28, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "W", x, y, 19, 5, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "A", x, y, 0, 24, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "S", x, y, 19, 24, 16, KEYSTROKE_PROGRESS[KEYSTROKE_S] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "D", x, y, 36, 24, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderSpacebarLabel(context, x, y, 0, 39, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] * cachedProgressScale, scale);
+        renderKeyLabel(context, client, "LMB", x, y, 0, 51, 26, KEYSTROKE_PROGRESS[KEYSTROKE_LMB] * cachedProgressScale, scale, module.textShadow.isValue());
+        renderKeyLabel(context, client, "RMB", x, y, 28, 51, 26, KEYSTROKE_PROGRESS[KEYSTROKE_RMB] * cachedProgressScale, scale, module.textShadow.isValue());
         context.getMatrices().popMatrix();
     }
 
@@ -2842,9 +3068,7 @@ public class InGameHudMixin {
         float iconSize = 18.0f;
         float paddingX = 6.0f;
         float paddingY = 4.0f;
-        // Effect-name column shifted 2 px to the left (was iconSize + 5,
-        // now iconSize + 3) so the text sits closer to the icon and
-        // gives the rect a tighter visual feel.
+
         float textX = paddingX + iconSize + 3.0f;
         int rows = sample ? 1 : effects.size();
         float maxTextWidth = 0.0f;
@@ -2853,16 +3077,8 @@ public class InGameHudMixin {
             maxTextWidth = Math.max(maxTextWidth, getHudTextWidth(client, potionDurationsCache.get(i), HUD_TEXT_SIZE));
         }
 
-        // Right side trimmed by 3 px (was paddingX, now paddingX - 3).
-        // Min width also drops by 3 (94 -> 91) so the user-perceived
-        // width matches across the empty / non-empty cases.
         float baseWidth = Math.max(91.0f, textX + maxTextWidth + paddingX - 3.0f);
-        // Height: -1 from top (rect's top edge moves DOWN 1 px) and
-        // -3 from bottom (rect's bottom edge moves UP 3 px). Total -4.
-        // We achieve the top-edge shift via a matrix translate on Y by
-        // +1, and the bottom-edge shift by feeding renderRectHud a
-        // baseHeight reduced by 4. Content (icons + text) renders
-        // outside this matrix scope so it stays at its original Y.
+
         float baseHeight = paddingY * 2.0f + rows * rowHeight;
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0f, 1.0f);
@@ -2884,10 +3100,7 @@ public class InGameHudMixin {
             if (sample) {
                 context.drawItem(new ItemStack(Items.POTION), Math.round(paddingX), Math.round(rowY + 2.0f));
             } else {
-                // 1.21.11: MinecraftClient.getStatusEffectSpriteManager() is gone.
-                // Effect icons are ordinary GUI sprites now, addressed by
-                // Identifier through InGameHud.getEffectTexture - this is exactly
-                // what vanilla's StatusEffectsDisplay does.
+
                 Identifier effectTexture = InGameHud.getEffectTexture(effects.get(i).getEffectType());
                 context.drawGuiTexture(RenderPipelines.GUI_TEXTURED, effectTexture, Math.round(paddingX), Math.round(rowY + 2.0f), Math.round(iconSize), Math.round(iconSize));
             }
@@ -2898,13 +3111,6 @@ public class InGameHudMixin {
             String name = potionNamesCache.get(i);
             String duration = potionDurationsCache.get(i);
 
-            // Color By Type: pick a tint for the effect NAME based
-            // on the StatusEffect category (BENEFICIAL / HARMFUL /
-            // NEUTRAL). Fixed colors so no extra picker UI; the
-            // user toggles the whole behaviour with a single
-            // checkbox. When sampling the empty list (chat-edit
-            // preview) we have no live effect to query, so fall
-            // back to plain white.
             int nameColor = resolveHudTextColor();
             if (module.colorByType.isValue() && !sample && i < potionEffectsCache.size()) {
                 StatusEffectInstance effect = potionEffectsCache.get(i);
@@ -2913,16 +3119,13 @@ public class InGameHudMixin {
                 else if (cat == StatusEffectCategory.HARMFUL) nameColor = 0xFFFF5555;
             }
 
-            // Flash-on-expiry: pulse the name's alpha when there's
-            // less than 10 seconds left. Sin oscillator so the
-            // change is smooth and breathes at ~5Hz.
             if (module.flashOnExpiry.isValue() && !sample && i < potionEffectsCache.size()) {
                 StatusEffectInstance effect = potionEffectsCache.get(i);
                 if (!effect.isInfinite() && effect.getDuration() < 200) {
-                    float pulse = (float) (0.5 + 0.5 * Math.sin(System.nanoTime() / 200_000_000.0));
-                    int origAlpha = (nameColor >>> 24) & 0xFF;
-                    int newAlpha = (int) (origAlpha * (0.45f + 0.55f * pulse));
-                    nameColor = (newAlpha << 24) | (nameColor & 0x00FFFFFF);
+                    boolean visible = (System.currentTimeMillis() / 500L) % 2L == 0L;
+                    if (!visible) {
+                        continue;
+                    }
                 }
             }
 
@@ -2943,7 +3146,7 @@ public class InGameHudMixin {
 
     private static float getTextHudBaseWidth(MinecraftClient client, String text) {
         float width = Math.max(44.0f, getHudTextWidth(client, text, HUD_TEXT_SIZE) + 14.0f);
-        // Add 2 pixels to background width when text contains "A"
+
         if (text.contains("A") || text.contains("a")) {
             width += 2.0f;
         }
@@ -2951,9 +3154,7 @@ public class InGameHudMixin {
     }
 
     private static String getSprintHudText(MinecraftClient client) {
-        // Sprint HUD now displays state without surrounding [] - the
-        // qualifier sources (Key Held / AutoSprint / Vanilla) live in
-        // round parens so the line reads naturally as one phrase.
+
         if (client.player == null || client.options == null) {
             return "Not Sprinting";
         }
@@ -2966,34 +3167,14 @@ public class InGameHudMixin {
         if (client.options.sneakKey.isPressed() || client.player.isSneaking()) {
             return "Sneaking (Key Held)";
         }
-        // GUI screens stop normal movement input, but the player sprint flag
-        // can survive for a frame while AutoSprint updates it. Keep the HUD
-        // stable in menus after preserving the higher-priority flight/sneak
-        // states above.
+
         if (client.currentScreen != null) {
             return "Not Sprinting";
         }
-        // AutoSprint label override: when the module is on AND its
-        // {@code showInSprintHud} toggle is true, the label flips
-        // from "Key Held" / "Vanilla" to "AutoSprint" so the user
-        // can see the module is the source. We override the label
-        // in any sprint-context (ground, in-air, falling) but never
-        // when the player isn't sprinting at all - "Not Sprinting
-        // (AutoSprint)" would be a lie.
+
         AutoSprint autoSprint = AutoSprint.getInstance();
         boolean autoSprintActive = autoSprint.isEnabled() && autoSprint.showInSprintHud.isValue();
 
-        // Standing still with AutoSprint on used to strobe between
-        // "Sprinting (AutoSprint)" and "Not Sprinting": vanilla clears the
-        // sprint flag on every tick with no movement input, and AutoSprint sets
-        // it again on the next one, so isSprinting() genuinely alternates. The
-        // label should follow the MODULE, which is continuously on, rather than
-        // that momentary flag.
-        //
-        // The exceptions are already handled above and return before this
-        // point - flying, flying+descending and sneaking - so the only one left
-        // is having a screen open, where the module stops driving input and the
-        // honest reading is vanilla's own state.
         if (autoSprintActive) {
             return "Sprinting (AutoSprint)";
         }
@@ -3010,17 +3191,12 @@ public class InGameHudMixin {
     private static String getDayCounterText(MinecraftClient client) {
         DayCounterHud module = DayCounterHud.getInstance();
         if (client.world == null) {
-            // Idle / pre-world state: keep the legacy "0 Days" text in
-            // the default order, but still respect the user's
-            // {@code reverseOrder} preference so the HUD doesn't flip
-            // formats the moment the world finishes loading.
+
             return module.reverseOrder.isValue() ? "Day: 0" : "0 Days";
         }
         long days = Math.max(0L, client.world.getTime() / 24000L) + 1;
         if (module.reverseOrder.isValue()) {
-            // Label-prefixed, plain-number form. We deliberately drop
-            // the singular/plural distinction here because "Day: 1"
-            // already reads naturally regardless of the count.
+
             return "Day: " + days;
         }
         return days + (days == 1L ? " Day" : " Days");
@@ -3039,8 +3215,9 @@ public class InGameHudMixin {
             pattern = wantSeconds ? "h:mm:ss" : "h:mm";
         }
         String time = now.format(DateTimeFormatter.ofPattern(pattern, Locale.US));
-        if (module.showPhase.isValue() && client != null && client.world != null) {
-            TimeHud.Phase phase = module.phaseForTime(client.world.getTimeOfDay());
+        if (module.showPhase.isValue()) {
+
+            TimeHud.Phase phase = module.phaseForClock(now.getHour());
             String label = module.colorPhase.isValue() ? phase.colorCode + phase.label + "§r" : phase.label;
             return time + " " + label;
         }
@@ -3244,12 +3421,6 @@ public class InGameHudMixin {
         KEYSTROKE_PROGRESS[index] = approachExp(KEYSTROKE_PROGRESS[index], pressed ? 1.0f : 0.0f, 16.0f, deltaSeconds);
     }
 
-    /**
-     * Draws only the input-dependent white press layer over the cached
-     * Keystrokes HUD. The backdrop, button idle colors, labels and blur stay
-     * inside BatchedHudBuffer and therefore keep obeying HudOptimizer's FPS
-     * limit; this tiny overlay is the only part submitted every display frame.
-     */
     private static void renderLiveKeystrokeAnimation(
             DrawContext context,
             MinecraftClient client,
@@ -3280,25 +3451,26 @@ public class InGameHudMixin {
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(x, y);
         context.getMatrices().scale(scale, scale);
-        renderLiveKeystrokeButton(context, 20, 0, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_W]);
-        renderLiveKeystrokeButton(context, 0, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A]);
-        renderLiveKeystrokeButton(context, 19, 19, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_S]);
-        renderLiveKeystrokeButton(context, 36, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D]);
-        renderLiveKeystrokeButton(context, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE]);
-        renderLiveKeystrokeButton(context, 0, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_LMB]);
-        renderLiveKeystrokeButton(context, 28, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_RMB]);
+        float keystrokeCornerRadius = Math.min(module.cornerRounding.getValue(), 8.0f);
+        renderLiveKeystrokeButton(context, 19, 0, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_W], keystrokeCornerRadius);
+        renderLiveKeystrokeButton(context, 0, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A], keystrokeCornerRadius);
+        renderLiveKeystrokeButton(context, 19, 19, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_S], keystrokeCornerRadius);
+        renderLiveKeystrokeButton(context, 36, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D], keystrokeCornerRadius);
+        renderLiveKeystrokeButton(context, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE], keystrokeCornerRadius);
+        renderLiveKeystrokeButton(context, 0, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_LMB], keystrokeCornerRadius);
+        renderLiveKeystrokeButton(context, 28, 47, 26, 16, KEYSTROKE_PROGRESS[KEYSTROKE_RMB], keystrokeCornerRadius);
         context.getMatrices().popMatrix();
 
         boolean shadow = module.textShadow.isValue();
-        renderLiveKeystrokeLabel(context, client, "W", x, y, 20, 4, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W], scale, shadow);
-        renderLiveKeystrokeLabel(context, client, "A", x, y, 0, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A], scale, shadow);
-        renderLiveKeystrokeLabel(context, client, "S", x, y, 19, 23, 16, KEYSTROKE_PROGRESS[KEYSTROKE_S], scale, shadow);
-        renderLiveKeystrokeLabel(context, client, "D", x, y, 36, 23, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "W", x, y, 19, 5, 16, KEYSTROKE_PROGRESS[KEYSTROKE_W], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "A", x, y, 0, 24, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "S", x, y, 19, 24, 16, KEYSTROKE_PROGRESS[KEYSTROKE_S], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "D", x, y, 36, 24, 18, KEYSTROKE_PROGRESS[KEYSTROKE_D], scale, shadow);
         if (KEYSTROKE_PROGRESS[KEYSTROKE_SPACE] > 0.45f) {
-            renderSpacebarLabel(context, x, y, 0, 38, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE], scale);
+            renderSpacebarLabel(context, x, y, 0, 39, 54, 8, KEYSTROKE_PROGRESS[KEYSTROKE_SPACE], scale);
         }
-        renderLiveKeystrokeLabel(context, client, "LMB", x, y, 0, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_LMB], scale, shadow);
-        renderLiveKeystrokeLabel(context, client, "RMB", x, y, 28, 50, 26, KEYSTROKE_PROGRESS[KEYSTROKE_RMB], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "LMB", x, y, 0, 51, 26, KEYSTROKE_PROGRESS[KEYSTROKE_LMB], scale, shadow);
+        renderLiveKeystrokeLabel(context, client, "RMB", x, y, 28, 51, 26, KEYSTROKE_PROGRESS[KEYSTROKE_RMB], scale, shadow);
         context.getMatrices().popMatrix();
     }
 
@@ -3308,11 +3480,21 @@ public class InGameHudMixin {
             int y,
             int width,
             int height,
-            float progress
+            float progress,
+            float radius
     ) {
         int alpha = MathHelper.clamp(Math.round(185.0f * progress), 0, 185);
         if (alpha > 0) {
-            context.fill(x, y, x + width, y + height, withAlpha(0xFFFFFF, alpha));
+            int color = withAlpha(0xFFFFFF, alpha);
+            if (radius > 0.01F) {
+                HUD_BACKGROUND_RECTANGLE.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
+                        .round(radius)
+                        .softness(1.0F)
+                        .color(color)
+                        .build());
+                return;
+            }
+            context.fill(x, y, x + width, y + height, color);
         }
     }
 
@@ -3350,30 +3532,52 @@ public class InGameHudMixin {
         }
         long blurStateKey = makeHudBlurStateKey(normalizedBlurRadius, safeScale, 0.0f, 0.0f, 54.0f, 63.0f);
         Blur.INSTANCE.registerHudBlurState(HUD_KEYSTROKES, blurStateKey);
-        for (ShapeProperties shape : KEYSTROKE_BLUR_RECTS) {
-            // 1.21.11: ShapeProperties owns a Matrix3x2f COPY of the pose.
-            // Storing the live Matrix3x2fStack here would let the deferred blur
-            // batch read the pose after the caller popped it, so copy in place
-            // (no allocation - the shapes are long-lived singletons).
+        float blurRound = Math.min(Math.max(0.0f, module.cornerRounding.getValue()), 8.0f);
+        List<ShapeProperties> blurRects = KEYSTROKE_BLUR_RECTS;
+        if (blurRound != PHAZE_KEYSTROKE_BLUR_ROUND) {
+            PHAZE_KEYSTROKE_BLUR_ROUND = blurRound;
+            KEYSTROKE_BLUR_RECTS = rebuildKeystrokeBlurRects(blurRound);
+            blurRects = KEYSTROKE_BLUR_RECTS;
+        }
+        for (ShapeProperties shape : blurRects) {
+
             shape.getMatrix().set(context.getMatrices());
             shape.setQuality(blurQuality);
         }
-        Blur.INSTANCE.renderCachedBatch(KEYSTROKE_BLUR_RECTS);
+        Blur.INSTANCE.renderCachedBatch(blurRects);
     }
 
-    private static ShapeProperties createKeystrokeBlurRect(float x, float y, float width, float height) {
-        // 1.21.11: ShapeProperties.create copies the pose eagerly
-        // (new Matrix3x2f(matrix)), so the old `null` placeholder would NPE.
-        // Seed with identity - renderKeystrokesHud overwrites it every frame.
+    private static ShapeProperties createKeystrokeBlurRect(float x, float y, float width, float height, float round) {
+
         return ShapeProperties.create(new Matrix3x2f(), x, y, width, height)
-                .round(0.0f)
+                .round(round)
                 .softness(0.0f)
                 .color(0xFFFFFFFF)
                 .build();
     }
-    private static void renderKeyButton(DrawContext context, int x, int y, int width, int height, int idleColor, float progress) {
+
+    private static List<ShapeProperties> rebuildKeystrokeBlurRects(float round) {
+        return List.of(
+                createKeystrokeBlurRect(19.0f, 0.0f, 16.0f, 18.0f, round),
+                createKeystrokeBlurRect(0.0f, 19.0f, 18.0f, 18.0f, round),
+                createKeystrokeBlurRect(19.0f, 19.0f, 16.0f, 18.0f, round),
+                createKeystrokeBlurRect(36.0f, 19.0f, 18.0f, 18.0f, round),
+                createKeystrokeBlurRect(0.0f, 38.0f, 54.0f, 8.0f, round),
+                createKeystrokeBlurRect(0.0f, 47.0f, 26.0f, 16.0f, round),
+                createKeystrokeBlurRect(28.0f, 47.0f, 26.0f, 16.0f, round)
+        );
+    }
+    private static void renderKeyButton(DrawContext context, int x, int y, int width, int height, int idleColor, float progress, float radius) {
         int activeOverlay = withAlpha(0xFFFFFF, Math.round(185.0f * progress));
         int color = blendARGB(idleColor, activeOverlay);
+        if (radius > 0.01F) {
+            HUD_BACKGROUND_RECTANGLE.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
+                    .round(radius)
+                    .softness(1.0F)
+                    .color(color)
+                    .build());
+            return;
+        }
         context.fill(x, y, x + width, y + height, color);
     }
 
@@ -3446,8 +3650,7 @@ public class InGameHudMixin {
 
     private static String formatEffectDuration(StatusEffectInstance effect) {
         if (effect.isInfinite()) {
-            // Infinity glyph (U+221E) - reads instantly as "permanent"
-            // and lines up nicely under the effect name.
+
             return "\u221E";
         }
         int totalSeconds = Math.max(0, effect.getDuration() / 20);
@@ -3491,10 +3694,6 @@ public class InGameHudMixin {
             return 0.0f;
         }
 
-        // Direct, continuous mapping for HUD blur. The old curve
-        // compressed almost the entire slider into a tiny effective
-        // blur radius, so the first non-zero values looked like the
-        // blur instantly "turned on" and then barely changed.
         float t = MathHelper.clamp(radius / 32.0f, 0.0f, 1.0f);
         float strength = MathHelper.lerp(t, 0.14f, 0.34f);
         return radius * strength;
@@ -3592,7 +3791,7 @@ public class InGameHudMixin {
         }
 
         long nowMs = System.currentTimeMillis();
-        // Left click tracking (button 0)
+
         if (mouseDown && !wasLeftMouseDown) {
             LEFT_CLICKS.addLast(nowMs);
         }
@@ -3602,7 +3801,6 @@ public class InGameHudMixin {
             LEFT_CLICKS.removeFirst();
         }
 
-        // Right click tracking (button 1)
         if (rightMouseDown && !wasRightMouseDown) {
             RIGHT_CLICKS.addLast(nowMs);
         }
@@ -3631,11 +3829,7 @@ public class InGameHudMixin {
                 || TpsHud.getInstance().isEnabled()
                 || ComboCounterHud.getInstance().isEnabled()
                 || ServerAddressHud.getInstance().isEnabled()
-                // Missing entries caused the parent dispatch to early-return
-                // when MovementSpeedHud or WailaHud was the only HUD enabled,
-                // making the HUD silently invisible. They render through the
-                // same renderBufferedHud path as the others, so they have to
-                // be counted here to unblock the dispatch.
+
                 || MovementSpeedHud.getInstance().isEnabled()
                 || WailaHud.getInstance().isEnabled()
                 || HealthIndicator.getInstance().isEnabled()
@@ -3645,32 +3839,15 @@ public class InGameHudMixin {
     }
 
     private static boolean isAnyHudInteractionActive() {
-        return RECT_DRAGGING[HUD_FPS] || RECT_RESIZING[HUD_FPS]
-                || RECT_DRAGGING[HUD_CPS] || RECT_RESIZING[HUD_CPS]
-                || RECT_DRAGGING[HUD_REACH] || RECT_RESIZING[HUD_REACH]
-                || RECT_DRAGGING[HUD_SPRINT] || RECT_RESIZING[HUD_SPRINT]
-                || RECT_DRAGGING[HUD_COORDINATES] || RECT_RESIZING[HUD_COORDINATES]
-                || RECT_DRAGGING[HUD_PING] || RECT_RESIZING[HUD_PING]
-                || RECT_DRAGGING[HUD_KEYSTROKES] || RECT_RESIZING[HUD_KEYSTROKES]
-                || RECT_DRAGGING[HUD_POTION] || RECT_RESIZING[HUD_POTION]
-                || RECT_DRAGGING[HUD_DAY_COUNTER] || RECT_RESIZING[HUD_DAY_COUNTER]
-                || RECT_DRAGGING[HUD_TAB] || RECT_RESIZING[HUD_TAB]
-                || RECT_DRAGGING[HUD_NAMETAG] || RECT_RESIZING[HUD_NAMETAG]
-                || RECT_DRAGGING[HUD_TIME] || RECT_RESIZING[HUD_TIME]
-                || RECT_DRAGGING[HUD_SESSION] || RECT_RESIZING[HUD_SESSION]
-                || RECT_DRAGGING[HUD_MEMORY] || RECT_RESIZING[HUD_MEMORY]
-                || RECT_DRAGGING[HUD_TPS] || RECT_RESIZING[HUD_TPS]
-                || RECT_DRAGGING[HUD_COMBO] || RECT_RESIZING[HUD_COMBO]
-                || RECT_DRAGGING[HUD_SERVER_ADDRESS] || RECT_RESIZING[HUD_SERVER_ADDRESS]
-                || RECT_DRAGGING[HUD_SCOREBOARD] || RECT_RESIZING[HUD_SCOREBOARD]
-                || RECT_DRAGGING[HUD_HEALTH_INDICATOR] || RECT_RESIZING[HUD_HEALTH_INDICATOR]
-                || RECT_DRAGGING[HUD_CONSUMABLE] || RECT_RESIZING[HUD_CONSUMABLE]
-                || RECT_DRAGGING[HUD_PLAYER_MODEL] || RECT_RESIZING[HUD_PLAYER_MODEL]
-                || RECT_DRAGGING[HUD_TRAP_TIMER] || RECT_RESIZING[HUD_TRAP_TIMER]
-                || armorDragging || armorResizing;
+
+        for (int i = 0; i < RECT_HUD_COUNT; i++) {
+            if (RECT_DRAGGING[i] || RECT_RESIZING[i]) {
+                return true;
+            }
+        }
+        return armorDragging || armorResizing;
     }
 
-    /** Restores the 1:1 size reliably while dragging any HUD resize handle. */
     private static float snapAndAnnounceHudScale(Module module, float rawScale) {
         float clamped = HudScaleLimits.clamp(rawScale);
         boolean snapped = HudScaleLimits.snapsToDefault(clamped);
@@ -3757,7 +3934,6 @@ public class InGameHudMixin {
             float targetCenterX = (HUD_SNAP_X[index] + HUD_SNAP_WIDTH[index] * 0.5f) / safeCoordinateScale;
             float targetRight = (HUD_SNAP_X[index] + HUD_SNAP_WIDTH[index]) / safeCoordinateScale;
 
-            // Center wins equal-distance ties, then matching outer edges.
             float distance = Math.abs((x + width * 0.5f) - targetCenterX);
             if (distance <= HUD_TO_HUD_SNAP_RADIUS && distance < bestDistance) {
                 bestDistance = distance;
@@ -4066,13 +4242,6 @@ public class InGameHudMixin {
                 chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
                 getTextHudBaseWidth(client, text), BASE_HEIGHT);
 
-        // Server icon is drawn AFTER renderRectHud so it overlays nothing
-        // important and so module.getHudX/Y read the post-clamp / post-
-        // drag positions that renderRectHud has just written back. The
-        // icon hugs the rect's left edge at the same Y and is sized 1:1
-        // to the rect's rendered height (BASE_HEIGHT * scale), per the
-        // user's spec - "to the left of the IP, square, same size as
-        // the rect Y dimension".
         if (module.displayServerIcon.isValue()) {
             module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
             float scale = module.getRenderHudScale();
@@ -4088,7 +4257,7 @@ public class InGameHudMixin {
         }
 
         HitResult hit = client.player.raycast(4.5, 0.0f, false);
-        
+
         if (hit.getType() == HitResult.Type.MISS) {
             return waila.alwaysShow.isValue() ? "No target" : "";
         }
@@ -4100,18 +4269,9 @@ public class InGameHudMixin {
             BlockState state = client.world.getBlockState(pos);
             Block block = state.getBlock();
 
-            // Block name (uses Minecraft language)
             String blockName = block.getName().getString();
             sb.append(blockName);
 
-            // Coordinates formatted as "(x, y, z)" with parentheses and
-            // signed integers to match the screenshot the user shared
-            // (e.g. "(-101, 71, -298)"). Single line, no axis labels -
-            // the parens make the role unambiguous at a glance.
-            // Streamer Mode veto: the Hide Coordinates toggle suppresses
-            // this line even when WAILA's own Show Coordinates setting
-            // is on, so the privacy feature wins over the per-HUD
-            // preference the user last chose for normal play.
             if (waila.showCoordinates.isValue()
                     && !StreamerMode.getInstance().isHideCoordinatesEnabled()) {
                 sb.append("\n(").append(pos.getX())
@@ -4120,21 +4280,10 @@ public class InGameHudMixin {
                   .append(')');
             }
 
-            // Optimal-tool hint. Walks the vanilla mineable BlockTags
-            // (each block carries at most one of pickaxe/axe/shovel/hoe;
-            // sword is the special-case for cobweb / leaves). The tier
-            // prefix comes from the needs_X_tool tags so a wood pick
-            // on diamond ore correctly shows "Diamond Pickaxe" instead
-            // of the bare "Pickaxe" - users expect to see why their
-            // current tool fails to harvest, not just the family.
             if (waila.showCorrectTool.isValue()) {
                 sb.append("\nCorrect Tool: ").append(phaze$resolveCorrectTool(state));
             }
 
-            // Break time on separate line. Label changed from "Break:"
-            // to "Break Time:" per user request - keeps parity with
-            // "Correct Tool:" wording above and is less ambiguous than
-            // a bare "Break:" which reads like a verb.
             if (waila.showBreakTime.isValue()) {
                 if (client.player.isCreative()) {
                     sb.append("\nBreak Time: Instant");
@@ -4164,8 +4313,7 @@ public class InGameHudMixin {
             Entity entity = ((EntityHitResult)hit).getEntity();
             String entityName = entity.getName().getString();
             sb.append(entityName);
-            
-            // Add entity type info
+
             EntityType<?> entityType = entity.getType();
             sb.append("\nType: ").append(entityType.getName().getString());
         }
@@ -4173,29 +4321,6 @@ public class InGameHudMixin {
         return sb.toString();
     }
 
-    /**
-     * Resolves the best-fit tool family for {@code state} by consulting
-     * the vanilla {@link BlockTags} the block has been registered under.
-     *
-     * <p>Vanilla's data-driven mining system uses one of four mutually-
-     * exclusive {@code *_MINEABLE} tags per block plus an orthogonal
-     * tier tag ({@code NEEDS_DIAMOND_TOOL} / {@code NEEDS_IRON_TOOL} /
-     * {@code NEEDS_STONE_TOOL}). We walk these in priority order:
-     * <ol>
-     *   <li>If a tier tag matches, prefix it ({@code "Diamond "}, etc.).
-     *       Wooden / golden / netherite blocks have no needs-tag because
-     *       wood is the implicit floor and netherite never requires a
-     *       higher-than-diamond tier, so an unmarked block falls through
-     *       to the bare family name.</li>
-     *   <li>Pickaxe / axe / shovel / hoe in tag-registered order.
-     *       Sword fires last because {@code SWORD_EFFICIENT} is a
-     *       cosmetic speed-up (cobweb, leaves) rather than a true
-     *       requirement; if a block were somehow in both pickaxe and
-     *       sword tags, the pickaxe win is the user-expected answer.</li>
-     *   <li>Default "Hand" - dirt, sand, gravel, plants, etc. don't
-     *       benefit from any tool above bare-fists in vanilla.</li>
-     * </ol>
-     */
     private static String phaze$resolveCorrectTool(BlockState state) {
         String tier = "";
         if (state.isIn(BlockTags.NEEDS_DIAMOND_TOOL)) {
@@ -4218,15 +4343,15 @@ public class InGameHudMixin {
         if (!waila.showIcon.isValue()) {
             return null;
         }
-        
+
         if (client.player == null || client.world == null) {
             return null;
         }
 
         HitResult hit = client.player.raycast(4.5, 0.0f, false);
-        
+
         if (hit.getType() == HitResult.Type.MISS) {
-            // Return barrier block icon for "No target"
+
             return new ItemStack(Items.BARRIER);
         }
 
@@ -4234,16 +4359,14 @@ public class InGameHudMixin {
             BlockPos pos = ((BlockHitResult)hit).getBlockPos();
             BlockState state = client.world.getBlockState(pos);
             Block block = state.getBlock();
-            
-            // Get block as item stack for icon
+
             Item item = block.asItem();
             if (item != Items.AIR) {
                 return new ItemStack(item);
             }
         } else if (hit.getType() == HitResult.Type.ENTITY && waila.showEntities.isValue()) {
             Entity entity = ((EntityHitResult)hit).getEntity();
-            
-            // For item frames, show the held item
+
             if (entity.getType() == EntityType.ITEM_FRAME || entity.getType() == EntityType.GLOW_ITEM_FRAME) {
                 net.minecraft.entity.decoration.ItemFrameEntity itemFrame = (net.minecraft.entity.decoration.ItemFrameEntity)entity;
                 ItemStack heldItem = itemFrame.getHeldItemStack();
@@ -4251,8 +4374,7 @@ public class InGameHudMixin {
                     return heldItem;
                 }
             }
-            
-            // Try to get spawn egg for entity type
+
             try {
                 String entityName = entity.getType().getName().getString().toLowerCase().replace(" ", "_");
                 Identifier spawnEggId = Identifier.of("minecraft", entityName + "_spawn_egg");
@@ -4261,10 +4383,9 @@ public class InGameHudMixin {
                     return new ItemStack(spawnEgg);
                 }
             } catch (Exception e) {
-                // Fall through to default
+
             }
-            
-            // Default to barrier icon for entities
+
             return new ItemStack(Items.BARRIER);
         }
 
@@ -4291,14 +4412,10 @@ public class InGameHudMixin {
     ) {
         float lineHeight = 10.0f;
         float scale = module.getRenderHudScale();
-        // Nominal icon size matches the original two-line-tall sprite. We
-        // clamp it down per-frame against {@code baseHeight} so a small
-        // rect (e.g. block name only, every sub-toggle disabled) doesn't
-        // overflow the rect with a 18 px icon.
+
         float nominalIconSize = lineHeight * 2.0f / 1.1f;
         boolean noTarget = text.isEmpty() || text.contains("No target");
 
-        // Split text into lines and compute base dimensions (without scale, like PotionHud)
         String[] lines = text.split("\n");
         float maxTextWidth = 0.0f;
         for (String line : lines) {
@@ -4307,67 +4424,32 @@ public class InGameHudMixin {
             }
         }
 
-        // Height: vanilla two-line minimum for the "no target" pill so it
-        // doesn't collapse into a sliver; otherwise hug the actual text
-        // line count + 2 px breathing room. This is what makes the rect
-        // grow / shrink automatically as the user toggles Show Break Time
-        // / Show Coordinates / Show Correct Tool - fewer enabled options
-        // -> fewer lines -> shorter rect.
         float baseHeight = noTarget ? 20.0f : lines.length * lineHeight + 2.0f;
 
-        // Effective icon size: shrink so the icon always fits inside the
-        // rect with 2 px of padding top + bottom. For a 4-line targeting
-        // rect (42 px) the icon stays at its 18 px nominal; for a single-
-        // line block-name-only rect (12 px) it shrinks to 8 px and still
-        // sits cleanly in the centre. Floored at 8 px so the icon never
-        // becomes a single pixel speck.
         float effectiveIconSize = icon != null
                 ? Math.max(8.0f, Math.min(nominalIconSize, baseHeight - 4.0f))
                 : 0.0f;
         float iconOffset = icon != null ? effectiveIconSize + 3.0f : 0.0f;
 
         float baseWidth = iconOffset + maxTextWidth;
-        // Universal +4 px right-side padding so the WAILA text never sits
-        // flush against the rect's right edge.
+
         baseWidth += 4.0f;
-        // Compensate for the +4 px icon-X nudge applied below (see
-        // {@code iconLocalX}). The text follows the icon and would
-        // otherwise overshoot the rect's right edge by exactly 4 px;
-        // padding the rect itself by +4 keeps both icon and text
-        // proportionally inside.
+
         baseWidth += 4.0f;
-        // Extra +2 px specifically for the "no target" pill - the empty
-        // / "No target" copy is shorter than block-name text and the
-        // user wants the rect to feel less cramped when nothing is
-        // selected.
+
         if (noTarget) {
             baseWidth += 2.0f;
         } else {
-            // And another +2 px on the targeting state per the user's
-            // follow-up request: block-name text plus the optional
-            // tool / break-time / coord lines were sitting flush
-            // against the rect's right edge on long block names like
-            // "Cracked Polished Blackstone Bricks", which read as a
-            // visual cramp rather than a tight design choice.
+
             baseWidth += 2.0f;
         }
 
-        // Visual top-edge lift for the targeting state. Vanilla anchors
-        // the rect at {@code module.getHudY()} as its top-left, which
-        // means we cannot grow the rect upward by changing baseHeight
-        // alone (that grows it downward). Instead we apply a matrix
-        // translate of {@code -4 px} on Y around the entire WAILA
-        // sub-render (rect + icon + text), which visually moves the
-        // top edge up by 4 px while leaving the saved hudY untouched.
-        // Drag/resize hit-tests still use the saved coord so the user's
-        // actual cursor target stays where they parked it.
         boolean liftTop = !noTarget;
         if (liftTop) {
             context.getMatrices().pushMatrix();
             context.getMatrices().translate(0.0F, -4.0F);
         }
 
-        // renderRectHud handles scaling internally, pass base dimensions
         renderRectHud(context, client, module, "", hudIndex,
                 chatEditing, mouseX, mouseY, mouseDown, deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
                 baseWidth, baseHeight);
@@ -4378,18 +4460,8 @@ public class InGameHudMixin {
         context.getMatrices().pushMatrix();
         context.getMatrices().scale(inverseGuiScale, inverseGuiScale);
 
-        // Horizontal nudge of the icon by +4 px in HUD-local space, in
-        // both the "no target" and "targeting" states - shifts the icon
-        // away from the rect's left edge so it has a bit of breathing
-        // room. The text x-anchor still uses {@code iconOffset + 4} so
-        // text follows the icon's new x without overlapping it.
         float iconLocalX = 1.0f + 4.0f;
 
-        // Render icon - translate to its centred slot in HUD-local space
-        // first, THEN scale the 16x16 sprite to {@code effectiveIconSize}.
-        // Separating translate and scale lets us reason about position
-        // (always centred vertically in {@code baseHeight}) without
-        // worrying about how it interacts with the sprite-scale factor.
         if (icon != null) {
             float iconLocalY = (baseHeight - effectiveIconSize) * 0.5f;
             context.getMatrices().pushMatrix();
@@ -4398,30 +4470,12 @@ public class InGameHudMixin {
             context.getMatrices().translate(iconLocalX, iconLocalY);
             float iconDrawScale = effectiveIconSize / 16.0f;
             context.getMatrices().scale(iconDrawScale, iconDrawScale);
-            // Disable blend to prevent blur from affecting icon
+
             context.drawItem(icon, 0, 0);
-            // Re-enable blend so subsequent HUD elements (hotbar selection,
-            // tab list, chat, etc.) render with proper alpha blending. Without
-            // this the rest of the HUD inherits a blend-off state and looks
-            // noticeably darker/desaturated until something else triggers a
-            // RenderLayer state re-setup (e.g. a context.draw() flush).
+
             context.getMatrices().popMatrix();
         }
 
-        // Text is centred vertically inside the rect for ALL states - both
-        // "no target" and "targeting", regardless of how many sub-toggles
-        // are enabled. This is the single source of truth requested: "в
-        // любых вкл/выкл оно должно быть нормального размера и по центру
-        // ректа по высоте". The "no target" pill receives an extra +1 px
-        // downward nudge per the user's typography preference - the
-        // single-word "No target" copy reads visually higher than the
-        // optical centre, so the +1 brings it down to the perceptual
-        // middle of the pill. The targeting state was later given the
-        // same +1 nudge: block-name + tool/break/coord text was reading
-        // visually higher than centre on multi-line rects because the
-        // capital-letter baseline of vanilla's font sits slightly above
-        // the geometric line midpoint, so the +1 brings the perceived
-        // text mass into the rect's optical centre.
         float totalTextHeight = lines.length * lineHeight;
         float verticalOffset = (baseHeight - totalTextHeight) * 0.5f;
         if (noTarget) {
@@ -4429,11 +4483,7 @@ public class InGameHudMixin {
         } else {
             verticalOffset += 1.0f;
         }
-        // Text x-anchor follows the icon's new shifted column so the
-        // gap between icon and text stays constant. Original layout was
-        // {@code iconOffset + 4}; with the icon nudged by +4 px we add
-        // the same +4 to the text so the visual relationship between
-        // them is preserved.
+
         float textXOffset = iconOffset + 4.0f + 4.0f;
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
@@ -4461,35 +4511,9 @@ public class InGameHudMixin {
         context.drawText(client.textRenderer, Text.literal(displayText), (int)x, (int)y, 0xFFFFFFFF, true);
     }
 
-    // ====================================================================
-    // ===== Merged sibling InGameHud mixins ==============================
-    // ====================================================================
-    //
-    // The following blocks were previously separate @Mixin(InGameHud.class)
-    // files. Each block keeps the original injectors verbatim with a unique
-    // method name and {@code phaze$<feature>} field prefix. Field names
-    // that collided across the originals (e.g. {@code phaze$dragging} used
-    // by both InventoryHud and PlayerModel) are renamed per feature.
-    //
-    // Mergers:
-    //   1. Saturation (renderStatusBars TAIL + renderAirBubbles HEAD/RETURN)
-    //   2. Cooldowns (renderHotbarItem TAIL)
-    //   3. HotbarSlide (renderHotbar HEAD/INVOKE/RETURN)
-    //   4. MaceIndicator (renderHotbar TAIL)
-    //   5. ScoreboardNickHider (renderScoreboardSidebar @ModifyArg)
-    //   6. TabSlide (render TAIL)
-    //   7. ItemHighlighter (renderHotbar TAIL)
-    //   8. PlayerModel (render TAIL)
-    //   9. InventoryHud (render TAIL)
-    //   10. HealingHelper (renderHotbar TAIL)
-    //   11. HotbarFlush (renderHotbar TAIL)
-    //   12. Crosshair (renderCrosshair @Redirect on Perspective.isFirstPerson)
-
-    // ---------- TabSlide shadows ----------
     @Shadow @Final private MinecraftClient client;
     @Shadow @Final private PlayerListHud playerListHud;
 
-    // ---------- Saturation state ----------
     @Unique private float phaze$satUnclampedFlashAlpha = 0f;
     @Unique private float phaze$satFlashAlpha = 0f;
     @Unique private byte phaze$satAlphaDir = 1;
@@ -4498,7 +4522,6 @@ public class InGameHudMixin {
     @Unique private boolean phaze$bubblesLifted = false;
     @Unique private static final int PHAZE_BUBBLE_LIFT_PX = 10;
 
-    // ---------- HotbarSlide state ----------
     @Unique private static final int PHAZE_HOTBAR_SLOT_PX = 20;
     @Unique private static final int PHAZE_HOTBAR_SLOTS = 9;
     @Unique private static final int PHAZE_HOTBAR_PIXEL_W = PHAZE_HOTBAR_SLOT_PX * PHAZE_HOTBAR_SLOTS;
@@ -4514,28 +4537,19 @@ public class InGameHudMixin {
     @Unique private int phaze$hotbarLastWidth;
     @Unique private int phaze$hotbarLastHeight;
     @Unique private Identifier phaze$hotbarLastTexture;
-    // 1.21.11: DrawContext.drawGuiTexture takes a RenderPipeline where 1.21.4
-    // took a Function<Identifier, RenderLayer>. The captured value is the
-    // pipeline vanilla used for the selection sprite.
+
     @Unique private RenderPipeline phaze$hotbarLastPipeline;
     @Unique private boolean phaze$hotbarScissorOn = false;
 
-    // ---------- TabSlide state ----------
     @Unique private boolean phaze$tabWasOpenedThisCycle = false;
 
-    // ---------- PlayerModel editor state ----------
     @Unique private static boolean phaze$pmWasMouseDown = false;
 
-    // ---------- InventoryHud drag state ----------
     @Unique private static final int PHAZE_INV_SLOT = 18;
     @Unique private static final int PHAZE_INV_ICON = 16;
     @Unique private static final int PHAZE_INV_BORDER = 7;
     @Unique private static final int PHAZE_INV_SLOT_OFFSET = 8;
     @Unique private static final Identifier PHAZE_INV_PANEL_SPRITE = Identifier.of("phaze", "shulker_box_tooltip");
-
-    // ====================================================================
-    // 1) Saturation: renderStatusBars TAIL + renderAirBubbles HEAD/RETURN
-    // ====================================================================
 
     @Inject(method = "renderStatusBars", at = @At("TAIL"))
     private void phaze$onSaturationRenderStatusBars(DrawContext context, CallbackInfo ci) {
@@ -4694,10 +4708,6 @@ public class InGameHudMixin {
         }
     }
 
-    // ====================================================================
-    // 2) Cooldowns: renderHotbarItem TAIL
-    // ====================================================================
-
     @Inject(
             method = "renderHotbarItem(Lnet/minecraft/client/gui/DrawContext;IILnet/minecraft/client/render/RenderTickCounter;Lnet/minecraft/entity/player/PlayerEntity;Lnet/minecraft/item/ItemStack;I)V",
             at = @At("TAIL")
@@ -4728,24 +4738,11 @@ public class InGameHudMixin {
         int color = module.colorForProgress(progress);
         int textWidth = mc.textRenderer.getWidth(text);
         int drawX = x + 8 - textWidth / 2;
-        // Anchor lifted 3px from the previous y+4 position so the
-        // digits sit near the top portion of the slot but still
-        // overlap the held-item icon. {@code DrawContext.drawText}
-        // is invoked at TAIL of {@code renderHotbarItem}, so the
-        // text already draws AFTER the item glyph in z-order - no
-        // extra translate is needed for it to read as "on top".
+
         int drawY = y + 1;
-        // 1.21.11: GUI depth is gone (every GUI pipeline is NO_DEPTH_TEST) so the
-        // old "+200 in Z" trick has no equivalent - and no longer needs one.
-        // GuiRenderState auto-promotes an element into a new sub-layer whenever
-        // its bounds intersect something already submitted, so the count text
-        // lands above the item glyph purely from being submitted after it.
+
         context.drawText(mc.textRenderer, text, drawX, drawY, color, module.textShadow.isValue());
     }
-
-    // ====================================================================
-    // 3) HotbarSlide: renderHotbar HEAD + scissor + ModifyArgs + after
-    // ====================================================================
 
     @Inject(method = "renderHotbar", at = @At("HEAD"))
     private void phaze$prepareHotbarSlideDraw(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
@@ -4769,7 +4766,6 @@ public class InGameHudMixin {
             return;
         }
 
-        // 1.21.11: PlayerInventory.selectedSlot is private; getSelectedSlot() is the accessor.
         int selected = mc.player.getInventory().getSelectedSlot();
         float target = selected * PHAZE_HOTBAR_SLOT_PX;
 
@@ -4812,10 +4808,6 @@ public class InGameHudMixin {
         );
     }
 
-    // 1.21.11 descriptor change: DrawContext.drawGuiTexture's first parameter is
-    // com/mojang/blaze3d/pipeline/RenderPipeline, not java/util/function/Function.
-    // Ordinal 1 inside renderHotbar is still HOTBAR_SELECTION_TEXTURE (verified
-    // against the 1.21.11 InGameHud bytecode).
     @Inject(
             method = "renderHotbar",
             at = @At(value = "INVOKE",
@@ -4852,9 +4844,7 @@ public class InGameHudMixin {
                     args.<Integer>get(4),
                     args.<Integer>get(5)
             );
-            // The cached layer deliberately contains the expensive hotbar
-            // background/items but not the selection frame. The frame is one
-            // cheap live sprite, so it can move at display FPS over the cache.
+
             args.set(2, -10_000);
             phaze$hotbarShouldDrawMirror = false;
             return;
@@ -4902,10 +4892,6 @@ public class InGameHudMixin {
         phaze$hotbarShouldDrawMirror = false;
     }
 
-    // ====================================================================
-    // 4) Utility slot overlays: one state scope, original layer order
-    // ====================================================================
-
     @Inject(method = "renderHotbar", at = @At("TAIL"))
     private void phaze$drawHotbarUtilityHighlights(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         MaceIndicator mace = MaceIndicator.getInstance();
@@ -4925,14 +4911,10 @@ public class InGameHudMixin {
         );
     }
 
-    // ====================================================================
-    // 5) ScoreboardNickHider: ModifyArg on drawText inside sidebar render
-    // ====================================================================
-
     @ModifyArg(
             method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
             at = @At(value = "INVOKE",
-                    // 1.21.11: DrawContext.drawText returns void (was int).
+
                     target = "Lnet/minecraft/client/gui/DrawContext;drawText(Lnet/minecraft/client/font/TextRenderer;Lnet/minecraft/text/Text;IIIZ)V")
     )
     private Text phaze$hideOwnNickInSidebar(Text original) {
@@ -4940,10 +4922,6 @@ public class InGameHudMixin {
         if (hider == null || !hider.isEnabled()) return original;
         return hider.rewrite(original);
     }
-
-    // ====================================================================
-    // 6) TabSlide: render TAIL drives the slide animation when key released
-    // ====================================================================
 
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$tabSlideTick(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
@@ -5000,9 +4978,6 @@ public class InGameHudMixin {
             return;
         }
 
-        // Exordium is optional. When it is absent or has not completed its
-        // first player-list capture yet, preserve the original full-render
-        // close path as a correctness fallback.
         this.playerListHud.setVisible(true);
         Scoreboard scoreboard = this.client.world == null ? null : this.client.world.getScoreboard();
         ScoreboardObjective objective = scoreboard == null ? null
@@ -5025,11 +5000,6 @@ public class InGameHudMixin {
         return false;
     }
 
-    /**
-     * Shared 9-slot hotbar fill helper for HealingHelper, ItemHighlighter
-     * and MaceIndicator. Walks the player's hotbar, calls the per-stack
-     * colour function, and fills the slot when alpha is non-zero.
-     */
     @Unique
     private void phaze$paintHotbarUtilityFills(
             DrawContext context,
@@ -5046,9 +5016,8 @@ public class InGameHudMixin {
         int centerX = screenW / 2;
         int itemY = screenH - 16 - 3;
 
-
         for (int n = 0; n < 9; n++) {
-            // 1.21.11: PlayerInventory.main is private; getMainStacks() exposes the same list.
+
             ItemStack stack = player.getInventory().getMainStacks().get(n);
             int itemX = centerX - 90 + n * 20 + 2;
             if (mace != null) {
@@ -5071,18 +5040,10 @@ public class InGameHudMixin {
         }
     }
 
-    // ====================================================================
-    // 11) HotbarFlush: renderHotbar TAIL — flush vertex batches
-    // ====================================================================
-
     @Inject(method = "renderHotbar", at = @At("TAIL"))
     private void phaze$flushHotbarBatch(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         phaze$resetGuiRenderState();
     }
-
-    // ====================================================================
-    // 8) PlayerModel: render TAIL
-    // ====================================================================
 
     @Inject(method = "render", at = @At("TAIL"))
     private void phaze$drawPlayerModel(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
@@ -5227,11 +5188,7 @@ public class InGameHudMixin {
         }
 
         float hoverTarget = chatEditing && hoveredHud ? 1.0F : 0.0F;
-        // approachExp's last argument is a time step in SECONDS - every other
-        // HUD feeds it `deltaSeconds`, the real frame delta (~0.008 at 120fps).
-        // This one was passing tickCounter.getTickProgress(), a 0..1 fraction
-        // of the current tick, so with a rate of 10 the fade converged in one
-        // or two frames and the outline snapped on instead of easing in.
+
         RECT_HOVER_PROGRESS[hudIndex] = approachExp(
                 RECT_HOVER_PROGRESS[hudIndex],
                 hoverTarget,
@@ -5259,16 +5216,6 @@ public class InGameHudMixin {
 
         float centerX = panelX + panelW * 0.5F;
 
-        // 1.21.11: the (x, y, size, translation, bodyRot, headRot) overload of
-        // InventoryScreen.drawEntity is gone. The surviving primitive is
-        // DrawContext.addEntity(state, size, translation, bodyRot, headRot,
-        // x1, y1, x2, y2): the entity origin sits at the CENTRE of the rect and
-        // `translation` is applied in entity units (1 unit == `size` gui pixels).
-        // The old call put the feet at panelY + panelH, i.e. panelH/2
-        // below the rect centre; panelH == 2 * size, so that is exactly +1.0
-        // entity unit downwards. Verified against SpecialGuiElementRenderer
-        // (origin = rect centre, matrices.scale(guiScale * scale)) and
-        // EntityGuiElementRenderer (translate -> multiply(rotation)).
         Vector3f translation = new Vector3f(0.0F, 1.0F, 0.0F);
         Quaternionf bodyRotation;
         Quaternionf headRotation = null;
@@ -5295,9 +5242,7 @@ public class InGameHudMixin {
         EntityPose previousPose = player.getPose();
         EntityRenderState renderState;
         try {
-            // The pose override has to wrap the render-state capture now, not the
-            // draw: getAndUpdateRenderState() is what snapshots the pose, and the
-            // actual draw is deferred until GuiRenderer prepares special elements.
+
             player.setPose(EntityPose.STANDING);
             renderState = phaze$captureEntityRenderState(player);
         } finally {
@@ -5317,9 +5262,7 @@ public class InGameHudMixin {
 
         if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05F) {
             int outlineColor = withAlpha(0xFFFFFF, (int) (165.0F * RECT_HOVER_PROGRESS[hudIndex]));
-            // Same thickness rule as every other HUD - this one had a
-            // hardcoded 1, which reads as a heavier border next to the
-            // scale-compensated ones.
+
             int pmOutlineThickness = Math.max(1, Math.round(BASE_HOVER_OUTLINE_THICKNESS / Math.max(1.0F, scale)));
             drawOuterOutline(context, hoverX, panelY, hoverW, panelH, pmOutlineThickness, outlineColor);
         }
@@ -5327,10 +5270,7 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
-            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
-            // because GuiRenderState promotes an intersecting element into a new
-            // sub-layer, and the handle is submitted after the panel it sits on.
+
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -5342,11 +5282,6 @@ public class InGameHudMixin {
         }
     }
 
-    /**
-     * 1.21.11 stand-in for {@code InventoryScreen.drawEntity(LivingEntity)}, which
-     * is private. Same body as vanilla: grab the renderer's reusable render state,
-     * force it full-bright, drop the shadow pieces and clear the outline.
-     */
     @Unique
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static EntityRenderState phaze$captureEntityRenderState(LivingEntity entity) {
@@ -5359,24 +5294,6 @@ public class InGameHudMixin {
         return state;
     }
 
-    // ====================================================================
-    // 9) InventoryHud: render TAIL — 9x3 panel with optional drag
-    // ====================================================================
-
-    /**
-     * Render the InventoryHud panel. Refactored out of the
-     * legacy {@code @Inject(method="render", at=TAIL)} entry point
-     * so it can flow through {@code renderBufferedHud} like every
-     * other HUD module - HudOptimizer routes it into Pass 1 (cached
-     * FBO at the user's refresh rate) instead of redrawing the 27
-     * slot icons every render frame, which is what made it spike
-     * frame time on the user's machine.
-     *
-     * <p>Self-contained: the method pulls mouse / world / screen
-     * state from {@link MinecraftClient} so the
-     * {@code renderBufferedHud} call site doesn't need to thread
-     * any extra context.
-     */
     private void renderInventoryHud(
             DrawContext context,
             MinecraftClient client,
@@ -5399,13 +5316,6 @@ public class InGameHudMixin {
             return;
         }
 
-        // Snapshot the live inventory at most once per game tick.
-        // The 27 storage slots are a server-driven state - they
-        // only change when packets land - so re-querying them per
-        // frame plus re-evaluating cooldown / damage flags is
-        // wasted work at modern HUD rates. Refresh is a no-op when
-        // the tick counter hasn't advanced, so calling it every
-        // frame is essentially free on the hot path.
         InventoryHud.refreshSnapshotIfStale(client);
         ItemStack[] snapshot = InventoryHud.getSnapshotStacks();
         boolean[] overlayFlags = InventoryHud.getSnapshotOverlayFlags();
@@ -5603,10 +5513,7 @@ public class InGameHudMixin {
         boolean showResizeHandle = chatEditing && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
         if (showResizeHandle) {
             context.getMatrices().pushMatrix();
-            // 1.21.11: was translate(0, 0, HANDLE_RENDER_Z). GUI depth no longer exists
-            // (all GUI pipelines are NO_DEPTH_TEST); the handle already lands on top
-            // because GuiRenderState promotes an intersecting element into a new
-            // sub-layer, and the handle is submitted after the panel it sits on.
+
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
@@ -5620,15 +5527,6 @@ public class InGameHudMixin {
         context.getMatrices().popMatrix();
     }
 
-    /**
-     * @deprecated superseded by the per-tick snapshot maintained in
-     *             {@link InventoryHud#refreshSnapshotIfStale(MinecraftClient)}.
-     *             Kept around because {@code phaze$drawInventoryHud}
-     *             now reads the precomputed flag directly from the
-     *             snapshot array, but other call sites in this mixin
-     *             may still rely on the live predicate during early
-     *             tear-down before the first snapshot refresh.
-     */
     @Unique
     private static boolean phaze$shouldDrawSlotOverlay(ItemStack stack) {
         if (stack.getCount() != 1) return true;
@@ -5641,20 +5539,6 @@ public class InGameHudMixin {
         return false;
     }
 
-    // ====================================================================
-    // 12) Crosshair: suppress while a Phaze screen is open, then redirect
-    //     Perspective.isFirstPerson inside renderCrosshair
-    // ====================================================================
-
-    /**
-     * Hide the vanilla crosshair while a Phaze screen is up.
-     *
-     * <p>Minecraft keeps rendering the in-game HUD behind an open screen, so
-     * the crosshair otherwise sits in the middle of the ClickGUI. Vanilla's own
-     * screens never needed this: the crosshair is skipped for spectator mode
-     * and hidden-HUD only, because a vanilla screen visually replaces it with
-     * the mouse cursor anyway.
-     */
     @Inject(method = "renderCrosshair", at = @At("HEAD"), cancellable = true)
     private void phaze$hideCrosshairInPhazeGui(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();

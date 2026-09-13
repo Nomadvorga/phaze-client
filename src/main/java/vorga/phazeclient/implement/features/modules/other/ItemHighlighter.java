@@ -24,11 +24,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-/**
- * Paints a per-item-type tint behind every matching slot in the
- * player's inventory + hotbar so the user can spot signature items
- * at a glance.
- */
 public final class ItemHighlighter extends Module {
     private static final int RESULT_CACHE_MAX = 512;
     private static final int[] CUSTOM_ITEM_COLORS = {

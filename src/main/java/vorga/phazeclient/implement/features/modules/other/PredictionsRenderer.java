@@ -17,14 +17,8 @@ import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.system.render.Render3DUtil;
 
-/**
- * World-render side of {@link Predictions}. Walks the held throwables
- * + own-projectile lists each frame, simulates a forward trajectory
- * via {@link Predictions#predict}, and paints the polyline + impact
- * marker.
- */
 public final class PredictionsRenderer {
-    /** Soft-falloff bloom texture used for the optional glow halo. */
+
     private static final net.minecraft.util.Identifier GLOW_TEXTURE =
             net.minecraft.util.Identifier.of("phaze", "textures/particles/bloom/bloom_soft.png");
     private static final float[] MULTISHOT_YAW_OFFSETS = {-10.0F, 0.0F, 10.0F};
@@ -39,41 +33,12 @@ public final class PredictionsRenderer {
     private PredictionsRenderer() {
     }
 
-    /**
-     * Smooth grow-in / shrink-out animation for entity-hit markers.
-     * The renderer flips the direction to {@code FORWARDS} every
-     * frame the prediction lands on an entity and to {@code BACKWARDS}
-     * every frame it doesn't; the {@link DecelerateAnimation}
-     * counter handles the ease curve internally so we read a
-     * settled 0..1 progress without any per-frame interpolation
-     * code on our side. Single static animation because the
-     * renderer never needs to track more than one marker at a time.
-     */
     private static final Animation entityGrow;
     static {
         entityGrow = new DecelerateAnimation().setMs(180).setValue(1);
         entityGrow.setDirection(Direction.BACKWARDS);
     }
 
-    /**
-     * Lerped eye position for the local player. Crucial: the camera
-     * frustum that {@link MinecraftClient#crosshairTarget} (which the
-     * crosshair locks onto) draws against is built from
-     * {@code prevPosX -> posX} interpolated with the current
-     * {@code tickDelta}. The held-hand prediction starts a forward
-     * Euler simulation from this exact point so the trajectory locks
-     * to the crosshair every frame.
-     *
-     * <p>{@link PlayerEntity#getCameraPosVec(float)} is vanilla's own
-     * camera-position helper - it lerps the body coords AND picks the
-     * correct eye-height offset for the current pose (1.62 standing,
-     * 1.27 sneaking, 0.4 elytra-gliding, 0.4 swimming). Using a fixed
-     * {@code getStandingEyeHeight()} like the previous implementation
-     * left the line stuck at standing height for ~half a second
-     * whenever the user crouched or popped elytra, because the
-     * server-side eye height transition doesn't propagate to the
-     * client-pose flag instantly.
-     */
     private static Vec3d lerpedEyePos(MinecraftClient mc, RenderTickCounter tickCounter) {
         PlayerEntity p = mc.player;
         float td = tickCounter.getTickProgress(false);
@@ -86,37 +51,16 @@ public final class PredictionsRenderer {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null || mc.world == null) return;
 
-        // Resolve the accent color once per frame. All passes (line,
-        // floor ring, entity ring, glow halo) share the same hue so
-        // the visual reads as a single coherent highlight rather than
-        // a multi-colored mix when the user picks a non-default theme.
         int accent = module.resolveAccentColor();
-        // Entity-hit colour. May equal {@code accent} when the user
-        // disabled the override (so call sites can branch on the
-        // {@code isEntity} flag without reading the toggle every
-        // time). Resolved once per frame for the same reason as
-        // {@code accent}.
+
         int entityAccent = module.resolveEntityHitColor();
 
-        // ---- Live projectile trails ---------------------------------
-        // For every projectile WE threw / shot, render the REMAINING
-        // path ahead of its current position (line "shrinks" as the
-        // projectile moves through it) plus an impact marker at the
-        // path end. Visual mirrors the held-hand prediction so the
-        // user sees a continuous experience: aim -> see line + impact,
-        // throw -> projectile flies along the same line into the same
-        // impact marker, line gets shorter each tick.
         var trails = module.getTrails();
         if (!trails.isEmpty()) {
             float trailWidth = Math.max(1.0F, module.lineWidth.getInt());
-            // Lerp the partial-tick delta so the line endpoint
-            // tracks the visually-rendered projectile model rather
-            // than its discrete tick position. Without this the
-            // line endpoint snaps 20 times per second while the
-            // projectile model interpolates smoothly between ticks,
-            // producing a visible jitter at the join.
+
             float tickDelta = tickCounter.getTickProgress(false);
-            // ---- Lines ----
+
             for (var t : trails) {
                 if (t.entity == null) continue;
                 double lx = net.minecraft.util.math.MathHelper.lerp(tickDelta, t.entity.lastRenderX, t.entity.getX());
@@ -125,28 +69,17 @@ public final class PredictionsRenderer {
                 Vec3d lerpedPos = new Vec3d(lx, ly, lz);
                 var pts = t.getRemainingPath(lerpedPos);
                 if (pts != null && pts.size() >= 2) {
-                    // Replace the last point with the live impact so
-                    // the line endpoint and the marker stay glued to
-                    // the same exact predicted hit point.
+
                     if (t.smoothedImpact != null
                             && t.result != null
                             && t.result.type() != HitResult.Type.MISS) {
                         pts.set(pts.size() - 1, t.smoothedImpact);
                     }
-                    // Trail lines that end on a living entity get
-                    // the entity-hit colour so the user can tell at
-                    // a glance whether their projectile is going to
-                    // hit a target or just splash into a wall.
+
                     int lineColor = (t.result != null && t.result.type() == HitResult.Type.ENTITY)
                             ? entityAccent : accent;
                     if (module.fadeTrail.isValue()) {
-                        // Fade the head end of the line (the part
-                        // closest to the projectile, i.e. the bit
-                        // it's "eating" right now). The fade region
-                        // length is the user-configured slider, so
-                        // visually the line dissolves smoothly just
-                        // behind the projectile rather than ending
-                        // abruptly at the head.
+
                         float fadeDist = module.fadeDistance.getValue();
                         Render3DUtil.drawPolylineFadedOffset(
                                 matrices, pts,
@@ -163,11 +96,6 @@ public final class PredictionsRenderer {
                 }
             }
 
-            // ---- Impact markers at path end ----
-            // Only draw if the user has the marker enabled. Reuse
-            // the same Sphere / Circle style choice and color/glow
-            // settings as the held-hand marker so the visual is
-            // consistent.
             if (module.showImpactSphere.isValue()) {
                 float baseRadius = module.impactSphereRadius.getValue();
                 String style = module.impactMarkerStyle.getSelected();
@@ -182,10 +110,6 @@ public final class PredictionsRenderer {
                     Vec3d impactRaw = result.impact();
                     if (impactRaw == null) continue;
 
-                    // Use the live predicted impact directly. This
-                    // keeps the marker pinned to the actual landing
-                    // point instead of easing toward it and visually
-                    // drifting behind fast projectiles like pearls.
                     t.smoothedImpact = impactRaw;
                     t.lastSmoothNanos = nowNanos;
 
@@ -195,10 +119,7 @@ public final class PredictionsRenderer {
                         continue;
                     }
                     float radius = baseRadius;
-                    // Per-marker accent: entity hits use the
-                    // dedicated entity-hit colour so the warning
-                    // signal "your projectile is locked onto a
-                    // mob" reads instantly even from a distance.
+
                     int markerAccent = isEntity ? entityAccent : accent;
                     int sphereColor = (sphereAlpha << 24) | (markerAccent & 0x00FFFFFF);
 
@@ -216,11 +137,7 @@ public final class PredictionsRenderer {
                             float pulse = phaze$pulseFactor(module);
                             int haloAlpha = Math.max(0, Math.min(255, Math.round(110.0F * Math.min(2.0F, strength) * pulse)));
                             int haloColor = (haloAlpha << 24) | (markerAccent & 0x00FFFFFF);
-                            // Single bloom billboard - the user
-                            // explicitly asked for the original
-                            // halo look (not the volumetric stack).
-                            // Pulse multiplier breathes the alpha
-                            // 10%..100% when Glow Pulsate is on.
+
                             Render3DUtil.drawBillboard(matrices, GLOW_TEXTURE,
                                     (float) (cx - cameraPos.x), (float) (sphereCy - cameraPos.y), (float) (cz - cameraPos.z),
                                     haloRadius, haloColor, true);
@@ -263,10 +180,6 @@ public final class PredictionsRenderer {
             }
         }
 
-        // First pass: collect trajectory results without touching the
-        // GL buffer. Mojang's BufferBuilder throws "BufferBuilder was
-        // empty" if we open it and submit nothing, so we have to know
-        // up-front whether ANY trajectory is going to land vertices.
         TRAJECTORIES.clear();
         IMPACT_MARKS.clear();
         java.util.List<Predictions.TrajectoryResult> trajectories = TRAJECTORIES;
@@ -276,8 +189,6 @@ public final class PredictionsRenderer {
             collectHeldHand(mc, module, cameraPos, tickCounter, trajectories, marks);
         }
 
-        // Drop trajectories that have less than 2 path points - those
-        // would emit no line segments and contribute zero vertices.
         boolean hasLines = false;
         for (Predictions.TrajectoryResult r : trajectories) {
             if (r != null && r.path() != null && r.path().size() >= 2) {
@@ -286,33 +197,13 @@ public final class PredictionsRenderer {
             }
         }
 
-        // Trajectory line is always rendered when there is a path -
-        // it complements both marker styles by showing the arc that
-        // reaches the impact point. The Circle / Sphere choice only
-        // affects how the marker itself looks at the destination.
         if (hasLines) {
-            // Depth-test ON: trajectory lines and impact markers
-            // respect world geometry, so the line gets occluded
-            // behind walls / mobs instead of bleeding through. Mask
-            // stays off so the line doesn't imprint into the depth
-            // buffer either (which would block subsequent draws).
-            //
-            // 1.21.11: RenderSystem.lineWidth() is gone - line width
-            // is a per-vertex attribute on
-            // VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH (the
-            // replacement for the removed VertexFormats.LINES), so
-            // the user's slider is handed down to vertexLine()
-            // instead of being set as global GL state. Depth test
-            // now lives on the pipeline the layer is built from.
+
             float lineWidth = Math.max(1.0F, module.lineWidth.getInt());
 
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
             for (Predictions.TrajectoryResult r : trajectories) {
-                // Same per-trajectory rule as the trail lines above:
-                // recolor to the entity-hit accent when this path
-                // ends on a living entity, so the user sees a red
-                // "you'll hit a target" line vs. the regular accent
-                // for block hits / misses.
+
                 int lineColor = (r != null && r.type() == HitResult.Type.ENTITY)
                         ? entityAccent : accent;
                 emitPath(matrices, buffer, r, lineColor, cameraPos, lineWidth);
@@ -325,29 +216,14 @@ public final class PredictionsRenderer {
 
         }
 
-        // Impact markers: optional black sphere or floor circle at
-        // the predicted impact. Style chosen via {@code Marker Style};
-        // both are gated by the master Impact Marker toggle.
         if (!marks.isEmpty() && module.showImpactSphere.isValue()) {
             float baseRadius = module.impactSphereRadius.getValue();
             String style = module.impactMarkerStyle.getSelected();
             boolean sphere = !"Circle".equalsIgnoreCase(style);
 
-            // Sphere body color: accent RGB modulated by the user's
-            // opacity slider (0..100 -> 0..255 alpha). Keeping the
-            // sphere on the same hue as the line/ring/glow makes the
-            // whole marker read as a coherent visual; the opacity
-            // slider lets the user tune from a ghost-like fade to a
-            // solid sphere without adding a separate color picker.
             int sphereAlpha = Math.max(0, Math.min(255,
                     Math.round(module.sphereOpacity.getValue() * 2.55F)));
 
-            // Drive the entity-hit grow animation. Flip the
-            // direction every frame; the DecelerateAnimation
-            // class clamps the counter so the progress only ever
-            // moves toward the target without bouncing or
-            // oscillating - one continuous transition between two
-            // resting values, no breathing.
             boolean anyEntity = false;
             for (ImpactMark m : marks) {
                 if (m.entity) { anyEntity = true; break; }
@@ -361,17 +237,10 @@ public final class PredictionsRenderer {
                     continue;
                 }
                 float radius = m.entity ? baseRadius * entityScale : baseRadius;
-                // Per-marker accent: entity hits use the dedicated
-                // entity-hit colour. Falls back to {@code accent}
-                // when the override is disabled (resolveEntityHitColor
-                // returns the regular accent in that case).
+
                 int markerAccent = m.entity ? entityAccent : accent;
                 int sphereColor = (sphereAlpha << 24) | (markerAccent & 0x00FFFFFF);
 
-                // Center the marker. For ENTITY hits we nudge it
-                // slightly TOWARD the camera so the sphere reads as
-                // "on the front of the entity" instead of getting
-                // half-eaten by the entity model behind it.
                 Vec3d toward = cameraPos.subtract(m.pos).normalize();
                 double frontShift = m.entity ? radius * 1.05 : 0.0;
                 double cx = m.pos.x + toward.x * frontShift;
@@ -379,22 +248,9 @@ public final class PredictionsRenderer {
                 double cz = m.pos.z + toward.z * frontShift;
 
                 if (sphere) {
-                    // Sphere centred at the impact point plus the
-                    // user's Y offset. Negative offsets push the
-                    // sphere down (sits half-buried in the floor),
-                    // positive lift it up. For ENTITY hits we
-                    // anchor directly at the hit point because the
-                    // floor offset doesn't apply to mid-air targets.
+
                     double sphereCy = m.entity ? cy : cy + module.sphereYOffset.getValue();
 
-                    // Optional bloom halo behind the sphere. Drawn
-                    // BEFORE the sphere so the additive blend lands
-                    // on world pixels, then the opaque sphere paints
-                    // on top - giving the look of a glowing core
-                    // surrounded by a soft halo. Strength scales the
-                    // halo radius and modulates the per-vertex alpha
-                    // so a 1.0 strength reads as a comfortable glow,
-                    // 4.0 as a bright flare, 0.2 as a subtle hint.
                     if (module.showGlow.isValue()) {
                         float strength = module.glowStrength.getValue();
                         float haloRadius = radius * (1.6F + strength * 1.4F);
@@ -408,28 +264,14 @@ public final class PredictionsRenderer {
 
                     Render3DUtil.drawSphereSolid(matrices, (float) (cx - cameraPos.x), (float) (sphereCy - cameraPos.y), (float) (cz - cameraPos.z),
                             radius, sphereColor, 12, 18, true);
-                    // Floor ring intentionally omitted for Sphere
-                    // style - the user wants only the sphere as the
-                    // impact marker, no underlying circle cluttering
-                    // the ground.
+
                 } else {
-                    // Circle / floor ring style. When Glow is on we
-                    // still emit a billboard at the same position
-                    // so the user gets a consistent visual cue
-                    // regardless of which marker style they picked.
-                    //
-                    // For BLOCK hits we orient the ring against the
-                    // surface normal of the face we struck - lands
-                    // flat on floors, vertical on walls, upside-down
-                    // on ceilings. For ENTITY hits there is no
-                    // surface to align to, so we keep the camera-
-                    // facing flat ring at the front-shifted point.
+
                     net.minecraft.util.math.Direction face = m.face;
                     float nx = face.getOffsetX();
                     float ny = face.getOffsetY();
                     float nz = face.getOffsetZ();
-                    // Lift the ring along the normal by a hair so it
-                    // doesn't z-fight with the surface itself.
+
                     float surfaceLift = 0.02F;
                     double markerCx, markerCy, markerCz;
                     if (m.entity) {
@@ -451,15 +293,10 @@ public final class PredictionsRenderer {
                                 (float) (markerCx - cameraPos.x), (float) (markerCy - cameraPos.y), (float) (markerCz - cameraPos.z),
                                 haloRadius, haloColor, true);
                     }
-                    // World-space thick ring. depthTest=true so the
-                    // ring is properly occluded by world geometry -
-                    // matches the line and sphere passes which now
-                    // also respect depth.
+
                     float ringThickness = module.circleThickness.getValue();
                     if (m.entity) {
-                        // Entity ring stays a horizontal disc.
-                        // Normal is UP because we want the ring on
-                        // the floor under the entity hitbox.
+
                         Render3DUtil.drawThickRingOnFace(matrices,
                                 (float) (cx - cameraPos.x), (float) (cy - cameraPos.y), (float) (cz - cameraPos.z),
                                 0.0F, 1.0F, 0.0F,
@@ -473,9 +310,7 @@ public final class PredictionsRenderer {
                 }
             }
         } else {
-            // No marker this frame - decay grow back to 0 so a
-            // future entity-hit starts cleanly from the resting
-            // size instead of the previous frame's grow value.
+
             entityGrow.setDirection(Direction.BACKWARDS);
         }
     }
@@ -493,9 +328,7 @@ public final class PredictionsRenderer {
 
         Predictions.HeldType type = module.classifyHeldStack(chosen);
         if (type == Predictions.HeldType.BOW) {
-            // Bow predictions should only be visible while the bow is
-            // actually being drawn. Other supported items keep the
-            // previous always-visible behavior.
+
             if (!p.isUsingItem()) return;
             ItemStack active = p.getActiveItem();
             if (active == null || active.isEmpty()) return;
@@ -506,12 +339,7 @@ public final class PredictionsRenderer {
 
         Vec3d look = p.getRotationVec(1.0F);
         Vec3d motion = look.multiply(speed);
-        // In first person use the exact camera origin from the world
-        // render state. The path is later made camera-relative with
-        // this same value, so strafing cannot introduce a one-frame
-        // lateral delta between simulation and rendering. Third
-        // person still starts at the player's actual eye, not at the
-        // chase camera behind them.
+
         net.minecraft.client.render.Camera activeCamera = mc.gameRenderer == null
                 ? null : mc.gameRenderer.getCamera();
         boolean firstPersonPlayerCamera = activeCamera != null
@@ -525,11 +353,6 @@ public final class PredictionsRenderer {
         };
         boolean trident = type == Predictions.HeldType.TRIDENT;
 
-        // Multishot crossbow: fan three trajectories at -10°, 0°,
-        // +10° yaw around the look direction, mirroring vanilla's
-        // {@code RangedWeaponItem.shootAll} fan logic. Each shot
-        // gets its own snap-to-target and impact marker so the user
-        // sees exactly where all three bolts will go.
         boolean multishot = type == Predictions.HeldType.CROSSBOW && module.hasMultishot(chosen);
         if (multishot) {
             for (float yawOffset : MULTISHOT_YAW_OFFSETS) {
@@ -550,15 +373,6 @@ public final class PredictionsRenderer {
         Predictions.TrajectoryResult result = module.predictCached(eye, motion, gravity, trident, p);
         if (result == null || result.path() == null || result.path().size() < 2) return;
 
-        // Snap-to-target: if the player's crosshair is on a living
-        // entity within reasonable projectile range, override the
-        // ballistic result with a straight line to that entity. The
-        // user wants the prediction to "lock" to the moving target
-        // they're aiming at instead of computing a parabola that
-        // technically misses by a few pixels because the simulation
-        // doesn't perfectly model server-side hit reg. Rebuild the
-        // result as a 2-point path (eye -> entity center) so the
-        // line + marker land exactly on the target.
         Predictions.TrajectoryResult snapped = phaze$snapToTargetedEntity(mc, p, eye, look, result, speed);
         if (snapped != null) {
             result = snapped;
@@ -570,20 +384,11 @@ public final class PredictionsRenderer {
         }
     }
 
-    /**
-     * Rotate the look vector around the world Y axis by
-     * {@code yawDegrees}. Used to fan multishot crossbow shots at
-     * {@code -10° / 0° / +10°} relative to the player's actual aim.
-     * Yaw rotation only - vanilla's multishot fan is purely
-     * horizontal, so pitch is preserved untouched.
-     */
     private static Vec3d phaze$rotateLookYaw(Vec3d look, float yawDegrees) {
         double rad = Math.toRadians(yawDegrees);
         double cos = Math.cos(rad);
         double sin = Math.sin(rad);
-        // Rotation about Y: (x', z') = (x*cos + z*sin, -x*sin + z*cos)
-        // Standard right-handed yaw matching Minecraft's coordinate
-        // convention (positive yaw = clockwise looking from above).
+
         double x = look.x * cos + look.z * sin;
         double z = -look.x * sin + look.z * cos;
         return new Vec3d(x, look.y, z).normalize();
@@ -619,10 +424,6 @@ public final class PredictionsRenderer {
             Predictions.TrajectoryResult ballistic, double speed) {
         if (mc.world == null) return null;
 
-        // Cap snap range by the ballistic impact distance so we
-        // don't lock onto unreachable far targets. Falls back to
-        // a generous 64-block search when the ballistic ended in
-        // MISS (e.g. trajectory cleared the horizon).
         double maxRange;
         if (ballistic != null && ballistic.impact() != null) {
             maxRange = Math.max(8.0, eye.distanceTo(ballistic.impact()) * 1.5);
@@ -646,12 +447,6 @@ public final class PredictionsRenderer {
             return null;
         }
 
-        // Block-raycast along the same look ray. If a block sits
-        // closer than the entity, the user isn't actually looking
-        // at the entity (a wall is in between) - the projectile
-        // would smack the wall first, so we DON'T snap. Without
-        // this check the marker would teleport across walls onto
-        // mobs the player can't even see.
         net.minecraft.world.RaycastContext blockCtx = new net.minecraft.world.RaycastContext(
                 eye, end,
                 net.minecraft.world.RaycastContext.ShapeType.COLLIDER,
@@ -667,11 +462,7 @@ public final class PredictionsRenderer {
         }
 
         net.minecraft.entity.Entity target = hit.getEntity();
-        // Marker lands exactly where the look-ray crossed the
-        // entity's bounding box - i.e. the same point vanilla
-        // would compute for a hit. This reads as "the projectile
-        // strikes wherever the crosshair is on the body" instead
-        // of always sticking to the bbox centre.
+
         Vec3d impactPos = hit.getPos();
 
         java.util.List<Vec3d> path = new java.util.ArrayList<>();
@@ -682,25 +473,12 @@ public final class PredictionsRenderer {
                 net.minecraft.util.math.Direction.UP, target);
     }
 
-    /**
-     * Pulse multiplier for the glow alpha. When the user enables
-     * Glow Pulsate, the halo's alpha breathes between 10% and 100%
-     * on a sine wave at the configured speed. When the toggle is
-     * off, returns {@code 1.0} so the alpha stays at the strength-
-     * driven baseline (no behaviour change).
-     *
-     * <p>Time source is {@link System#nanoTime} to stay independent
-     * of game-tick rate / pause state - the user wanted the pulse
-     * to keep breathing at a constant cadence regardless of fps.
-     */
     private static float phaze$pulseFactor(Predictions module) {
         if (!module.glowPulsate.isValue()) return 1.0F;
         float speed = module.glowPulsateSpeed.getValue();
         if (speed <= 0.0F) speed = 0.0001F;
         double t = (System.nanoTime() / 1_000_000_000.0) * speed;
-        // sin-derived 0..1 wave, then mapped to [0.1, 1.0] so the
-        // halo never fully disappears - matches the user's "10% до
-        // 100%" spec.
+
         float s = (float) (0.5 + 0.5 * Math.sin(t * Math.PI * 2.0));
         return 0.1F + s * 0.9F;
     }
@@ -710,11 +488,7 @@ public final class PredictionsRenderer {
         if (entity.isGlowing()) return true;
         if (!entity.isInvisible()) return true;
         if (!(entity instanceof net.minecraft.entity.LivingEntity living)) return false;
-        // 1.21.11: LivingEntity.getArmorItems() was removed. Walk the
-        // equipment slots instead and keep exactly the old slot set
-        // (HUMANOID_ARMOR = feet/legs/chest/head) so an invisible mob
-        // is still treated as "visible enough to target" only when it
-        // actually wears rendered armour.
+
         for (net.minecraft.entity.EquipmentSlot slot : net.minecraft.entity.EquipmentSlot.VALUES) {
             if (slot.getType() != net.minecraft.entity.EquipmentSlot.Type.HUMANOID_ARMOR) continue;
             ItemStack armor = living.getEquippedStack(slot);
@@ -725,8 +499,6 @@ public final class PredictionsRenderer {
         return false;
     }
 
-    // 1.21.11: takes the line width explicitly - it is now a
-    // per-vertex attribute rather than RenderSystem global state.
     private static void emitPath(MatrixStack matrices, BufferBuilder buffer, Predictions.TrajectoryResult result, int color, Vec3d cameraPos, float lineWidth) {
         var path = result.path();
         if (path.size() < 2) return;
@@ -755,7 +527,6 @@ public final class PredictionsRenderer {
         return null;
     }
 
-    /** Marker geometry record. {@code entity} flips to true on entity-hit so the renderer can place the marker forward of the body. The {@code face} is the surface normal direction for block hits, used to orient the floor ring against walls / ceilings. */
     private record ImpactMark(Vec3d pos, boolean entity, net.minecraft.util.math.Direction face, Entity entityRef) {
     }
 

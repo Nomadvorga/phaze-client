@@ -19,13 +19,6 @@ import java.util.Locale;
 import java.util.TreeSet;
 import java.util.zip.ZipFile;
 
-/**
- * Persistent state for the standalone COSMETICS page.
- *
- * <p>This deliberately does not implement Module: cosmetics are a top-level
- * client feature and should not appear in the Mods catalog or inherit module
- * keybind/toggle semantics.</p>
- */
 public final class CosmeticsState {
     public static final String NONE = "None";
     public static final String WIMGS = "Wimgs";
@@ -246,7 +239,7 @@ public final class CosmeticsState {
                         .forEach(file -> discoverEntries(file, discovered));
             }
         } catch (Throwable ignored) {
-            // The empty-state UI handles an unavailable directory.
+
         }
         discovered.sort(Comparator
                 .comparingInt((CosmeticEntry entry) -> catalogPriority(entry.name()))
@@ -277,25 +270,17 @@ public final class CosmeticsState {
         return runDirectory.resolve("Phaze").resolve("cosmetics");
     }
 
-    /**
-     * Standard cosmetics ship with the mod. The VPS synchronizes only their
-     * small catalog ids; it never serves model archives per player.
-     */
     private void installBundledModels() {
         Path directory = cosmeticsDirectory();
-        // This was an early compressed preview of the regular Phaze cape.
-        // Remove already-installed copies too, otherwise catalog discovery
-        // would keep showing "Classic Phaze" after it left the bundled list.
+
         try {
             Files.deleteIfExists(directory.resolve("PhazeClient-cape-preview.png"));
             Files.deleteIfExists(directory.resolve("Ally Companion.zip"));
-            // Removed cosmetics must also disappear from existing installs,
-            // otherwise discovery would keep listing an archive copied by an
-            // older client version.
+
             Files.deleteIfExists(directory.resolve("Dreamy Snowy Fox Companion.zip"));
             Files.deleteIfExists(directory.resolve("Dreamy Fox Companion.zip"));
         } catch (Throwable ignored) {
-            // A read-only game directory must not prevent client startup.
+
         }
         for (String fileName : List.of(
                 "Wimgs.bbmodel",
@@ -316,8 +301,7 @@ public final class CosmeticsState {
                 Files.createDirectories(directory);
                 Files.copy(input, target);
             } catch (Throwable ignored) {
-                // A read-only game directory should not prevent local models
-                // already present on disk from continuing to work.
+
             }
         }
         for (BundledCape cape : BUNDLED_CAPES) {
@@ -334,7 +318,7 @@ public final class CosmeticsState {
                     Files.copy(input, target);
                 }
             } catch (Throwable ignored) {
-                // Keep startup usable on read-only installations.
+
             }
         }
     }
@@ -386,7 +370,7 @@ public final class CosmeticsState {
                 petEquipped = false;
             }
         } catch (Throwable ignored) {
-            // A malformed local preference file must never prevent startup.
+
         }
     }
 
@@ -408,7 +392,7 @@ public final class CosmeticsState {
             object.addProperty("petFollowIntensity", petFollowIntensity);
             Files.writeString(file, GSON.toJson(object), StandardCharsets.UTF_8);
         } catch (Throwable ignored) {
-            // Cosmetic preferences are non-critical; rendering can continue.
+
         }
     }
 
@@ -430,9 +414,7 @@ public final class CosmeticsState {
     private static void discoverEntries(Path file, List<CosmeticEntry> result) {
         String baseName = displayName(file.getFileName().toString());
         if ("Violet Witch Hat".equalsIgnoreCase(baseName)) {
-            // The complete hat is stored directly under the avatar's Head
-            // branch: its nested group contains the crown while the brim and
-            // black backing are sibling elements.
+
             result.add(new CosmeticEntry(
                     baseName,
                     file,
@@ -466,9 +448,7 @@ public final class CosmeticsState {
                         }
                     });
             for (String variant : variants) {
-                // This skin is intentionally not offered as a separate
-                // cosmetic, while the shared model archive remains intact
-                // for the other wing variants.
+
                 if ("ayldwt".equalsIgnoreCase(baseName)
                         && ("fire".equalsIgnoreCase(variant)
                         || "magma (codexcracked)".equalsIgnoreCase(variant))) {
@@ -481,7 +461,7 @@ public final class CosmeticsState {
                 ));
             }
         } catch (Throwable ignored) {
-            // A regular single-model ZIP needs no variant metadata.
+
         }
     }
 
@@ -550,7 +530,6 @@ public final class CosmeticsState {
         return CosmeticType.WING;
     }
 
-    /** Stable catalog ids remain unchanged for sync; only UI labels are translated. */
     public static String displayNameFor(String cosmetic) {
         if (cosmetic == null) return "";
         String lower = cosmetic.toLowerCase(Locale.ROOT);
@@ -679,7 +658,6 @@ public final class CosmeticsState {
         };
     }
 
-    /** Short localized copy shown below the selected cosmetic name. */
     public static String descriptionFor(String cosmetic) {
         if (cosmetic == null) return "";
         String lower = cosmetic.toLowerCase(Locale.ROOT);
@@ -825,7 +803,6 @@ public final class CosmeticsState {
         };
     }
 
-    /** Two-line preview copy: the unique phrase plus a localized type detail. */
     public static String longDescriptionFor(String cosmetic) {
         String first = descriptionFor(cosmetic);
         boolean russian = vorga.phazeclient.base.util.Lang.RU.equals(vorga.phazeclient.base.util.Lang.getActive());
@@ -847,7 +824,6 @@ public final class CosmeticsState {
         }
         return first.isBlank() ? second : first + ". " + second;
     }
-
 
     private record BundledCape(String fileName, String resource) {
     }

@@ -3,27 +3,6 @@ package vorga.phazeclient.implement.features.modules.hud;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 
-/**
- * Real wall-clock time HUD. Renders through the existing batched
- * HUD pipeline ({@code InGameHudMixin#renderSimpleTextHud}) which
- * handles drag, scale, background, and bracket wrapping uniformly
- * across every text HUD module.
- *
- * <h3>Settings</h3>
- * <ul>
- *   <li>{@code 24 Hour Format} - on by default flips to 24h time.</li>
- *   <li>{@code Show AM/PM} - 12h-only modifier.</li>
- *   <li>{@code Show Seconds} - extra extension for both formats.</li>
- *   <li>{@code Show Day Phase} - appends the in-game day phase
- *       label (Morning / Day / Dusk / Night) computed from the
- *       client's world time.</li>
- *   <li>{@code Color Phase} - tints the appended phase label by
- *       phase: morning yellow, day white, dusk orange, night blue.
- *       Implemented via in-message legacy color codes so the
- *       single-line batched renderer doesn't need a per-segment
- *       color path.</li>
- * </ul>
- */
 public final class TimeHud extends RectHudModule {
     private static final TimeHud INSTANCE = new TimeHud();
 
@@ -45,11 +24,11 @@ public final class TimeHud extends RectHudModule {
     public final SectionSetting phaseSection = new SectionSetting("Day Phase");
     public final BooleanSetting showPhase = new BooleanSetting(
             "Show Day Phase",
-            "Append the in-game day phase (Morning / Day / Dusk / Night)"
+            "Append the real-time day phase (Morning / Day / Evening / Night)"
     ).setValue(false);
     public final BooleanSetting colorPhase = new BooleanSetting(
             "Color Phase",
-            "Tint the day-phase label by phase (Morning yellow, Day white, Dusk orange, Night blue)"
+            "Tint the day-phase label by phase (Morning yellow, Day white, Evening orange, Night blue)"
     ).setValue(true)
             .visible(() -> showPhase.isValue());
 
@@ -65,7 +44,7 @@ public final class TimeHud extends RectHudModule {
         showPhase.setFullWidth(true);
         colorPhase.setFullWidth(true);
         setup(timeSection, hour24, showAmPm, showSeconds,
-                phaseSection, showPhase, colorPhase);
+                phaseSection, showPhase, colorPhase, otherSection, cornerRounding);
     }
 
     @Override
@@ -83,27 +62,27 @@ public final class TimeHud extends RectHudModule {
         return 21.0F;
     }
 
-    /**
-     * Decode the world time-of-day tick into one of four phases.
-     * Boundaries match vanilla's lighting transitions: 0..6000 =
-     * Morning (sunrise), 6000..12000 = Day, 12000..13800 = Dusk
-     * (the brief sunset window), 13800..23999 = Night.
-     */
     public Phase phaseForTime(long timeOfDay) {
+
         long t = ((timeOfDay % 24000L) + 24000L) % 24000L;
         if (t < 6000L) return Phase.MORNING;
         if (t < 12000L) return Phase.DAY;
-        if (t < 13800L) return Phase.DUSK;
+        if (t < 13800L) return Phase.EVENING;
         return Phase.NIGHT;
     }
 
-    /** Phases mapped to display strings + legacy colour codes so
-     *  the single-line text renderer can tint the suffix without
-     *  needing a per-segment color path. */
+    public Phase phaseForClock(int hour) {
+        if (hour < 4) return Phase.NIGHT;
+        if (hour < 12) return Phase.MORNING;
+        if (hour < 18) return Phase.DAY;
+        if (hour < 22) return Phase.EVENING;
+        return Phase.NIGHT;
+    }
+
     public enum Phase {
         MORNING("Morning", "§e"),
         DAY("Day", "§f"),
-        DUSK("Dusk", "§6"),
+        EVENING("Evening", "§6"),
         NIGHT("Night", "§9");
 
         public final String label;

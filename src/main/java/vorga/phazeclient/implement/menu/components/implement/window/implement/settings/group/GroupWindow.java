@@ -40,7 +40,6 @@ public class GroupWindow extends AbstractWindow {
         );
     }
 
-
     @Override
     public void drawWindow(DrawContext context, int mouseX, int mouseY, float delta) {
         Matrix3x2fStack matrix = context.getMatrices();
@@ -54,8 +53,6 @@ public class GroupWindow extends AbstractWindow {
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(4).thickness(2).softness(1).outlineColor(applyGlobalAlpha(ColorUtil.getOutline())).color(applyGlobalAlpha(ColorUtil.getGuiRectColor(1))).build());
 
-        // 1.21.11: FontRenderer still draws through a MatrixStack (its vertex path is unchanged),
-        // but the GUI pose is now 2D, so promote it into a throwaway stack for the text draw.
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
 
@@ -102,7 +99,6 @@ public class GroupWindow extends AbstractWindow {
         scroll = MathHelper.clamp(scroll, -maxScroll, 0);
         smoothedScroll = MathHelper.lerp(0.1F, smoothedScroll, scroll);
     }
-
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -154,7 +150,6 @@ public class GroupWindow extends AbstractWindow {
         }
     }
 
-
     @Override
     public boolean isHover(double mouseX, double mouseY) {
         components.forEach(abstractComponent -> abstractComponent.isHover(mouseX, mouseY));
@@ -177,13 +172,11 @@ public class GroupWindow extends AbstractWindow {
         return super.isHovered(mouseX, mouseY);
     }
 
-
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         components.forEach(abstractComponent -> abstractComponent.mouseReleased(mouseX, mouseY, button));
         return super.mouseReleased(mouseX, mouseY, button);
     }
-
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {

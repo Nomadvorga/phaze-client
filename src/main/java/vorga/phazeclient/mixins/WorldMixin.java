@@ -11,8 +11,7 @@ import vorga.phazeclient.implement.features.modules.other.WeatherChanger;
 
 @Mixin(World.class)
 public abstract class WorldMixin {
-    // 1.21.11: World.isClient is `private final boolean` (was public in earlier versions).
-    // The @Shadow must mirror the real modifiers or it silently disagrees with the target.
+
     @Shadow @Final private boolean isClient;
     @Shadow protected float rainGradient;
     @Shadow protected float thunderGradient;

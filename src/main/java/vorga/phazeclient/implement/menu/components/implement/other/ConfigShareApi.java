@@ -18,28 +18,6 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
-/**
- * Client for the cloud config share endpoints.
- *
- * <p>Uploads go to {@code POST /api/configs} and come back with a short
- * id in the shape {@code nick-xxxx-xxxx}; downloads are
- * {@code GET /api/configs/:id}. The payload on the wire is exactly the
- * {@code PHAZE1:} share-string {@link
- * vorga.phazeclient.implement.config.ConfigManager#exportCurrentToString}
- * already produces, so nothing about the format is specific to the
- * cloud path - the same string works pasted into chat.
- *
- * <p>Every upload carries three owner hints: the install id, a
- * hardware digest and (implicitly) the source address the server sees.
- * The server caps stored configs per owner and answers 429 with
- * {@code quota_exceeded} once any one of them is over the limit, which
- * is surfaced to the user rather than swallowed - "nothing happened"
- * is the worst possible response to a full quota.
- *
- * <p>Failures never throw. Every entry point returns null and leaves a
- * human-readable reason in {@link #getLastError()} for the modal to
- * render.
- */
 public final class ConfigShareApi {
 
     private static final int CONNECT_TIMEOUT_MS = 15_000;
@@ -184,8 +162,7 @@ public final class ConfigShareApi {
             case 404:
                 return Lang.t("status.cloud_not_found");
             case 410:
-                // The uploader capped the number of downloads and the
-                // last one has been used.
+
                 return Lang.t("status.cloud_exhausted");
             case 429:
                 return Lang.t("status.cloud_rate_limited");
@@ -230,8 +207,7 @@ public final class ConfigShareApi {
             }
 
             int status = conn.getResponseCode();
-            // 4xx/5xx bodies arrive on the error stream, and they are
-            // exactly where the reason lives, so read both.
+
             InputStream stream = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
             return new Response(status, stream == null ? "" : readBody(stream));
         } finally {
@@ -248,9 +224,7 @@ public final class ConfigShareApi {
             while ((read = reader.read(buf)) != -1) {
                 out.append(buf, 0, read);
                 if (out.length() > MAX_RESPONSE_BYTES) {
-                    // A share payload caps at 256 KB server-side; if we
-                    // are past double that, something is wrong and we
-                    // should stop rather than buffer it all.
+
                     break;
                 }
             }

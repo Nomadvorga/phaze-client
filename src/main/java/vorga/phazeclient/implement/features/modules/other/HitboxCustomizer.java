@@ -2,7 +2,7 @@
  * Hitbox Customizer Module
  * Based on HitboxPlus by PingIsFun (https://github.com/PingIsFun/hitboxplus)
  * Licensed under MIT License
- * 
+ *
  * Original Copyright (c) 2022 PingIsFun
  * Modified for Phaze Client
  */

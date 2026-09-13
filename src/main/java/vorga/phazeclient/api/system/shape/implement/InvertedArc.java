@@ -21,21 +21,6 @@ import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
 import net.minecraft.client.gl.UniformType;
 
-/**
- * Inverting arc / ring segment.
- *
- * <h3>1.21.11 port</h3>
- *
- * Same treatment as {@link Arc} - the six loose uniforms became vertex
- * attributes - but with no colors (the shader emits white and the
- * inverting blend does the rest) and with that blend baked into the
- * pipeline as {@link BlendFunction#INVERT} instead of being configured
- * imperatively around the draw.
- *
- * <p>Reuses {@link Arc}'s {@code ArcRect} / {@code ArcParams} elements
- * rather than registering its own: element ids are a shared 32-slot
- * registry, and the two shapes want byte-identical attributes.
- */
 public class InvertedArc implements Shape, QuickImports {
 
     private static final VertexFormat FORMAT = VertexFormat.builder()
@@ -98,9 +83,6 @@ public class InvertedArc implements Shape, QuickImports {
         emit(buffer, matrix4f, x + w, y + h, locX, locY, width, height, round.x, shape);
         emit(buffer, matrix4f, x + w, y, locX, locY, width, height, round.x, shape);
 
-        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-        // immediate draw runs outside the GUI pass and must install the
-        // GUI ortho projection (and its z = -11000 model-view) itself.
         vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             LAYER.draw(buffer.end());

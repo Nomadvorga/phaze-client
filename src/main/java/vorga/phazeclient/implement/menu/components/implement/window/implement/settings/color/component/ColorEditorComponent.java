@@ -12,7 +12,7 @@ public class ColorEditorComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Disabled - removed hex input and alpha slider
+
     }
 
     @Override

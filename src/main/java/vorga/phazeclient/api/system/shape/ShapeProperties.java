@@ -12,16 +12,7 @@ import org.joml.Vector4i;
 @Getter
 @Setter
 public class ShapeProperties {
-    /**
-     * GUI pose at submission time, as an owned COPY.
-     *
-     * <p>1.21.11 replaced the 4x4 {@code MatrixStack} with
-     * {@code Matrix3x2fStack}. The copy is mandatory rather than stylistic:
-     * shapes are consumed lazily (batched rects, blur, card snapshots), so
-     * holding the live stack would let a deferred draw read the pose after
-     * the caller already popped it. Vanilla copies at every one of its own
-     * render-state construction sites for the same reason.
-     */
+
     private Matrix3x2f matrix;
     private float x, y, width, height;
     private float softness, thickness;
@@ -90,11 +81,6 @@ public class ShapeProperties {
         }
     }
 
-    /**
-     * Takes {@code Matrix3x2fc} so that a live {@code Matrix3x2fStack} can
-     * be passed straight in - every existing call site compiles unchanged -
-     * while the stored value is a defensive copy.
-     */
     public static ShapeProperties.ShapePropertiesBuilder create(Matrix3x2fc matrix, double x, double y, double width, double height) {
         return ShapeProperties.builder().matrix(new Matrix3x2f(matrix)).x((float) x).y((float) y).width((float) width).height((float) height);
     }

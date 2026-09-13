@@ -64,10 +64,6 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
         panelX = width / 2.0F - panelWidth / 2.0F;
         panelY = height / 2.0F - panelHeight / 2.0F;
 
-        // Do not dim or blur the complete screen here. Besides making the
-        // picker look green with the Phaze palette, a full-screen backdrop is
-        // needlessly expensive and can collide with other post effects.
-        // The only blur this screen owns is the panel-sized one below.
         float blurRadius = Theme.getInstance().getMenuBlurRadius();
         if (blurRadius > 0.0F) {
             Blur.INSTANCE.renderGaussian(ShapeProperties.create(context.getMatrices(), panelX, panelY, panelWidth, panelHeight)
@@ -88,8 +84,6 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
         FontRenderer titleFont = Fonts.getSize(15, INTER_BOLD);
         FontRenderer subtitleFont = Fonts.getSize(11);
 
-        // 1.21.11: DrawContext.getMatrices() is a Matrix3x2fStack, but FontRenderer still
-        // consumes a MatrixStack. Bake the GUI pose once per frame (see fontPose()).
         MatrixStack textPose = fontPose(context);
 
         float textX = panelX + PANEL_PADDING - 7.0F;
@@ -159,7 +153,7 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
         for (int row = 0; row < rows; row++) {
             for (int column = 0; column < GRID_COLUMNS; column++) {
                 int slotIndex = startIndex + row * GRID_COLUMNS + column;
-                // 1.21.11: PlayerInventory.main is private now; getMainStacks() exposes the same DefaultedList.
+
                 ItemStack stack = inventory.getMainStacks().get(slotIndex);
                 float slotX = startX + column * SLOT_SIZE;
                 float slotY = startY + row * SLOT_SIZE;
@@ -191,8 +185,6 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
         }
     }
 
-    // 1.21.11: Element.mouseClicked(double, double, int) became mouseClicked(Click, boolean doubled).
-    // Click carries x()/y()/button(); the boolean flags a double-click, which this screen ignores.
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
         if (click.button() != 0) {
@@ -237,26 +229,11 @@ public final class ItemPickerScreen extends Screen implements QuickImports {
     private void playClick() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null && client.getSoundManager() != null) {
-            // 1.21.11: PositionedSoundInstance.master(...) was renamed to ui(...); same MASTER-category behaviour.
+
             client.getSoundManager().play(PositionedSoundInstance.ui(SoundEvents.UI_BUTTON_CLICK, 1.0F));
         }
     }
 
-    /**
-     * Bridges the 1.21.11 GUI pose to the pose type {@link FontRenderer} still takes.
-     *
-     * <p>1.21.6 changed {@code DrawContext.getMatrices()} from {@code MatrixStack} to
-     * {@code org.joml.Matrix3x2fStack}, but {@code FontRenderer.drawString} still accepts a
-     * {@code MatrixStack} and only ever reads {@code peek().getPositionMatrix()} from it.
-     * Baking the promoted 2D pose into a throwaway {@code MatrixStack} therefore reproduces the
-     * 1.21.4 geometry exactly, with no behaviour change.
-     *
-     * <p>One instance per {@code render()} is sufficient: this screen never mutates the GUI pose
-     * while drawing, and {@code FontRenderer.drawGlyphs} pushes/pops symmetrically.
-     *
-     * <p>TODO(1.21.11): drop this once FontRenderer itself is ported to take a
-     * {@code Matrix3x2fc} - then {@code context.getMatrices()} can be passed directly again.
-     */
     private static MatrixStack fontPose(DrawContext context) {
         MatrixStack pose = new MatrixStack();
         pose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));

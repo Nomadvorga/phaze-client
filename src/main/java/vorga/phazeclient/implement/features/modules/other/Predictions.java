@@ -33,39 +33,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Trajectory prediction. Computes the impact point of throwables
- * the player is currently holding (snowball / egg / pearl / xp
- * bottle / splash potion / trident / bow / crossbow) plus every
- * own-projectile already in flight, and exposes the data via
- * accessors the world-render mixin draws over.
- *
- * <h3>Why not bundle the renderer here</h3>
- * The renderer needs a {@link net.minecraft.client.util.math.MatrixStack}
- * scoped to the world-render pass. Keeping math in the module and
- * paint in the mixin lets the same prediction reuse different
- * render passes (debug overlay, block highlight, future radar) and
- * keeps the module test-friendly.
- *
- * <h3>Simulation contract</h3>
- * Each "predict" call simulates up to {@link #MAX_TICKS} ticks of
- * forward Euler integration mirroring the vanilla
- * {@code ProjectileEntity.tick}: position += velocity, velocity *=
- * drag, velocity.y -= gravity. Drag is 0.99 in air / 0.8 in water
- * for thrown items, 0.6 in water for arrows. Gravity is read from
- * vanilla's {@code Entity.getFinalGravity} which already accounts
- * for slow-falling and item-specific overrides. We bail out early
- * on block hit, entity hit, or y &lt; -128.
- *
- * <h3>Adapted from</h3>
- * {@code winvi.moscow.soupbetter.modules.PredictionsModule}. The
- * Phaze port keeps the simulation maths but drops the upstream's
- * Theme-driven helper colour - we expose a per-module colour
- * setting instead.
- */
 public final class Predictions extends Module {
     private static final Predictions INSTANCE = new Predictions();
-    /** Hard cap on simulation ticks - matches the upstream cap, ~15s of flight at 20Hz. */
+
     private static final int MAX_TICKS = 300;
     private static final int HELD_PREDICTION_CACHE_SIZE = 4;
     private final CachedPrediction[] heldPredictionCache = new CachedPrediction[HELD_PREDICTION_CACHE_SIZE];
@@ -74,9 +44,6 @@ public final class Predictions extends Module {
     private int heldPredictionCacheCount;
     private int heldPredictionCacheWriteIndex;
 
-    // ---- Trajectory ---------------------------------------------------
-    // Everything that controls the line itself: should we draw it,
-    // how thick, optional fade-out behind the projectile.
     public final SectionSetting trajectorySection = new SectionSetting("Trajectory");
     public final BooleanSetting predictHeld = new BooleanSetting(
             "Predict Held",
@@ -96,11 +63,6 @@ public final class Predictions extends Module {
     ).range(0.5f, 8.0f).step(0.1f).setValue(2.0f)
             .visible(() -> fadeTrail.isValue());
 
-    // ---- Impact Marker ------------------------------------------------
-    // Marker drawn at the predicted impact point. All settings here
-    // are gated behind the master Impact Marker toggle, and a few
-    // are mode-specific (Sphere vs. Circle) so they only show up
-    // when the corresponding style is selected.
     public final SectionSetting markerSection = new SectionSetting("Impact Marker");
     public final BooleanSetting showImpactSphere = new BooleanSetting(
             "Show Marker",
@@ -153,14 +115,6 @@ public final class Predictions extends Module {
     ).range(0.1f, 4.0f).step(0.05f).setValue(1.0f)
             .visible(() -> showImpactSphere.isValue() && showGlow.isValue() && glowPulsate.isValue());
 
-    // ---- Color selection -----------------------------------------------
-    // Two-mode color: by default we follow the active client Theme so
-    // the prediction visuals match the rest of the UI without any
-    // tweaking. Disabling the toggle reveals a preset picker with
-    // exactly the same 22 names the Theme module exposes, so the user
-    // can pin a fixed accent regardless of which menu theme is active.
-    // The chosen color drives the line, the floor ring, the entity
-    // ring, and tints the bloom glow billboard.
     public final SectionSetting colorSection = new SectionSetting("Color");
     public final BooleanSetting useThemeColor = new BooleanSetting(
             "Theme Color",
@@ -196,14 +150,6 @@ public final class Predictions extends Module {
     ).selected("Lunar Blue")
             .visible(() -> !useThemeColor.isValue());
 
-    // ---- Entity-hit color override -------------------------------------
-    // When the prediction lands on a mob / player, override the
-    // accent with a dedicated colour (default red) so the visual
-    // distinction "you'll hit a target vs. you'll hit a wall" is
-    // immediate at a glance. Mode mirrors the main color: a Theme
-    // toggle that follows the active menu accent, a preset picker
-    // when the toggle is off (with a "Default" option that locks to
-    // the requested {@code #FE5053} red).
     public final BooleanSetting entityColorEnabled = new BooleanSetting(
             "Entity Hit Color",
             "Use a different colour when the prediction lands on a mob or player"
@@ -265,12 +211,7 @@ public final class Predictions extends Module {
         entityColorEnabled.setFullWidth(true);
         entityUseThemeColor.setFullWidth(true);
         entityColorPreset.setFullWidth(true);
-        // Order: Trajectory -> Impact Marker -> Color. Within
-        // Impact Marker we go style-first then size, opacity, the
-        // mode-specific tweaks (Y offset for Sphere, thickness for
-        // Circle), then glow toggles. Mirrors the visual editing
-        // flow: pick what kind of marker, set its size, fine-tune
-        // the chosen mode, optionally light it up.
+
         setup(trajectorySection, predictHeld, lineWidth, fadeTrail, fadeDistance,
                 markerSection, showImpactSphere, impactMarkerStyle, impactSphereRadius,
                 sphereOpacity, sphereYOffset, circleThickness, showGlow, glowStrength,
@@ -298,7 +239,6 @@ public final class Predictions extends Module {
         return 21.0F;
     }
 
-    /** True iff the held-hand prediction should be drawn this frame. */
     public boolean shouldPredictHeld() {
         if (!isEnabled() || !predictHeld.isValue()) return false;
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -307,20 +247,8 @@ public final class Predictions extends Module {
                 || classifyHeldStack(mc.player.getOffHandStack()) != HeldType.NONE;
     }
 
-    /**
-     * Resolve the active accent color used for line / ring / glow.
-     * Theme mode reads the active menu palette's {@code chipActive}
-     * accent (the same one driving the GUI accents); preset mode
-     * looks up the named palette directly so the visual pin doesn't
-     * shift when the menu theme changes. Always returns ARGB with
-     * full alpha because per-element alpha is decided at the draw
-     * site (e.g. the glow halo modulates its own alpha by strength).
-     */
     public int resolveAccentColor() {
-        // "Black" is a Predictions-only override that doesn't exist
-        // in the Theme palette list - short-circuit before trying
-        // the palette lookup so we don't fall back to the default
-        // Lunar Blue accent for it. Full opacity, pure black RGB.
+
         if (!useThemeColor.isValue() && "Black".equalsIgnoreCase(colorPreset.getSelected())) {
             return 0xFF000000;
         }
@@ -331,33 +259,10 @@ public final class Predictions extends Module {
         } else {
             palette = vorga.phazeclient.implement.menu.MenuPalettes.byName(colorPreset.getSelected());
         }
-        // chipActive is the strongest accent in the palette and the
-        // one used for "selected" highlights in the GUI - perfect
-        // for a high-contrast world overlay. Force full alpha; per
-        // draw site re-applies its own alpha as needed.
+
         return 0xFF000000 | (palette.chipActive() & 0x00FFFFFF);
     }
 
-    /**
-     * Resolve the colour used when the prediction lands on a living
-     * entity (mob or player). Returns {@link #resolveAccentColor()}
-     * when the entity-color override is disabled, so callers can
-     * use the same code path regardless of the toggle state.
-     *
-     * <p>Modes:
-     * <ul>
-     *   <li><b>Theme on</b> - active palette {@code chipActive},
-     *       same accent the rest of the GUI uses.</li>
-     *   <li><b>Preset = Default</b> - the requested {@code #FE5053}
-     *       red, which doesn't exist in any palette and so needs an
-     *       explicit fallback.</li>
-     *   <li><b>Preset = Black</b> - mirrors the main color picker's
-     *       Black escape hatch.</li>
-     *   <li><b>Other preset</b> - palette lookup by name.</li>
-     * </ul>
-     * Always returns ARGB with full alpha; per-element alpha is
-     * applied at the draw site.
-     */
     public int resolveEntityHitColor() {
         if (!entityColorEnabled.isValue()) {
             return resolveAccentColor();
@@ -369,9 +274,7 @@ public final class Predictions extends Module {
             return 0xFF000000 | (palette.chipActive() & 0x00FFFFFF);
         }
         String preset = entityColorPreset.getSelected();
-        // "Default" is the requested fixed red - it isn't a palette
-        // name so we hardcode the ARGB here. Same idea as the main
-        // picker's Black, just on a different accent colour.
+
         if ("Default".equalsIgnoreCase(preset)) {
             return 0xFFFE5053;
         }
@@ -383,11 +286,6 @@ public final class Predictions extends Module {
         return 0xFF000000 | (palette.chipActive() & 0x00FFFFFF);
     }
 
-    /**
-     * Estimate the forward velocity for a held throwable. Bow / crossbow
-     * scale with the use-time-charge progress, others have a fixed
-     * launch speed mirroring vanilla. Returns 0 for non-throwables.
-     */
     public double initialVelocityFor(HeldType type, ItemStack stack, MinecraftClient mc) {
         return switch (type) {
             case SNOWBALL, EGG, ENDER_PEARL -> 1.5;
@@ -403,15 +301,10 @@ public final class Predictions extends Module {
         };
     }
 
-    /** Classifier for held throwable types, mirrors vanilla item-class hierarchy. */
     public HeldType classifyHeldStack(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return HeldType.NONE;
         var item = stack.getItem();
-        // Wind-charge extends SnowballItem in vanilla but its
-        // server-side flight model is different (linear, no gravity,
-        // explosive impact handled by WindChargeEntity). Drawing
-        // the standard parabola would lie about where it lands, so
-        // skip prediction entirely on a held wind charge.
+
         if (item instanceof net.minecraft.item.WindChargeItem) return HeldType.NONE;
         if (item instanceof SnowballItem) return HeldType.SNOWBALL;
         if (item instanceof EggItem) return HeldType.EGG;
@@ -424,28 +317,12 @@ public final class Predictions extends Module {
         return HeldType.NONE;
     }
 
-    /**
-     * True if the held crossbow has the Multishot enchantment.
-     * Used by the renderer to fan three trajectories at the
-     * vanilla {@code -10° / 0° / +10°} yaw spread that vanilla's
-     * {@code RangedWeaponItem.shootAll} produces when the enchant
-     * is present (one shot fires straight, the other two fan out
-     * 10 degrees on each side of the look direction).
-     *
-     * <p>Reads the enchantment level directly off the stack's
-     * {@code ENCHANTMENTS} component instead of going through the
-     * server-only {@code EnchantmentHelper.getProjectileCount}, so
-     * the check works on the client without a server world.
-     */
     public boolean hasMultishot(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
         net.minecraft.component.type.ItemEnchantmentsComponent comp =
                 stack.getOrDefault(net.minecraft.component.DataComponentTypes.ENCHANTMENTS,
                         net.minecraft.component.type.ItemEnchantmentsComponent.DEFAULT);
-        // Walk the stack's enchantments and check the registry key
-        // matches MULTISHOT directly. Avoids the server-only
-        // {@code EnchantmentHelper.getProjectileCount} which needs a
-        // ServerWorld; iteration works fine on the client.
+
         for (var entry : comp.getEnchantments()) {
             if (entry.matchesKey(net.minecraft.enchantment.Enchantments.MULTISHOT)) {
                 return comp.getLevel(entry) > 0;
@@ -454,13 +331,6 @@ public final class Predictions extends Module {
         return false;
     }
 
-    /**
-     * Forward-integrate a projectile state and return the impact point.
-     * Mirrors {@code ProjectileEntity.tick} exactly: position += velocity,
-     * velocity *= drag, velocity.y -= gravity. Returns {@code null} if
-     * the projectile flies past {@link #MAX_TICKS} without hitting
-     * anything.
-     */
     public TrajectoryResult predictCached(Vec3d startPos, Vec3d startMotion, double gravity, boolean trident, Entity owner) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.world == null) return null;
@@ -509,8 +379,7 @@ public final class Predictions extends Module {
         for (int i = 0; i < MAX_TICKS; i++) {
             Vec3d prev = pos;
             pos = pos.add(motion);
-            // Drag selection: trident always 0.99, persistent in water
-            // 0.6, throwables in water 0.8, otherwise 0.99.
+
             fluidPos.set(MathHelper.floor(prev.x), MathHelper.floor(prev.y), MathHelper.floor(prev.z));
             boolean inWater = mc.world.getBlockState(fluidPos).getFluidState().isIn(FluidTags.WATER);
             float drag = trident ? 0.99F : (inWater ? 0.8F : 0.99F);
@@ -521,10 +390,7 @@ public final class Predictions extends Module {
                     RaycastContext.FluidHandling.NONE,
                     owner));
             if (result.getType() != HitResult.Type.MISS) {
-                // Capture the block face we hit so the renderer can
-                // orient the floor/wall ring against that surface
-                // normal. For non-block hits the renderer falls back
-                // to UP (horizontal floor ring).
+
                 net.minecraft.util.math.Direction face =
                         (result instanceof net.minecraft.util.hit.BlockHitResult bhr)
                                 ? bhr.getSide()
@@ -533,14 +399,6 @@ public final class Predictions extends Module {
                 return new TrajectoryResult(path, result.getPos(), HitResult.Type.BLOCK, face, null);
             }
 
-            // Exact entity raycast on this segment. Using
-            // ProjectileUtil.raycast (instead of a coarse
-            // box.intersects segment test) stabilizes impact points:
-            // we get the nearest real intersection point on the
-            // entity hitbox, so the marker no longer jumps
-            // "inside/outside" when the path runs close to edges.
-            // Skip fully invisible entities, but keep glowing ones
-            // so outlined targets still get a valid prediction.
             Vec3d a = prev, b = pos;
             net.minecraft.util.math.Box searchBox = new net.minecraft.util.math.Box(a, b).expand(1.0);
             Entity source = owner != null ? owner : mc.player;
@@ -571,67 +429,30 @@ public final class Predictions extends Module {
                 net.minecraft.util.math.Direction.UP, null);
     }
 
-    /** Held-stack throwable classification used by the renderer to pick the launch math. */
     public enum HeldType {
         NONE, SNOWBALL, EGG, ENDER_PEARL, EXPERIENCE_BOTTLE, SPLASH_POTION, TRIDENT, BOW, CROSSBOW
     }
 
-    // ----------------------------------------------------------------
-    // Projectile trail tracking (own-projectile flight prediction)
-    // ----------------------------------------------------------------
-    // Whenever the LOCAL PLAYER spawns a projectile we register it
-    // here, simulate its full flight forward at spawn time, and
-    // store the path. Renderer reads this map to draw the REMAINING
-    // path in front of each in-flight projectile - the line shrinks
-    // as the projectile moves along it ("eats the line"). At the end
-    // we draw the same impact marker (sphere / circle) that the
-    // held-hand prediction uses, so the visual is consistent whether
-    // the user is still aiming or has already thrown.
     private final Map<Integer, ProjectileTrail> trails = new HashMap<>();
 
-    /** Network-thread entrypoint. Filters to LOCAL-PLAYER-owned
-     *  projectiles only - other players' projectiles are ignored. */
     public void trackProjectile(ProjectileEntity projectile) {
         if (projectile == null || !isEnabled()) return;
-        // Fireworks have player-controlled trajectory while elytra-
-        // boosting (the user steers them), so a static spawn-time
-        // prediction is meaningless for them. Skip the firework
-        // family entirely.
+
         if (projectile instanceof net.minecraft.entity.projectile.FireworkRocketEntity) return;
-        // Wind charges fly on a linear, gravity-less, fast-decaying
-        // trajectory handled entirely by WindChargeEntity. Drawing
-        // the standard ballistic-parabola trail would mislead the
-        // user about where the charge actually lands, so skip
-        // tracking them entirely - the held-hand check already
-        // refuses to predict from a held wind charge stack, this
-        // mirrors the same rule for in-flight entities.
+
         if (projectile instanceof net.minecraft.entity.projectile.WindChargeEntity) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null) return;
-        // Only track projectiles WE threw / shot. The local player
-        // is the projectile's owner if and only if they're the one
-        // that spawned it on the server.
+
         Entity owner = projectile.getOwner();
         if (owner == null || owner.getId() != mc.player.getId()) return;
 
-        // Precompute the entire forward trajectory at spawn time,
-        // mirroring the held-hand prediction. We use the projectile's
-        // starting velocity and gravity bucket, then run the same
-        // forward-Euler simulation that {@link #predict} does for
-        // the held visual. Storing the path once means the renderer
-        // only has to slice it on each frame, not re-simulate.
-        // 1.21.11: Entity.getPos() -> getEntityPos(). Same value
-        // (the entity's tick-boundary world position); rename only.
         Vec3d startPos = projectile.getEntityPos();
         Vec3d startMotion = projectile.getVelocity();
-        // Gravity bucket: same classification used for held items.
-        // We default to the thrown-item bucket (0.03) for everything
-        // but bow-arrow types (which use 0.05). Tridents land in
-        // their own branch via instanceof check below.
+
         double gravity = 0.03;
         boolean trident = false;
-        // Net.minecraft.entity.projectile types we care about:
-        // PersistentProjectileEntity covers arrow / trident / spectral arrow.
+
         if (projectile instanceof net.minecraft.entity.projectile.PersistentProjectileEntity) {
             gravity = 0.05;
             if (projectile instanceof net.minecraft.entity.projectile.TridentEntity) {
@@ -643,15 +464,6 @@ public final class Predictions extends Module {
         trails.put(projectile.getId(), new ProjectileTrail(projectile, result));
     }
 
-    /** Per-tick: re-predict trajectory from current pos+velocity
-     *  and prune dead. Re-predicting each tick lets the impact
-     *  marker follow the projectile's ACTUAL flight (vanilla adds
-     *  a small random spread at spawn, plus drag / wind / collisions
-     *  can shift the path mid-flight) instead of being pinned to
-     *  the initial spawn-time prediction. The renderer then
-     *  exponentially smooths the marker position toward the new
-     *  prediction so the user sees a plump glide rather than a
-     *  per-tick teleport. */
     public void tickTrails() {
         if (trails.isEmpty()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -662,26 +474,16 @@ public final class Predictions extends Module {
                 it.remove();
                 continue;
             }
-            // Drop trails for projectiles that have effectively
-            // stopped moving. Persistent projectiles (arrows /
-            // tridents) zero their velocity the moment the server
-            // pins them to a block, and snowball-like projectiles
-            // also leave a near-zero velocity once they've hit and
-            // are pending despawn. A single velocity-magnitude
-            // check covers both cases without needing access to
-            // the protected {@code isInGround} flag.
+
             Vec3d v = t.entity.getVelocity();
             if (v.lengthSquared() < 1.0E-4) {
                 it.remove();
                 continue;
             }
-            // Re-simulate from current state. Player owner is the
-            // entity-collision blacklist for the predict() helper -
-            // it skips intersecting our own player so the line
-            // doesn't think we're our own target.
+
             Entity owner = t.entity.getOwner();
             if (owner == null && mc != null) owner = mc.player;
-            // 1.21.11: Entity.getPos() -> getEntityPos().
+
             Vec3d startPos = t.entity.getEntityPos();
             Vec3d startMotion = v;
             double gravity = 0.03;
@@ -699,7 +501,6 @@ public final class Predictions extends Module {
         }
     }
 
-    /** Read-only access to the live trail list for the renderer. */
     public java.util.Collection<ProjectileTrail> getTrails() {
         return trails.values();
     }
@@ -710,25 +511,13 @@ public final class Predictions extends Module {
         trails.clear();
     }
 
-    /** Per-projectile precomputed flight path + impact marker. */
     public static final class ProjectileTrail {
         public final ProjectileEntity entity;
-        /** Latest predicted trajectory; refreshed every tick by
-         *  {@link #tickTrails()} so the path tracks the projectile's
-         *  actual flight (vanilla random spread at spawn + drag +
-         *  collisions). Mutable rather than final because we re-run
-         *  the simulation each tick. */
+
         public TrajectoryResult result;
 
-        /** Smoothed impact-marker position. Exponentially decays
-         *  toward {@code result.impact()} every frame so the user
-         *  sees a plump glide rather than a per-tick teleport when
-         *  the prediction shifts due to vanilla randomness. */
         public Vec3d smoothedImpact;
-        /** Last frame timestamp (nanoseconds) used to compute the
-         *  delta-time for the exponential smoother. {@code 0} means
-         *  "no previous frame" so the first paint snaps directly to
-         *  the live impact. */
+
         public long lastSmoothNanos = 0L;
         private final List<Vec3d> simulationPath = new ArrayList<>(64);
         private final List<Vec3d> remainingPath = new ArrayList<>(64);
@@ -750,31 +539,11 @@ public final class Predictions extends Module {
             this.smoothedImpact = result != null ? result.impact() : null;
         }
 
-        /** Live position of the projectile (camera-frame irrelevant - raw world coords). */
         public Vec3d getCurrentPos() {
-            // 1.21.11: Entity.getPos() -> getEntityPos().
+
             return entity != null ? entity.getEntityPos() : null;
         }
 
-        /** Returns the slice of the predicted path AHEAD of the
-         *  projectile's current position, prepended with the
-         *  projectile's actual location so the polyline starts
-         *  exactly at the entity. The {@code currentPos} parameter
-         *  is the lerped (partial-tick) position the renderer
-         *  computes per frame, so the line "starts at the visible
-         *  projectile" rather than at the last tick boundary - that
-         *  removes the jitter when the line endpoint snaps every
-         *  50ms while the projectile model interpolates smoothly.
-         *
-         *  <p>The previous implementation found the closest path
-         *  WAYPOINT and started from there, which produced a visible
-         *  V-shaped kink at the join: the line went projectile -&gt;
-         *  next-waypoint, but next-waypoint was offset to the side
-         *  of where the projectile actually was. Now we find the
-         *  closest path SEGMENT, project the projectile onto it, and
-         *  start the remaining-path slice from the END of that
-         *  segment - so the line goes projectile -&gt; segment-end
-         *  -&gt; ... -&gt; impact, with no detour. */
         public List<Vec3d> getRemainingPath(Vec3d currentPos) {
             if (result == null || result.path() == null) return java.util.Collections.emptyList();
             List<Vec3d> path = result.path();
@@ -782,9 +551,6 @@ public final class Predictions extends Module {
             Vec3d cur = currentPos != null ? currentPos : getCurrentPos();
             if (cur == null) return path;
 
-            // Find the closest SEGMENT, not the closest waypoint.
-            // Project cur onto each segment a->b and pick the one
-            // with minimum perpendicular distance.
             int bestSegIdx = 0;
             double bestDist = Double.MAX_VALUE;
             for (int i = 0; i < path.size() - 1; i++) {
@@ -811,12 +577,6 @@ public final class Predictions extends Module {
                 }
             }
 
-            // Output: live projectile position + every waypoint
-            // strictly AFTER the segment we're inside (i.e. starting
-            // at index bestSegIdx + 1). The projectile is somewhere
-            // along the segment [bestSegIdx, bestSegIdx+1], so
-            // joining (cur) directly to (bestSegIdx+1) avoids any
-            // backtrack, and the rest of the path continues forward.
             remainingPath.clear();
             remainingPath.add(cur);
             for (int i = bestSegIdx + 1; i < path.size(); i++) {
@@ -825,14 +585,11 @@ public final class Predictions extends Module {
             return remainingPath;
         }
 
-        /** No-arg overload uses the entity's tick-boundary position.
-         *  Prefer the lerped overload from the renderer. */
         public List<Vec3d> getRemainingPath() {
             return getRemainingPath(getCurrentPos());
         }
     }
 
-    /** Path + impact info returned by {@link #predict}. */
     public record TrajectoryResult(java.util.List<Vec3d> path, Vec3d impact, HitResult.Type type,
                                     net.minecraft.util.math.Direction face, Entity entity) {
     }

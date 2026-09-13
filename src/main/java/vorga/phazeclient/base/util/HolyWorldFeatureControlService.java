@@ -25,11 +25,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
 
-/**
- * HolyWorld sends feature-control updates over the liteapi:feature-control
- * custom-payload channel. We keep a local fail-open cache of disabled
- * features so the client can react immediately without polling HTTP.
- */
 public final class HolyWorldFeatureControlService {
     private static final String REQUEST_METHOD_NAME = "checkFeatures";
     private static final String HOLYWORLD_SEGMENT = "holyworld";
@@ -149,7 +144,7 @@ public final class HolyWorldFeatureControlService {
             disabledFeatures.clear();
             disabledFeatures.addAll(nextDisabled);
         } catch (Throwable ignored) {
-            // Fail-open: malformed payloads should never break the client.
+
         }
     }
 

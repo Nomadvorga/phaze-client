@@ -61,7 +61,7 @@ public class ShaderHelper {
                 if (shader1Fbo != null) shader1Fbo.delete();
                 if (shader2Fbo != null) shader2Fbo.delete();
             }
-            // 1.21.11: SimpleFramebuffer takes a debug name as its FIRST argument.
+
             copyFbo = new SimpleFramebuffer("phaze/hand/copy", width, height, true);
             fbo1 = new SimpleFramebuffer("phaze/hand/fbo1", width, height, true);
             fbo2 = new SimpleFramebuffer("phaze/hand/fbo2", width, height, true);
@@ -72,43 +72,9 @@ public class ShaderHelper {
         }
     }
 
-    /**
-     * Draws a full-screen NDC quad through whatever shader program is currently bound.
-     *
-     * <p>TODO(1.21.11): stubbed - no equivalent exists.
-     *
-     * <p>On 1.21.4 this built a {@code POSITION} quad on the render-thread tessellator and
-     * submitted it with {@code BufferRenderer.drawWithGlobalProgram}, which drew using the
-     * program that {@link Shader#bind()} had just installed with {@code glUseProgram}. Both
-     * halves of that contract are gone in 1.21.11:
-     * <ul>
-     *   <li>{@code BufferRenderer} was deleted outright, and with it the whole concept of a
-     *       "global program" - every draw now names a {@code RenderPipeline}, which owns its
-     *       own compiled program plus its blend/depth/cull state.</li>
-     *   <li>{@code RenderSystem.renderThreadTesselator()} is gone as well
-     *       ({@link net.minecraft.client.render.Tessellator#getInstance()} is the survivor).</li>
-     * </ul>
-     *
-     * <p>Routing the quad through a stock {@code RenderLayer} would compile, but it would draw
-     * with vanilla's position shader instead of the hand shader - a flat full-screen rectangle
-     * painted over the frame, which is strictly worse than drawing nothing. And re-binding the
-     * raw GL program by hand is explicitly off the table: {@code GlCommandEncoder} caches
-     * {@code currentPipeline}/{@code currentProgram}, so a stray {@code glUseProgram} corrupts
-     * every vanilla draw that follows.
-     *
-     * <p>Making this real means giving each {@code assets/Phaze/shaders/hand/*} program a
-     * {@code RenderPipeline} whose loose uniforms have become a std140 UBO block (see J-8 in
-     * PORTING-WAVE2.md), at which point this method disappears in favour of
-     * {@code layer.draw(builtBuffer)} / {@code GpuDraw.draw(...)}.
-     *
-     * <p>Current blast radius: none. The only two callers are {@code Blur.runDualKawasePass}
-     * and {@code Blur.runGaussianPass}, both of which are themselves unreachable while their
-     * {@code ShaderProgram} lookup is stubbed to {@code null}.
-     */
     public static void drawFullScreenQuad() {
         RenderSystem.assertOnRenderThread();
-        // Intentionally empty - see javadoc. Do NOT begin a Tessellator buffer here without
-        // ending it; an unfinished build leaks into vanilla's next begin() and throws.
+
     }
 
     public static boolean isInitialized() {

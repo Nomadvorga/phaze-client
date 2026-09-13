@@ -50,15 +50,7 @@ public class CategoryComponent extends AbstractComponent {
 
     private final Map<ModuleComponent, Integer> assignedColumns = new HashMap<>();
     private final List<ModuleComponent> visibleComponents = new ArrayList<>();
-    /**
-     * Sum of (componentHeight + ROW_GAP) per column, captured in
-     * {@link #assignColumns()}. Used as the seed array for the render-loop
-     * offsets and as the source for {@link #calculateMaxScrollHeight()},
-     * eliminating two O(n) iterations over {@link #visibleComponents} every
-     * frame. Invalidated whenever assignColumns() runs (category/search/
-     * visibility change), which is the only time per-card heights or column
-     * mapping can shift.
-     */
+
     private final int[] cachedColumnHeights = new int[COLUMN_COUNT];
     private int cachedMaxColumnHeight = 0;
     private ModuleCategory lastCategory = null;
@@ -86,9 +78,7 @@ public class CategoryComponent extends AbstractComponent {
 
     private void initialize() {
         List<Module> modules = new ArrayList<>(Main.getInstance().getModuleProvider().getModules());
-        // Render iterates visibleComponents from last to first, but the offset
-        // arithmetic puts the FIRST list element at the visual top of its
-        // column. Sort A..Z so the menu reads A..Z top-down.
+
         modules.sort((a, b) -> a.getVisibleName().compareToIgnoreCase(b.getVisibleName()));
 
         for (Module module : modules) {
@@ -135,9 +125,6 @@ public class CategoryComponent extends AbstractComponent {
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
         scissorManager.push(positionMatrix, gridX, gridY, gridWidth, gridHeight);
 
-        // Working copy of the cached column totals; the render loop
-        // decrements per-column as it walks cards from the bottom of each
-        // stack upwards. Cached array is preserved for the next frame.
         int[] offsets = new int[COLUMN_COUNT];
         System.arraycopy(cachedColumnHeights, 0, offsets, 0, COLUMN_COUNT);
         float gridBottom = gridY + gridHeight;
@@ -149,9 +136,7 @@ public class CategoryComponent extends AbstractComponent {
             component.x = gridX + (column * (columnWidth + COLUMN_GAP));
             component.y = (float) (gridY + ROW_GAP + offsets[column] - componentHeight + smoothedScroll);
             component.width = columnWidth;
-            // Keep height in sync so mouseClicked / isHover work even for
-            // cards we are about to cull (preserves the contract that
-            // component bounds are always valid after CategoryComponent.render).
+
             component.height = component.getComponentHeight();
 
             float cardTop = component.y;
@@ -193,8 +178,7 @@ public class CategoryComponent extends AbstractComponent {
         float gridWidth = menuScreen.width - SIDEBAR_WIDTH - 12f;
         float gridHeight = menuScreen.height - GRID_TOP - GRID_BOTTOM_PADDING;
         if (MathUtil.isHovered(mouseX, mouseY, gridX, gridY, gridWidth, gridHeight)) {
-            // Single-pass: was previously iterating visibleComponents twice
-            // (anyMatch -> for-loop). Each isHover() call is a bounds check.
+
             boolean anyHovered = false;
             for (ModuleComponent moduleComponent : visibleComponents) {
                 if (moduleComponent.isHover(mouseX, mouseY)) {
@@ -214,7 +198,7 @@ public class CategoryComponent extends AbstractComponent {
 
     @Override
     public boolean isHover(double mouseX, double mouseY) {
-        // Removed redundant forEach(isHover) call whose result was discarded.
+
         for (ModuleComponent moduleComponent : visibleComponents) {
             if (moduleComponent.isHover(mouseX, mouseY)) {
                 return true;
@@ -257,9 +241,6 @@ public class CategoryComponent extends AbstractComponent {
         return super.charTyped(chr, modifiers);
     }
 
-    // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack, not MatrixStack.
-    // Taking Matrix3x2fc lets the live stack be passed straight through
-    // (ShapeProperties.create copies it defensively).
     private void drawCategoryTab(DrawContext context, Matrix3x2fc matrix, int mouseX, int mouseY) {
         boolean isSelected = MenuScreen.INSTANCE.getCategory() == category;
         selectionAnimation.setDirection(isSelected ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -267,9 +248,6 @@ public class CategoryComponent extends AbstractComponent {
         boolean isHovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        // Dynamic cursor: category chips behave like buttons - request
-        // the hand pointer while hovered. The end-of-frame commit lives
-        // in ScreenCursorMixin.
         if (isHovered) {
             vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
         }
@@ -305,15 +283,7 @@ public class CategoryComponent extends AbstractComponent {
 
     private boolean shouldRenderContentForCurrentCategory(ModuleCategory currentCategory) {
         if (currentCategory == ModuleCategory.SEARCH) {
-            // Every CategoryComponent ({ALL, HUD, UTILITIES, OTHER}) shares
-            // the SAME backing module list (initialize() does not filter by
-            // this.category - see line 92-98), so letting all four render
-            // in SEARCH mode would draw every matching card 4x at the same
-            // grid coordinates. The visible result was text glyphs blending
-            // over themselves (apparent "bolding"/thickening) and the card
-            // outline being stroked 4x (apparent widening). Pin search-mode
-            // rendering to a single CategoryComponent (ALL) so each matching
-            // card is drawn exactly once.
+
             return category == ModuleCategory.ALL;
         }
         return category == currentCategory;
@@ -330,8 +300,6 @@ public class CategoryComponent extends AbstractComponent {
             heights[shortestColumn] += component.getComponentHeight() + ROW_GAP;
         }
 
-        // Cache totals for reuse in render() and calculateMaxScrollHeight()
-        // so we don't iterate visibleComponents twice every frame.
         System.arraycopy(heights, 0, cachedColumnHeights, 0, COLUMN_COUNT);
         int max = 0;
         for (int h : heights) {
@@ -384,7 +352,7 @@ public class CategoryComponent extends AbstractComponent {
         }
 
         if (currentCategory == ModuleCategory.ALL) {
-            return true; // Show all modules in ALL category
+            return true;
         }
 
         return moduleCategory.equals(currentCategory) ||

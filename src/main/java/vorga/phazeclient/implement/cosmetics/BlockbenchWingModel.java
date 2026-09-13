@@ -31,11 +31,6 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-/**
- * Small, deliberately restricted Blockbench reader used for Phaze cosmetics.
- * It accepts the cube + embedded PNG subset emitted by Generic Model projects.
- * No Lua, arbitrary files, or Blockbench scripts are ever executed.
- */
 final class BlockbenchWingModel {
     private static final float PIXEL = 1.0F / 16.0F;
 
@@ -93,10 +88,7 @@ final class BlockbenchWingModel {
         Map<String, Integer> textureIndexByUuid = new HashMap<>();
         for (int i = 0; i < textures.size(); i++) {
             textureIndexByUuid.put(textures.get(i).uuid, i);
-            // In .bbmodel face data, numeric references are positions in the
-            // texture array. They are not the texture object's optional "id"
-            // field (Figura projects commonly contain duplicate and sparse
-            // ids). UUID references are supported alongside array indices.
+
             textureIndexByUuid.put(Integer.toString(i), i);
         }
 
@@ -134,8 +126,7 @@ final class BlockbenchWingModel {
             }
 
             if (cosmeticType == CosmeticsState.CosmeticType.WING) {
-                // Figura wing archives are often full avatars. When the
-                // project has explicit wing branches, ignore bundled limbs.
+
                 Set<Cube> cosmeticCubes = new HashSet<>();
                 for (JsonElement node : outliner) {
                     collectWingCubes(node, false, cubesByUuid, cosmeticCubes);
@@ -147,9 +138,7 @@ final class BlockbenchWingModel {
                 String fileName = file.getFileName().toString()
                         .toLowerCase(java.util.Locale.ROOT);
                 if (!modelGroup.isBlank()) {
-                    // Hat Kid stores six independently toggleable hats in one
-                    // Figura avatar. A stable group id turns each one into its
-                    // own lightweight catalog entry without executing Lua.
+
                     Set<Cube> selectedGroup = new HashSet<>();
                     for (JsonElement node : outliner) {
                         collectNamedGroupCubes(
@@ -160,19 +149,14 @@ final class BlockbenchWingModel {
                     if (!selectedGroup.isEmpty()) {
                         cubes.removeIf(cube -> !selectedGroup.contains(cube));
                         if (fileName.contains("violet witch")) {
-                            // The selected Head branch also contains the
-                            // Figura avatar's vanilla head template. Keep all
-                            // sibling hat pieces, including the black backing,
-                            // but discard those two template cubes.
+
                             cubes.removeIf(cube ->
                                     "head".equalsIgnoreCase(cube.name)
                                             || "hat".equalsIgnoreCase(cube.name));
                         }
                     }
                 } else {
-                    // Turtle and the remaining Figura hat projects include a
-                    // vanilla player template. Their actual accessory pieces
-                    // are the generically named cubes.
+
                     cubes.removeIf(cube ->
                             !"cube".equalsIgnoreCase(cube.name));
                 }
@@ -289,12 +273,6 @@ final class BlockbenchWingModel {
         }
     }
 
-    /**
-     * Figura archives keep their useful rest pose in a Blockbench animation
-     * rather than in the outliner rotations. aylDWT calls that pose "spread".
-     * Reading the first rotation keyframe gives the authored open-wing shape
-     * without executing any Lua bundled in the archive.
-     */
     private static Map<String, float[]> readFirstAnimationRotationPose(
             JsonObject root,
             String... animationNames
@@ -506,9 +484,7 @@ final class BlockbenchWingModel {
                                 CosmeticsPhysics.Pose physics, boolean uniformLighting,
                                 boolean tipsOnlyPhysics, MatrixStack.Entry stableLightingEntry,
                                 boolean catalogLod, int targetTexture) {
-        // Keep a shader-compatible normal-space transform from before the
-        // mirrored Blockbench groups are applied. Both Wimgs halves can then
-        // share one direction without sending raw world-space normals.
+
         MatrixStack.Entry uniformLightingEntry =
                 stableLightingEntry == null ? matrices.peek() : stableLightingEntry;
         Map<String, Vector3f> markerPositions = markerPositions(physics, tipsOnlyPhysics);
@@ -532,7 +508,7 @@ final class BlockbenchWingModel {
                 parent.apply(matrices, physics, tipsOnlyPhysics);
             }
             matrices.translate(cube.ox * PIXEL, cube.oy * PIXEL, cube.oz * PIXEL);
-            // Blockbench rotates cubes in XYZ order around their origin.
+
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(cube.rz));
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(cube.ry));
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(cube.rx));
@@ -606,11 +582,6 @@ final class BlockbenchWingModel {
         return bounds;
     }
 
-    /**
-     * Computes the authored, static model bounds after every Blockbench group
-     * and cube transform has been applied. Card previews use this instead of
-     * guessing a player-relative offset/scale.
-     */
     private static Bounds calculateBounds(List<Cube> cubes) {
         float minX = Float.POSITIVE_INFINITY;
         float minY = Float.POSITIVE_INFINITY;
@@ -695,12 +666,6 @@ final class BlockbenchWingModel {
         matrices.translate(-bounds.centerX(), -bounds.centerY(), -bounds.centerZ());
     }
 
-    /**
-     * Figura WORLD companions are authored with Y pointing up, while the
-     * vanilla player-model matrix used by the feature renderer points down.
-     * Keep the companion at one stable shoulder-side anchor and correct that
-     * axis here instead of making every imported pet carry a special case.
-     */
     void transformCompanionTo(
             MatrixStack matrices,
             float targetX,
@@ -717,11 +682,6 @@ final class BlockbenchWingModel {
         matrices.translate(-bounds.centerX(), -bounds.centerY(), -bounds.centerZ());
     }
 
-    /**
-     * Keeps an authored Blockbench attachment group (for example {@code Head})
-     * at the vanilla model-part origin. Unlike bounds-centering this preserves
-     * the artist's intended offset of a hat or companion relative to the head.
-     */
     void transformGroupPivotTo(
             MatrixStack matrices,
             String groupName,
@@ -755,12 +715,6 @@ final class BlockbenchWingModel {
         );
     }
 
-    /**
-     * Centers an imported companion above vanilla's 8px head and places the
-     * lowest rendered point exactly on the head's top plane (local y=-0.5).
-     * Figura avatars may keep their cosmetic mesh far away from the Head
-     * pivot, so bounds are the only stable attachment reference here.
-     */
     void transformOntoHead(
             MatrixStack matrices,
             float scale,
@@ -880,15 +834,12 @@ final class BlockbenchWingModel {
     }
 
     boolean renderCatalogBuffers(MatrixStack matrices) {
-        // Minecraft 1.21.11 removed the legacy VertexBuffer wrapper used by
-        // 1.21.4. Catalog thumbnails are submitted through the modern special
-        // GUI element path instead, while world rendering still uses the
-        // entity VertexConsumerProvider directly.
+
         return false;
     }
 
     void close() {
-        // Dynamic textures are owned by TextureManager.
+
     }
 
     private static final class Texture {
@@ -989,10 +940,7 @@ final class BlockbenchWingModel {
             if (!"cube".equals(type)) return null;
             float[] from = numbers(object.getAsJsonArray("from"), 3);
             float[] to = numbers(object.getAsJsonArray("to"), 3);
-            // Blockbench omits zero-valued rotation (and occasionally origin)
-            // arrays. Treat those missing properties as zero rather than
-            // discarding the cube. This is required by both simplewings and
-            // most of the aylDWT geometry.
+
             float[] origin = numbersOrDefault(object.getAsJsonArray("origin"), 3, 0.0F);
             float[] rotation = numbersOrDefault(object.getAsJsonArray("rotation"), 3, 0.0F);
             if (from == null || to == null) return null;
@@ -1088,14 +1036,6 @@ final class BlockbenchWingModel {
             );
         }
 
-        /**
-         * Blockbench/Figura exporters do not agree on quad vertex order. Some
-         * archives use perimeter order, others store a 2x2 grid, and the
-         * Goldfish avatar mixes rotations that make a two-candidate heuristic
-         * ambiguous. Sort the vertices geometrically around the face centroid;
-         * UV coordinates remain attached to their vertex, so this produces a
-         * valid perimeter for every planar mesh without model-specific hacks.
-         */
         private static List<MeshVertex> orderMeshFace(List<MeshVertex> vertices) {
             if (vertices.size() != 4) return vertices;
             Vector3f center = new Vector3f();
@@ -1368,9 +1308,7 @@ final class BlockbenchWingModel {
                     .color(0xFFFFFFFF).texture(u, v).overlay(OverlayTexture.DEFAULT_UV)
                     .light(light);
             if (uniformLighting) {
-                // Wimgs has mirrored group transforms. Supplying a stable
-                // entity-space normal keeps both halves equally grey instead
-                // of letting one mirrored half become bright white.
+
                 vertex.normal(uniformLightingEntry, 0.0F, 0.0F, 1.0F);
             } else {
                 vertex.normal(matrices.peek(), nx, ny, nz);
@@ -1404,7 +1342,6 @@ final class BlockbenchWingModel {
 
     private record MeshFace(int textureIndex, List<MeshVertex> vertices) { }
 
-    /** A Blockbench group pivot. Applied root-to-leaf before its cube. */
     private record Transform(
             String uuid,
             String name,

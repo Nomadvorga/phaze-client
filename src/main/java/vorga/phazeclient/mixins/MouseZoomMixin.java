@@ -16,7 +16,7 @@ import vorga.phazeclient.implement.features.modules.other.Zoom;
 
 @Mixin(value = Mouse.class, priority = 500)
 public class MouseZoomMixin {
-    
+
     @Unique
     private static float cinematic$smoothX = 0;
     @Unique
@@ -32,12 +32,6 @@ public class MouseZoomMixin {
     @Shadow
     private double cursorDeltaY;
 
-    // 1.21.11: Mouse.onMouseButton is now (long window, MouseInput input,
-    // int action) - the raw GLFW button/mods ints were folded into the
-    // MouseInput record. MouseInput.button() is the same raw GLFW button
-    // index we used to receive, so FreeLook's keybind comparison is
-    // unchanged. The old `mods` argument is gone (it lives on the record
-    // as modifiers()) and was unused here anyway.
     @Inject(method = "onMouseButton", at = @At("HEAD"))
     private void phaze$onMouseButton(long window, MouseInput input, int action, CallbackInfo ci) {
         if (window == client.getWindow().getHandle()) {
@@ -58,30 +52,18 @@ public class MouseZoomMixin {
             return;
         }
 
-        // Geometric scroll: each scroll notch multiplies / divides
-        // the current zoom by {@code multiplier}. With multiplier=2
-        // and defaultZoom=4 the progression is 4 -> 8 -> 16 -> 32.
-        // With multiplier=3 and defaultZoom=3 it's 3 -> 9 -> 27.
-        // {@code sensitivity} acts as the exponent scale - 1.0 is a
-        // full step per notch, 0.5 a half step (smoother), 2.0 a
-        // double step (faster). The legacy linear (currentZoom/10)
-        // ramp produced an additive feel that broke as soon as the
-        // user wanted predictable doubling.
         double currentZoom = Zoom.getInstance().getCurrentZoomLevel();
         double multiplier = Zoom.getInstance().getZoomScrollMultiplier();
         double sensitivity = Zoom.getInstance().getZoomScrollSensitivity();
         double newZoom;
         if (multiplier <= 1.0001) {
-            // Multiplier == 1 disables geometric scaling. Fall back
-            // to the additive ramp so the slider remains useful at
-            // the lower bound instead of "scroll does nothing".
+
             newZoom = currentZoom + vertical * (currentZoom / 10) * sensitivity;
         } else {
             double exponent = vertical * sensitivity;
             newZoom = currentZoom * Math.pow(multiplier, exponent);
         }
 
-        // Prevent zooming out below minimum (only allow zooming in)
         if (newZoom < 2.0f) {
             newZoom = 2.0f;
         }
@@ -102,17 +84,7 @@ public class MouseZoomMixin {
     )
     private void phaze$redirectChangeLookDirection(net.minecraft.client.network.ClientPlayerEntity player,
                                                    double cursorDeltaX, double cursorDeltaY) {
-        // {@code cursorDeltaX/Y} here are the FINAL per-frame
-        // yaw/pitch step in degrees: vanilla's {@code updateMouse}
-        // has already run the sensitivity ramp, the optional
-        // Smooth Camera smoother, and our {@link #zoomSensitivityX}/
-        // {@code Y} {@code @ModifyArg} hooks (Zoom + Cinematic
-        // Camera) on the locals before calling this method. So
-        // when FreeLook is active we feed those processed deltas
-        // into its accumulator and skip the player rotation - the
-        // freelook camera now inherits Smooth Camera + Cinematic
-        // Zoom for free instead of getting raw cursor delta as
-        // before.
+
         FreeLook freeLook = FreeLook.getInstance();
         if (freeLook != null && freeLook.isEnabled() && freeLook.isActive()) {
             freeLook.onMouseLook(cursorDeltaX, cursorDeltaY);
@@ -134,23 +106,9 @@ public class MouseZoomMixin {
         }
 
         float zoomLevel = Zoom.getInstance().getCurrentZoomLevel();
-        
+
         if (Zoom.getInstance().isCinematicCamera()) {
-            // FPS-independent smoothing: at the canonical 60 fps the
-            // smoothing factor is 0.15 per frame (the original
-            // hand-tuned value). For any other refresh rate we need
-            // to convert the discrete-step decay constant into a
-            // continuous one so the perceived smoothness stays the
-            // same regardless of frame rate. Standard transform:
-            //   alpha_t = 1 - (1 - 0.15)^(60 * dt)
-            // Where dt is the frame time in seconds. At dt = 1/60
-            // this collapses back to 0.15 exactly; at higher fps the
-            // exponent shrinks so the per-frame nudge is smaller,
-            // and at lower fps it grows so the camera still catches
-            // up.
-            //
-            // 1.21.11: getLastFrameDuration() -> getDynamicDeltaTicks();
-            // same value (ticks since last frame), so dt is unchanged.
+
             float dt = MinecraftClient.getInstance().getRenderTickCounter().getDynamicDeltaTicks() / 20.0F;
             float alpha = 1.0F - (float) Math.pow(1.0F - 0.15F, 60.0F * dt);
             if (alpha < 0.0F) alpha = 0.0F;
@@ -158,7 +116,7 @@ public class MouseZoomMixin {
             cinematic$smoothX = (float) (cinematic$smoothX + (x - cinematic$smoothX) * alpha);
             return (cinematic$smoothX / zoomLevel);
         }
-        
+
         return x / zoomLevel;
     }
 
@@ -175,11 +133,9 @@ public class MouseZoomMixin {
         }
 
         float zoomLevel = Zoom.getInstance().getCurrentZoomLevel();
-        
+
         if (Zoom.getInstance().isCinematicCamera()) {
-            // Same FPS-independent smoothing as zoomSensitivityX -
-            // see that method for the alpha conversion rationale.
-            // 1.21.11: getLastFrameDuration() -> getDynamicDeltaTicks().
+
             float dt = MinecraftClient.getInstance().getRenderTickCounter().getDynamicDeltaTicks() / 20.0F;
             float alpha = 1.0F - (float) Math.pow(1.0F - 0.15F, 60.0F * dt);
             if (alpha < 0.0F) alpha = 0.0F;
@@ -187,7 +143,7 @@ public class MouseZoomMixin {
             cinematic$smoothY = (float) (cinematic$smoothY + (y - cinematic$smoothY) * alpha);
             return (cinematic$smoothY / zoomLevel);
         }
-        
+
         return y / zoomLevel;
     }
 }

@@ -43,12 +43,12 @@ public class NametagVBOManager {
         GL30.glBindBuffer(GL30.GL_ARRAY_BUFFER, 0);
 
         if (vboCache.size() > CACHE_SIZE) {
-            // Remove oldest entry
-            vboCache.entrySet().removeIf(e -> 
+
+            vboCache.entrySet().removeIf(e ->
                 (System.currentTimeMillis() - e.getValue().timestamp) > 60000);
         }
 
-        vboCache.put(key, new VBOEntry(vboId, vertices.length / 4)); // 4 floats per vertex
+        vboCache.put(key, new VBOEntry(vboId, vertices.length / 4));
         return vboId;
     }
 

@@ -160,7 +160,7 @@ final class ParsedCosmeticModel {
 
             float q = (t - a.getKey()) / (b.getKey() - a.getKey());
             q = Math.max(0f, Math.min(1f, q));
-            // Smoothstep gives much smoother cosmetics than stepping at 20 TPS.
+
             q = q * q * (3f - 2f * q);
             Vec3 av = a.getValue();
             Vec3 bv = b.getValue();

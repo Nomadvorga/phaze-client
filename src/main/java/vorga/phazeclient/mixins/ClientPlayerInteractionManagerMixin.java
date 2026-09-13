@@ -28,69 +28,29 @@ public class ClientPlayerInteractionManagerMixin {
             reachHud.recordHitDistance(player, target);
         }
 
-        // Shift Tap: only fire when the LEFT-click hits another
-        // PlayerEntity (PvP swing). Mob hits no longer trigger -
-        // sneak-tapping while farming feels jittery and was never
-        // the intended use case. Right-click / item-use no longer
-        // triggers either; the {@code interactItem} hook for shift
-        // tap was removed because the user reported sneak firing
-        // on every block / item interaction.
-        ShiftTap shiftTap = ShiftTap.getInstance();
-        if (shiftTap.isEnabled()
-                && target instanceof PlayerEntity victim
-                && !victim.equals(player)) {
-            shiftTap.triggerShiftTap();
-        }
+        ShiftTap.getInstance().triggerShiftTapIfPlayerTarget(target, player);
 
-        // Auto GG: stamp the target as recently attacked so the kill
-        // detector can credit a follow-up death to the local player.
-        // Filtering to PlayerEntity (excluding self) here keeps the
-        // tracker map small and avoids mob-kill noise.
         if (target instanceof PlayerEntity victim && !victim.equals(player)) {
             AutoGG autoGG = AutoGG.getInstance();
             if (autoGG != null) {
                 autoGG.recordAttack(victim);
             }
-            // Health Indicator: stamp the same victim so the HUD
-            // widget knows which player's HP to surface for the next
-            // {@code targetDelay} seconds. Module gates itself on
-            // {@code isEnabled} when the HUD renderer reads back the
-            // tracked target, so we don't gate the write here - that
-            // way a mid-fight enable immediately surfaces the live
-            // target instead of waiting for the next hit.
+
             HealthIndicator healthIndicator = HealthIndicator.getInstance();
             if (healthIndicator != null) {
                 healthIndicator.recordAttack(victim);
             }
         }
 
-        // Change Hand: flip the vanilla MainArm option on every
-        // successful attack against any entity (players AND mobs per
-        // the user spec - both should drive the alternating-slap
-        // tell). The module itself gates on its Upon Impact toggle,
-        // so disabled / bind-only mode is a quiet no-op here.
         ChangeHand changeHand = ChangeHand.getInstance();
         if (changeHand != null) {
             changeHand.onAttackEntity();
         }
     }
 
-    /**
-     * BattleInfo's combo metric reads from {@link
-     * vorga.phazeclient.implement.features.modules.hud.ComboCounterHud}
-     * which is incremented inside {@code PlayerEntity.attack} - i.e.
-     * <em>during</em> the body of {@code attackEntity}. The
-     * BattleInfo module itself was removed in a later cleanup;
-     * keeping the RETURN inject as a no-op stub would just consume
-     * mixin slots, so it's been deleted.
-     */
-
     @Inject(method = "interactItem", at = @At("HEAD"))
     private void phaze$onInteractItem(PlayerEntity player, Hand hand, CallbackInfoReturnable<ActionResult> cir) {
-        // Trap Timer: arm the local trapka cooldown stopwatch when
-        // the held item matches the configured (item type + name)
-        // pair. Module gates internally so a non-trapka click is a
-        // single instanceof + map probe.
+
         vorga.phazeclient.implement.features.modules.other.TrapTimer trapTimer =
                 vorga.phazeclient.implement.features.modules.other.TrapTimer.getInstance();
         if (trapTimer != null) {
@@ -98,14 +58,6 @@ public class ClientPlayerInteractionManagerMixin {
         }
     }
 
-    /**
-     * Pickaxe Notifications: hook the player's left-click-on-block
-     * dispatch so the durability check fires every swing without us
-     * having to touch the block-breaking progress path. The vanilla
-     * method runs on a successful left-click that hits a block, which
-     * is exactly when we want to evaluate "is this the swing that
-     * breaks my pickaxe?".
-     */
     @Inject(method = "attackBlock", at = @At("HEAD"))
     private void phaze$onAttackBlock(net.minecraft.util.math.BlockPos pos, net.minecraft.util.math.Direction direction, CallbackInfoReturnable<Boolean> cir) {
         vorga.phazeclient.implement.features.modules.other.PickaxeNotifier notifications =
@@ -126,8 +78,6 @@ public class ClientPlayerInteractionManagerMixin {
             return;
         }
 
-        // Hotbar slots inside the player screen handler are 36..44 (= hotbar 0..8).
-        // Offhand is slot 45 in the player screen handler.
         if (slotId >= 36 && slotId <= 44) {
             int hotbarIndex = slotId - 36;
             if (lockSlot.isHotbarSlotLocked(hotbarIndex)) {

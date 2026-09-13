@@ -13,7 +13,6 @@ import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Arrays;
 
-/** Produces a privacy-safe stable key for the multiplayer/LAN world. */
 public final class SharedWorldKey {
     public static String get(MinecraftClient client) {
         if (client == null || client.world == null) return null;
@@ -28,7 +27,6 @@ public final class SharedWorldKey {
         return hash(address);
     }
 
-    /** Previous key format, used only to migrate already saved placements. */
     public static String legacy(MinecraftClient client) {
         if (client == null || client.world == null) return null;
         String address = null;
@@ -41,7 +39,6 @@ public final class SharedWorldKey {
         return hash(address);
     }
 
-    /** Short-lived migration helper for builds that keyed by proxy IP. */
     public static String actual(MinecraftClient client) {
         return client == null || client.world == null ? null : hash(actualAddress(client, false));
     }

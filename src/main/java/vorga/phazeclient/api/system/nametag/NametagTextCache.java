@@ -8,7 +8,7 @@ import java.util.Map;
 public class NametagTextCache {
     private static final Map<String, TextCacheEntry> textCache = new HashMap<>();
     private static final int CACHE_SIZE = 256;
-    private static final long CACHE_DURATION = 60000; // 1 minute
+    private static final long CACHE_DURATION = 60000;
 
     public static class TextCacheEntry {
         public final float width;
@@ -26,16 +26,15 @@ public class NametagTextCache {
         if (entry != null && (System.currentTimeMillis() - entry.timestamp) < CACHE_DURATION) {
             return entry.width;
         }
-        return -1; // Not cached
+        return -1;
     }
 
     public static void cacheTextWidth(Text text, float width) {
         String key = text.getString();
         textCache.put(key, new TextCacheEntry(width));
-        
-        // Remove old entries if cache is too large
+
         if (textCache.size() > CACHE_SIZE) {
-            textCache.entrySet().removeIf(e -> 
+            textCache.entrySet().removeIf(e ->
                 (System.currentTimeMillis() - e.getValue().timestamp) > CACHE_DURATION);
         }
     }

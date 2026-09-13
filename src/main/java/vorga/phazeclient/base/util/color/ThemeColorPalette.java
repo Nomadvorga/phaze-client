@@ -2,24 +2,6 @@ package vorga.phazeclient.base.util.color;
 
 import vorga.phazeclient.implement.menu.MenuPalette;
 
-/**
- * HUD-facing {@link ColorPalette} derived directly from a menu
- * {@link MenuPalette}. Keeps the HUD and menu visually consistent:
- * whichever theme the user picks in the menu dropdown becomes the
- * single source of truth for HUD surface / text / accent colors too.
- *
- * <p>The menu record stores its panel colors with built-in translucency
- * (alpha around {@code 0x5C-0xB2}) because the menu composites them over
- * the game's blurred backdrop. HUD elements usually render onto the
- * game world without any such backdrop, so here we strip the alpha to
- * produce solid fills via {@link #opaque(int)}. The opaque versions
- * still carry the theme's subtle surface/accent blend, just without
- * the see-through factor that would bleed the game through.
- *
- * <p>{@link #isDark()} is inferred from the theme's {@code textPrimary}
- * brightness - dark themes use light text, light themes use dark text,
- * so a bright text color is a reliable dark-theme signal.
- */
 public final class ThemeColorPalette extends ColorPalette {
 
     private final MenuPalette menu;

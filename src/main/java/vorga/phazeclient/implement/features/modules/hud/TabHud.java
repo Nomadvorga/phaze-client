@@ -21,7 +21,7 @@ public final class TabHud extends RectHudModule {
 
     private TabHud() {
         super("tab_hud", "Tab", 22.0f, 374.0f, 1.0f);
-        // Remove background-related settings since TabHud renders through vanilla PlayerListHud
+
         settings().removeIf(s -> {
             String name = s.getNameKey();
             return name.equals("Background") || name.equals("Background Preset") || name.equals("Color Brightness")
@@ -34,7 +34,7 @@ public final class TabHud extends RectHudModule {
         displayPingAsNumber.setFullWidth(true);
         pingNumberShadow.setFullWidth(true);
         dynamicPingColor.setFullWidth(true);
-        setup(colorSection2, highlightOwn, showSelfOnTop, displayPingAsNumber, pingNumberShadow, dynamicPingColor);
+        setup(colorSection2, highlightOwn, showSelfOnTop, displayPingAsNumber, pingNumberShadow, dynamicPingColor, otherSection, cornerRounding);
     }
 
     @Override
@@ -52,4 +52,3 @@ public final class TabHud extends RectHudModule {
         return 21.0F;
     }
 }
-

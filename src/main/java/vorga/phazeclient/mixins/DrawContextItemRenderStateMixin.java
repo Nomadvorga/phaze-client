@@ -8,11 +8,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Hard guard against leaked render state from custom blur/overlay passes.
- * Ensures every item icon render starts from vanilla-safe GL state so GUI
- * item sprites cannot appear dark/tinted.
- */
 @Mixin(DrawContext.class)
 public abstract class DrawContextItemRenderStateMixin {
 

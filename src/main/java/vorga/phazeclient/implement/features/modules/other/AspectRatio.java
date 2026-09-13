@@ -9,28 +9,6 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Aspect Ratio override. Forces the world projection matrix to use a
- * custom width/height ratio instead of the actual window's, so the user
- * can stretch / squeeze the field of view independently of monitor
- * shape (cinematic 21:9 on a 16:9 panel, "old Minecraft" 4:3 look,
- * arbitrary squish via the manual factor, etc.).
- *
- * <p>Two operating modes selected by {@link #usePreset}:
- * <ul>
- *   <li>{@code usePreset = true} - {@link #preset} picks a named ratio
- *       ({@code 16:9}, {@code 5:4}, {@code 4:3}, {@code 21:9}). The
- *       preset slider is hidden when this mode is off.</li>
- *   <li>{@code usePreset = false} - {@link #factor} is the raw aspect
- *       ratio applied directly. {@code 1.0} = perfect square, values
- *       above stretch horizontally, below squeeze. The manual slider
- *       is hidden when preset mode is on.</li>
- * </ul>
- *
- * <p>The projection-matrix override itself lives in
- * {@link vorga.phazeclient.mixins.GameRendererMixin} which
- * calls {@link #getRatio()} once per projection-matrix recomputation.
- */
 public final class AspectRatio extends Module {
     private static final Pattern PRESET_RATIO = Pattern.compile("^(\\d+(?:\\.\\d+)?)\\s*:\\s*(\\d+(?:\\.\\d+)?)$");
     private static final float FALLBACK_RATIO = 16.0F / 9.0F;
@@ -79,13 +57,6 @@ public final class AspectRatio extends Module {
         return INSTANCE;
     }
 
-    /**
-     * Resolves the currently-configured aspect ratio. When
-     * {@link #usePreset} is on, decodes the {@link #preset} string into
-     * a width/height ratio; otherwise returns the raw {@link #factor}
-     * slider value. Unknown or invalid preset values fall back to
-     * {@code 16:9}, so an edited or old config can never blank the world.
-     */
     public float getRatio() {
         if (usePreset.isValue()) {
             return parsePresetRatio(preset.getSelected());
@@ -110,7 +81,7 @@ public final class AspectRatio extends Module {
                 return width / height;
             }
         } catch (NumberFormatException ignored) {
-            // A malformed value from a manually edited config uses 16:9.
+
         }
         return FALLBACK_RATIO;
     }

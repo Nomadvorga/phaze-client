@@ -24,49 +24,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/**
- * Thin wrapper around a vanilla {@link PostEffectProcessor}.
- *
- * <h2>1.21.11 port notes</h2>
- * <ul>
- *   <li>{@code RenderSystem.resetTextureMatrix()} is gone - the fixed-function
- *       texture matrix no longer exists, so there is nothing to reset.</li>
- *   <li>{@code Framebuffer.beginWrite(boolean)} is gone. The render target is
- *       chosen per render pass now, and {@code PostEffectProcessor.render}
- *       drives its own frame graph that already outputs to {@code minecraft:main},
- *       so re-binding the main framebuffer afterwards is both impossible and
- *       unnecessary.</li>
- *   <li><b>Loose shader uniforms no longer exist.</b> {@code PostEffectPass}
- *       has no {@code getProgram()} and {@code GlUniform} is a bare marker
- *       interface with no {@code set(...)} of any kind. A pass' uniform values
- *       are baked into private {@code Map<String, GpuBuffer> uniformBuffers}
- *       std140 blocks at construction time, from the {@code uniforms} section
- *       of the post-effect JSON. There is no per-frame setter.
- *       <p>TODO(1.21.11): the real fix is a rewrite (plan item B4): declare a
- *       {@code layout(std140) uniform} block in the GLSL, list it in the
- *       post-effect JSON, and write the {@code GpuBuffer} directly (needs an
- *       accesswidener entry for {@code PostEffectPass.uniformBuffers}) or
- *       rebuild the {@code PostEffectProcessor} through
- *       {@code PostEffectProcessor.parseEffect(PostEffectPipeline, ...)}.
- *       Until then every {@code setUniformValue} call is <em>recorded</em> in
- *       {@link #getRequestedUniforms()} rather than uploaded, so the rewrite
- *       has the exact set of names/types/values it must carry, and callers keep
- *       compiling and keep their change-detection logic intact.</p></li>
- * </ul>
- *
- * <p>Practical consequence today: both Phaze post effects ship GLSL with loose
- * uniforms, which will not link in 1.21.11, so
- * {@code Cache.getOrLoadProcessor} throws, {@link #errored} latches and
- * {@link #render(float)} becomes a no-op. The feature is off rather than
- * rendering with wrong values.
- */
 public class PostEffectShader {
     private static final Logger LOGGER = LoggerFactory.getLogger("phaze/PostEffectShader");
 
-    /** Which std140 type a recorded value must be written as by the B4 rewrite. */
     public enum UniformKind { FLOAT, INT, MATRIX4 }
 
-    /** A uniform value Phaze wants applied, kept until the UBO rewrite can consume it. */
     public record RequestedUniform(UniformKind kind, float[] data) {}
 
     private final Identifier location;
@@ -80,7 +42,6 @@ public class PostEffectShader {
     private boolean uniformsDirty = false;
     private Identifier copyOutput;
 
-    /** Use a pooled color-only target followed by an exact GPU texture copy. */
     public void useCopyOutput(Identifier output) {
         if (initialized) throw new IllegalStateException("Output must be configured before initialization");
         copyOutput = output;
@@ -117,16 +78,7 @@ public class PostEffectShader {
         if (processor == null) return;
 
         MinecraftClient client = MinecraftClient.getInstance();
-        // 1.21.11: no resetTextureMatrix, and no beginWrite afterwards - see the
-        // class javadoc. render(Framebuffer, ObjectAllocator) still exists and
-        // GameRenderer's pool is now net.minecraft.client.util.memory.ObjectPool,
-        // which implements ObjectAllocator - but the overload is @Deprecated;
-        // vanilla now drives post effects through
-        // render(FrameGraphBuilder, int, int, FramebufferSet). Moving to that is
-        // part of the same B4 rewrite as the uniforms.
-        // Values must reach the std140 buffer BEFORE the pass reads it, and
-        // outside any open render pass - writeToBuffer refuses to run inside
-        // one.
+
         uploadUniforms();
 
         if (copyOutput == null) {
@@ -197,7 +149,7 @@ public class PostEffectShader {
     }
 
     public void setUniformValue(String name, Matrix4f value) {
-        // Column-major, the layout both GLSL and Std140Builder expect.
+
         record(name, UniformKind.MATRIX4, value.get(new float[16]));
     }
 
@@ -206,20 +158,13 @@ public class PostEffectShader {
         this.initialized = false;
         this.errored = false;
         this.uniformsDirty = true;
-        // Deliberately NOT clearing requestedUniforms: it is the record of what
-        // Phaze wants applied, not of what has been uploaded, and callers reset
-        // their own change-detection guards on reload anyway.
+
     }
 
     public boolean isInitialized() {
         return initialized;
     }
 
-    /**
-     * The latest value requested for every uniform name, in first-set order.
-     *
-     * <p>Seam for the B4 rewrite: nothing uploads these yet (see class javadoc).
-     */
     public Map<String, RequestedUniform> getRequestedUniforms() {
         return Collections.unmodifiableMap(requestedUniforms);
     }
@@ -233,30 +178,12 @@ public class PostEffectShader {
         }
     }
 
-    /**
-     * Declare the std140 block this effect writes, and the order of its members.
-     *
-     * <p>The order MUST match the {@code uniforms} list in the post-effect JSON
-     * and the block declaration in the GLSL, because all three describe the
-     * same byte layout and only the JSON one is visible to vanilla. A mismatch
-     * does not fail loudly - it silently feeds each value to the wrong member.
-     */
     public void declareUniformBlock(String blockName, String... members) {
         this.uniformBlockName = blockName;
         this.uniformBlockMembers = members;
         this.uniformsDirty = true;
     }
 
-    /**
-     * Write the recorded values into the pass' std140 buffer.
-     *
-     * <p>Only runs when something actually changed - the buffer keeps its
-     * contents between frames, so re-uploading an unchanged block would be pure
-     * bus traffic for no visual difference. That matters here: Color
-     * Correction's values only move when the user drags a slider, so in the
-     * steady state this costs nothing at all; Motion Blur, whose matrices
-     * change every frame, pays one small write.
-     */
     private void uploadUniforms() {
         if (uniformBlockName == null || uniformBlockMembers == null) return;
         if (!uniformsDirty || processor == null) return;
@@ -270,18 +197,6 @@ public class PostEffectShader {
             GpuBuffer buffer = buffers.get(uniformBlockName);
             if (buffer == null) continue;
 
-            // PostEffectPass allocates its uniform buffers as USAGE_UNIFORM
-            // only - they are written once at construction and never again, so
-            // vanilla has no reason to ask for USAGE_COPY_DST. writeToBuffer
-            // rejects a destination without that bit ("Buffer needs
-            // USAGE_COPY_DST to be a destination for a copy"), so the first
-            // upload crashed the game.
-            //
-            // Swap in an equivalently sized buffer that does allow copies. The
-            // pass reads the map every frame, so it picks up the replacement
-            // transparently, and closing the original here hands its slot over
-            // cleanly rather than leaking it - the pass will close ours in its
-            // own close(), which is the same lifetime it gave the original.
             if ((buffer.usage() & GpuBuffer.USAGE_COPY_DST) == 0) {
                 final String label = uniformBlockName;
                 GpuBuffer writable = RenderSystem.getDevice().createBuffer(
@@ -306,12 +221,6 @@ public class PostEffectShader {
         }
     }
 
-    /**
-     * A member the module never set still has to advance its slot, or every
-     * later member shifts and the whole block decodes wrong. Zero is the right
-     * filler: the recorded map is keyed by the same names the JSON declares, so
-     * an absent entry means the module genuinely never drives that value.
-     */
     private static void write(Std140Builder builder, RequestedUniform uniform) {
         if (uniform == null) {
             builder.putFloat(0.0F);

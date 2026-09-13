@@ -89,7 +89,7 @@ public class GroupSetting extends Setting {
     @Override
     public void reset() {
         if (defaultValue != null) {
-            // setValue handles notifyChange + the dirty-flag plumbing.
+
             setValue(defaultValue);
         }
 

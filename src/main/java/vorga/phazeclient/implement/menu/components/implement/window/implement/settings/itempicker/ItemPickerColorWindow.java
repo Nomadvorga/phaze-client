@@ -219,8 +219,6 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         brightness = hsb[2];
     }
 
-    // 1.21.11: GUI pose is a Matrix3x2f now, so these helpers take Matrix3x2fc
-    // instead of MatrixStack. Geometry and colours are unchanged.
     private void renderHueStrip(Matrix3x2fc matrices, float x, float y, float width, float height, int outlineColor) {
         float radius = 2.35F;
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
@@ -258,16 +256,12 @@ public final class ItemPickerColorWindow extends AbstractWindow {
     private static void renderHorizontalHueTexture(Matrix3x2fc matrices, float x, float y, float width, float height, int color) {
         BatchedRectangle.flushIfBatching();
 
-        // 1.21.11: VertexConsumer has a native vertex(Matrix3x2fc, x, y) overload for
-        // GUI poses, so no Matrix4f promotion is needed on this path.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
         buffer.vertex(matrices, x, y).texture(0.0F, 0.0F).color(color);
         buffer.vertex(matrices, x, y + height).texture(0.0F, 1.0F).color(color);
         buffer.vertex(matrices, x + width, y + height).texture(1.0F, 1.0F).color(color);
         buffer.vertex(matrices, x + width, y).texture(1.0F, 0.0F).color(color);
-        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-        // immediate draw runs outside the GUI pass and must install the GUI
-        // ortho projection (and its z = -11000 model-view) itself.
+
         vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             PhazeDrawLayers.positionTexColor(HUE_TEXTURE).draw(buffer.end());

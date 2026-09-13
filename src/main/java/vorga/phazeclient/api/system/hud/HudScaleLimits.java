@@ -2,9 +2,8 @@ package vorga.phazeclient.api.system.hud;
 
 import net.minecraft.util.math.MathHelper;
 
-/** Shared, readable scale range for every draggable Phaze HUD. */
 public final class HudScaleLimits {
-    /** The value shown and persisted in settings, before the common render multiplier. */
+
     public static final float MIN = 0.50F;
     public static final float MAX = 3.00F;
     public static final float RENDER_MULTIPLIER = 2.00F;

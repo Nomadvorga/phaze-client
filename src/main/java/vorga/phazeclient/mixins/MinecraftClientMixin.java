@@ -1,8 +1,3 @@
-/*
- * Includes ported logic from the "hitrange" mod by uku3lig (uku),
- * https://github.com/uku3lig/hitrange, MIT License. See per-method
- * comments below for attribution.
- */
 package vorga.phazeclient.mixins;
 
 import net.minecraft.client.MinecraftClient;
@@ -31,20 +26,10 @@ import vorga.phazeclient.implement.features.modules.other.HitRange;
 import vorga.phazeclient.implement.features.modules.other.NoRender;
 import vorga.phazeclient.implement.menu.MainMenuScreen;
 
-/**
- * Consolidated mixin for {@link MinecraftClient}, merging the previous
- * six sibling mixins (NoGlow, HitRange, FastExp, Framebuffer, DoAttack,
- * FakeFps). Each original injector is preserved with a unique
- * {@code phaze$} method name; shadow fields are combined.
- */
 @Mixin(MinecraftClient.class)
 public abstract class MinecraftClientMixin {
     @Unique
     private boolean phaze$redirectingMainMenuInRender;
-
-    // ---------------------------------------------------------------
-    // Shared shadows
-    // ---------------------------------------------------------------
 
     @Shadow private int itemUseCooldown;
 
@@ -53,10 +38,6 @@ public abstract class MinecraftClientMixin {
     @Shadow @Mutable private static int currentFps;
 
     @Shadow public Screen currentScreen;
-
-    // ---------------------------------------------------------------
-    // NoGlow: cancel hasOutline when toggle is on
-    // ---------------------------------------------------------------
 
     @Inject(method = "hasOutline(Lnet/minecraft/entity/Entity;)Z",
             at = @At("HEAD"),
@@ -71,13 +52,6 @@ public abstract class MinecraftClientMixin {
         }
     }
 
-    // ---------------------------------------------------------------
-    // HitRange: per-tick nearest-player snapshot
-    //
-    // Ported from the "hitrange" mod by uku3lig (MIT). See file header
-    // for original copyright and the modifications notice.
-    // ---------------------------------------------------------------
-
     @Inject(method = "tick", at = @At("TAIL"))
     private void phaze$updateHitRangeNearest(CallbackInfo ci) {
         HitRange config = HitRange.getInstance();
@@ -90,7 +64,6 @@ public abstract class MinecraftClientMixin {
             return;
         }
 
-        // 1.21.11: Entity.getWorld() was renamed to Entity.getEntityWorld().
         PlayerEntity nearest = player.getEntityWorld().getClosestPlayer(
                 player.getX(),
                 player.getY(),
@@ -153,20 +126,12 @@ public abstract class MinecraftClientMixin {
         }
     }
 
-    // ---------------------------------------------------------------
-    // FastExp: zero out the item-use cooldown each input tick
-    // ---------------------------------------------------------------
-
     @Inject(method = "handleInputEvents", at = @At("HEAD"))
     private void phaze$bypassExperienceBottleCooldown(CallbackInfo ci) {
         if (FastExp.shouldFastThrow()) {
             this.itemUseCooldown = 0;
         }
     }
-
-    // ---------------------------------------------------------------
-    // Framebuffer: redirect getFramebuffer during HUD batch capture
-    // ---------------------------------------------------------------
 
     @Inject(method = "getFramebuffer", at = @At("HEAD"), cancellable = true)
     private void phaze$redirectFramebufferToBatchCapture(CallbackInfoReturnable<Framebuffer> cir) {
@@ -179,10 +144,6 @@ public abstract class MinecraftClientMixin {
         }
     }
 
-    // ---------------------------------------------------------------
-    // DoAttack: notify ReachHud on air-swing
-    // ---------------------------------------------------------------
-
     @Inject(method = "doAttack", at = @At("HEAD"))
     private void phaze$reachHudAirSwingReset(CallbackInfoReturnable<Boolean> cir) {
         ReachHud reachHud = ReachHud.getInstance();
@@ -193,10 +154,6 @@ public abstract class MinecraftClientMixin {
             reachHud.notifyAirSwing();
         }
     }
-
-    // ---------------------------------------------------------------
-    // FakeFps: rewrite getCurrentFps + the static field
-    // ---------------------------------------------------------------
 
     @Inject(method = "getCurrentFps", at = @At("HEAD"), cancellable = true)
     private void phaze$fakeFps(CallbackInfoReturnable<Integer> cir) {

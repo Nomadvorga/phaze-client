@@ -9,22 +9,6 @@ import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 
-/**
- * Independent fog override. Wraps the vanilla
- * {@code BackgroundRenderer.applyFog} return value so the user
- * can dictate distance, density and colour without depending on
- * vanilla's fog enabled / disabled state, biome, or the F3+F
- * toggle. Submersion fog (water / lava / powder snow) is left
- * alone - those have UX-critical visibility implications and
- * should be controlled by the dedicated NoFluid module.
- *
- * <h3>Distance vs density</h3>
- * <ul>
- *   <li>{@code distance} is the {@code end} of the fog ramp.</li>
- *   <li>{@code density} is how much of that range is fogged:
- *       {@code start = end * (1 - density)}.</li>
- * </ul>
- */
 public final class CustomFog extends Module {
     private static final CustomFog INSTANCE = new CustomFog();
 
@@ -63,9 +47,6 @@ public final class CustomFog extends Module {
         color.setFullWidth(true);
         affectSky.setFullWidth(true);
 
-        // Hide the colour picker when the user is on Theme - the
-        // value is ignored anyway and the dead control is just
-        // visual clutter.
         color.visible(() -> "Custom".equalsIgnoreCase(colorMode.getSelected()));
 
         setup(
@@ -106,7 +87,6 @@ public final class CustomFog extends Module {
         return affectSky.isValue();
     }
 
-    /** RGB colour the fog should fade to (alpha is forced to full). */
     public int getResolvedRgb() {
         if ("Theme".equalsIgnoreCase(colorMode.getSelected())) {
             return Theme.getInstance().getCurrentMenuPalette().chipActive() & 0x00FFFFFF;

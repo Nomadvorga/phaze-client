@@ -14,9 +14,9 @@ public final class ItemPhysics extends Module {
 
     private ItemPhysics() {
         super("item_physics", "Item Physics", ModuleCategory.OTHER, true, false);
-        
+
         rotationSpeed.setFullWidth(true);
-        
+
         setup(mainSection, rotationSpeed);
     }
 

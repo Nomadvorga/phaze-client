@@ -14,7 +14,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.cosmetics.PreviewMarker;
 
-/** Fades and frame-limits the deferred cosmetics player preview. */
 @Mixin(SpecialGuiElementRenderer.class)
 public abstract class SpecialGuiElementFadeMixin {
     @Unique private float phaze$previewAlpha = 1.0F;
@@ -34,7 +33,8 @@ public abstract class SpecialGuiElementFadeMixin {
         boolean same = selection.equals(phaze$lastPreviewSelection);
         boolean rotating = !Float.isNaN(phaze$lastPreviewYaw)
                 && Math.abs(yaw - phaze$lastPreviewYaw) > 0.001F;
-        long interval = rotating ? 8_333_333L : 16_666_667L;
+
+        long interval = rotating ? 8_333_333L : 33_333_334L;
         if (same && now - phaze$lastPreviewRenderNanos < interval) {
             cir.setReturnValue(true);
             return;

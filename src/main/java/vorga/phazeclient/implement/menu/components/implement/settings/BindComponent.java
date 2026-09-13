@@ -22,7 +22,6 @@ public class BindComponent extends AbstractSettingComponent {
         this.setting = setting;
     }
 
-
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
@@ -32,12 +31,6 @@ public class BindComponent extends AbstractSettingComponent {
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
 
-        // 1.21.11: DrawContext.getMatrices() hands out org.joml.Matrix3x2fStack,
-        // not MatrixStack. The stack is passed straight through to the shape /
-        // font / icon helpers, all of which now take a Matrix3x2fc (a
-        // Matrix3x2fStack IS-A Matrix3x2fc), so no promotion to Matrix4f is
-        // needed here - only draws that build their own vertex buffers need
-        // GuiMatrix.mat4(...).
         Matrix3x2fStack matrix = context.getMatrices();
 
         String bindName = StringUtil.getBindName(setting.getKey());
@@ -71,7 +64,6 @@ public class BindComponent extends AbstractSettingComponent {
         float textX = x + 10 + textOffset;
         labelFont.drawString(matrix, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
     }
-
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -107,7 +99,7 @@ public class BindComponent extends AbstractSettingComponent {
         }
         return MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
     }
-    
+
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (binding) {

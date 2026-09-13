@@ -13,7 +13,6 @@ import vorga.phazeclient.api.system.hud.ChatHudBadgeRenderAccess;
 import vorga.phazeclient.api.system.hud.ChatMessageAnimationRenderState;
 import vorga.phazeclient.base.util.PhazeBadgeUtil;
 
-/** Draws Phaze badges through the interactive backend used while chat is open. */
 @Mixin(targets = "net.minecraft.client.gui.hud.ChatHud$Interactable")
 abstract class ChatHudInteractableBadgeMixin implements ChatHudBadgeRenderAccess {
     @Shadow(remap = false) @Final private DrawContext context;

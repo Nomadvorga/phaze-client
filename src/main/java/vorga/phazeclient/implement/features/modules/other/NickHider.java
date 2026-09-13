@@ -9,17 +9,6 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
 
-/**
- * Replaces the local player's username with a configurable string in any
- * chat message that funnels through {@link net.minecraft.client.gui.hud.ChatHud}.
- *
- * <p>Scope is intentionally limited to the local player only - the user
- * specifically asked NOT to hide other players' names. The rewrite walks
- * the styled text via {@link Text#visit} so per-fragment formatting is
- * preserved; only the literal username substring is swapped within each
- * styled run. This is the same approach the soup-better
- * {@code NameProtect} module uses, minus the friend-list expansion.
- */
 public final class NickHider extends Module {
     private static final NickHider INSTANCE = new NickHider();
 
@@ -54,10 +43,6 @@ public final class NickHider extends Module {
         return 21.0F;
     }
 
-    /**
-     * Local player's profile name as reported by the active session, or
-     * {@code null} when called too early in the lifecycle.
-     */
     private static String selfName() {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.getSession() == null) {
@@ -67,24 +52,6 @@ public final class NickHider extends Module {
         return (name == null || name.isEmpty()) ? null : name;
     }
 
-    /**
-     * Rewrites {@code original} so every occurrence of the local player's
-     * username inside any styled text fragment is replaced with the user's
-     * configured {@link #replacement} string. Returns the original
-     * reference unchanged when no work is needed; the {@link
-     * vorga.phazeclient.mixins.ChatHudNickHiderMixin} relies on that to
-     * skip its substitution path.
-     *
-     * <p>The traversal uses {@link Text#visit(net.minecraft.text.StringVisitable.StyledVisitor, Style)}
-     * which yields each contiguous styled string fragment. Each fragment
-     * is independently {@code String.replace}d and re-wrapped in a new
-     * {@link Text#literal} carrying the same {@link Style}, so colors,
-     * bold, hover events, etc. survive intact. Names that span multiple
-     * fragments (rare - vanilla almost always emits a sender name as a
-     * single literal arg of {@code chat.type.text}) are not handled by
-     * the per-fragment replace; this matches the upstream NameProtect
-     * behavior and is acceptable for the documented use case.
-     */
     public Text rewrite(Text original) {
         if (!isEnabled() || original == null) {
             return original;

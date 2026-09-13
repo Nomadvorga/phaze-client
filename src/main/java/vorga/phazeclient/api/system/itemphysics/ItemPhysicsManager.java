@@ -37,11 +37,11 @@ public class ItemPhysicsManager {
             } else {
                 target = Math.round(xRot / 180.0f) * 180.0f;
             }
-            // Instant snap to target
+
             data.xRot = target;
         } else {
             data.onGround = false;
-            // Spin in air
+
             data.xRot += rotateBy * 2.0f;
         }
 

@@ -69,9 +69,7 @@ public class ModuleDescriptionComponent extends AbstractComponent {
         boxY = Math.max(10f, Math.min(boxY, (float) screenHeight - boxHeight - 10f));
 
         Matrix3x2fStack matrices = context.getMatrices();
-        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
-        // consumes a MatrixStack. Bake the promoted GUI pose once per frame
-        // (see fontPose()) instead of handing getMatrices() straight over.
+
         MatrixStack textPose = fontPose(context);
 
         rectangle.render(ShapeProperties.create(matrices, boxX, boxY, boxWidth, boxHeight)
@@ -89,17 +87,6 @@ public class ModuleDescriptionComponent extends AbstractComponent {
         }
     }
 
-    /**
-     * Promotes the 2D GUI pose to the {@code MatrixStack} {@code FontRenderer} still takes,
-     * so text keeps landing under the same transform as the surrounding shapes - the 1.21.4
-     * geometry exactly, with no behaviour change.
-     *
-     * <p>One instance per {@code render()} is sufficient: this component never mutates the GUI
-     * pose while drawing, and {@code FontRenderer.drawGlyphs} pushes/pops symmetrically.
-     *
-     * <p>TODO(1.21.11): drop this once FontRenderer itself is ported to take a
-     * {@code Matrix3x2fc} - then {@code context.getMatrices()} can be passed directly again.
-     */
     private static MatrixStack fontPose(DrawContext context) {
         MatrixStack pose = new MatrixStack();
         pose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));

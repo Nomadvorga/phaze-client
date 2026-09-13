@@ -12,12 +12,6 @@ public interface GameRendererAccessor {
     @Invoker("getFov")
     float invokeGetFov(Camera camera, float tickDelta, boolean changingFov);
 
-    /**
-     * 1.21.11 renamed {@code net.minecraft.client.util.Pool} to
-     * {@code net.minecraft.client.util.memory.ObjectPool}, which is what
-     * {@code PostEffectProcessor.render(Framebuffer, ObjectAllocator)}
-     * consumes.
-     */
     @Accessor
     ObjectPool getPool();
 }

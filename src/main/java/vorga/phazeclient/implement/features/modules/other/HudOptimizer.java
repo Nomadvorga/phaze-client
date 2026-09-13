@@ -10,20 +10,30 @@ public final class HudOptimizer extends Module {
     private static final HudOptimizer INSTANCE = new HudOptimizer();
 
     public final SectionSetting generalSection = new SectionSetting("General");
-    public final ValueSetting refreshRate = new ValueSetting("Refresh Rate", "How many times per second the cached HUD frame is regenerated. Lower = more performance, higher = smoother animations.")
+    public final ValueSetting refreshRate = new ValueSetting("Refresh Rate", "How many times per second the HUD content (text and backgrounds) is regenerated. Lower = more performance, higher = smoother updates.")
             .range(10, 120)
             .setValue(30)
             .onChange(value -> BatchedHudBuffer.INSTANCE.setTargetFps(value.intValue()));
 
+    public final ValueSetting blurRefreshRate = new ValueSetting("Refresh Rate With Background Blur", "Refresh rate of the blurred HUD background while blur is enabled. The regular Refresh Rate keeps governing the text.")
+            .range(10, 360)
+            .setValue(60);
+
     private HudOptimizer() {
         super("hudoptimizer", "HUD Optimizer", ModuleCategory.HUD);
         refreshRate.setFullWidth(true);
-        setup(generalSection, refreshRate);
+        blurRefreshRate.setFullWidth(true);
+        setup(generalSection, refreshRate, blurRefreshRate);
         BatchedHudBuffer.INSTANCE.setTargetFps((int) refreshRate.getValue());
     }
 
     public static HudOptimizer getInstance() {
         return INSTANCE;
+    }
+
+    @Override
+    public boolean isDefaultStateOn() {
+        return true;
     }
 
     @Override

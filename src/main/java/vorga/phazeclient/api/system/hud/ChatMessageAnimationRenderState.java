@@ -3,7 +3,6 @@ package vorga.phazeclient.api.system.hud;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.hud.ChatHudLine;
 
-/** Per-line state shared by the new 1.21.11 chat backend implementations. */
 public final class ChatMessageAnimationRenderState {
     private static final ThreadLocal<Offset> ACTIVE = ThreadLocal.withInitial(Offset::new);
 
@@ -27,8 +26,7 @@ public final class ChatMessageAnimationRenderState {
     }
 
     public static void end() {
-        // This state is render-thread-local. Keep the small holder allocated
-        // instead of recreating it for every visible chat line each frame.
+
         Offset offset = ACTIVE.get();
         offset.line = null;
         offset.dx = 0.0F;

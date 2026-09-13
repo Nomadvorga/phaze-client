@@ -22,54 +22,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-/**
- * FunTime helper - per-ability item-name detector with rendering
- * hooks for the visualizers each ability uses on the FunTime
- * server-cluster ("трапка" / "пласт" / "божья аура" etc).
- *
- * <h3>What it does</h3>
- * Each enabled ability has a vanilla item type (snowball, ender eye,
- * etc.) and a per-name match string (the item's display name on the
- * FT server contains that string for the magic-imbued variant).
- * When the local player is holding an item that matches both
- * (vanilla item AND name substring), {@link #getHighlightType()}
- * returns the matching {@link HighlightType} so the renderer can
- * paint the appropriate visual overlay (target circle, plast plane,
- * dezorientation ring, etc.). The renderer side is tracked
- * separately and consumes the {@code HighlightType} enum returned
- * here.
- *
- * <h3>Why per-ability name overrides</h3>
- * Server admins occasionally rename items (capitalisation tweaks,
- * adding a clan tag, etc.). The {@link TextSetting} per ability
- * lets the user paste the live item name without rebuilding the
- * client. Comparison is lower-case substring match, so any prefix
- * (rank, level, etc.) the server appends is invisible to the
- * detector.
- *
- * <h3>Logic credits</h3>
- * Detection logic is adapted from
- * {@code winvi.moscow.soupbetter.modules.FTHelperModule}. The Phaze
- * port wires the same flag set into a {@link Module} (so the toggle
- * lives in the standard module list) and exposes the same
- * {@link HighlightType} surface for the future renderer hooks. The
- * server-allowlist gate ({@code ServerUtil.isFTHelperSupported} in
- * the upstream) is replaced by Phaze's own {@code isServerLocked}
- * pipeline, which surfaces the same "is this server in the FT
- * cluster" check via the remote-rules service when configured.
- */
 public final class FTHelper extends Module {
-    /**
-     * Shared preset list used by the Circle and Box color
-     * dropdowns. Declared FIRST so the static initializer assigns
-     * it before {@link #INSTANCE} runs - {@code SelectSetting.value}
-     * does {@code Arrays.asList} which {@code requireNonNull}s the
-     * array, so feeding it a null (which would happen if this
-     * field was declared after INSTANCE) NPEs the constructor.
-     * The "Black" preset is a Predictions/FT helper override that
-     * doesn't exist in the Theme palette list - resolveAccentColor
-     * short-circuits to pure black for it.
-     */
+
     private static final String[] COLOR_PRESETS = {
             "Black",
             "Lunar Blue", "Mocha Gold", "Rose Quartz", "Emerald Frost",
@@ -130,16 +84,6 @@ public final class FTHelper extends Module {
     ).range(0.20f, 4.0f).step(0.05f).setValue(1.5f)
             .visible(() -> circleGlow.isValue());
 
-    // ---- Color sections (one each for circles and boxes) ----------------
-    // Two independent color pickers so the user can paint, say, a
-    // dark filled trapka box AND a bright cyan dezo ring at the
-    // same time. Each section mirrors the Predictions module:
-    // toggle "Theme Color" ON to follow the active client theme,
-    // toggle OFF to pick a fixed preset (including a special
-    // "Black" option not present in the Theme list). The preset
-    // list is declared at the top of the class so it's initialized
-    // before INSTANCE runs.
-
     public final SectionSetting circleColorSection = new SectionSetting("Circle Color");
     public final BooleanSetting circleUseThemeColor = new BooleanSetting(
             "Theme Color",
@@ -164,12 +108,6 @@ public final class FTHelper extends Module {
 
     public final SectionSetting nameSection = new SectionSetting("Name Overrides");
 
-    /**
-     * Per-ability display-name substrings the server uses. Defaults
-     * mirror the upstream FunTime conventions (lowercase russian).
-     * Comparison is a case-insensitive substring check so any rank /
-     * level prefix the server prepends is invisible to the detector.
-     */
     public final TextSetting trapkaName = new TextSetting(
             "Trapka Name",
             "Substring to match in the held item's display name to identify a трапка"
@@ -260,13 +198,6 @@ public final class FTHelper extends Module {
         return 21.0F;
     }
 
-    /**
-     * Visual overlay families the FT renderer uses. Each enum entry
-     * maps onto a single helper draw routine; abilities that share a
-     * geometric family (the three 10-block AOE circles) collapse to
-     * a single value here so the renderer doesn't have to enumerate
-     * every detection branch.
-     */
     public enum HighlightType {
         NONE,
         TRAPKA,
@@ -277,17 +208,6 @@ public final class FTHelper extends Module {
         SNEZHOK_PREDICTION
     }
 
-    /**
-     * Inspect the local player's main hand stack and return the
-     * appropriate highlight family. Branches mirror the upstream
-     * {@code FTHelperModule.getHighlightType} order: the first
-     * matching predicate wins, so when an item somehow satisfies
-     * two (it shouldn't with a proper name set) we deterministically
-     * pick the earlier-listed ability.
-     *
-     * <p>Returns {@link HighlightType#NONE} when the module is
-     * disabled, the player is missing, or no held item matches.
-     */
     public HighlightType getHighlightType() {
         if (!isEnabled()) {
             return HighlightType.NONE;
@@ -305,10 +225,7 @@ public final class FTHelper extends Module {
 
         if (trapkaEnabled.isValue()
                 && mainHand.getItem() == Items.NETHERITE_SCRAP) {
-            // Dragon trapka FIRST: its name ("драконья трапка")
-            // contains "трапка" as a substring, so checking the
-            // base trapka match first would always claim it before
-            // the dragon branch ever ran.
+
             if (drakonTrapkaEnabled.isValue()
                     && itemName.contains(drakonTrapkaName.getText().toLowerCase())) {
                 return HighlightType.TRAPKA_DRAGON;
@@ -350,24 +267,12 @@ public final class FTHelper extends Module {
         return HighlightType.NONE;
     }
 
-    /**
-     * Block-position of the local player. Returned as
-     * {@code BlockPos} (not Vec3d) because the upstream renderers
-     * snap the visualisers to block coordinates - all geometry is
-     * voxel-aligned. Returns {@code null} when no player is alive.
-     */
     public BlockPos getPlayerPos() {
         if (!isEnabled()) return null;
         MinecraftClient client = MinecraftClient.getInstance();
         return client != null && client.player != null ? client.player.getBlockPos() : null;
     }
 
-    /**
-     * Block the player's crosshair is currently aimed at. Used by
-     * the trapka / plast / aura renderers to anchor their geometry.
-     * Returns {@code null} when crosshair isn't on a block (entity
-     * hit, miss, etc.) or the player is missing.
-     */
     public BlockPos getTargetBlockPos() {
         if (!isEnabled()) return null;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -378,11 +283,6 @@ public final class FTHelper extends Module {
         return null;
     }
 
-    /**
-     * Face of the targeted block currently under the crosshair, or
-     * {@code null} if no block is aimed at. The plast renderer uses
-     * this to orient its placement plane.
-     */
     public Direction getTargetBlockSide() {
         if (!isEnabled()) return null;
         MinecraftClient client = MinecraftClient.getInstance();
@@ -393,37 +293,14 @@ public final class FTHelper extends Module {
         return null;
     }
 
-    /**
-     * Local player's pitch angle. The snezhok-prediction projector
-     * needs it to compute the throw arc. Returns 0 when the player
-     * is missing instead of throwing - the renderer treats 0 as
-     * "horizontal throw" which matches the upstream behaviour.
-     */
     public float getPlayerPitch() {
         if (!isEnabled()) return 0.0F;
         MinecraftClient client = MinecraftClient.getInstance();
         return client != null && client.player != null ? client.player.getPitch() : 0.0F;
     }
 
-    // ---- Snowball tracking (formerly SnowballTracker module) -----------
-    // The snowball-tracker functionality used to live in a separate
-    // module; the user merged it into FT helper since this module
-    // already exposes the toggle for "снежок заморозки" and the two
-    // were always used together. The state and tick lifecycle are
-    // ported verbatim from SnowballTracker - render side reads
-    // {@link #getTrackedSnowballs()} once per frame.
     private final List<TrackedSnowball> tracked = new ArrayList<>();
 
-    /**
-     * Network-thread entrypoint forwarded from
-     * {@code ClientPlayNetworkHandlerSnowballTrackerMixin}.
-     * Filters to snowballs whose display name contains the
-     * configured substring, then appends to the tracked list.
-     * Synchronisation comes from {@link ArrayList}'s structural
-     * stability for single-thread reads from the render thread -
-     * the worst case is a one-frame stale list which is invisible
-     * to the user.
-     */
     public void trackSnowball(SnowballEntity snowball) {
         if (!isEnabled() || !snezhokZamorozkaEnabled.isValue() || snowball == null) {
             return;
@@ -439,7 +316,6 @@ public final class FTHelper extends Module {
         tracked.add(new TrackedSnowball(snowball));
     }
 
-    /** Per-tick pruning of dead snowballs. Called from the player tick mixin. */
     public void tickTrackedSnowballs() {
         Iterator<TrackedSnowball> it = tracked.iterator();
         while (it.hasNext()) {
@@ -448,17 +324,11 @@ public final class FTHelper extends Module {
                 it.remove();
                 continue;
             }
-            // Append the snowball's current position to its trail
-            // history once per tick. Capped at 200 points so a
-            // long-flying projectile doesn't grow the list
-            // unbounded - 200 ticks @ 20 tps is 10 seconds, more
-            // than enough for any thrown snowball arc.
-            // 1.21.11: Entity.getPos() was renamed to getEntityPos().
+
             t.appendTrailPoint(t.snowball.getEntityPos());
         }
     }
 
-    /** Live tracked-snowball list used by the world render mixin. */
     public List<TrackedSnowball> getTrackedSnowballs() {
         return tracked;
     }
@@ -469,26 +339,24 @@ public final class FTHelper extends Module {
         tracked.clear();
     }
 
-    /** Lightweight wrapper around a tracked snowball entity. */
     public static final class TrackedSnowball {
         public final SnowballEntity snowball;
-        /** Recorded flight path (camera-space-agnostic, raw world coords). */
+
         private final List<Vec3d> trail = new ArrayList<>();
 
         TrackedSnowball(SnowballEntity snowball) {
             this.snowball = snowball;
             if (snowball != null) {
-                // 1.21.11: Entity.getPos() -> getEntityPos().
+
                 trail.add(snowball.getEntityPos());
             }
         }
 
         public Vec3d getPosition() {
-            // 1.21.11: Entity.getPos() -> getEntityPos().
+
             return snowball.getEntityPos();
         }
 
-        /** Entity position interpolated for the current render frame. */
         public Vec3d getRenderPosition(float tickDelta) {
             return new Vec3d(
                     MathHelper.lerp(tickDelta, snowball.lastRenderX, snowball.getX()),
@@ -501,11 +369,9 @@ public final class FTHelper extends Module {
             return snowball.getBlockPos();
         }
 
-        /** Append a new flight-path point with cap and dedup. */
         void appendTrailPoint(Vec3d pos) {
             if (pos == null) return;
-            // Skip near-duplicate consecutive points so a stationary
-            // snowball doesn't bloat the trail list.
+
             if (!trail.isEmpty()) {
                 Vec3d last = trail.get(trail.size() - 1);
                 if (last.squaredDistanceTo(pos) < 1e-4) return;
@@ -516,31 +382,15 @@ public final class FTHelper extends Module {
             }
         }
 
-        /** Read-only view of the recorded flight path. */
         public List<Vec3d> getTrail() {
             return trail;
         }
     }
 
-    // ---- Color resolution (Theme / preset / Black) --------------------
-    /**
-     * Resolve the active accent color for the circle visualisers
-     * (CIRCLE_10, BOZHESTVENNAYA_AURA, SNEZHOK_PREDICTION,
-     * snowball tracker rings). When {@code circleUseThemeColor} is
-     * on, follows the active client theme; off, looks up the named
-     * preset directly. Pure-black is a special override that
-     * doesn't exist in the Theme palette list.
-     */
     public int resolveCircleColor() {
         return resolvePresetColor(circleUseThemeColor.isValue(), circleColorPreset.getSelected());
     }
 
-    /**
-     * Resolve the active accent color for the box visualisers
-     * (TRAPKA, TRAPKA_DRAGON, PLAST). Independent from the circle
-     * accent so a user can paint a black trapka box and a bright
-     * dezo ring at the same time without trade-offs.
-     */
     public int resolveBoxColor() {
         return resolvePresetColor(boxUseThemeColor.isValue(), boxColorPreset.getSelected());
     }

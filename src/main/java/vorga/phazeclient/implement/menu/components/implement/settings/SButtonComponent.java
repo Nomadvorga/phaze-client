@@ -38,10 +38,6 @@ public class SButtonComponent extends AbstractSettingComponent {
 
         renderSettingCard(context, 0.0f, hoverProgress);
 
-        // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack. ResetIconComponent.render and
-        // ShapeProperties.create take that 2D pose directly; FontRenderer still wants a
-        // world-style MatrixStack, so promote once per render() and reuse it below.
-        // TODO(1.21.11): drop textPose once FontRenderer takes a Matrix3x2fc directly.
         Matrix3x2fStack matrix = context.getMatrices();
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
@@ -66,7 +62,6 @@ public class SButtonComponent extends AbstractSettingComponent {
         lunarButton.globalAlpha = currentAlpha;
         lunarButton.render(context, mouseX, mouseY, delta);
     }
-
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {

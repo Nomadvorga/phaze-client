@@ -20,9 +20,6 @@ public class InactivityFpsLimiterMixin {
             return;
         }
 
-        // Apply the menu FPS cap to every out-of-world GUI (main menu,
-        // singleplayer, multiplayer, mod menu, etc.) but never while a
-        // world is loaded, even if the player opens pause / inventory.
         if (this.client.world != null || this.client.currentScreen == null) {
             return;
         }

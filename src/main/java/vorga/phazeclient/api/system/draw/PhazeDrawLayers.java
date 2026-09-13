@@ -16,23 +16,6 @@ import java.util.HashMap;
 import java.util.Map;
 import net.minecraft.client.gl.UniformType;
 
-/**
- * Shared draw layers replacing the 1.21.4
- * {@code RenderSystem.setShader(ShaderProgramKeys.X)} +
- * {@code BufferRenderer.drawWithGlobalProgram(buffer.end())} pair.
- *
- * <p>Both of those are gone in 1.21.11. A draw now needs a
- * {@link RenderPipeline} wrapped in a {@link RenderLayer}, whose
- * {@link RenderLayer#draw(BuiltBuffer)} runs the whole GpuDevice /
- * CommandEncoder / RenderPass submission internally.
- *
- * <p>The pipelines here are built against vanilla's own core shaders
- * rather than reusing entries from {@code RenderPipelines}. Those entries
- * carry vanilla's blend / depth / cull choices for the specific place
- * they are used (GUI, sky, particles...), which do not all match what
- * Phaze wants. Pointing at the same shader assets with our own state
- * keeps the ported call sites behaving like the 1.21.4 ones did.
- */
 public final class PhazeDrawLayers {
 
     private static final RenderPipeline POSITION_COLOR_PIPELINE = RenderPipeline.builder()
@@ -48,7 +31,6 @@ public final class PhazeDrawLayers {
             .withCull(false)
             .build();
 
-    /** POSITION_COLOR quads, alpha blended, no depth write. */
     public static final RenderLayer POSITION_COLOR = RenderLayer.of(
             "phaze_position_color",
             RenderSetup.builder(POSITION_COLOR_PIPELINE).translucent().build());
@@ -66,7 +48,6 @@ public final class PhazeDrawLayers {
             .withCull(false)
             .build();
 
-    /** Same as {@link #POSITION_COLOR} but for TRIANGLE_STRIP geometry. */
     public static final RenderLayer POSITION_COLOR_TRIANGLE_STRIP = RenderLayer.of(
             "phaze_position_color_tri_strip",
             RenderSetup.builder(POSITION_COLOR_TRIS_PIPELINE).translucent().build());
@@ -85,15 +66,6 @@ public final class PhazeDrawLayers {
             .withCull(false)
             .build();
 
-    /**
-     * One layer per texture.
-     *
-     * <p>Textures are no longer bound imperatively - the sampler is part
-     * of the {@link RenderSetup} - so a layer is specific to the texture
-     * it samples. The set of textures Phaze draws through here is small
-     * and stable, so they are cached for the process lifetime.
-     */
-    /** Lines, for the world overlays that used RENDERTYPE_LINES. */
     public static final RenderLayer LINES = RenderLayer.of(
             "phaze_lines",
             RenderSetup.builder(net.minecraft.client.gl.RenderPipelines.LINES).translucent().build());

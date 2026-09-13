@@ -12,52 +12,6 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
-/**
- * Minimal 3D draw helpers used by the FT Helper renderer, the
- * Predictions module, and the Snowball Tracker. Each helper builds
- * one {@link BufferBuilder} and submits it.
- *
- * <h3>Camera-relative coordinates</h3>
- * Every call expects coordinates already translated by the camera
- * position. The world-render mixin pushes that translate before
- * invoking these helpers, so callers pass plain world-space values
- * and the matrix stack handles the camera offset implicitly. The
- * one exception is {@link #drawLineWorld} which subtracts the
- * camera position itself for ad-hoc callers that don't sit inside
- * a pushed camera-relative frame.
- *
- * <h3>Shader / state contract (1.21.11)</h3>
- * Imperative GPU state is gone: blend, depth test, depth write,
- * cull and polygon offset are now properties of the
- * {@code RenderPipeline} a draw is submitted through, so every
- * {@code RenderSystem.enableBlend/depthMask/lineWidth/...} call that
- * used to bracket these helpers has been deleted rather than
- * emulated. The {@code depthTest} parameters kept on the public
- * methods below therefore only select which layer the geometry must
- * eventually go to - see the per-method TODOs.
- *
- * <p>Line width is no longer global state either: it is a per-vertex
- * attribute ({@code VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH}
- * + {@code VertexConsumer.lineWidth(float)}), which is what the old
- * {@code VertexFormats.LINES} was replaced by.
- *
- * <p>The actual submission still routes through
- * PhazeRenderLayers (world overlays draw through real layers as of the
- * first compiling tree); the geometry produced here is already in
- * the shape the real {@code RenderLayer}s will want.
- *
- * <p>We deliberately don't cache a {@code BufferBuilder} between
- * calls because batching would force us to flush at every state
- * change in a way that conflicts with the specialised batched-rect
- * pipeline used by the GUI. Per-shape submission is still cheap
- * because the BufferBuilder pool is thread-local in vanilla.
- *
- * <h3>Adapted from</h3>
- * {@code winvi.moscow.soupbetter.util.Render3DUtil} (FunTime
- * client). Phaze drops the upstream's Theme-coupled colour
- * accessors in favour of explicit ARGB ints so each module can
- * drive its own palette.
- */
 public final class Render3DUtil {
     private static final int MAX_CACHED_CIRCLE_SEGMENTS = 256;
     private static final int MAX_CACHED_SPHERE_STACKS = 64;
@@ -65,26 +19,12 @@ public final class Render3DUtil {
     private static final SphereLatitudeLut[] SPHERE_LATITUDE_CACHE = new SphereLatitudeLut[MAX_CACHED_SPHERE_STACKS + 1];
     private static final Vector3f BILLBOARD_RIGHT = new Vector3f();
     private static final Vector3f BILLBOARD_UP = new Vector3f();
-    /**
-     * Fallback width for the {@code vertexLine} overloads that predate
-     * 1.21.11's per-vertex LINE_WIDTH attribute. 1.0 matches what the
-     * driver clamped {@code RenderSystem.lineWidth} to on most GPUs.
-     */
+
     private static final float DEFAULT_LINE_WIDTH = 1.0F;
 
     private Render3DUtil() {
     }
 
-    /**
-     * Draw only the six filled faces of an axis-aligned box,
-     * without any outline geometry. Useful when the caller wants
-     * the fill to be drawn alongside another (vanilla or otherwise)
-     * outline pass that handles the edge rendering separately.
-     * {@code fillAlphaScale} multiplies the supplied color's alpha
-     * so a 1.0 scale renders at full alpha and 0.5 at half alpha,
-     * matching the convention {@link #drawBox} uses for its filled
-     * faces.
-     */
     public static void drawBoxFill(MatrixStack matrices,
                                    float x1, float y1, float z1,
                                    float x2, float y2, float z2,
@@ -97,57 +37,41 @@ public final class Render3DUtil {
         float b = (color & 0xFF) / 255.0F;
         float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
 
-        // 1.21.11: RenderSystem.polygonOffset / enablePolygonOffset are
-        // gone - depth bias is a pipeline property now
-        // (RenderPipeline.Builder.withDepthBias(factor, units)). The
-        // bias that used to push this fill slightly closer to the
-        // camera (and so stopped it z-fighting with coplanar world
-        // geometry) is baked into PhazeRenderLayers.getBlockFill() instead,
-        // where it travels with the layer and cannot leak into later draws
-        // the way the old imperative pair could.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        // bottom
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
-        // top
+
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
-        // north
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
-        // south
+
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
-        // west
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
-        // east
+
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
-        // World space: the perspective projection is already live here, so
-        // this must NOT go through GuiProjection - that is only for draws
-        // issued from screen/HUD code.
+
         vorga.phazeclient.util.render.PhazeRenderLayers.getBlockFill().draw(buffer.end());
     }
 
-    /**
-     * Draw an axis-aligned filled box plus its outline in
-     * camera-relative coordinates. The fill alpha is reduced to
-     * {@code fillAlphaScale} of the supplied colour's alpha so
-     * the outline reads on top.
-     */
     public static void drawBox(MatrixStack matrices,
                                float x1, float y1, float z1,
                                float x2, float y2, float z2,
@@ -161,58 +85,52 @@ public final class Render3DUtil {
         float b = (color & 0xFF) / 255.0F;
         float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
 
-
-        // Filled faces.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        // bottom
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
-        // top
+
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
-        // north
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
-        // south
+
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
-        // west
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
-        // east
+
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         vorga.phazeclient.util.render.PhazeRenderLayers.getHitboxFill().draw(buffer.end());
 
-        // Outline lines. 1.21.11: RenderSystem.lineWidth is gone and
-        // VertexFormats.LINES was replaced by
-        // POSITION_COLOR_NORMAL_LINE_WIDTH - the width travels with
-        // each vertex now, so it is threaded through line(...).
         float lw = Math.max(1.0F, lineWidth);
         buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
-        // bottom edges
+
         line(matrix, buffer, x1, y1, z1, x2, y1, z1, r, g, b, a, lw);
         line(matrix, buffer, x2, y1, z1, x2, y1, z2, r, g, b, a, lw);
         line(matrix, buffer, x2, y1, z2, x1, y1, z2, r, g, b, a, lw);
         line(matrix, buffer, x1, y1, z2, x1, y1, z1, r, g, b, a, lw);
-        // top edges
+
         line(matrix, buffer, x1, y2, z1, x2, y2, z1, r, g, b, a, lw);
         line(matrix, buffer, x2, y2, z1, x2, y2, z2, r, g, b, a, lw);
         line(matrix, buffer, x2, y2, z2, x1, y2, z2, r, g, b, a, lw);
         line(matrix, buffer, x1, y2, z2, x1, y2, z1, r, g, b, a, lw);
-        // verticals
+
         line(matrix, buffer, x1, y1, z1, x1, y2, z1, r, g, b, a, lw);
         line(matrix, buffer, x2, y1, z1, x2, y2, z1, r, g, b, a, lw);
         line(matrix, buffer, x2, y1, z2, x2, y2, z2, r, g, b, a, lw);
@@ -270,11 +188,6 @@ public final class Render3DUtil {
         consumer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
     }
 
-    /**
-     * Draw only the translucent faces of an axis-aligned box.
-     * Depth test can be disabled so the fill stays readable even
-     * when entity geometry sits inside the hitbox volume.
-     */
     public static void drawSolidBox(MatrixStack matrices,
                                     float x1, float y1, float z1,
                                     float x2, float y2, float z2,
@@ -288,36 +201,33 @@ public final class Render3DUtil {
         float b = (color & 0xFF) / 255.0F;
         float fillA = a * Math.max(0.0F, Math.min(1.0F, fillAlphaScale));
 
-        // 1.21.11: depth test is a pipeline property, not a call.
-        // TODO(1.21.11): pick a depth-testing / always-on-top layer from
-        //  `depthTest`.
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        // bottom
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
-        // top
+
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
-        // north
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
-        // south
+
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
-        // west
+
         buffer.vertex(matrix, x1, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y1, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z2).color(r, g, b, fillA);
         buffer.vertex(matrix, x1, y2, z1).color(r, g, b, fillA);
-        // east
+
         buffer.vertex(matrix, x2, y1, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z1).color(r, g, b, fillA);
         buffer.vertex(matrix, x2, y2, z2).color(r, g, b, fillA);
@@ -326,18 +236,6 @@ public final class Render3DUtil {
 
     }
 
-    /**
-     * Filled UV sphere centered at {@code (cx, cy, cz)} (camera-relative).
-     * Built as a stack of latitude rings stitched into quads. Each ring
-     * has {@code segments} vertical slices; we use {@code stacks} latitude
-     * bands so a typical {@code stacks=12, segments=18} sphere comes out
-     * to ~432 quads which is cheap for a single per-frame draw.
-     *
-     * <p>The sphere uses {@code POSITION_COLOR} with depth-test on
-     * but depth-mask off, so it composites against terrain without
-     * z-fighting against itself or imprinting into the depth buffer
-     * (which would mess with later transparent draws).
-     */
     public static void drawSphereSolid(MatrixStack matrices,
                                        float cx, float cy, float cz,
                                        float radius,
@@ -346,25 +244,6 @@ public final class Render3DUtil {
         drawSphereSolid(matrices, cx, cy, cz, radius, color, stacks, segments, true);
     }
 
-    /**
-     * Filled UV sphere centered at {@code (cx, cy, cz)} (camera-relative)
-     * with explicit depth-test control. {@code depthTest=true} respects
-     * world geometry (recommended for impact markers so the sphere
-     * gets occluded by intervening blocks); {@code depthTest=false}
-     * draws on top regardless.
-     *
-     * <p>Back-face culling is always ON. The UV-sphere mesh is built
-     * with CCW winding so {@code GL_BACK} culling drops the rear
-     * hemisphere, leaving only the camera-facing half. This is the
-     * single most important correctness fix for transparent spheres:
-     * with culling disabled both hemispheres rasterise and the
-     * additive overlap reads as a two-tone seam that "depends on
-     * camera position" - exactly the artefact users reported.
-     * Combined with depthMask=false, the sphere never imprints
-     * itself into depth, so subsequent translucent passes (halo
-     * billboard, world-space ring) composite correctly without
-     * z-fighting.
-     */
     public static void drawSphereSolid(MatrixStack matrices,
                                        float cx, float cy, float cz,
                                        float radius,
@@ -376,17 +255,6 @@ public final class Render3DUtil {
         float r = ((color >>> 16) & 0xFF) / 255.0F;
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
-
-        // Back-face cull keeps only the camera-facing hemisphere
-        // visible. Without this both halves rasterise and the
-        // overlap on transparent fills produces the two-tone seam
-        // artefact reported by users. The UV-sphere mesh below
-        // emits CCW from outside, matching GL's default GL_BACK.
-        // 1.21.11: cull / depth-write / depth-test are pipeline
-        // properties now.
-        // TODO(1.21.11): the layer for this
-        //  sphere must be built .withCull(true).withDepthWrite(false)
-        //  and pick its depth-test function from `depthTest`.
 
         CircleLut circle = circleLut(segments);
         SphereLatitudeLut latitudes = sphereLatitudeLut(stacks);
@@ -407,13 +275,6 @@ public final class Render3DUtil {
                 float x21 = cx + r2 * c1, z21 = cz + r2 * s1;
                 float x22 = cx + r2 * c2, z22 = cz + r2 * s2;
 
-                // CCW-from-outside winding: lower-t1 -> upper-t1 ->
-                // upper-t2 -> lower-t2. The natural lat/long sweep
-                // produces CW quads when viewed from outside, so we
-                // reverse the order here. Verified by computing the
-                // surface normal at the equator: this winding gives
-                // the +radial outward direction, which is what
-                // {@code GL_BACK} culling expects to KEEP.
                 buffer.vertex(matrix, x11, cy + y1, z11).color(r, g, b, a);
                 buffer.vertex(matrix, x21, cy + y2, z21).color(r, g, b, a);
                 buffer.vertex(matrix, x22, cy + y2, z22).color(r, g, b, a);
@@ -427,35 +288,12 @@ public final class Render3DUtil {
 
     }
 
-    /**
-     * Camera-facing textured billboard. Used by the Predictions
-     * impact marker to draw a soft bloom halo (bloom_soft.png)
-     * behind the sphere. The quad is sized {@code radius * 2}
-     * across, pivot at {@code (cx, cy, cz)} (camera-relative), and
-     * always faces the active camera so the bloom looks the same
-     * from any angle.
-     *
-     * <p>Uses additive blending ({@code SRC_ALPHA, ONE}) so the
-     * texture's alpha modulates a brighter colour value into the
-     * frame, which reads as a glow rather than a flat sticker.
-     * Depth-test is off so the halo paints over the entity model
-     * the marker is anchored to.
-     */
     public static void drawBillboard(MatrixStack matrices, net.minecraft.util.Identifier texture,
                                      float cx, float cy, float cz,
                                      float radius, int color) {
         drawBillboard(matrices, texture, cx, cy, cz, radius, color, false);
     }
 
-    /**
-     * Camera-facing textured billboard with explicit depth-test
-     * control. {@code depthTest=true} enables depth comparison so
-     * the billboard is occluded by closer geometry - used by the
-     * Predictions glow halo when the user wants the marker to
-     * respect world geometry. The default {@code drawBillboard}
-     * overload keeps depth-test off (always-on-top) for backward
-     * compatibility with the FT helper feet circles.
-     */
     public static void drawBillboard(MatrixStack matrices, net.minecraft.util.Identifier texture,
                                      float cx, float cy, float cz,
                                      float radius, int color, boolean depthTest) {
@@ -469,9 +307,6 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        // Camera basis vectors. {@code right = camera_right} and
-        // {@code up = camera_up} both unit-length so the quad stays
-        // square regardless of camera pitch / yaw.
         var camera = client.gameRenderer.getCamera();
         Vector3f rightV = BILLBOARD_RIGHT;
         Vector3f upV = BILLBOARD_UP;
@@ -482,27 +317,8 @@ public final class Render3DUtil {
         float rx = rightV.x * radius, ry = rightV.y * radius, rz = rightV.z * radius;
         float ux = upV.x * radius,    uy = upV.y * radius,    uz = upV.z * radius;
 
-        // 1.21.11: the whole state block that used to live here
-        // (enableBlend + blendFunc(SRC_ALPHA, ONE) additive, disableCull,
-        // depthMask(false), depth test from `depthTest`, setShaderTexture
-        // + setShader(POSITION_TEX_COLOR)) is gone from RenderSystem.
-        // Blend / cull / depth now live on the RenderPipeline, and the
-        // texture is bound by the RenderSetup of the layer, so all of it
-        // has to be encoded in the layer this buffer is submitted to.
-        // TODO(1.21.11): consider a dedicated layer with
-        //  POSITION_TEXTURE_COLOR layer for `texture` (see
-        //  PhazeDrawLayers.positionTexColor) built with
-        //  new BlendFunction(SRC_ALPHA, ONE, ONE, ZERO) for the additive
-        //  glow, .withCull(false), .withDepthWrite(false) and a depth-test
-        //  function chosen from `depthTest`. PhazeDrawLayers' cached
-        //  textured layer is TRANSLUCENT, so it is NOT a drop-in here -
-        //  using it would turn the halo from additive into a flat sticker.
-
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-        // Triangle-fan quad with the camera-aligned right/up basis.
-        // Texture UVs map the bloom_soft png onto the full quad so
-        // the soft falloff at the texture's edges produces the halo
-        // gradient.
+
         buffer.vertex(matrix, cx - rx - ux, cy - ry - uy, cz - rz - uz).texture(0.0F, 1.0F).color(r, g, b, a);
         buffer.vertex(matrix, cx + rx - ux, cy + ry - uy, cz + rz - uz).texture(1.0F, 1.0F).color(r, g, b, a);
         buffer.vertex(matrix, cx + rx + ux, cy + ry + uy, cz + rz + uz).texture(1.0F, 0.0F).color(r, g, b, a);
@@ -512,34 +328,30 @@ public final class Render3DUtil {
         if (built != null) {
             vorga.phazeclient.util.render.PhazeRenderLayers.getTextured(texture).draw(built);
         }
-        // No state restore needed: state travels with the pipeline in
-        // 1.21.11 and cannot leak into the next draw.
+
     }
 
     private static void line(Matrix4f matrix, BufferBuilder buffer,
                              float x1, float y1, float z1, float x2, float y2, float z2,
                              float r, float g, float b, float a, float lineWidth) {
-        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0).lineWidth(lineWidth);
-        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0).lineWidth(lineWidth);
+
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float dz = z2 - z1;
+        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len > 1.0E-4F) {
+            dx /= len;
+            dy /= len;
+            dz /= len;
+        } else {
+            dx = 0.0F;
+            dy = 1.0F;
+            dz = 0.0F;
+        }
+        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, a).normal(dx, dy, dz).lineWidth(lineWidth);
+        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, a).normal(dx, dy, dz).lineWidth(lineWidth);
     }
 
-    /**
-     * Draw a thick flat ring (annulus) lying horizontally on the XZ
-     * plane at {@code centerY}. Built as a quad strip between an
-     * inner and outer radius so the visible thickness is a true
-     * world-space measurement rather than depending on OpenGL's
-     * quirky {@code glLineWidth} support.
-     *
-     * <p>Used by the FT helper for the feet circles (CIRCLE_10,
-     * BOZHESTVENNAYA_AURA) where {@code drawCylinderOutline}'s thin
-     * line-strip turned into a 1px hairline on most GPUs because
-     * vendors clamp {@code lineWidth} to 1. This routine emits real
-     * geometry instead, so the user-set thickness actually shows up.
-     *
-     * <p>{@code thickness} is in blocks - typical values are
-     * 0.10..0.40. {@code segments} controls smoothness; 64-96 is
-     * plenty for radii under 15 blocks.
-     */
     public static void drawThickFlatRing(MatrixStack matrices,
                                          float centerX, float centerY, float centerZ,
                                          float radius, float thickness,
@@ -553,10 +365,6 @@ public final class Render3DUtil {
         float inner = Math.max(0.0F, radius - thickness * 0.5F);
         float outer = radius + thickness * 0.5F;
 
-        // 1.21.11: depth test is a pipeline property.
-        // TODO(1.21.11): select the layer from `depthTest` once
-        //  the layer is selected.
-
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         for (int i = 0; i < circle.segments; i++) {
@@ -568,7 +376,6 @@ public final class Render3DUtil {
             float ox1 = centerX + c1 * outer, oz1 = centerZ + s1 * outer;
             float ox2 = centerX + c2 * outer, oz2 = centerZ + s2 * outer;
 
-            // Quad: inner1 -> inner2 -> outer2 -> outer1 (CCW from above)
             buffer.vertex(matrix, ix1, centerY, iz1).color(r, g, b, a);
             buffer.vertex(matrix, ix2, centerY, iz2).color(r, g, b, a);
             buffer.vertex(matrix, ox2, centerY, oz2).color(r, g, b, a);
@@ -578,18 +385,6 @@ public final class Render3DUtil {
 
     }
 
-    /**
-     * Draw a flat filled disc on the XZ plane at {@code centerY}.
-     * Used for the "flat glow" halo under FT helper circles - paints
-     * a soft additive disc that radiates from the centre out, giving
-     * the ring a glow effect without using a billboard sphere.
-     *
-     * <p>Each segment is a triangle from the centre to two ring
-     * vertices, so passing 64 segments produces a smooth disc. The
-     * rim alpha fades to zero by storing two colors at the rim
-     * vertices vs the centre vertex - the GPU interpolates linearly,
-     * so the disc smoothly fades to transparent at its border.
-     */
     public static void drawFlatGlowDisc(MatrixStack matrices,
                                         float centerX, float centerY, float centerZ,
                                         float radius,
@@ -605,13 +400,6 @@ public final class Render3DUtil {
         float rr = ((rimColor >>> 16) & 0xFF) / 255.0F;
         float rg = ((rimColor >>> 8) & 0xFF) / 255.0F;
         float rb = (rimColor & 0xFF) / 255.0F;
-
-        // Additive blending so the disc reads as a soft glow on top
-        // of the world rather than a flat tinted overlay.
-        // 1.21.11: blend mode and depth test are pipeline properties.
-        // TODO(1.21.11): the replacement layer needs
-        //  new BlendFunction(SRC_ALPHA, ONE, ONE, ZERO) (additive) plus a
-        //  TRIANGLES draw mode, and its depth test picked from `depthTest`.
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
@@ -629,12 +417,6 @@ public final class Render3DUtil {
 
     }
 
-    /**
-     * Draw a vertical "cylinder" using a top + bottom circle of
-     * line segments. {@code centerX/Z} are camera-relative,
-     * {@code centerY} sits at the bottom and {@code centerY + height}
-     * at the top.
-     */
     public static void drawCylinderOutline(MatrixStack matrices,
                                            float centerX, float centerY, float centerZ,
                                            float radius, float height,
@@ -642,13 +424,6 @@ public final class Render3DUtil {
         drawCylinderOutline(matrices, centerX, centerY, centerZ, radius, height, color, lineWidth, segments, true);
     }
 
-    /**
-     * Cylinder / flat-ring outline with explicit depth-test control.
-     * {@code depthTest=false} disables OpenGL's depth comparison so
-     * the ring paints through entities and terrain, used by the
-     * Predictions impact-ring so it doesn't get hidden behind the
-     * entity it's anchoring.
-     */
     public static void drawCylinderOutline(MatrixStack matrices,
                                            float centerX, float centerY, float centerZ,
                                            float radius, float height,
@@ -660,9 +435,6 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        // 1.21.11: depth test is a pipeline property; line width is a
-        // per-vertex attribute.
-        // TODO(1.21.11): select the layer from `depthTest`.
         float lw = Math.max(1.0F, lineWidth);
 
         CircleLut circle = circleLut(segments);
@@ -682,20 +454,6 @@ public final class Render3DUtil {
 
     }
 
-    /**
-     * Draw a flat circle outline lying on the plane defined by the
-     * given normal direction and centre point. Used for impact
-     * markers that need to flatten against the surface they hit -
-     * floor stays horizontal, walls turn vertical, ceilings flip
-     * upside down.
-     *
-     * <p>The circle is built in a local 2D basis aligned to the
-     * normal: {@code u} is any vector perpendicular to the normal,
-     * {@code v = normal x u}. Each vertex is
-     * {@code centre + cos(t) * u * radius + sin(t) * v * radius},
-     * which keeps the ring perfectly co-planar with the surface
-     * regardless of orientation.
-     */
     public static void drawCircleOnFace(MatrixStack matrices,
                                         float centerX, float centerY, float centerZ,
                                         float nx, float ny, float nz,
@@ -708,30 +466,23 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        // Build an orthonormal basis (u, v) on the surface plane.
-        // Pick a candidate that is least parallel to the normal so
-        // the cross product won't degenerate to zero. Cross with the
-        // normal once for u, once more for v - both unit length.
         float ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
         float hx, hy, hz;
         if (ax <= ay && ax <= az) { hx = 1; hy = 0; hz = 0; }
         else if (ay <= ax && ay <= az) { hx = 0; hy = 1; hz = 0; }
         else { hx = 0; hy = 0; hz = 1; }
-        // u = normalise(h x n)
+
         float uxRaw = hy * nz - hz * ny;
         float uyRaw = hz * nx - hx * nz;
         float uzRaw = hx * ny - hy * nx;
         float uLen = (float) Math.sqrt(uxRaw * uxRaw + uyRaw * uyRaw + uzRaw * uzRaw);
-        if (uLen < 1.0e-6F) return; // pathological normal, skip
+        if (uLen < 1.0e-6F) return;
         float ux = uxRaw / uLen, uy = uyRaw / uLen, uz = uzRaw / uLen;
-        // v = n x u (unit because n and u are unit and orthogonal)
+
         float vx = ny * uz - nz * uy;
         float vy = nz * ux - nx * uz;
         float vz = nx * uy - ny * ux;
 
-        // 1.21.11: depth test is a pipeline property; line width is a
-        // per-vertex attribute.
-        // TODO(1.21.11): select the layer from `depthTest`.
         float lw = Math.max(1.0F, lineWidth);
 
         CircleLut circle = circleLut(segments);
@@ -753,19 +504,6 @@ public final class Render3DUtil {
 
     }
 
-    /**
-     * Thick flat ring (annulus) lying on the plane defined by the
-     * given normal direction and centre. World-space thickness is
-     * a true measurement (not relying on glLineWidth which clamps
-     * to 1px on most drivers). Built as a quad strip between an
-     * inner and outer radius using an orthonormal basis on the
-     * plane - same math as {@link #drawCircleOnFace} but emitting
-     * real geometry instead of line segments.
-     *
-     * <p>Used by the Predictions impact-circle style so the user's
-     * thickness slider produces a visible difference and depth-test
-     * can stay on (line primitives can't reliably depth-occlude).
-     */
     public static void drawThickRingOnFace(MatrixStack matrices,
                                            float centerX, float centerY, float centerZ,
                                            float nx, float ny, float nz,
@@ -780,10 +518,6 @@ public final class Render3DUtil {
         float inner = Math.max(0.0F, radius - thickness * 0.5F);
         float outer = radius + thickness * 0.5F;
 
-        // Build orthonormal basis (u, v) on the surface plane,
-        // identical to drawCircleOnFace's pick-least-parallel-axis
-        // strategy so a normal that's nearly aligned with one axis
-        // still gives a non-degenerate cross product.
         float ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
         float hx, hy, hz;
         if (ax <= ay && ax <= az) { hx = 1; hy = 0; hz = 0; }
@@ -798,9 +532,6 @@ public final class Render3DUtil {
         float vx = ny * uz - nz * uy;
         float vy = nz * ux - nx * uz;
         float vz = nx * uy - ny * ux;
-
-        // 1.21.11: depth test is a pipeline property.
-        // TODO(1.21.11): select the layer from `depthTest`.
 
         CircleLut circle = circleLut(segments);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
@@ -830,11 +561,6 @@ public final class Render3DUtil {
 
     }
 
-    /**
-     * Append a straight line segment to an externally-managed
-     * BufferBuilder. Used by the Predictions trajectory pass which
-     * batches every projectile arc into a single draw.
-     */
     public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
                                   Vec3d start, Vec3d end,
                                   int startColor, int endColor) {
@@ -844,7 +570,6 @@ public final class Render3DUtil {
                 startColor, endColor, DEFAULT_LINE_WIDTH);
     }
 
-    /** @see #vertexLine(MatrixStack, VertexConsumer, double, double, double, double, double, double, int, int, float) */
     public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
                                   Vec3d start, Vec3d end,
                                   int startColor, int endColor, float lineWidth) {
@@ -862,15 +587,6 @@ public final class Render3DUtil {
                 startColor, endColor, DEFAULT_LINE_WIDTH);
     }
 
-    /**
-     * 1.21.11: line width is a per-vertex attribute
-     * ({@code VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH}), not
-     * global state, so callers that batch their own line buffer have
-     * to hand their width down here. {@code VertexConsumer.lineWidth}
-     * is a no-op on formats without a LINE_WIDTH element, so this is
-     * safe to call on a plain {@code POSITION_COLOR_NORMAL} buffer
-     * too.
-     */
     public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
                                   double startX, double startY, double startZ,
                                   double endX, double endY, double endZ,
@@ -898,23 +614,17 @@ public final class Render3DUtil {
                 .color(r2, g2, b2, a2).normal(normalX, normalY, normalZ).lineWidth(lw);
     }
 
-    /** Convenience: same colour at both ends. */
     public static void vertexLine(MatrixStack matrices, VertexConsumer buffer,
                                   Vec3d start, Vec3d end, int color) {
         vertexLine(matrices, buffer, start, end, color, color, DEFAULT_LINE_WIDTH);
     }
 
-    /**
-     * One-shot line draw in absolute world coordinates (handles the
-     * camera subtraction internally). Used by ad-hoc callers that
-     * don't sit inside a pushed camera-relative frame.
-     */
     public static void drawLineWorld(MatrixStack matrices, Vec3d start, Vec3d end, int color, float lineWidth) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.gameRenderer == null || client.gameRenderer.getCamera() == null) {
             return;
         }
-        // 1.21.11: Camera.getPos -> getCameraPos.
+
         Vec3d camera = client.gameRenderer.getCamera().getCameraPos();
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         float a = ((color >>> 24) & 0xFF) / 255.0F;
@@ -937,19 +647,6 @@ public final class Render3DUtil {
 
     }
 
-    /**
-     * Camera-relative polyline draw. The caller is expected to have
-     * already translated {@code matrices} by {@code -cameraPos} so
-     * the points can be passed in raw world coordinates and land on
-     * screen at the right place. Used by the snowball-tracker flight
-     * trail to paint a polyline along every recorded tick-position
-     * of a tracked projectile.
-     *
-     * @param points    sequence of world-space waypoints (size >= 2)
-     * @param color     ARGB
-     * @param lineWidth GL line width in pixels
-     * @param depthTest true to occlude behind world geometry
-     */
     public static void drawPolyline(MatrixStack matrices,
                                     java.util.List<Vec3d> points,
                                     int color, float lineWidth, boolean depthTest) {
@@ -961,10 +658,7 @@ public final class Render3DUtil {
                                           double offsetX, double offsetY, double offsetZ,
                                           int color, float lineWidth, boolean depthTest) {
         if (!hasRenderablePolylineSegment(points)) return;
-        // Large-coordinate precision fix:
-        // build vertices in a local origin near the path, not in absolute
-        // world coordinates. This avoids float precision loss around
-        // millions of blocks.
+
         Vec3d origin = points.get(0);
         matrices.push();
         matrices.translate(origin.x + offsetX, origin.y + offsetY, origin.z + offsetZ);
@@ -974,9 +668,6 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        // 1.21.11: depth test is a pipeline property; line width is a
-        // per-vertex attribute.
-        // TODO(1.21.11): select the layer from `depthTest`.
         float lw = Math.max(1.0F, lineWidth);
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
@@ -1005,32 +696,6 @@ public final class Render3DUtil {
         matrices.pop();
     }
 
-    /**
-     * Camera-relative polyline draw with a head-end fade. Same
-     * pipeline as {@link #drawPolyline} but the first
-     * {@code fadeDistance} blocks of the polyline (measured along
-     * the path from {@code points.get(0)}) are alpha-faded from 0
-     * at the start to full alpha once the cumulative arc length
-     * exceeds {@code fadeDistance}. Subdivides any segment that
-     * straddles the fade boundary so the fade reads as a smooth
-     * gradient rather than a step at vertex boundaries. Used by
-     * the projectile trail so the line "dissolves" right behind
-     * the in-flight projectile.
-     *
-     * @param points       polyline waypoints (size >= 2). The
-     *                     ENTRY at index 0 is treated as the
-     *                     fade origin (i.e. the projectile's
-     *                     current head position).
-     * @param color        ARGB; alpha is the upper limit (full-
-     *                     opacity portion of the line uses this
-     *                     directly).
-     * @param lineWidth    GL line width in pixels.
-     * @param fadeDistance Length in blocks over which the alpha
-     *                     ramps from 0 -> color.alpha. Pass <= 0
-     *                     to disable fading.
-     * @param depthTest    {@code true} to occlude behind world
-     *                     geometry.
-     */
     public static void drawPolylineFaded(MatrixStack matrices,
                                          java.util.List<Vec3d> points,
                                          int color, float lineWidth,
@@ -1059,18 +724,10 @@ public final class Render3DUtil {
         float g = ((color >>> 8) & 0xFF) / 255.0F;
         float b = (color & 0xFF) / 255.0F;
 
-        // 1.21.11: depth test is a pipeline property; line width is a
-        // per-vertex attribute.
-        // TODO(1.21.11): select the layer from `depthTest`.
         float lw = Math.max(1.0F, lineWidth);
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
 
-        // Walk the polyline, accumulating arc length. Within the
-        // fade band the alpha ramps linearly from 0 (at length 0)
-        // to maxA (at length fadeDistance). If a single segment
-        // crosses the boundary we split it so the visible gradient
-        // reads as smooth.
         double accLen = 0.0;
         for (int i = 0; i < points.size() - 1; i++) {
             Vec3d start = points.get(i);
@@ -1097,18 +754,15 @@ public final class Render3DUtil {
             float startAlpha = (float) Math.min(1.0, Math.max(0.0, startLen / fadeDistance)) * maxA;
             float endAlpha = (float) Math.min(1.0, Math.max(0.0, endLen / fadeDistance)) * maxA;
 
-            // If this segment crosses the fade boundary, split at
-            // the crossing point so we don't get a hard kink in the
-            // visual gradient.
             if (startLen < fadeDistance && endLen > fadeDistance) {
                 double t = (fadeDistance - startLen) / segLen;
                 double mx = sx + dx * t;
                 double my = sy + dy * t;
                 double mz = sz + dz * t;
-                // First half: ramp up to full alpha at the boundary.
+
                 buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(normalX, normalY, normalZ).lineWidth(lw);
                 buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(normalX, normalY, normalZ).lineWidth(lw);
-                // Second half: full alpha across the rest.
+
                 buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(normalX, normalY, normalZ).lineWidth(lw);
                 buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, maxA).normal(normalX, normalY, normalZ).lineWidth(lw);
             } else {
@@ -1123,7 +777,6 @@ public final class Render3DUtil {
         matrices.pop();
     }
 
-    /** Prevents Tessellator#end from receiving an empty line buffer. */
     private static boolean hasRenderablePolylineSegment(java.util.List<Vec3d> points) {
         if (points == null || points.size() < 2) return false;
         for (int i = 0; i < points.size() - 1; i++) {

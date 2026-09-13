@@ -23,10 +23,7 @@ import static net.minecraft.util.math.MathHelper.clamp;
 
 @RequiredArgsConstructor
 public class AlphaComponent extends AbstractComponent {
-    // Same indicator sizing constant as SaturationComponent so the
-    // two sliders remain visually paired; tweaking one without the
-    // other would break the symmetry MultiColorComponent's window
-    // layout was designed around.
+
     private static final float INDICATOR_SIZE = 6.0F;
 
     private final ColorSetting setting;
@@ -34,20 +31,10 @@ public class AlphaComponent extends AbstractComponent {
 
     private float X, Y, W, H;
 
-
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         Matrix3x2fStack matrix = context.getMatrices();
 
-        // Vertical alpha strip placed after the hue strip and its
-        // triangle indicator. Layout from the picker's right edge:
-        //   x+148..x+154   hue strip          (6 px)
-        //   x+154..x+160   hue triangle       (6 px)
-        //   x+162..x+168   alpha strip        (6 px, 2 px gap)
-        //   x+168..x+174   alpha triangle     (6 px)
-        // Total picker block ends at x+174; MultiColorComponent sizes
-        // the window to 178 so the alpha triangle has a 4 px gap to
-        // the rounded window border.
         X = x + 162;
         Y = y + 10.5F;
         W = 6;
@@ -57,25 +44,8 @@ public class AlphaComponent extends AbstractComponent {
             vorga.phazeclient.api.system.cursor.CursorManager.requestVerticalResize();
         }
 
-        // Underlying checker pattern that visualizes transparency.
-        // Same UV-rotation trick as SaturationComponent: stretch the
-        // texture's u axis along the slider's vertical axis so the
-        // checker repeats top-to-bottom rather than left-to-right.
         renderVerticalGradientStrip(matrix, "textures/color_picker/alpha.png", X, Y, W, H, applyGlobalAlpha(0xFFFFFFFF));
 
-        // Solid-color overlay that fades from the picker's current
-        // color (top) to fully transparent (bottom). The four corner
-        // colors map (in submit's order) to:
-        //   c1 = visual BL = transparent
-        //   c2 = visual TL = current color
-        //   c3 = visual BR = transparent
-        //   c4 = visual TR = current color
-        // i.e. left and right columns share the same color so the
-        // gradient runs purely along Y, and inverting top vs bottom
-        // (compared to the legacy horizontal slider's left vs right)
-        // moves the alpha=1 region to the top of the strip - which
-        // matches the indicator math below where alpha increases as
-        // the user drags upward.
         int gradColorWithAlpha = applyGlobalAlpha(setting.getColorWithAlpha());
         int transparent = applyGlobalAlpha(0x80000000);
         rectangle.render(ShapeProperties.create(matrix, X, Y - 0.2, W, H + 0.5)
@@ -83,23 +53,13 @@ public class AlphaComponent extends AbstractComponent {
                 .color(transparent, gradColorWithAlpha, transparent, gradColorWithAlpha)
                 .build());
 
-        // Left-pointing triangle indicator anchored at the slider's
-        // right edge; identical visual language to SaturationComponent
-        // so the two strips read as a paired control. The apex Y
-        // tracks setting.getAlpha() in [0, 1] from BOTTOM (alpha=0)
-        // to TOP (alpha=1), matching the gradient: full-opacity at
-        // the top of the strip, fully transparent at the bottom.
         float apexY = clamp(Y + H * (1.0F - setting.getAlpha()), Y, Y + H);
         float triX = X + W;
         float triY = apexY - INDICATOR_SIZE / 2.0F;
         renderLeftPointingTriangle(matrix, "textures/color_picker/triangle.png", triX, triY, INDICATOR_SIZE, INDICATOR_SIZE, applyGlobalAlpha(0xFFFFFFFF));
 
         if (alphaDragging) {
-            // Drag UP raises alpha (toward 1.0 = opaque), drag DOWN
-            // lowers alpha (toward 0 = transparent) - same visual
-            // direction as the indicator above. Without the (1 -)
-            // inversion the slider would be upside-down relative to
-            // the gradient, which is the bug the user reported.
+
             setting.setAlpha(clamp(1.0F - (float) (mouseY - Y) / H, 0, 1));
         }
     }
@@ -116,16 +76,6 @@ public class AlphaComponent extends AbstractComponent {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    /**
-     * Same UV-rotation trick {@link SaturationComponent} uses, copied
-     * here so AlphaComponent doesn't have to import a sibling package
-     * member - keeps the pair of slider components symmetric and lets
-     * each control its own POSITION_TEX_COLOR draw without crossing
-     * dependencies.
-     */
-    // 1.21.11: GUI pose is org.joml.Matrix3x2f, not MatrixStack. The
-    // vertex writes below still want a Matrix4f, so the 2D pose is
-    // promoted with GuiMatrix.mat4 at the draw call (vanilla's own idiom).
     private static void renderVerticalGradientStrip(Matrix3x2fc matrix, String texture, float x, float y, float w, float h, int color) {
         BatchedRectangle.flushIfBatching();
 
@@ -139,9 +89,6 @@ public class AlphaComponent extends AbstractComponent {
         buf.vertex(mat, x + w, y + h, 0).texture(1, 1).color(color);
         buf.vertex(mat, x + w, y,     0).texture(0, 1).color(color);
 
-        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-        // immediate draw runs outside the GUI pass and must install the GUI
-        // ortho projection (and its z = -11000 model-view) itself.
         vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());
@@ -150,14 +97,6 @@ public class AlphaComponent extends AbstractComponent {
         }
     }
 
-    /**
-     * Renders the source triangle texture rotated 90 deg CW via UV
-     * remap, mirroring {@link SaturationComponent}'s indicator. See
-     * that class for the full UV-mapping breakdown; duplicated here
-     * so AlphaComponent stays self-contained against future package
-     * reorganization.
-     */
-    // 1.21.11: see renderVerticalGradientStrip - GUI pose is 2D now.
     private static void renderLeftPointingTriangle(Matrix3x2fc matrix, String texture, float x, float y, float w, float h, int color) {
         BatchedRectangle.flushIfBatching();
 
@@ -171,8 +110,6 @@ public class AlphaComponent extends AbstractComponent {
         buf.vertex(mat, x + w, y + h, 0).texture(1, 0).color(color);
         buf.vertex(mat, x + w, y,     0).texture(0, 0).color(color);
 
-        // See renderVerticalGradientStrip - GUI-space immediate draw needs
-        // the GUI ortho projection installed around it in 1.21.11.
         vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buf.end());

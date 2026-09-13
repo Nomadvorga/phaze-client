@@ -20,9 +20,8 @@ public final class AutoSwap extends Module {
     private static final String SPHERE_KEY = "сфера";
     private static final String TALISMAN_KEY = "талисман";
     private static final String TOTEM_KEY = "тотем";
-    private static final int SWAP_DELAY_MS = 50; // 1 tick (50ms)
+    private static final int SWAP_DELAY_MS = 50;
 
-    // Settings
     public final SectionSetting generalSection = new SectionSetting("General");
     public final BindSetting keybind = new BindSetting("Keybind", "Key to activate swap");
     public final SelectSetting swapType = new SelectSetting("Swap Type", "Automatic swap type")
@@ -30,17 +29,15 @@ public final class AutoSwap extends Module {
             .selected("Sphere -> Totem")
             .onChange(this::onSwapTypeChanged);
 
-    // Runtime state
     private boolean isSwapping = false;
     private int currentSlotIndex = 0;
 
     private AutoSwap() {
         super("autoswap", "Auto Swap", ModuleCategory.UTILITIES);
-        
-        // Set full width for settings
+
         keybind.setFullWidth(true);
         swapType.setFullWidth(true);
-        
+
         setup(generalSection, keybind, swapType);
     }
 
@@ -73,9 +70,6 @@ public final class AutoSwap extends Module {
         return ServerUtil.isAutoSwapSupported();
     }
 
-    /**
-     * Activate direct swap with rules
-     */
     public void activateDirectSwap() {
         if (!canActivateInGame()) {
             return;
@@ -89,22 +83,18 @@ public final class AutoSwap extends Module {
             }
             return;
         }
-        
+
         SwapTarget target = findNextAvailableTargetWithRules();
         if (target != null) {
             startSwapSequence(target);
         }
     }
 
-    /** AutoSwap hotkeys are gameplay-only; never consume chat or GUI input. */
     public boolean canActivateInGame() {
         MinecraftClient client = MinecraftClient.getInstance();
         return client.player != null && client.world != null && client.currentScreen == null;
     }
 
-    /**
-     * Start swap sequence
-     */
     private void startSwapSequence(SwapTarget target) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.interactionManager == null || isSwapping) {
@@ -125,9 +115,6 @@ public final class AutoSwap extends Module {
         worker.start();
     }
 
-    /**
-     * Perform the actual swap
-     */
     private void performSwap(int targetSlot, String itemName) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.interactionManager == null) {
@@ -137,8 +124,7 @@ public final class AutoSwap extends Module {
 
         int syncId = client.player.playerScreenHandler.syncId;
         int offhandSlot = 45;
-        // 1.21.11: PlayerInventory.offHand is gone (offhand lives in EntityEquipment now);
-        // LivingEntity.getOffHandStack() is the public accessor for the same stack.
+
         boolean hasOffhandItem = !client.player.getOffHandStack().isEmpty();
 
         Thread worker = new Thread(() -> {
@@ -161,40 +147,31 @@ public final class AutoSwap extends Module {
         worker.start();
     }
 
-    /** Finish the invisible player-screen-handler swap. */
     private void finishSwap() {
         isSwapping = false;
     }
 
-    /**
-     * Show swap message in action bar
-     */
     private void showSwapMessage(String itemName) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || itemName == null || itemName.isEmpty()) {
             return;
         }
-        
-        // Find the actual item stack to get its formatted name with colors
+
         ItemStack foundStack = findItemStackByName(itemName);
         if (foundStack != null && !foundStack.isEmpty()) {
-            // Use the item's display name which includes colors and formatting
+
             Text swapMessage = Text.literal("Swap to ").append(foundStack.getName());
             client.player.sendMessage(swapMessage, true);
         } else {
-            // Fallback to plain text if item not found
+
             client.player.sendMessage(Text.literal("Swap to " + itemName), true);
         }
     }
-    
-    /**
-     * Find item stack by name in inventory
-     */
+
     private ItemStack findItemStackByName(String itemName) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return null;
 
-        // 1.21.11: PlayerInventory.main is private; getMainStacks() returns the same DefaultedList.
         var mainStacks = client.player.getInventory().getMainStacks();
         for (int i = 0; i < mainStacks.size(); i++) {
             ItemStack stack = mainStacks.get(i);
@@ -203,7 +180,6 @@ public final class AutoSwap extends Module {
             }
         }
 
-        // Check offhand
         ItemStack offhand = client.player.getOffHandStack();
         if (!offhand.isEmpty() && offhand.getName().getString().equals(itemName)) {
             return offhand;
@@ -212,9 +188,6 @@ public final class AutoSwap extends Module {
         return null;
     }
 
-    /**
-     * Find next available target with rules
-     */
     private SwapTarget findNextAvailableTargetWithRules() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return null;
@@ -225,14 +198,10 @@ public final class AutoSwap extends Module {
         return applySwapRules(currentOffhandItem);
     }
 
-    /**
-     * Apply swap rules based on current offhand item
-     */
     private SwapTarget applySwapRules(String currentItem) {
         String rule = swapType.getSelected();
         String lowerItem = currentItem == null ? "" : currentItem.toLowerCase();
 
-        // If offhand is empty, find first available item based on rule
         if (currentItem == null || currentItem.isEmpty()) {
             if ("Talisman -> Talisman".equals(rule)) {
                 SwapTarget talisman = findItemContaining(TALISMAN_KEY);
@@ -248,7 +217,6 @@ public final class AutoSwap extends Module {
             return findItemContaining(SPHERE_KEY);
         }
 
-        // If current item is totem
         if (isTotemName(currentItem)) {
             if ("Sphere -> Totem".equals(rule) || "Sphere -> Talisman".equals(rule)) {
                 SwapTarget sphere = findItemContaining(SPHERE_KEY);
@@ -262,7 +230,6 @@ public final class AutoSwap extends Module {
             return null;
         }
 
-        // If current item is talisman
         if (lowerItem.contains(TALISMAN_KEY)) {
             if ("Talisman -> Talisman".equals(rule)) {
                 SwapTarget talisman = findItemContaining(TALISMAN_KEY);
@@ -285,7 +252,6 @@ public final class AutoSwap extends Module {
             return null;
         }
 
-        // If current item is sphere
         if (lowerItem.contains(SPHERE_KEY)) {
             if ("Sphere -> Sphere".equals(rule)) {
                 SwapTarget sphere = findItemContaining(SPHERE_KEY);
@@ -310,9 +276,6 @@ public final class AutoSwap extends Module {
         return null;
     }
 
-    /**
-     * Find totem in inventory
-     */
     private SwapTarget findTotemTarget() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return null;
@@ -327,9 +290,6 @@ public final class AutoSwap extends Module {
         return null;
     }
 
-    /**
-     * Find item containing search text
-     */
     private SwapTarget findItemContaining(String searchText) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return null;
@@ -347,18 +307,12 @@ public final class AutoSwap extends Module {
         return null;
     }
 
-    /**
-     * Check if item name is totem
-     */
     private boolean isTotemName(String itemName) {
         return itemName != null
                 && (itemName.equalsIgnoreCase("Totem of Undying")
                 || itemName.toLowerCase().contains(TOTEM_KEY));
     }
 
-    /**
-     * Find item slot by exact name
-     */
     private int findItemSlotByName(String itemName) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return -1;
@@ -373,9 +327,6 @@ public final class AutoSwap extends Module {
         return -1;
     }
 
-    /**
-     * Run swap click on main thread
-     */
     private void runSwapClick(MinecraftClient client, int syncId, int slotId) {
         CountDownLatch latch = new CountDownLatch(1);
         client.execute(() -> {
@@ -396,9 +347,6 @@ public final class AutoSwap extends Module {
         }
     }
 
-    /**
-     * Sleep for swap delay
-     */
     private void sleepSwapDelay() {
         try {
             Thread.sleep(SWAP_DELAY_MS);
@@ -411,23 +359,11 @@ public final class AutoSwap extends Module {
         return isSwapping;
     }
 
-    /**
-     * Called when swap type is changed
-     */
     private void onSwapTypeChanged(String newType) {
-        // No direct save: Setting.notifyChange already routes
-        // through ConfigManager.markDirty() via the global change
-        // listener, so a user-triggered swap-type change persists
-        // within the autosave debounce window. The previous direct
-        // saveCurrentConfig() call ignored the load-time guard and
-        // could write half-reset state during applyInCodeDefaults,
-        // which manifested as configs swapping places after import.
+
     }
 }
 
-/**
- * Swap target data class
- */
 class SwapTarget {
     final String itemName;
     final int slotId;

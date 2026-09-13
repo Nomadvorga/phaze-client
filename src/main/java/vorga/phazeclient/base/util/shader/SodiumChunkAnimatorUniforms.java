@@ -8,7 +8,6 @@ import vorga.phazeclient.implement.features.modules.other.ChunkAnimator;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Sets the four lightweight uniforms used with Sodium's native chunk timing UBO. */
 public final class SodiumChunkAnimatorUniforms {
     private static final float[] DIRECTION = new float[3];
     private static final Map<Integer, Locations> PROGRAMS = new HashMap<>();

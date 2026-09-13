@@ -13,13 +13,6 @@ public final class ComboCounterHud extends RectHudModule {
 
     public final SectionSetting otherSection = new SectionSetting("Other");
 
-    /**
-     * Toggle that swaps the order of the {@code Combo} label and the
-     * numeric value. Default OFF renders {@code "Combo 3"} (label
-     * first); ON renders {@code "3 Combo"} (value first). The "No
-     * Combo" idle copy is unaffected because it has no value half to
-     * reorder.
-     */
     public final BooleanSetting reverseOrder = new BooleanSetting("Reverse Order", "Show value before label, e.g. \"3 Combo\" instead of \"Combo 3\"").setValue(false);
 
     private int combo = 0;
@@ -29,7 +22,7 @@ public final class ComboCounterHud extends RectHudModule {
     private ComboCounterHud() {
         super("combo_counter_hud", "Combo Counter", 100.0f, 50.0f, 1.0f);
         reverseOrder.setFullWidth(true);
-        setup(otherSection, reverseOrder);
+        setup(otherSection, reverseOrder, cornerRounding);
     }
 
     public void onAttack(LivingEntity target) {
@@ -48,7 +41,7 @@ public final class ComboCounterHud extends RectHudModule {
     }
 
     public void onWorldJoin() {
-        // Default logic: reset combo on world join
+
         combo = 0;
         lastTarget = null;
         wasHit = false;
@@ -58,18 +51,10 @@ public final class ComboCounterHud extends RectHudModule {
         if (combo == 0 && !wasHit) {
             return "No Combo";
         }
-        // Visible "Combo X" / "X Combo" form with the user-controlled
-        // ordering. Idle "No Combo" stays untouched because it has no
-        // value half to reorder.
+
         return reverseOrder.isValue() ? combo + " Combo" : "Combo " + combo;
     }
 
-    /**
-     * Raw running-combo accessor. Other modules can read this
-     * without reimplementing the target-change / hit-by-enemy /
-     * world-join reset logic that lives here.
-     * reset rules. Returns 0 when no combo is active.
-     */
     public int getCombo() {
         return combo;
     }

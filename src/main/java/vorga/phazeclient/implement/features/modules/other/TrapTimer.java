@@ -15,48 +15,6 @@ import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
 
 import java.util.Locale;
 
-/**
- * "Трапка" use-cooldown timer.
- *
- * <h3>What it does</h3>
- * The FunTime "трапка" ability puts itself on a fixed cooldown
- * after each use - 15 seconds for the regular variant, 20 for the
- * dragon one. The server doesn't broadcast that cooldown via the
- * standard {@code CooldownUpdateS2CPacket}, so vanilla's cooldown
- * pie doesn't show. This module starts a local timer the moment the
- * player right-clicks the trapka item and renders a draggable HUD
- * line with the remaining time, so the user knows when the ability
- * is ready again without staring at the slot.
- *
- * <h3>Detection</h3>
- * On every {@code interactItem} (hooked from
- * {@link vorga.phazeclient.mixins.ClientPlayerInteractionManagerMixin})
- * we inspect the held stack:
- * <ol>
- *   <li>The item must be {@link Items#NETHERITE_SCRAP} (the FT
- *       трапка vanilla type).</li>
- *   <li>The display name must contain the user-configured substring
- *       (defaults to {@code "трапка"}, lowercased) so we don't
- *       trigger on a regular netherite scrap. Matching is
- *       case-insensitive.</li>
- * </ol>
- * When both pass, we stamp {@link System#currentTimeMillis} and
- * arm the timer for the configured duration.
- *
- * <h3>Why a millis stopwatch instead of a tick counter</h3>
- * Tick counts pause when the user opens a screen, but the FT cooldown
- * keeps ticking on the server. Using wall-clock milliseconds matches
- * the server-side authoritative timer so the local UX stays correct
- * even if the user opens chat / inventory mid-cooldown.
- *
- * <h3>Logic credits</h3>
- * Adapted from {@code winvi.moscow.soupbetter.modules.TrapTimerModule};
- * the Phaze port replaces the upstream's
- * {@code ConfigManager.setTrapTimerEnabled} state plumbing with the
- * standard module-setting backed values, and substitutes the
- * upstream's silent timer surface with a draggable HUD text line
- * rendered through Phaze's existing rect-HUD pipeline.
- */
 public final class TrapTimer extends RectHudModule {
     private static final TrapTimer INSTANCE = new TrapTimer();
     public enum TrapType {
@@ -92,7 +50,7 @@ public final class TrapTimer extends RectHudModule {
         trapSection.setFullWidth(true);
         trapType.setFullWidth(true);
         trapName.setFullWidth(true);
-        setup(trapSection, trapType, trapName);
+        setup(trapSection, trapType, trapName, otherSection, cornerRounding);
     }
 
     public static TrapTimer getInstance() {
@@ -114,22 +72,10 @@ public final class TrapTimer extends RectHudModule {
         return 21.0F;
     }
 
-    /**
-     * Selected variant's wall-clock duration. The
-     * {@link SelectSetting} stores the user-facing label, which the
-     * upstream config also persisted as the enum name; we map both
-     * variants here without lookup overhead since there are only two.
-     */
     public TrapType getSelectedType() {
         return "Dragon".equalsIgnoreCase(trapType.getSelected()) ? TrapType.DRAGON : TrapType.NORMAL;
     }
 
-    /**
-     * Hook called from {@code ClientPlayerInteractionManagerMixin
-     * .phaze$onInteractItem}. Filters the use to a trapka stack and
-     * arms the timer when both the vanilla item type and the display
-     * name match.
-     */
     public void onItemUse(PlayerEntity player, Hand hand) {
         if (!isEnabled() || player == null || hand == null) {
             return;
@@ -149,11 +95,6 @@ public final class TrapTimer extends RectHudModule {
         startTimer(stack.getName().copy());
     }
 
-    /**
-     * Per-tick hook from {@code ClientPlayerEntityMixin}. We keep the
-     * local HUD state in sync with the wall-clock stopwatch so the
-     * widget disappears the moment the cooldown expires.
-     */
     public void tick() {
         if (!timerActive || !isEnabled()) {
             return;
@@ -165,7 +106,6 @@ public final class TrapTimer extends RectHudModule {
         activeItemText = Text.empty();
     }
 
-    /** Remaining seconds in tenths-friendly form for the HUD line. */
     public float getRemainingSecondsPrecise() {
         if (!timerActive) {
             return 0.0F;
@@ -175,7 +115,6 @@ public final class TrapTimer extends RectHudModule {
         return Math.max(0.0F, remainingMs / 1000.0F);
     }
 
-    /** {@code [0, 1]} progress through the timer; 0 = just started, 1 = expired. */
     public float getProgress() {
         if (!timerActive) {
             return 0.0F;

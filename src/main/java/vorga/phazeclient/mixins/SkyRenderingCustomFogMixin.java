@@ -15,21 +15,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.features.modules.other.CustomFog;
 
-/**
- * Stops the sunrise/sunset glow from punching through Custom Fog.
- *
- * <p>The fog hooks in {@link FogRendererCustomFogMixin} cover the fog UBO and
- * the fog colour, which between them tint the sky background and everything
- * blended against it. The dawn/dusk glow is not part of that: vanilla draws it
- * as its own geometry in {@code SkyRendering.renderGlowingSky}, with its own
- * colour, on top of the sky. So with fog on, the horizon went fog-coloured
- * everywhere except a bright wedge around the sun.
- *
- * <p>Suppressing that draw is what makes the fog uniform. It is gated on
- * "Affect Sky" because that is the setting which decides whether Custom Fog
- * owns the sky at all - with it off the sky, and therefore the glow, stays
- * vanilla.
- */
 @Mixin(SkyRendering.class)
 public class SkyRenderingCustomFogMixin {
 
@@ -39,8 +24,7 @@ public class SkyRenderingCustomFogMixin {
         if (module == null || !module.isEnabled() || !module.isAffectSky()) {
             return;
         }
-        // Same carve-outs as the fog hooks: submersion and the blindness /
-        // darkness effects are gameplay visibility cues and stay vanilla.
+
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.gameRenderer == null) {
             return;

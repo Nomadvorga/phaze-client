@@ -5,6 +5,7 @@ import net.minecraft.util.math.MathHelper;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
@@ -48,32 +49,62 @@ public abstract class RectHudModule extends Module {
                     "Jade",
                     "Sunset",
                     "Violet",
-                    "Ocean"
+                    "Ocean",
+                    "Custom Color",
+                    "Gradient"
             )
             .selected("Vanilla")
             .visible(() -> background.isValue());
     public final ValueSetting colorBrightness = new ValueSetting("Color Brightness", "Adjust main color brightness")
             .range(0, 200)
             .setValue(100)
-            .visible(() -> background.isValue() && !isVanillaPreset());
+            .visible(() -> background.isValue() && !isVanillaPreset() && !isCustomColorPreset() && !isGradientPreset());
     public final ValueSetting backgroundOpacity = new ValueSetting("Background Opacity", "Custom background opacity")
             .range(0, 100)
             .setValue(50)
             .visible(() -> background.isValue() && !isVanillaPreset());
+    public final ColorSetting customBackgroundColor = new ColorSetting("Custom Background Color", "Color used by the custom HUD background")
+            .value(0xFF203447)
+            .noAlpha()
+            .popupRow()
+            .visible(() -> background.isValue() && isCustomColorPreset());
+    public final ColorSetting gradientStartColor = new ColorSetting("Gradient Start Color", "First color of the HUD gradient")
+            .value(0xFF1B4965)
+            .noAlpha()
+            .popupRow()
+            .visible(() -> background.isValue() && isGradientPreset());
+    public final ColorSetting gradientEndColor = new ColorSetting("Gradient End Color", "Second color of the HUD gradient")
+            .value(0xFF5FA8D3)
+            .noAlpha()
+            .popupRow()
+            .visible(() -> background.isValue() && isGradientPreset());
+    public final ValueSetting gradientSpeed = new ValueSetting("Gradient Speed", "How quickly the gradient flows between its colors")
+            .range(0.0f, 4.0f)
+            .step(0.05f)
+            .setValue(0.75f)
+            .visible(() -> background.isValue() && isGradientPreset());
+    public final SelectSetting gradientDirection = new SelectSetting("Gradient Direction", "Direction of the animated HUD gradient")
+            .value("Left to Right", "Right to Left", "Top to Bottom", "Bottom to Top", "Diagonal Down", "Diagonal Up", "Pulse")
+            .selected("Left to Right")
+            .visible(() -> background.isValue() && isGradientPreset());
     public final ValueSetting backgroundBlurRadius = new ValueSetting("Background Blur Radius", "Blur radius for HUD background")
             .range(0.0f, 32.0f)
             .step(0.25f)
             .setValue(0)
             .visible(() -> background.isValue());
-    // The Color Settings divider is meaningful only when at least one
-    // of its children is visible, and every child is gated by
-    // {@code background.isValue()}. So when Background is off the whole
-    // section collapses, otherwise we'd render an empty header floating
-    // above nothing.
+
     public final SectionSetting colorSection = new SectionSetting("Color Settings")
+            .visible(() -> background.isValue());
+    public final SectionSetting otherSection = new SectionSetting("Other");
+    public final ValueSetting cornerRounding = new ValueSetting("Corner Rounding", "Round this HUD background's corners")
+            .range(0.0F, 10.0F)
+            .step(0.5F)
+            .setValue(0.0F)
             .visible(() -> background.isValue());
 
     private final HudBuffer hudBuffer = new HudBuffer();
+    private long gradientLastUpdateNanos = -1L;
+    private float gradientAnimationOffset = 0.0F;
 
     private float hudX = DEFAULT_HUD_X;
     private float hudY = DEFAULT_HUD_Y;
@@ -89,16 +120,6 @@ public abstract class RectHudModule extends Module {
         this(name, visibleName, ModuleCategory.HUD, defaultHudX, defaultHudY, defaultHudScale);
     }
 
-    /**
-     * Category-customisable variant of the standard {@code RectHudModule}
-     * constructor. Modules that want to inherit the full drag / resize /
-     * background / blur pipeline but show up in a non-HUD tab of the
-     * client menu (e.g. {@code OTHER}) should call this overload and pass
-     * the desired {@link ModuleCategory}. All other behaviour matches the
-     * 5-arg constructor exactly - the shared body is delegated, so any
-     * future change to the inherited setting wiring only needs to be
-     * applied here.
-     */
     protected RectHudModule(String name, String visibleName, ModuleCategory category, float defaultHudX, float defaultHudY, float defaultHudScale) {
         super(name, visibleName, category, true, false);
         this.defaultHudX = defaultHudX;
@@ -114,8 +135,15 @@ public abstract class RectHudModule extends Module {
         backgroundPreset.setFullWidth(true);
         colorBrightness.setFullWidth(true);
         backgroundOpacity.setFullWidth(true);
+        customBackgroundColor.setFullWidth(true);
+        gradientStartColor.setFullWidth(true);
+        gradientEndColor.setFullWidth(true);
+        gradientSpeed.setFullWidth(true);
+        gradientDirection.setFullWidth(true);
         backgroundBlurRadius.setFullWidth(true);
-        setup(mainSection, textShadow, background, showBrackets, colorSection, backgroundPreset, colorBrightness, backgroundOpacity, backgroundBlurRadius);
+
+        setup(mainSection, textShadow, background, showBrackets, colorSection, backgroundPreset, colorBrightness, backgroundOpacity,
+                customBackgroundColor, gradientStartColor, gradientEndColor, gradientSpeed, gradientDirection, backgroundBlurRadius);
     }
 
     public float getHudX() {
@@ -140,11 +168,6 @@ public abstract class RectHudModule extends Module {
         return hudScale;
     }
 
-    /**
-     * Visual scale shared by every rectangular HUD.  Keeping the stored value
-     * independent preserves existing configs: x1.00 is now rendered at the
-     * former x2.00 size, while the former x1.00 look is selected with x0.50.
-     */
     public float getRenderHudScale() {
         return hudScale * HudScaleLimits.RENDER_MULTIPLIER;
     }
@@ -166,21 +189,13 @@ public abstract class RectHudModule extends Module {
         return hudBuffer;
     }
 
-    /**
-     * Whether this HUD currently renders a live blur backdrop. Used by the
-     * HUD batching to force unlimited refresh, since a throttled blur would
-     * freeze the world behind it between refreshes.
-     */
     public boolean hasActiveBackgroundBlur() {
-        // Float comparison instead of getInt(): the renderRectHud blur
-        // gate uses backgroundBlurRadius.getValue() > 0.0f, and the two
-        // paths MUST agree on whether a HUD is blur-active. A truncated
-        // getInt() would round 0 < r < 1 down to 0 and falsely report
-        // "no blur" here while the renderer still spawns the blur pass
-        // - which would then land the HUD in BOTH the cached FBO (Pass 1
-        // thinks no blur) AND the live blur pass (Pass 2 still draws),
-        // producing the imprinted-HUD ghost.
+
         return background.isValue() && backgroundBlurRadius.getValue() > 0.0f;
+    }
+
+    public boolean hasActiveAnimatedBackground() {
+        return background.isValue() && isGradientPreset() && gradientSpeed.getValue() > 0.0F;
     }
 
     public void resetHudTransform() {
@@ -232,6 +247,12 @@ public abstract class RectHudModule extends Module {
         if (isVanillaPreset()) {
             return client.options.getTextBackgroundColor(0.5F);
         }
+        if (isCustomColorPreset()) {
+            return applyColorOptions(customBackgroundColor.getColor());
+        }
+        if (isGradientPreset()) {
+            return getResolvedGradientStartColor();
+        }
         var palette = MenuPalettes.byName(backgroundPreset.getSelected());
         int presetColor = adjustBrightness(palette.chipActive(), colorBrightness.getValue() / 100.0f);
         int alpha = MathHelper.clamp(Math.round((backgroundOpacity.getValue() / 100.0f) * 255.0f), 0, 255);
@@ -240,6 +261,87 @@ public abstract class RectHudModule extends Module {
 
     protected boolean isVanillaPreset() {
         return "Vanilla".equalsIgnoreCase(backgroundPreset.getSelected());
+    }
+
+    public boolean isCustomColorPreset() {
+        return "Custom Color".equalsIgnoreCase(backgroundPreset.getSelected());
+    }
+
+    public boolean isGradientPreset() {
+        return "Gradient".equalsIgnoreCase(backgroundPreset.getSelected());
+    }
+
+    public int getResolvedGradientStartColor() {
+        return applyColorOptions(gradientStartColor.getColor());
+    }
+
+    public int getResolvedGradientEndColor() {
+        return applyColorOptions(gradientEndColor.getColor());
+    }
+
+    public String getGradientDirection() {
+        return gradientDirection.getSelected();
+    }
+
+    public float getGradientAnimationOffset(long nowMs) {
+        long nowNanos = System.nanoTime();
+        if (gradientLastUpdateNanos < 0L) {
+            gradientLastUpdateNanos = nowNanos;
+            return gradientAnimationOffset;
+        }
+        float deltaSeconds = MathHelper.clamp((nowNanos - gradientLastUpdateNanos) / 1_000_000_000.0F, 0.0F, 0.10F);
+        gradientLastUpdateNanos = nowNanos;
+        float speed = Math.max(0.0F, gradientSpeed.getValue());
+        gradientAnimationOffset = (gradientAnimationOffset + deltaSeconds * speed * 0.5F) % 1.0F;
+        return gradientAnimationOffset;
+    }
+
+    public void writeGradientColors(int[] colors, long nowMs) {
+        if (colors == null || colors.length < 4) {
+            return;
+        }
+        if (!isGradientPreset()) {
+            int color = getResolvedBackgroundColor(MinecraftClient.getInstance());
+            colors[0] = color;
+            colors[1] = color;
+            colors[2] = color;
+            colors[3] = color;
+            return;
+        }
+
+        int first = getResolvedGradientStartColor();
+        int second = getResolvedGradientEndColor();
+        int midpoint = blend(first, second, 0.5F);
+        switch (gradientDirection.getSelected()) {
+            case "Right to Left" -> setGradientCorners(colors, second, second, first, first);
+            case "Top to Bottom" -> setGradientCorners(colors, first, second, first, second);
+            case "Bottom to Top" -> setGradientCorners(colors, second, first, second, first);
+            case "Diagonal Down" -> setGradientCorners(colors, first, midpoint, midpoint, second);
+            case "Diagonal Up" -> setGradientCorners(colors, midpoint, second, first, midpoint);
+            case "Pulse" -> setGradientCorners(colors, first, first, first, first);
+            default -> setGradientCorners(colors, first, first, second, second);
+        }
+    }
+
+    private int applyColorOptions(int color) {
+        int alpha = MathHelper.clamp(Math.round(((color >>> 24) & 0xFF) * (backgroundOpacity.getValue() / 100.0F)), 0, 255);
+        return (alpha << 24) | (color & 0x00FFFFFF);
+    }
+
+    private static void setGradientCorners(int[] colors, int topLeft, int bottomLeft, int topRight, int bottomRight) {
+        colors[0] = topLeft;
+        colors[1] = bottomLeft;
+        colors[2] = topRight;
+        colors[3] = bottomRight;
+    }
+
+    private static int blend(int first, int second, float progress) {
+        float t = MathHelper.clamp(progress, 0.0F, 1.0F);
+        int a = Math.round(((first >>> 24) & 0xFF) + (((second >>> 24) & 0xFF) - ((first >>> 24) & 0xFF)) * t);
+        int r = Math.round(((first >>> 16) & 0xFF) + (((second >>> 16) & 0xFF) - ((first >>> 16) & 0xFF)) * t);
+        int g = Math.round(((first >>> 8) & 0xFF) + (((second >>> 8) & 0xFF) - ((first >>> 8) & 0xFF)) * t);
+        int b = Math.round((first & 0xFF) + ((second & 0xFF) - (first & 0xFF)) * t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     private static int adjustBrightness(int color, float multiplier) {

@@ -74,9 +74,7 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         float textWidth = Math.max(12.0F, toggleX - textX - 8.0F);
 
         ItemStack previewStack = setting.createPreviewStack();
-        // drawItem is deferred in 1.21.11. The parent mirrors its text scissor
-        // into DrawContext, so this item render state captures the exact same
-        // clip rectangle and can be partially clipped instead of popping out.
+
         if (!previewStack.isEmpty()) {
             renderPreviewItem(context, previewStack, iconX, iconY);
         } else {
@@ -100,10 +98,7 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
                 MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha),
                 enabledProgress * 0.44F + hoverProgress * 0.08F
         );
-        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
-        // draws through a 4x4 MatrixStack, so promote the pose once per row.
-        // The MSDF "+" above already takes the promoted Matrix4f directly.
-        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));
         titleFont.drawString(textPose, title, textX, centeredTextY(titleFont, title, y, ROW_HEIGHT), titleColor);

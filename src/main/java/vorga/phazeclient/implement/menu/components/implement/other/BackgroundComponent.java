@@ -72,15 +72,10 @@ public class BackgroundComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Apply the language selection from Theme each frame so a
-        // mid-session locale flip repaints in the new strings without
-        // a restart.
+
         Theme.getInstance().syncLanguage();
         Matrix3x2fStack matrix = context.getMatrices();
-        // Sidebar is hidden while the CONFIGS view is active so the
-        // configs list spans the full width of the menu's content
-        // pane. Keep the same border / background panels otherwise so
-        // the menu chrome stays identical with or without the sidebar.
+
         boolean configsOpen = MenuScreen.INSTANCE.isConfigsViewOpen();
         boolean cosmeticsOpen = MenuScreen.INSTANCE.isCosmeticsViewOpen();
         boolean fullWidth = configsOpen || cosmeticsOpen;
@@ -107,7 +102,7 @@ public class BackgroundComponent extends AbstractComponent {
             rectangle.render(ShapeProperties.create(matrix, x + SIDEBAR_WIDTH, y + HEADER_HEIGHT + 1.0F, 1.0F, height - HEADER_HEIGHT - 2.0F)
                     .color(applyGlobalAlpha(MenuStyle.BORDER)).build());
         } else {
-            // Full-width content pane (no sidebar separator).
+
             rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT + 1.0F, width - 2.0F, height - HEADER_HEIGHT - 2.0F)
                     .round(0, 0, 7, 7).color(applyGlobalAlpha(MenuStyle.PANEL_CONTENT)).build());
         }
@@ -135,12 +130,7 @@ public class BackgroundComponent extends AbstractComponent {
                 totalTabsWidth += TOP_TAB_GAP;
             }
         }
-        // Reserve space for the import-key "+" button only while
-        // the CONFIGS tab is active. The plus is irrelevant on the
-        // MODS / SETTINGS screens and the user explicitly asked for
-        // it to be hidden there. Skipping the reservation when it's
-        // not shown lets the three-tab strip recentre on the menu's
-        // horizontal centreline.
+
         if (configsActive) {
             totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
         }
@@ -149,10 +139,7 @@ public class BackgroundComponent extends AbstractComponent {
         for (int i = 0; i < labels.length; i++) {
             tabsX += drawTopTab(context, mouseX, mouseY, tabsX, labels[i], active[i]) + TOP_TAB_GAP;
         }
-        // "+" - opens the import-from-key modal. Only rendered (and
-        // only clickable) while CONFIGS is the active top-tab so it
-        // doesn't sit there as a dead chip on the MODS / SETTINGS
-        // screens.
+
         if (configsActive) {
             drawImportPlus(context, mouseX, mouseY, tabsX);
         }
@@ -295,11 +282,6 @@ public class BackgroundComponent extends AbstractComponent {
                     0.0F
             );
 
-            // Always show the delete icon - even on "default" and on
-            // the active config. ConfigManager.deleteConfig handles
-            // both: default is a regular file that can be recreated
-            // by the next save, and deleting the active config
-            // auto-switches to the next available config.
             {
                 float iconSize = CONFIG_DELETE_ICON_SIZE;
                 float deleteX = deleteSectionX(rowX, rowWidth) + (CONFIG_DELETE_WIDTH - iconSize) / 2.0F;
@@ -309,7 +291,6 @@ public class BackgroundComponent extends AbstractComponent {
                 renderConfigCross(matrix, deleteX, iconY, iconSize, applyGlobalAlpha(deleteColor));
             }
 
-            // Render editing field if this config is being edited
             if (editingConfigName != null && editingConfigName.equals(config)) {
                 float textWidth = MsdfFonts.bold().getWidth(editingText + "_", CONFIG_TEXT_SIZE);
                 rectangle.render(ShapeProperties.create(matrix, rowX, rowY, Math.max(rowWidth, textWidth + CONFIG_TEXT_PADDING * 2), CONFIG_ROW_HEIGHT)
@@ -335,8 +316,7 @@ public class BackgroundComponent extends AbstractComponent {
         float footerX = x + 4;
         float footerWidth = SIDEBAR_WIDTH - 8;
         float buttonGap = 4.0F;
-        
-        // NEW CONFIG button (top button in footer)
+
         float newConfigY = footerStartY() - 5.0F - FOOTER_BUTTON_HEIGHT - buttonGap;
         boolean newConfigHovered = MathUtil.isHovered(mouseX, mouseY, footerX, newConfigY, footerWidth, FOOTER_BUTTON_HEIGHT);
         saveConfigHoverAnimation.setDirection(newConfigHovered ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -357,8 +337,7 @@ public class BackgroundComponent extends AbstractComponent {
                 MenuStyle.centerMsdfTextY(FOOTER_TEXT_SIZE, newConfigY, FOOTER_BUTTON_HEIGHT),
                 0.0F
         );
-        
-        // EDIT HUD LAYOUT button (bottom button in footer)
+
         float editHudY = footerStartY() - 5.0F;
         boolean editHovered = MathUtil.isHovered(mouseX, mouseY, footerX, editHudY, footerWidth, FOOTER_BUTTON_HEIGHT);
         editHudHoverAnimation.setDirection(editHovered ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -391,10 +370,6 @@ public class BackgroundComponent extends AbstractComponent {
             return true;
         }
 
-        // While CONFIGS view is open the sidebar isn't rendered, so
-        // its click handlers (config rows, NEW CONFIG, EDIT HUD)
-        // would react to clicks in the now full-width content pane
-        // where they have no visible widgets. Skip them entirely.
         if (MenuScreen.INSTANCE.isConfigsViewOpen() || MenuScreen.INSTANCE.isCosmeticsViewOpen()) {
             return false;
         }
@@ -402,24 +377,20 @@ public class BackgroundComponent extends AbstractComponent {
         float footerX = x + 4.0F;
         float footerWidth = SIDEBAR_WIDTH - 8.0F;
         float buttonGap = 4.0F;
-        
-        // NEW CONFIG button click (top button in footer)
+
         float newConfigY = footerStartY() - 5.0F - FOOTER_BUTTON_HEIGHT - buttonGap;
         if (MathUtil.isHovered(mouseX, mouseY, footerX, newConfigY, footerWidth, FOOTER_BUTTON_HEIGHT)) {
             playButtonClickSound();
             configManager.createNewConfig();
             return true;
         }
-        
-        // EDIT HUD LAYOUT button click (bottom button in footer)
+
         float editHudY = footerStartY() - 5.0F;
         if (MathUtil.isHovered(mouseX, mouseY, footerX, editHudY, footerWidth, FOOTER_BUTTON_HEIGHT)) {
             playButtonClickSound();
             MinecraftClient client = MinecraftClient.getInstance();
             if (client != null && client.player != null && client.world != null) {
-                // 1.21.11: ChatScreen(String, boolean draft) - passing
-                // false keeps the old single-arg behaviour (no restored
-                // draft text).
+
                 client.setScreen(new ChatScreen("", false));
             }
             return true;
@@ -435,11 +406,7 @@ public class BackgroundComponent extends AbstractComponent {
             }
 
             if (isDeleteHovered(mouseX, mouseY, rowY)) {
-                // Default is now a regular file (no special-cased
-                // redirect), and deleteConfig safely auto-switches to
-                // the next available config when the user nukes the
-                // active one. Both restrictions removed - if the user
-                // wants their config gone, give it to them.
+
                 playButtonClickSound();
                 configManager.deleteConfig(config);
                 return true;
@@ -448,7 +415,7 @@ public class BackgroundComponent extends AbstractComponent {
             if (MathUtil.isHovered(mouseX, mouseY, rowX, rowY, rowWidth, CONFIG_ROW_HEIGHT)) {
                 long currentTime = System.currentTimeMillis();
                 if (config.equals(lastClickedConfig) && (currentTime - lastClickTime) < 500) {
-                    // Double click - start editing
+
                     if (!config.equalsIgnoreCase("default")) {
                         editingConfigName = config;
                         editingText = config;
@@ -456,9 +423,9 @@ public class BackgroundComponent extends AbstractComponent {
                         lastClickTime = 0;
                     }
                 } else {
-                    // Single click - load config
+
                     if (editingConfigName != null) {
-                        // Save the edited config name before switching
+
                         if (!editingText.isEmpty() && !editingText.equals(editingConfigName)) {
                             configManager.renameConfig(editingConfigName, editingText);
                         }
@@ -476,7 +443,6 @@ public class BackgroundComponent extends AbstractComponent {
             rowY += CONFIG_ROW_HEIGHT + CONFIG_ROW_GAP;
         }
 
-        // Click outside - stop editing
         if (editingConfigName != null) {
             editingConfigName = null;
             editingText = "";
@@ -489,7 +455,7 @@ public class BackgroundComponent extends AbstractComponent {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (editingConfigName != null) {
             if (keyCode == GLFW.GLFW_KEY_ENTER) {
-                // Save and finish editing
+
                 if (!editingText.isEmpty() && !editingText.equals(editingConfigName)) {
                     configManager.renameConfig(editingConfigName, editingText);
                 }
@@ -497,12 +463,12 @@ public class BackgroundComponent extends AbstractComponent {
                 editingText = "";
                 return true;
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                // Cancel editing
+
                 editingConfigName = null;
                 editingText = "";
                 return true;
             } else if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-                // Delete last character
+
                 if (!editingText.isEmpty()) {
                     editingText = editingText.substring(0, editingText.length() - 1);
                 }
@@ -515,7 +481,7 @@ public class BackgroundComponent extends AbstractComponent {
     @Override
     public boolean charTyped(char chr, int modifiers) {
         if (editingConfigName != null) {
-            // Add character if valid
+
             if (Character.isLetterOrDigit(chr) || chr == '_' || chr == '-') {
                 editingText += chr;
             }
@@ -607,10 +573,7 @@ public class BackgroundComponent extends AbstractComponent {
                 totalTabsWidth += TOP_TAB_GAP;
             }
         }
-        // Match the offset reservation in renderHeader: the import
-        // plus only contributes to the strip's width when CONFIGS is
-        // active. Otherwise the hit-test would read tabs at the
-        // wrong x-positions.
+
         if (configsActive) {
             totalTabsWidth += TOP_TAB_GAP + TOP_TAB_HEIGHT;
         }
@@ -637,7 +600,7 @@ public class BackgroundComponent extends AbstractComponent {
             }
             tabsX += tabWidth + TOP_TAB_GAP;
         }
-        // Plus button - only clickable when CONFIGS is open.
+
         if (configsActive
                 && MathUtil.isHovered(mouseX, mouseY, tabsX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)) {
             playButtonClickSound();
@@ -677,12 +640,6 @@ public class BackgroundComponent extends AbstractComponent {
         return false;
     }
 
-    /**
-     * Renders the import-from-key "+" button. Square chip the same
-     * height as the top tabs, sitting one TOP_TAB_GAP after the
-     * CONFIGS tab. Hover animates a soft outline glow so the hit
-     * target reads even when there's no label text in the chip.
-     */
     private void drawImportPlus(DrawContext context, int mouseX, int mouseY, float tabX) {
         Matrix3x2fStack matrix = context.getMatrices();
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
@@ -692,11 +649,6 @@ public class BackgroundComponent extends AbstractComponent {
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float hoverProgress = hoverAnimation.getOutputFloat();
 
-        // Match the visual styling of the regular top-tabs so the
-        // plus chip reads as a sibling of MODS / SETTINGS / CONFIGS
-        // rather than a floating outline. Light-tint base fill +
-        // visible border outline + brighter on hover - identical
-        // weight curve to drawTopTab.
         int baseTabColor = MenuStyle.PANEL_CHIP;
         int hoverTabColor = MenuStyle.mix(baseTabColor, 0xFFFFFFFF, 0.08F);
         int tabColor = MenuStyle.mix(baseTabColor, hoverTabColor, hoverProgress);
@@ -709,38 +661,17 @@ public class BackgroundComponent extends AbstractComponent {
         int hoverIconColor = MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.55F);
         int iconColor = MenuStyle.mix(baseIconColor, hoverIconColor, hoverProgress);
 
-        // Draw the chip outline first - matches drawTopTab styling.
         rectangle.render(ShapeProperties.create(matrix, tabX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT)
                 .round(2).thickness(3.0F)
                 .outlineColor(applyGlobalAlpha(borderColor))
                 .color(MenuStyle.withAlpha(tabColor, 0))
                 .build());
 
-        // Cross icon centred on the chip. Image's render path
-        // pivots around (x+width, y) of the supplied rect at a
-        // default 90° rotation, so to land the centre of the icon
-        // on the chip's centre we compensate by translating to the
-        // chip centre, rotating, then translating back. We push
-        // through the matrix stack so the bookkeeping is local to
-        // this draw call.
         float iconSize = TOP_TAB_HEIGHT * 0.50F;
         float chipCx = tabX + TOP_TAB_HEIGHT * 0.5F;
         float chipCy = tabY + TOP_TAB_HEIGHT * 0.5F;
         matrix.pushMatrix();
-        // Translate-pivot-translate pattern: anchor the rotation at
-        // the chip centre. Image internally rotates +90° around
-        // its rect's (x+width, y) corner; combined with the matrix
-        // rotation here the net effect lands the cross glyph
-        // upright (vertical+horizontal bars) and centred on the
-        // chip. The iconSize square is drawn with its top-left at
-        // (chipCx - iconSize/2, chipCy - iconSize/2) so after the
-        // 90° internal rotation around (x+width, y) it covers the
-        // chip-centred area.
-        // 1.21.11: the GUI pose is a Matrix3x2fStack, so the old
-        // MatrixStack.multiply(RotationAxis.POSITIVE_Z.rotationDegrees)
-        // is gone. Matrix3x2f.rotateAbout(radians, cx, cy) is exactly
-        // translate(+c) * rotate * translate(-c) about the same +Z
-        // axis, so the resulting pose is identical.
+
         matrix.rotateAbout((float) Math.toRadians(45.0F), chipCx, chipCy);
         image.setTexture("phaze:textures/menu/cross.png")
                 .render(ShapeProperties.create(matrix,
@@ -751,7 +682,6 @@ public class BackgroundComponent extends AbstractComponent {
         matrix.popMatrix();
     }
 
-    // 1.21.11: GUI poses are org.joml.Matrix3x2fc now, not MatrixStack.
     private void renderConfigCross(Matrix3x2fc matrix, float x, float y, float size, int color) {
         net.minecraft.util.Identifier phaze$tex = Identifier.of("phaze", "textures/menu/cross.png");
 
@@ -761,9 +691,7 @@ public class BackgroundComponent extends AbstractComponent {
         buffer.vertex(positionMatrix, x, y + size, 0.0F).texture(0.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + size, y + size, 0.0F).texture(1.0F, 1.0F).color(color);
         buffer.vertex(positionMatrix, x + size, y, 0.0F).texture(1.0F, 0.0F).color(color);
-        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-        // immediate draw runs outside the GUI pass and must install the GUI
-        // ortho projection (and its z = -11000 model-view) itself.
+
         vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());

@@ -19,15 +19,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 
-/**
- * Captures the camera history used by the motion-blur reprojection pass.
- *
- * <p>This is deliberately separate from the terrain mixins: it is renderer
- * agnostic and therefore remains valid with Sodium.  The original 1.21.4
- * implementation was missing from the 1.21.11 port, leaving the post shader
- * with zero matrices; dividing by their zero W component produced a black
- * frame.
- */
 @Mixin(WorldRenderer.class)
 public abstract class WorldRendererMotionBlurMixin {
     @Shadow @Final private MinecraftClient client;
@@ -58,8 +49,7 @@ public abstract class WorldRendererMotionBlurMixin {
         phaze$currentProjection.set(client.gameRenderer.getBasicProjectionMatrix(fov));
 
         Vec3d cameraPosition = camera.getCameraPos();
-        // Keep the values close to zero exactly as the 1.21.4 implementation
-        // did; this preserves floating-point precision far from spawn.
+
         phaze$currentCameraPosition.set(
                 (float) (cameraPosition.x % 30000.0),
                 (float) (cameraPosition.y % 30000.0),

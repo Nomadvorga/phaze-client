@@ -15,11 +15,6 @@ import org.joml.Matrix4f;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-/**
- * Shared badge helpers for marking known Phaze users in vanilla text
- * surfaces (chat, tab list, world nametags) without rewriting the
- * actual glyph stream into a custom font/icon character.
- */
 public final class PhazeBadgeUtil {
     public static final Identifier BADGE_ICON =
             Identifier.of("phaze", "textures/gui/phaze_user_badge.png");
@@ -250,8 +245,7 @@ public final class PhazeBadgeUtil {
     }
 
     private static RenderLayer resolveTextRenderLayer(TextRenderer.TextLayerType layerType, boolean codeBadge) {
-        // 1.21.11: the RenderLayer static factories moved to net.minecraft.client.render.RenderLayers
-        // (getTextX -> textX). Same memoized instances, same blend/depth semantics.
+
         return switch (layerType) {
             case SEE_THROUGH -> RenderLayers.textSeeThrough(badgeIcon(codeBadge));
             case POLYGON_OFFSET -> RenderLayers.textPolygonOffset(badgeIcon(codeBadge));
