@@ -44,16 +44,10 @@ public class WindowManager extends AbstractComponent {
         return false;
     }
 
-
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         List<AbstractWindow> toRemove = new ArrayList<>();
 
-        // Snapshot the menu with its content drawn but before any window is
-        // painted. Window backdrops blur from this, so a color picker's
-        // background continues the menu's blur instead of showing the world
-        // straight through it - and because the windows themselves are not in
-        // the snapshot, none of them can blur its own output.
         if (!windows.isEmpty()) {
             vorga.phazeclient.api.system.shape.implement.Blur.INSTANCE.captureMenuOverlayFrame();
         }
@@ -69,7 +63,7 @@ public class WindowManager extends AbstractComponent {
 
         renderWindowHoverDescriptions(context, mouseX, mouseY, delta);
     }
-    
+
     private void renderWindowHoverDescriptions(DrawContext context, int mouseX, int mouseY, float delta) {
         MenuScreen menuScreen = MenuScreen.INSTANCE;
         ModuleDescriptionComponent descriptionComponent = menuScreen.getModuleDescriptionComponent();
@@ -90,8 +84,8 @@ public class WindowManager extends AbstractComponent {
             }
         }
     }
-    
-    private void handleWindowHoverDescriptions(AbstractWindow window, ModuleDescriptionComponent descriptionComponent, 
+
+    private void handleWindowHoverDescriptions(AbstractWindow window, ModuleDescriptionComponent descriptionComponent,
                                             int mouseX, int mouseY, DrawContext context, float delta) {
         if (window instanceof GroupWindow) {
             GroupWindow groupWindow =
@@ -124,7 +118,7 @@ public class WindowManager extends AbstractComponent {
 
         descriptionComponent.hide();
     }
-    
+
     private String getColorComponentDescription(AbstractComponent component) {
         String className = component.getClass().getSimpleName();
         switch (className) {
@@ -173,7 +167,6 @@ public class WindowManager extends AbstractComponent {
         return true;
     }
 
-
     @Override
     public boolean isHover(double mouseX, double mouseY) {
         windows.forEach(window -> window.isHovered(mouseX, mouseY));
@@ -185,7 +178,6 @@ public class WindowManager extends AbstractComponent {
         }
         return super.isHover(mouseX, mouseY);
     }
-
 
     @Override
     public boolean charTyped(char chr, int modifiers) {

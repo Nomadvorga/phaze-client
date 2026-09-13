@@ -48,10 +48,6 @@ public class SettingComponent extends AbstractComponent {
                 .color(MenuStyle.PANEL_CHIP)
                 .build());
 
-        // 1.21.11: the GUI pose is a 2D Matrix3x2fStack, so the old
-        // translate(center) / multiply(RotationAxis.POSITIVE_Z) / translate(-center)
-        // triple has no quaternion to apply. rotateAbout() is exactly that triple
-        // in one call - same Z rotation, same pivot - and it takes RADIANS.
         matrices.pushMatrix();
         matrices.rotateAbout((float) Math.toRadians(rotationAngle), centerX, centerY);
 
@@ -63,7 +59,6 @@ public class SettingComponent extends AbstractComponent {
 
         matrices.popMatrix();
     }
-
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {

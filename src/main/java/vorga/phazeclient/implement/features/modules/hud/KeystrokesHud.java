@@ -9,6 +9,7 @@ public final class KeystrokesHud extends RectHudModule {
 
     private KeystrokesHud() {
         super("keystrokes_hud", "Keystrokes", 22.0f, 218.0f, 1.0f);
+        setup(otherSection, cornerRounding);
     }
 
     @Override

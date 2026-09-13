@@ -17,7 +17,6 @@ import vorga.phazeclient.implement.cosmetics.CosmeticsState;
 import vorga.phazeclient.implement.cosmetics.CosmeticsSyncService;
 import vorga.phazeclient.implement.cosmetics.PreviewMarker;
 
-/** Hides the elytra mesh when it would clip through a back cosmetic. */
 @Mixin(ElytraFeatureRenderer.class)
 public abstract class ElytraFeatureRendererMixin {
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)

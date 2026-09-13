@@ -6,7 +6,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Client-only movement classifier with jitter filtering and stop hysteresis. */
 public final class PetMovementTracker {
     private static final double MOVE_PER_TICK_SQ = 0.02 * 0.02;
     private static final int STOP_AFTER_TICKS = 2;

@@ -4,33 +4,6 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
-/**
- * On-screen 3D miniature of the local player. Reuses vanilla's
- * {@code InventoryScreen.drawEntity} static helper for the actual
- * rendering so animations (walking / sneaking / item poses /
- * cape / ear / armor / glint) all work without re-implementing the
- * model layer pipeline.
- *
- * <h3>Mode</h3>
- * <ul>
- *   <li><b>Follow Mouse</b> - the model rotates to track the mouse
- *       cursor like the inventory portrait, so the user can see
- *       any side of their skin by hovering over the panel.</li>
- *   <li><b>Auto Rotate</b> - the model spins on its body axis
- *       continuously at a fixed speed - good for showcase /
- *       streamer overlays where there's no mouse input.</li>
- *   <li><b>Static</b> - locked facing the camera; least
- *       distracting if the user just wants a "this is my skin"
- *       indicator without motion.</li>
- * </ul>
- *
- * <h3>Why a HUD module not a screen overlay</h3>
- * Putting it in the HUD pipeline gets us drag/resize/scale for
- * free and keeps the player model visible in-world (not just in
- * inventory). The renderer mixin paints at TAIL of InGameHud
- * render, so nothing the user does to the inventory affects the
- * HUD copy.
- */
 public final class PlayerModelHud extends RectHudModule {
     private static final PlayerModelHud INSTANCE = new PlayerModelHud();
     private static final float BASE_MODEL_SIZE = 30.0F;
@@ -50,8 +23,7 @@ public final class PlayerModelHud extends RectHudModule {
     ).range(10, 360).step(5).setValue(60)
             .visible(() -> "Auto Rotate".equalsIgnoreCase(mode.getSelected()));
     private PlayerModelHud() {
-        // Footprint roughly 60x100 px (model's drawEntity bounds at
-        // size=30); start at the top-left so the user can drag.
+
         super("player_model_hud", "Player Model", 22.0F, 22.0F, 1.5F);
         background.setVisible(() -> false);
         backgroundPreset.setVisible(() -> false);
@@ -64,7 +36,7 @@ public final class PlayerModelHud extends RectHudModule {
         colorSection.setVisible(() -> false);
         mode.setFullWidth(true);
         rotationSpeed.setFullWidth(true);
-        setup(otherSection, mode, modelSize, rotationSpeed);
+        setup(otherSection, mode, modelSize, rotationSpeed, cornerRounding);
     }
 
     public static PlayerModelHud getInstance() {

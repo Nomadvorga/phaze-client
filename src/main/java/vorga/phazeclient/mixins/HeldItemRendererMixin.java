@@ -15,42 +15,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.features.modules.other.ChangeHand;
 
-/**
- * Consolidated {@link HeldItemRenderer} mixin: hand tweaks (offset
- * + scale on first-person items) and No-Hand-Sway (suppresses the
- * camera-following rotation). Different injection points / methods,
- * but same target class — merged for fewer mixin files.
- *
- * <h3>Hand tweaks</h3>
- * Inject at the {@code INVOKE} of {@code renderItem(...)} inside
- * {@code renderFirstPersonItem}, BEFORE shift. By that point vanilla
- * has already pushed its per-item transforms (equip offset, swing,
- * use-action) so {@code matrices.translate + scale} only mutates
- * the item mesh, not its anchor position. X is sign-corrected by
- * the active main arm so a left-handed flip mirrors the user-
- * configured offset symmetrically.
- *
- * <h3>No hand sway</h3>
- * MixinExtras' {@link WrapWithCondition} on the
- * {@code matrices.multiply(Quaternionfc)} calls inside the outer
- * {@code renderItem(F,MatrixStack,OrderedRenderCommandQueue,CPE,I)V} overload. Returning
- * {@code false} suppresses both quaternion multiplies (the pitch
- * and yaw lag rotations); returning {@code true} lets vanilla run
- * unchanged.
- *
- * <h3>Attribution</h3>
- * The no-sway part is adapted from {@code logwan.nohandsway.mixin.NoSwayMixin}
- * by O3kar (Apache License 2.0). See {@code THIRD_PARTY_LICENSES.md}
- * at the project root.
- */
 @Mixin(HeldItemRenderer.class)
 public abstract class HeldItemRendererMixin {
 
-    // 1.21.11: renderFirstPersonItem's VertexConsumerProvider param became an
-    // OrderedRenderCommandQueue, and the renderItem overload it calls lost the
-    // `boolean leftHanded` arg while ModelTransformationMode was renamed to
-    // ItemDisplayContext. Both the injection point descriptor and the handler
-    // parameter list are updated to the real 1.21.11 shapes.
     @Inject(
             method = "renderFirstPersonItem(Lnet/minecraft/client/network/AbstractClientPlayerEntity;FFLnet/minecraft/util/Hand;FLnet/minecraft/item/ItemStack;FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;I)V",
             at = @At(
@@ -76,11 +43,6 @@ public abstract class HeldItemRendererMixin {
             return;
         }
 
-        // Mirror X when player's main arm has been flipped from
-        // vanilla default (Right). Vanilla's per-item translates
-        // already mirror via (arm == Right ? 1 : -1); without this
-        // sign-match the user's X slider would point the wrong way
-        // after a ChangeHand flip.
         float xSign = (player.getMainArm() == Arm.LEFT) ? -1.0f : 1.0f;
 
         boolean isMain = hand == Hand.MAIN_HAND;
@@ -109,11 +71,6 @@ public abstract class HeldItemRendererMixin {
         }
     }
 
-    // 1.21.11: the outer renderItem overload takes an OrderedRenderCommandQueue
-    // instead of VertexConsumerProvider$Immediate, and MatrixStack.multiply is now
-    // declared against the Quaternionfc interface rather than Quaternionf.
-    // Still exactly two multiply(Quaternionfc) call sites in that method (the pitch
-    // and yaw lag rotations), so the un-ordinal'd wrap keeps its original meaning.
     @WrapWithCondition(
             method = "renderItem(FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/network/ClientPlayerEntity;I)V",
             at = @At(

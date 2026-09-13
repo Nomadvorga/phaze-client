@@ -2,7 +2,6 @@ package vorga.phazeclient.implement.cosmetics;
 
 import org.jetbrains.annotations.Nullable;
 
-/** Cosmetic data attached to a deferred GUI player render state. */
 public interface PreviewMarker {
     @Nullable String phaze$previewSelection();
 

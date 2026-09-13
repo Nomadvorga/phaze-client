@@ -30,27 +30,6 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * "CONFIGS" tab content. The sidebar is hidden by {@code MenuScreen}
- * while this view is open, so the row list spans the full menu width
- * minus a tiny margin. No header / back-arrow / title - the user told
- * us those duplicated information already shown in the top tabs.
- *
- * <p>Each row carries:
- * <ul>
- *   <li>Top-left: {@code dd.MM HH:mm} timestamp from the file's
- *       last-modified time. Cached when the view opens so we don't
- *       hammer the disk on every frame.</li>
- *   <li>Bottom-left: the config name + author tag. Author is the
- *       local Minecraft username (server-authoritative tagging will
- *       come when accounts ship).</li>
- *   <li>Right: a vertical three-dot kebab. Clicking it spawns a
- *       small popup at the click point with three actions
- *       (Поделиться / Переименовать / Удалить).</li>
- * </ul>
- *
- * <p>Click on the row body activates that config (loads it).
- */
 public class ConfigsViewComponent extends AbstractComponent {
 
     private static final float ROW_HEIGHT = 40.0F;
@@ -60,59 +39,33 @@ public class ConfigsViewComponent extends AbstractComponent {
     private static final float TIMESTAMP_SIZE = 5.6F;
     private static final float NAME_SIZE = 7.0F;
     private static final float META_SIZE = 5.6F;
-    /** Single inline action button. Three of them stack right-edge:
-     *  rename, share, delete. Hover-anim per (config, kind) so each
-     *  button glows independently when the cursor lands on it. */
+
     private static final float ACTION_ICON_SIZE = 11.0F;
     private static final float ACTION_BUTTON_W = 22.0F;
     private static final float ACTION_BUTTON_GAP = 2.0F;
     private static final float ACTIONS_TRAIL_PAD = 6.0F;
     private static final float DOT_SIZE = 1.6F;
     private static final float DOT_GAP = 1.4F;
-    /** Inline separator between config name and author label.
-     *  Drawn procedurally as a circle so its visual size and text
-     *  spacing stay exact instead of depending on dot.png's large
-     *  transparent padding. */
+
     private static final float NAME_DOT_SIZE = (16.7F * 44.0F / 256.0F) / 1.1F;
     private static final float NAME_DOT_TEXT_GAP = 2.0F;
-    /** Size of the inline meta icons (size, clock for last-modified,
-     *  cloud for imported). The cloud / clock icons are visually
-     *  lighter than the size icon, so they're rendered larger to
-     *  read at the same weight in the strip. */
+
     private static final float META_ICON_SIZE = 6.5F;
     private static final float META_ICON_SIZE_LARGE = 7.8F;
     private static final float META_ICON_GAP = 3.5F;
     private static final float META_GROUP_GAP = 12.0F;
 
-    /** Top + bottom inset from the menu's content area. Keeps the
-     *  list out from under the top tabs and the bottom blur frame. */
     private static final float TOP_MARGIN = 50.0F;
     private static final float BOTTOM_MARGIN = 16.0F;
     private static final float SIDE_MARGIN = 12.0F;
 
     private final Animation openAnim = new DecelerateAnimation().setMs(1).setValue(1);
     private final Map<String, Animation> rowHoverAnims = new HashMap<>();
-    /** Hover animations per (config name + action kind) so each
-     *  inline icon button (rename / share / delete) animates
-     *  independently. Key format: {@code <name>::<kind>}. */
+
     private final Map<String, Animation> actionHoverAnims = new HashMap<>();
-    /** Per-row "is this the active config?" animation. Tweens the
-     *  outline colour from the standard BORDER to the green-tinted
-     *  CHIP_ACTIVE mix when a config becomes active and back when
-     *  another config takes its place. Same approach the module
-     *  card uses for its enable/disable outline pulse, so the two
-     *  surfaces feel like one design language. */
+
     private final Map<String, Animation> activeAnims = new HashMap<>();
 
-    /** Popup attached to the row whose kebab the user clicked.
-     *  Lives until its fade-out animation finishes so close-clicks
-     *  visually trail off instead of snapping.
-     *
-     *  <p>Kept around because the share / rename modals are still
-     *  spawned via the same constants the popup formerly used. The
-     *  popup itself is no longer rendered or instantiated - the row
-     *  shows three inline icon buttons (rename / share / delete)
-     *  instead. */
     private KebabPopup popup = null;
 
     private boolean open = false;
@@ -179,27 +132,14 @@ public class ConfigsViewComponent extends AbstractComponent {
         nextRelativeRefreshMs = now + 1000L;
     }
 
-    /**
-     * Hook the import modal calls after a successful download. Just
-     * a thin wrapper around {@link #refreshMetadataCaches} that the menu
-     * can pass as a {@code Runnable} - keeps the import path from
-     * having to know about ConfigsView's internals.
-     */
     public void refreshAfterImport() {
         refreshMetadataCaches();
     }
 
-    /* ============================================================ */
-    /* render                                                       */
-    /* ============================================================ */
-
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         if (!open && openAnim.getOutputFloat() <= 0.001F) return;
-        // Combine the menu's open/close fade (globalAlpha, set by
-        // MenuScreen each frame) with our own configs-view open/close
-        // fade so the rows AND the kebab popup softly fade in/out
-        // alongside the rest of the GUI instead of snapping.
+
         float fadeAlpha = openAnim.getOutputFloat() * globalAlpha;
         refreshRelativeModifiedCache();
 
@@ -210,8 +150,6 @@ public class ConfigsViewComponent extends AbstractComponent {
 
         renderRows(context, mouseX, mouseY, listX, listTop, listW, listBottom, fadeAlpha);
 
-        // Drop the popup once its fade-out is fully done so we don't
-        // keep dispatching hover work to a transparent panel.
         if (popup != null) {
             popup.render(context, mouseX, mouseY, fadeAlpha);
             if (popup.isFullyClosed()) {
@@ -227,42 +165,36 @@ public class ConfigsViewComponent extends AbstractComponent {
         ConfigManager mgr = ConfigManager.getInstance();
         String[] names = mgr.getConfigList();
 
-        // Bound scroll to the actual visible window so the user can
-        // never scroll past the last row or above the first.
         float listH = listBottom - listY;
         float contentH = names.length * (ROW_HEIGHT + ROW_GAP) - ROW_GAP;
         maxScrollOffset = Math.max(0.0F, contentH - listH);
         if (scrollOffset < 0.0F) scrollOffset = 0.0F;
         if (scrollOffset > maxScrollOffset) scrollOffset = maxScrollOffset;
 
-        // GL scissor so any row that runs past the visible window is
-        // clipped to it. Without this the bottom row would visibly
-        // poke under the menu's rounded bottom border.
         context.enableScissor((int) listX, (int) listY,
                 (int) (listX + listW), (int) listBottom);
-
-        String authorLabel = resolveAuthorLabel();
-        float rowY = listY - scrollOffset;
-        for (String name : names) {
-            if (rowY + ROW_HEIGHT > listY && rowY < listBottom) {
-                renderRow(matrix, mouseX, mouseY, listX, rowY, listW, name, authorLabel, fadeAlpha);
+        vorga.phazeclient.base.util.render.ScissorManager scissorManager =
+                vorga.phazeclient.core.Main.getInstance().getScissorManager();
+        scissorManager.push(GuiMatrix.mat4(matrix), listX, listY, listW, listBottom - listY);
+        try {
+            String authorLabel = resolveAuthorLabel();
+            float rowY = listY - scrollOffset;
+            for (String name : names) {
+                if (rowY + ROW_HEIGHT > listY && rowY < listBottom) {
+                    renderRow(matrix, mouseX, mouseY, listX, rowY, listW, name, authorLabel, fadeAlpha);
+                }
+                rowY += ROW_HEIGHT + ROW_GAP;
             }
-            rowY += ROW_HEIGHT + ROW_GAP;
+        } finally {
+            context.disableScissor();
+            scissorManager.pop();
         }
-
-        context.disableScissor();
     }
 
-    /** Left padding inside the row, before the type icon. */
     private static final float ICON_AREA_W = 28.0F;
-    /** Visual size of the file / file_import icon. Smaller than the
-     *  area itself so the icon has comfortable breathing room. */
+
     private static final float ICON_SIZE = 19.6875F;
 
-    // 1.21.11: the GUI pose is org.joml.Matrix3x2f(Stack), not MatrixStack.
-    // Taking the read-only Matrix3x2fc interface keeps every call site
-    // (ShapeProperties.create / GuiMatrix.mat4) compiling unchanged and makes
-    // it explicit that these helpers only READ the pose, never mutate it.
     private void renderRow(Matrix3x2fc matrix, int mouseX, int mouseY,
                            float listX, float rowY, float listW,
                            String name, String authorLabel, float fadeAlpha) {
@@ -275,13 +207,6 @@ public class ConfigsViewComponent extends AbstractComponent {
         rowAnim.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float h = rowAnim.getOutputFloat();
 
-        // Active config gets the same green-tinted outline that an
-        // enabled module card uses (BORDER → CHIP_ACTIVE 75% mix);
-        // every other row keeps the standard BORDER outline like a
-        // disabled module card. The per-row activeAnim tweens the
-        // mix factor, so a row visibly fades INTO the active look
-        // when the user picks it (and the previously-active row
-        // fades back out at the same time) instead of snapping.
         boolean isActive = name.equalsIgnoreCase(ConfigManager.getInstance().getCurrentConfigName());
         Animation activeAnim = activeAnims.computeIfAbsent(name,
                 k -> new DecelerateAnimation().setMs(300).setValue(1));
@@ -296,10 +221,6 @@ public class ConfigsViewComponent extends AbstractComponent {
                 .color(MenuStyle.withAlpha(fill, fadeAlpha * 0.92F))
                 .build());
 
-        // Type icon on the left. {@code file_import.png} for configs
-        // imported from a server share-key, {@code file.png} for
-        // locally created configs. The marker comes from
-        // {@link ConfigManager#isImportedConfig}.
         boolean imported = importedCache.getOrDefault(name, Boolean.FALSE);
         String iconTexture = imported ? "textures/file_import.png" : "textures/file.png";
         float iconWidth = resolveUiIconWidth(iconTexture, ICON_SIZE);
@@ -308,9 +229,6 @@ public class ConfigsViewComponent extends AbstractComponent {
         renderUiIcon(matrix, iconTexture, iconX, iconY, iconWidth, ICON_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F));
 
-        // Top: timestamp
-        // Middle: name • author (with dot.png separator)
-        // Bottom: size + last-modified / imported-from-cloud
         float textX = listX + ROW_PAD_X + ICON_AREA_W;
         float lineGap = 1.6F;
         float metaGap = 1.6F;
@@ -329,7 +247,6 @@ public class ConfigsViewComponent extends AbstractComponent {
                 0.0F
         );
 
-        // Name (bold) + dot separator + author (lighter).
         int nameColor = MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha);
         int authorColor = MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F);
         MsdfRenderer.renderText(
@@ -342,10 +259,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         );
         float nameWidth = MsdfFonts.bold().getWidth(name, NAME_SIZE);
         float dotX = textX + nameWidth + NAME_DOT_TEXT_GAP;
-        // Centre against the cap-height middle (~0.42 of the font
-        // size from the text's top) instead of the full bbox - the
-        // bbox includes descender room that pushes the dot below
-        // the letters' optical mid-line.
+
         float dotY = nameY + NAME_SIZE * 0.42F - NAME_DOT_SIZE * 0.5F;
         rectangle.render(ShapeProperties.create(matrix, dotX, dotY, NAME_DOT_SIZE, NAME_DOT_SIZE)
                 .round(NAME_DOT_SIZE * 0.5F)
@@ -363,35 +277,16 @@ public class ConfigsViewComponent extends AbstractComponent {
             );
         }
 
-        // Bottom meta line. Imported configs swap the
-        // "Last modified ..." chip for an "Imported from cloud"
-        // marker so the user can spot remote-origin entries at a
-        // glance without hovering. Size is shown for both.
         renderRowMeta(matrix, textX, metaY, name, imported, fadeAlpha);
 
-        // Three inline action buttons on the right side: rename →
-        // share (create key) → delete, in that visual order. Each
-        // button has its own hover animation and click hit-area.
-        // The buttons sit RIGHT-aligned with a small trailing pad
-        // so they don't kiss the row's outer border.
         renderActionButtons(matrix, mouseX, mouseY, listX, rowY, listW, name, fadeAlpha);
     }
 
-    /**
-     * Bottom-line meta strip: size + (imported badge OR last-modified
-     * humanised). Each chip is an inline icon followed by a label,
-     * separated by a fixed gap so the strip layout stays predictable
-     * across different label widths.
-     */
     private void renderRowMeta(Matrix3x2fc matrix, float startX, float metaY,
                                String configName, boolean imported, float fadeAlpha) {
         float cursorX = startX;
         int metaColor = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.95F);
 
-        // Size chip - dedicated size.png icon, tinted with the same
-        // muted text colour so it reads as part of the meta strip
-        // instead of standing out as a stray accent. Label nudged
-        // 1px down so the text sits on the icon's optical centre.
         cursorX = renderMetaChip(matrix, cursorX, metaY,
                 "textures/size.png",
                 Lang.translate("Size") + ": " + sizeCache.getOrDefault(configName, "—"),
@@ -399,10 +294,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         cursorX += META_GROUP_GAP;
 
         if (imported) {
-            // Imported chip - cloud-arrow-down. Icon at 1.5× the
-            // base meta-icon size (the cloud glyph reads lighter at
-            // 6.5px); text nudged down 1.5px to sit on the icon's
-            // visual centre line.
+
             renderMetaChip(matrix, cursorX, metaY,
                     "textures/cloud.png",
                     Lang.translate("Imported from cloud"),
@@ -415,13 +307,6 @@ public class ConfigsViewComponent extends AbstractComponent {
         }
     }
 
-    /** Renders one icon+label chip and returns the x coordinate
-     *  immediately after the label, so the caller can append the
-     *  next chip with a fixed group gap. {@code labelDeltaY} nudges
-     *  the text vertically without moving the icon - useful when an
-     *  icon is asymmetrically weighted in its bbox. {@code iconSize}
-     *  picks between the standard 6.5px rendering and the 1.5×
-     *  oversized variant for the cloud / clock glyphs. */
     private float renderMetaChip(Matrix3x2fc matrix, float startX, float baselineY,
                                  String iconTexture, String label,
                                  int color, float fadeAlpha,
@@ -445,9 +330,7 @@ public class ConfigsViewComponent extends AbstractComponent {
     }
 
     private void renderUiIcon(Matrix3x2fc matrix, String iconTexture, float x, float y, float width, float height, int color) {
-        // Image.render still uses the legacy swapped width/height convention,
-        // so pass the box dimensions in that order to keep non-square icons
-        // aligned without stretching in Configs rows.
+
         image.setTexture(iconTexture)
                 .render(ShapeProperties.create(matrix, x, y, height, width)
                         .color(color)
@@ -508,11 +391,6 @@ public class ConfigsViewComponent extends AbstractComponent {
         return plural;
     }
 
-    /** Visual order of the inline action buttons on every row.
-     *  Indexed by the {@link ActionKind} ordinal. The kebab popup's
-     *  legacy constants ({@code "kebab.share"} etc.) still drive the
-     *  share / rename modals, but the row UI itself now uses
-     *  these icons instead. */
     private enum ActionKind {
         RENAME("textures/edit.png"),
         SHARE("textures/share.png"),
@@ -532,13 +410,6 @@ public class ConfigsViewComponent extends AbstractComponent {
                 + (kinds.length - 1) * ACTION_BUTTON_GAP;
         float startX = listX + listW - totalW - ACTIONS_TRAIL_PAD;
 
-        // Group container behind the three buttons. Slightly inset
-        // top/bottom (centered on the row) with a soft rounded
-        // panel so the buttons read as a unit instead of three
-        // floating glyphs. Background is fully opaque per the user
-        // request, with the panel's border tinted by the menu's
-        // standard outline so it sits on the row without fighting
-        // the row's own outline.
         float groupPadX = 2.0F;
         float groupPadY = 10.0F;
         float groupX = startX - groupPadX;
@@ -582,31 +453,17 @@ public class ConfigsViewComponent extends AbstractComponent {
                         .build());
     }
 
-    /* ============================================================ */
-    /* events                                                       */
-    /* ============================================================ */
-
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!open) return false;
         if (button != 0) return false;
 
-        // Popup intercepts first so a click inside it lands on its
-        // action menu, not on the row underneath. Only popups that
-        // are still opening / fully open answer to clicks - one that
-        // is mid-fade-out is purely visual.
         if (popup != null && popup.isInteractive()) {
             if (popup.handleClick(mouseX, mouseY)) {
                 popup.close();
                 return true;
             }
-            // Click outside the popup starts its smooth fade-out. We
-            // deliberately FALL THROUGH so a click on a different
-            // kebab in the same gesture immediately spawns the new
-            // popup - without this, the user has to click twice
-            // (once to close the old popup, once to open the new
-            // one), which reads as "clicking the kebab does nothing"
-            // half the time.
+
             popup.close();
         }
 
@@ -627,10 +484,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         float bodyEndX = actionsStartX - 2.0F;
         for (String name : names) {
             if (rowY + ROW_HEIGHT > listTop && rowY < listBottom) {
-                // Inline action buttons take precedence over the
-                // body-click "load this config" hit-area, so the
-                // user can rename / share / delete without the row
-                // also activating itself underneath.
+
                 ActionKind hit = null;
                 for (int i = 0; i < kinds.length; i++) {
                     float btnX = actionsStartX + i * (ACTION_BUTTON_W + ACTION_BUTTON_GAP);
@@ -657,12 +511,6 @@ public class ConfigsViewComponent extends AbstractComponent {
         return false;
     }
 
-    /** Routes an inline action button click to the appropriate
-     *  flow. Renames go through the rename modal so the user can
-     *  type a new name; share spawns the share-key creation modal;
-     *  delete is one-shot through {@link ConfigManager#deleteConfig}.
-     *  All three mirror what the old kebab popup used to do, just
-     *  without the popup intermediate UI. */
     private void handleActionClick(String configName, ActionKind kind) {
         switch (kind) {
             case RENAME -> MenuScreen.INSTANCE.openConfigRenameModal(configName, this::refreshMetadataCaches);
@@ -674,12 +522,6 @@ public class ConfigsViewComponent extends AbstractComponent {
         }
     }
 
-    /**
-     * Returns true while a kebab popup is currently visible (open or
-     * mid-fade-out). MenuScreen reads this to refuse menu-window
-     * drags while a popup or modal is up - otherwise the click that
-     * closes the popup also drags the entire menu, which feels broken.
-     */
     public boolean isPopupOpen() {
         return popup != null && popup.isInteractive();
     }
@@ -692,10 +534,6 @@ public class ConfigsViewComponent extends AbstractComponent {
         if (scrollOffset > maxScrollOffset) scrollOffset = maxScrollOffset;
         return true;
     }
-
-    /* ============================================================ */
-    /* helpers                                                      */
-    /* ============================================================ */
 
     private static String resolveAuthorLabel() {
         try {
@@ -737,18 +575,6 @@ public class ConfigsViewComponent extends AbstractComponent {
         } catch (Throwable ignored) {}
     }
 
-    /* ============================================================ */
-    /* popup inner class                                            */
-    /* ============================================================ */
-
-    /**
-     * Small action menu spawned at click-point. Three rows:
-     * Поделиться / Переименовать / Удалить. Smooth fade-in on
-     * spawn AND smooth fade-out when dismissed (outside-click,
-     * action picked, or sister popup opened on a different row).
-     * Per-item hover is animated through its own DecelerateAnimation
-     * so the highlight slides instead of snapping under the cursor.
-     */
     private static final class KebabPopup {
         private static final float ITEM_H = 16.0F;
         private static final float WIDTH = 100.0F;
@@ -778,9 +604,6 @@ public class ConfigsViewComponent extends AbstractComponent {
             }
         }
 
-        /** Begin the fade-out tween. The popup keeps rendering until
-         *  {@link #isFullyClosed()} flips true so its highlight rows
-         *  visibly trail off instead of disappearing in one frame. */
         void close() {
             this.closing = true;
             this.fade.setDirection(Direction.BACKWARDS);
@@ -789,11 +612,6 @@ public class ConfigsViewComponent extends AbstractComponent {
             }
         }
 
-        /** True while the popup is opening or fully open - i.e. it
-         *  should still receive clicks and block menu drags. Once
-         *  {@link #close()} is called this flips false even before
-         *  the fade-out finishes, so the next click can reach the
-         *  rows beneath. */
         boolean isInteractive() {
             return !closing;
         }
@@ -807,10 +625,6 @@ public class ConfigsViewComponent extends AbstractComponent {
             float a = fade.getOutputFloat() * menuFadeAlpha;
             if (a <= 0.001F) return;
 
-            // Layout: popup hangs DOWN-LEFT from the kebab so its
-            // upper-right corner lines up with the dots. If it would
-            // overflow the menu's bottom edge, anchor it ABOVE the
-            // kebab instead.
             float popupX = anchorX - WIDTH;
             float popupY = anchorY + 4.0F;
             float popupH = ITEMS.length * ITEM_H;
@@ -830,10 +644,7 @@ public class ConfigsViewComponent extends AbstractComponent {
 
             for (int i = 0; i < ITEMS.length; i++) {
                 float iy = popupY + i * ITEM_H;
-                // Only register hover while the popup is open;
-                // closing popups should drain their highlight to 0
-                // alongside the panel fade so the row glow doesn't
-                // outlive the panel.
+
                 boolean hover = !closing
                         && MathUtil.isHovered(mouseX, mouseY, popupX, iy, WIDTH, ITEM_H);
                 itemHover[i].setDirection(hover ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -879,11 +690,7 @@ public class ConfigsViewComponent extends AbstractComponent {
                 case 1 -> MenuScreen.INSTANCE.openConfigRenameModal(configName, owner::refreshMetadataCaches);
                 case 2 -> {
                     ConfigManager mgr = ConfigManager.getInstance();
-                    // Default is now a regular file - the manager
-                    // recreates it on first save - so it's safe to
-                    // delete from the UI too. Active-config delete
-                    // is also fine: deleteConfig auto-switches to
-                    // the next available config.
+
                     mgr.deleteConfig(configName);
                     owner.refreshMetadataCaches();
                 }

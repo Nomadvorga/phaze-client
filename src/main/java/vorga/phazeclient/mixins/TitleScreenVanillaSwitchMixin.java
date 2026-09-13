@@ -56,9 +56,6 @@ public abstract class TitleScreenVanillaSwitchMixin extends Screen {
         int iconX = phaze$switchBackButton.getX() + (phaze$switchBackButton.getWidth() - iconSize) / 2;
         int iconY = phaze$switchBackButton.getY() + (phaze$switchBackButton.getHeight() - iconSize) / 2;
 
-        // 1.21.11 DrawContext records GUI elements for a deferred render pass.
-        // The old immediate Render2DUtil draw ran after TitleScreen had already
-        // submitted its GUI state and disappeared, leaving only the gray button.
         context.createNewRootLayer();
         context.drawTexture(
                 RenderPipelines.GUI_TEXTURED,

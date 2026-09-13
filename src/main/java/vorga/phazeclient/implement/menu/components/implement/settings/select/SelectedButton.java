@@ -46,7 +46,6 @@ public class SelectedButton extends AbstractComponent {
         alphaAnimation.setDirection(Direction.BACKWARDS);
     }
 
-
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         Matrix3x2fStack matrices = context.getMatrices();
@@ -76,7 +75,6 @@ public class SelectedButton extends AbstractComponent {
         );
     }
 
-
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (MathUtil.isHovered(mouseX, mouseY, x, y, width, height) && button == 0) {
@@ -86,7 +84,6 @@ public class SelectedButton extends AbstractComponent {
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
-
 
     public void renderTargetHudTooltip(DrawContext context) {
     }

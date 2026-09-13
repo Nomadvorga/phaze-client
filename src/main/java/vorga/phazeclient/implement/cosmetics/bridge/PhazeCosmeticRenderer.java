@@ -11,7 +11,6 @@ import vorga.phazeclient.implement.cosmetics.CosmeticsSyncService;
 import vorga.phazeclient.implement.cosmetics.CosmeticsRenderer;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 
-/** Renders remote Phaze states inside Phaze's existing live player matrices. */
 public final class PhazeCosmeticRenderer {
     private static final long START_NANOS = System.nanoTime();
 

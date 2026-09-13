@@ -12,7 +12,6 @@ import vorga.phazeclient.implement.cosmetics.CosmeticsSyncService;
 import vorga.phazeclient.implement.cosmetics.CosmeticsRenderer;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 
-/** Camera-relative world pass for remote Phaze pets. */
 public final class PhazeCosmeticPetRenderer {
     private static final long START_NANOS = System.nanoTime();
     private static boolean registered;

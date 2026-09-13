@@ -6,38 +6,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
-/**
- * Configurable Discord Rich Presence. The lifecycle (init / connect /
- * shutdown) lives in {@link vorga.phazeclient.api.system.discord.DiscordManager};
- * this module decides WHAT data the daemon thread pushes on each
- * 15-second update cycle.
- *
- * <h3>State / Details lines</h3>
- * Discord RPC has two text rows:
- * <ul>
- *   <li><b>Details</b> - the larger top line.</li>
- *   <li><b>State</b> - the smaller bottom line.</li>
- * </ul>
- * Each line is a templated string the user can customise. Tokens
- * are replaced at update time:
- * <ul>
- *   <li>{@code {server}} - server host (singleplayer / mcs.example.com).</li>
- *   <li>{@code {dimension}} - "overworld" / "the_nether" / "the_end".</li>
- *   <li>{@code {player}} - the local player's display name.</li>
- *   <li>{@code {gamemode}} - survival / creative / adventure / spectator.</li>
- *   <li>{@code {health}} - integer current HP.</li>
- * </ul>
- *
- * <h3>Show Server Name</h3>
- * When off, the module forces "Singleplayer" in {@code {server}} so
- * users who don't want their hostname leaked into Discord stay
- * private. When on, the live server host is used.
- *
- * <h3>Elapsed Time</h3>
- * The "00:01 elapsed" badge that sits to the right of the activity
- * card. Three options: Session (since launch), World (since joining
- * current world), Off.
- */
+
 public final class DiscordRpc extends Module {
     private static final DiscordRpc INSTANCE = new DiscordRpc();
 

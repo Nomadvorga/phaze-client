@@ -15,16 +15,13 @@ public final class MemoryHud extends RectHudModule {
             .value("Percentage", "Megabytes", "Gigabytes");
     public final BooleanSetting colorBasedOnUsage = new BooleanSetting("Color Based On Usage", "Change color based on memory usage").setValue(true);
     public final SectionSetting otherSection = new SectionSetting("Other");
-    /**
-     * Swap the {@code Mem} label position. Default OFF renders
-     * {@code "Mem: 50%"}; ON renders {@code "50% Mem"}.
-     */
+
     public final BooleanSetting reverseOrder = new BooleanSetting("Reverse Order", "Show value before label, e.g. \"50% Mem\" instead of \"Mem: 50%\"").setValue(false);
 
     private MemoryHud() {
         super("memory_hud", "Memory HUD", 100.0f, 50.0f, 1.0f);
         reverseOrder.setFullWidth(true);
-        setup(displayMode, colorBasedOnUsage, otherSection, reverseOrder);
+        setup(displayMode, colorBasedOnUsage, otherSection, reverseOrder, cornerRounding);
     }
 
     public String getMemoryText() {
@@ -36,9 +33,6 @@ public final class MemoryHud extends RectHudModule {
 
         String mode = displayMode.getSelected();
 
-        // Build the unit-suffixed numeric portion first so the
-        // "Reverse Order" branch can decide where to glue the "Mem"
-        // label without duplicating the formatting code.
         String value;
         if (mode.equals("Percentage")) {
             double percentage = (usedMemory * 100.0) / maxMemory;
@@ -64,11 +58,11 @@ public final class MemoryHud extends RectHudModule {
         double percentage = (usedMemory * 100.0) / maxMemory;
 
         if (percentage < 50) {
-            return 0xFF00FF00; // Green
+            return 0xFF00FF00;
         } else if (percentage < 75) {
-            return 0xFFFFFF00; // Yellow
+            return 0xFFFFFF00;
         } else {
-            return 0xFFFF0000; // Red
+            return 0xFFFF0000;
         }
     }
 

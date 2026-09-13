@@ -16,49 +16,36 @@ import java.util.stream.IntStream;
 @UtilityClass
 public class StringUtil implements QuickImports {
 
-    /**
-     * Static lookup table for non-letter / non-digit / non-Fn GLFW key codes.
-     * Built once at class init so {@link #getBindName(int)} stays O(1) on the
-     * common dispatch path (this gets called per-frame for every bind label
-     * on screen, so the previous implementation's allocations + GLFW JNI
-     * call were measurable on big config screens).
-     *
-     * <p>Mapping is locale-agnostic and uses short uppercase labels that fit
-     * the bind badges; that's why modifiers are abbreviated to LSHIFT/RALT
-     * etc. rather than the GLFW raw names, and why the navigation cluster
-     * uses two-letter shortenings (PG UP, PG DN).
-     */
     private static final Map<Integer, String> SPECIAL_KEY_NAMES = buildSpecialKeyNames();
 
     private static Map<Integer, String> buildSpecialKeyNames() {
         Map<Integer, String> m = new HashMap<>();
-        // Whitespace / line breaks
+
         m.put(GLFW.GLFW_KEY_SPACE, "SPACE");
         m.put(GLFW.GLFW_KEY_ENTER, "ENTER");
         m.put(GLFW.GLFW_KEY_TAB, "TAB");
         m.put(GLFW.GLFW_KEY_BACKSPACE, "BACKSPACE");
         m.put(GLFW.GLFW_KEY_ESCAPE, "ESC");
-        // Editing
+
         m.put(GLFW.GLFW_KEY_INSERT, "INSERT");
         m.put(GLFW.GLFW_KEY_DELETE, "DELETE");
         m.put(GLFW.GLFW_KEY_HOME, "HOME");
         m.put(GLFW.GLFW_KEY_END, "END");
         m.put(GLFW.GLFW_KEY_PAGE_UP, "PG UP");
         m.put(GLFW.GLFW_KEY_PAGE_DOWN, "PG DN");
-        // Arrows
+
         m.put(GLFW.GLFW_KEY_LEFT, "LEFT");
         m.put(GLFW.GLFW_KEY_RIGHT, "RIGHT");
         m.put(GLFW.GLFW_KEY_UP, "UP");
         m.put(GLFW.GLFW_KEY_DOWN, "DOWN");
-        // Locks + sys
+
         m.put(GLFW.GLFW_KEY_CAPS_LOCK, "CAPS");
         m.put(GLFW.GLFW_KEY_SCROLL_LOCK, "SCROLL");
         m.put(GLFW.GLFW_KEY_NUM_LOCK, "NUM LOCK");
         m.put(GLFW.GLFW_KEY_PRINT_SCREEN, "PRT SC");
         m.put(GLFW.GLFW_KEY_PAUSE, "PAUSE");
         m.put(GLFW.GLFW_KEY_MENU, "MENU");
-        // Modifiers (the whole reason this rewrite exists - default
-        // glfwGetKeyName returns null for these, so users saw "KEY_342").
+
         m.put(GLFW.GLFW_KEY_LEFT_SHIFT, "LSHIFT");
         m.put(GLFW.GLFW_KEY_LEFT_CONTROL, "LCTRL");
         m.put(GLFW.GLFW_KEY_LEFT_ALT, "LALT");
@@ -67,9 +54,7 @@ public class StringUtil implements QuickImports {
         m.put(GLFW.GLFW_KEY_RIGHT_CONTROL, "RCTRL");
         m.put(GLFW.GLFW_KEY_RIGHT_ALT, "RALT");
         m.put(GLFW.GLFW_KEY_RIGHT_SUPER, "RSUPER");
-        // Punctuation (hard-coded so we never fall through to
-        // glfwGetKeyName on a non-Latin layout where it would return
-        // Cyrillic or similar). Values match the US QWERTY printable.
+
         m.put(GLFW.GLFW_KEY_APOSTROPHE, "'");
         m.put(GLFW.GLFW_KEY_COMMA, ",");
         m.put(GLFW.GLFW_KEY_MINUS, "-");
@@ -81,7 +66,7 @@ public class StringUtil implements QuickImports {
         m.put(GLFW.GLFW_KEY_BACKSLASH, "\\");
         m.put(GLFW.GLFW_KEY_RIGHT_BRACKET, "]");
         m.put(GLFW.GLFW_KEY_GRAVE_ACCENT, "`");
-        // Numpad operators / non-digit numpad keys
+
         m.put(GLFW.GLFW_KEY_KP_DECIMAL, "NP .");
         m.put(GLFW.GLFW_KEY_KP_DIVIDE, "NP /");
         m.put(GLFW.GLFW_KEY_KP_MULTIPLY, "NP *");
@@ -98,34 +83,9 @@ public class StringUtil implements QuickImports {
                 .collect(Collectors.joining());
     }
 
-    /**
-     * Build a short, locale-agnostic English label for a stored bind key.
-     *
-     * <p>{@code key} stores either a GLFW key code (for keyboard binds) or a
-     * GLFW mouse button index (for binds set via right/middle/aux click) -
-     * those share the same int field on {@code BindSetting}. We disambiguate
-     * by range: anything in {@code [0, 7]} is a mouse button (GLFW mouse
-     * buttons are 0..7) and everything else is treated as a GLFW key code
-     * (the first real key, {@code GLFW_KEY_SPACE}, is 32).
-     *
-     * <p>For letters and digits we compute the glyph from the key code
-     * directly rather than asking GLFW: {@code GLFW_KEY_A..GLFW_KEY_Z} and
-     * {@code GLFW_KEY_0..GLFW_KEY_9} match ASCII, so {@code (char) key}
-     * yields {@code "B"} regardless of whether the user's OS layout would
-     * paint Cyrillic / Hebrew / etc. on that physical key. This is the
-     * fix for "I see "И" instead of "B" on a RU layout".
-     *
-     * <p>Modifier keys (LSHIFT, RCTRL, ALT, ...) and everything else
-     * non-printable goes through {@link #SPECIAL_KEY_NAMES}. The previous
-     * fallback returned "KEY_342" for ALT because {@code glfwGetKeyName}
-     * returns {@code null} for non-printable codes.
-     */
     public String getBindName(int key) {
         if (key < 0) return "N/A";
 
-        // Mouse buttons - BindComponent stores `button` directly when the
-        // user middle-clicks / aux-clicks the bind field, so the same int
-        // field can carry mouse codes 0..7.
         if (key <= 7) {
             return switch (key) {
                 case 0 -> "LMB";
@@ -135,8 +95,6 @@ public class StringUtil implements QuickImports {
             };
         }
 
-        // A-Z / 0-9 via direct ASCII mapping - forces English glyphs even
-        // when the OS keyboard layout would paint a different character.
         if (key >= GLFW.GLFW_KEY_A && key <= GLFW.GLFW_KEY_Z) {
             return String.valueOf((char) key);
         }
@@ -144,22 +102,17 @@ public class StringUtil implements QuickImports {
             return String.valueOf((char) key);
         }
 
-        // F1..F25 - contiguous block, just offset off F1's code.
         if (key >= GLFW.GLFW_KEY_F1 && key <= GLFW.GLFW_KEY_F25) {
             return "F" + (key - GLFW.GLFW_KEY_F1 + 1);
         }
 
-        // Numpad digits
         if (key >= GLFW.GLFW_KEY_KP_0 && key <= GLFW.GLFW_KEY_KP_9) {
             return "NP " + (key - GLFW.GLFW_KEY_KP_0);
         }
 
-        // Named keys (modifiers, navigation, punctuation, numpad ops...)
         String mapped = SPECIAL_KEY_NAMES.get(key);
         if (mapped != null) return mapped;
 
-        // Genuinely unknown / exotic - keep the diagnostic code so a user
-        // can still report what they pressed if it isn't covered above.
         return "KEY " + key;
     }
 

@@ -12,7 +12,6 @@ import vorga.phazeclient.api.system.hud.ChatHudBadgeRenderAccess;
 import vorga.phazeclient.api.system.hud.ChatMessageAnimationRenderState;
 import vorga.phazeclient.base.util.PhazeBadgeUtil;
 
-/** Applies the active line offset and Phaze badge to the regular HUD backend. */
 @Mixin(targets = "net.minecraft.client.gui.hud.ChatHud$Hud")
 abstract class ChatHudBackendMixin implements ChatHudBadgeRenderAccess {
     @Shadow(remap = false) @Final private DrawContext context;

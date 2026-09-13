@@ -42,10 +42,7 @@ public abstract class AbstractSettingComponent extends AbstractComponent {
     }
 
     public double getVisibilityProgress() {
-        // Use the primitive-double accessor so we don't allocate a
-        // Double wrapper just to immediately unbox it on assignment.
-        // This getter is read every frame by every visible setting
-        // component during {@code MenuScreen.render}.
+
         return visibilityAnimation.getOutputDouble();
     }
 

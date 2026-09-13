@@ -108,7 +108,6 @@ public final class CosmeticModelLoader {
             return out;
         }
 
-        // Legacy Bedrock box UV. This is rare in the supplied cosmetics.
         if (uv.isJsonArray() && uv.getAsJsonArray().size() >= 2) {
             JsonArray a = uv.getAsJsonArray();
             float u = a.get(0).getAsFloat();

@@ -6,7 +6,6 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 
 import java.util.function.Consumer;
 
-/** Accesses the pose retained by the 1.21.11 ChatHud backend. */
 @Mixin(targets = {
         "net.minecraft.client.gui.hud.ChatHud$Hud",
         "net.minecraft.client.gui.hud.ChatHud$Interactable"

@@ -246,9 +246,6 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         commitColor();
     }
 
-    // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack, not MatrixStack. These helpers only
-    // forward the pose into ShapeProperties.create / GuiMatrix, so they take the read-only
-    // Matrix3x2fc view - it accepts the live stack and documents that nothing here mutates it.
     private void renderWindowBlur(Matrix3x2fc matrices) {
         float blurRadius = Theme.getInstance().getMenuBlurRadius();
         if (blurRadius <= 0.0F) {
@@ -364,9 +361,7 @@ public final class SettingColorPickerWindow extends AbstractWindow {
         buffer.vertex(matrix, x, y + height, 0.0F).texture(0.0F, 1.0F).color(color);
         buffer.vertex(matrix, x + width, y + height, 0.0F).texture(1.0F, 1.0F).color(color);
         buffer.vertex(matrix, x + width, y, 0.0F).texture(1.0F, 0.0F).color(color);
-        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-        // immediate draw runs outside the GUI pass and must install the GUI
-        // ortho projection (and its z = -11000 model-view) itself.
+
         vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());

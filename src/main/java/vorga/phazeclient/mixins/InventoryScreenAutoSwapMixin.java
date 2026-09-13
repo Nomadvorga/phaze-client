@@ -14,7 +14,7 @@ public class InventoryScreenAutoSwapMixin {
 
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void onRenderInventory(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        // Cancel rendering if AutoSwap is active on FunTime or FunTrainer
+
         if (AutoSwap.getInstance().isSwapping()) {
             if (ServerUtil.isFunTimeServer() || ServerUtil.isFunTrainerServer()) {
                 ci.cancel();

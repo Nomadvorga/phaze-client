@@ -29,24 +29,8 @@ import vorga.phazeclient.implement.features.modules.other.ShulkerPreview;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Consolidated mixin for {@link HandledScreen}, merging the previous
- * sibling mixins (ItemScroller, ShulkerPreview, MaceIndicator,
- * ItemHighlighter, HealingHelper).
- * Each original injector is preserved with a unique {@code phaze$}
- * method name; shadow fields and unique state are merged at the top.
- *
- * <p>The trailing-36-slots iteration is shared between three modules
- * (HealingHelper, ItemHighlighter, MaceIndicator) so we extract a
- * helper {@link #phaze$paintInventoryFills} that all three call into
- * with their own per-stack colour function.
- */
 @Mixin(HandledScreen.class)
 public abstract class HandledScreenMixin {
-
-    // ---------------------------------------------------------------
-    // Shared shadows
-    // ---------------------------------------------------------------
 
     @Shadow protected int x;
     @Shadow protected int y;
@@ -61,21 +45,10 @@ public abstract class HandledScreenMixin {
     private static void phaze$resetGuiRenderState() {
     }
 
-    // ---------------------------------------------------------------
-    // ItemScroller unique state
-    // ---------------------------------------------------------------
-
     @Unique private final Set<Integer> phaze$transferredSlots = new HashSet<>();
     @Unique private boolean phaze$shiftDragActive = false;
     @Unique private long phaze$lastTransferAt = 0L;
-    // ---------------------------------------------------------------
-    // ItemScroller: shift-drag through inventory slots
-    // ---------------------------------------------------------------
 
-    // 1.21.11: Element.mouseClicked(double,double,int) became
-    // mouseClicked(Click, boolean doubled). Click carries the cursor position,
-    // the button code and the GLFW modifier mask, so Screen.hasShiftDown()
-    // (removed in 1.21.11) is replaced by click.hasShift() here.
     @Inject(method = "mouseClicked", at = @At("HEAD"))
     private void phaze$onMouseClickedHead(Click click, boolean doubled,
                                           CallbackInfoReturnable<Boolean> cir) {
@@ -95,13 +68,10 @@ public abstract class HandledScreenMixin {
 
         phaze$shiftDragActive = true;
         phaze$transferredSlots.clear();
-        // Let the very first drag frame transfer the slot under the
-        // cursor immediately. Pre-marking it here makes short drags in
-        // creative inventory miss every slot before the debounce elapses.
+
         phaze$lastTransferAt = 0L;
     }
 
-    // 1.21.11: mouseReleased(double,double,int) -> mouseReleased(Click).
     @Inject(method = "mouseReleased", at = @At("HEAD"))
     private void phaze$onMouseReleasedHead(Click click,
                                            CallbackInfoReturnable<Boolean> cir) {
@@ -111,10 +81,6 @@ public abstract class HandledScreenMixin {
         }
     }
 
-    // 1.21.11: mouseDragged(double,double,int,double,double) ->
-    // mouseDragged(Click, double offsetX, double offsetY). The Click holds the
-    // current (already scaled) cursor position, so the sampling maths below is
-    // unchanged apart from where the values come from.
     @Inject(method = "mouseDragged", at = @At("HEAD"))
     private void phaze$onMouseDraggedHead(Click click, double deltaX, double deltaY,
                                           CallbackInfoReturnable<Boolean> cir) {
@@ -145,10 +111,6 @@ public abstract class HandledScreenMixin {
     private void phaze$processShiftDragWhileHovering(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         phaze$tryShiftDragTransfer(mouseX, mouseY);
     }
-
-    // ---------------------------------------------------------------
-    // ShulkerPreview: replace vanilla tooltip with a 9x3 grid
-    // ---------------------------------------------------------------
 
     @Inject(method = "drawMouseoverTooltip", at = @At("HEAD"), cancellable = true)
     private void phaze$suppressShulkerVanillaTooltip(DrawContext context, int mouseX, int mouseY, CallbackInfo ci) {
@@ -184,16 +146,11 @@ public abstract class HandledScreenMixin {
         module.renderPreview(context, mouseX, mouseY, container, stack);
     }
 
-    // ---------------------------------------------------------------
-    // HealingHelper / ItemHighlighter / MaceIndicator: trailing 36 fills
-    // ---------------------------------------------------------------
-
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$resetStateAtRenderHead(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         phaze$resetGuiRenderState();
     }
 
-    // 1.21.11: drawSlot(DrawContext, Slot) gained the mouse coordinates.
     @Inject(method = "drawSlot", at = @At("HEAD"))
     private void phaze$resetStateBeforeSlot(DrawContext context, Slot slot, int mouseX, int mouseY,
                                             CallbackInfo ci) {
@@ -223,12 +180,6 @@ public abstract class HandledScreenMixin {
         phaze$resetGuiRenderState();
     }
 
-    /**
-     * Walks the local player's storage + hotbar slots and fills every
-     * slot whose colour function returns a non-zero alpha. Falls back
-     * to the legacy trailing-36 heuristic on handlers that don't
-     * expose the expected player inventory wiring.
-     */
     @Unique
     private void phaze$paintInventoryUtilityFills(
             DrawContext context,
@@ -241,7 +192,6 @@ public abstract class HandledScreenMixin {
         if (handler == null) {
             return;
         }
-
 
         MinecraftClient client = MinecraftClient.getInstance();
         PlayerInventory playerInventory = client != null && client.player != null ? client.player.getInventory() : null;
@@ -322,10 +272,7 @@ public abstract class HandledScreenMixin {
 
         long windowHandle = client.getWindow().getHandle();
         boolean leftPressed = GLFW.glfwGetMouseButton(windowHandle, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
-        // 1.21.11: Screen.hasShiftDown() was removed - modifier state now rides on
-        // the input event (Click/KeyInput). This path runs from the render tick and
-        // has no event to read, so poll GLFW directly, exactly like the mouse-button
-        // check above and like the removed helper used to do internally.
+
         boolean shiftPressed = GLFW.glfwGetKey(windowHandle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
                 || GLFW.glfwGetKey(windowHandle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
         if (!phaze$shiftDragActive || !leftPressed || !shiftPressed) {

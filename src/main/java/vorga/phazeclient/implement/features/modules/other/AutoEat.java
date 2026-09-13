@@ -147,8 +147,7 @@ public final class AutoEat extends Module {
                 resetState();
                 return;
             }
-            // The selected hotbar index stays unchanged. Only the stacks are
-            // exchanged, so the server uses the same slot the player holds.
+
             mc.interactionManager.clickSlot(
                     mc.player.playerScreenHandler.syncId,
                     sourceScreenSlot,
@@ -206,7 +205,7 @@ public final class AutoEat extends Module {
         }
 
         if (startedUsingItem) {
-            // Wait for the server's stack update before trying another use.
+
             startedUsingItem = false;
             nextUseAttemptMs = now + USE_RETRY_DELAY_MS;
             return;
@@ -247,8 +246,6 @@ public final class AutoEat extends Module {
             return;
         }
 
-        // Reverse the original exchange: held item and remaining food both
-        // return to exactly the slots they occupied before Auto Eat started.
         mc.interactionManager.clickSlot(
                 mc.player.playerScreenHandler.syncId,
                 sourceScreenSlot,

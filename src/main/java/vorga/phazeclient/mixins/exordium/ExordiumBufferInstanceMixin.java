@@ -9,7 +9,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 
-/** Optional lifecycle hooks for Exordium's per-component framebuffer cache. */
 @Pseudo
 @Mixin(targets = "dev.tr7zw.exordium.components.BufferInstance", remap = false)
 public abstract class ExordiumBufferInstanceMixin {

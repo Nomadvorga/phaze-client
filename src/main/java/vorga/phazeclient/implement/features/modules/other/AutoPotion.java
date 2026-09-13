@@ -164,7 +164,7 @@ public final class AutoPotion extends Module {
 
     private void startDrinking(PotionType potionType, PotionSlot potionSlot, long now) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        // 1.21.11: PlayerInventory.selectedSlot is private, use getSelectedSlot()/setSelectedSlot().
+
         originalSelectedSlot = mc.player.getInventory().getSelectedSlot();
         activeHotbarSlot = potionSlot.hotbarSlot() ? potionSlot.hotbarIndex() : originalSelectedSlot;
         sourceScreenSlot = potionSlot.hotbarSlot() ? -1 : potionSlot.screenSlotId();

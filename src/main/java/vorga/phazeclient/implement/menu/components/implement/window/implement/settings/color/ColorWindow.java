@@ -39,7 +39,7 @@ public class ColorWindow extends AbstractWindow {
                 )
         );
     }
-    
+
     @Override
     public void drawWindow(DrawContext context, int mouseX, int mouseY, float delta) {
         rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
@@ -61,7 +61,7 @@ public class ColorWindow extends AbstractWindow {
             component.render(context, mouseX, mouseY, delta);
         });
     }
-    
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         draggable(MathUtil.isHovered(mouseX, mouseY, x, y, width, 17));
@@ -73,7 +73,7 @@ public class ColorWindow extends AbstractWindow {
         });
         return super.mouseClicked(mouseX, mouseY, button);
     }
-    
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         components.forEach(component -> {
@@ -84,7 +84,7 @@ public class ColorWindow extends AbstractWindow {
         });
         return super.mouseScrolled(mouseX, mouseY, amount);
     }
-    
+
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         components.forEach(component -> {

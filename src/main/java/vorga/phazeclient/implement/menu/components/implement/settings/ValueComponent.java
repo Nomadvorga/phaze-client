@@ -114,13 +114,6 @@ public class ValueComponent extends AbstractSettingComponent {
 
         renderLabelText(matrices, wrapped, x + 10 + animatedTextOffset, primaryText());
 
-        // Format the value cleanly: when the step is a whole
-        // number AND the value itself is a whole number, hide the
-        // trailing ".0" so an integer-stepped slider doesn't read
-        // as "2.0" when "2" is what the user expects. Anything
-        // with a fractional step or a fractional value keeps the
-        // raw String.valueOf output so 0.5-step sliders still show
-        // their precision.
         float rawValue = setting.getValue();
         float stepSize = setting.getStep();
         String value;
@@ -144,14 +137,9 @@ public class ValueComponent extends AbstractSettingComponent {
 
         changeValue(renderSlider(mouseX, matrices, cachedSliderStartX, centerY, cachedSliderWidth));
 
-        // 1.21.11: ResetIconComponent.render() takes the GUI pose (Matrix3x2fc) directly -
-        // it only feeds ShapeProperties.create, which is Matrix3x2fc-based since the port.
         resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(context);
     }
 
-    // 1.21.11: the GUI pose is org.joml.Matrix3x2f now, not MatrixStack.
-    // Read-only here, so the interface type is enough and it accepts the
-    // Matrix3x2fStack handed out by DrawContext.getMatrices().
     private void renderLabelText(Matrix3x2fc matrices, String wrapped, float textX, int color) {
         String[] lines = wrapped.split("\n");
         float lineHeight = LABEL_TEXT_SIZE + 1.5F;
@@ -204,7 +192,6 @@ public class ValueComponent extends AbstractSettingComponent {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         boolean wasDragging = dragging;
@@ -216,8 +203,6 @@ public class ValueComponent extends AbstractSettingComponent {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    // 1.21.11: same pose-type change as renderLabelText - ShapeProperties.create
-    // now takes a Matrix3x2fc and copies it, so read-only is all we need.
     private float renderSlider(int mouseX, Matrix3x2fc matrix, float sliderStartX, float sliderY, float sliderWidth) {
         float percentValue = sliderWidth * (setting.getValue() - setting.getMin()) / (setting.getMax() - setting.getMin());
         float difference = MathHelper.clamp(mouseX - sliderStartX, 0, sliderWidth);
@@ -243,11 +228,7 @@ public class ValueComponent extends AbstractSettingComponent {
         }
 
         float thumbX = MathHelper.clamp((float) (sliderStartX + animation), sliderStartX, sliderStartX + sliderWidth);
-        // One SDF rect for the whole thumb: fill = sliderColor for
-        // the inner disc, outline = thumbBgColor as the 1 px ring.
-        // Visually identical to the previous (outer thumbBgColor
-        // disc + smaller sliderColor disc on top) pair, but in a
-        // single rasterisation pass.
+
         float thumbBorder = (THUMB_OUTER - THUMB_INNER) * 0.5F;
         rectangle.render(ShapeProperties.create(matrix, thumbX - THUMB_OUTER / 2, sliderY - THUMB_OUTER / 2, THUMB_OUTER, THUMB_OUTER)
                 .round(THUMB_OUTER / 2)
@@ -259,18 +240,11 @@ public class ValueComponent extends AbstractSettingComponent {
         return difference;
     }
 
-
     private void changeValue(float difference) {
         if (!dragging) {
             return;
         }
 
-        // Raw position-derived value. Snapped down to the
-        // configured step so an integer-stepped slider can never
-        // land on, e.g., 4.7 - the user explicitly asked for the
-        // ползунок to scroll only whole-number values when the
-        // setting declares step >= 1. Sub-1 steps still get their
-        // intended granularity (e.g. 0.05).
         float rangeMin = setting.getMin();
         float rangeMax = setting.getMax();
         float rawValue = difference == 0
@@ -279,19 +253,12 @@ public class ValueComponent extends AbstractSettingComponent {
 
         float step = setting.getStep();
         if (step <= 0.0F) step = 0.01F;
-        // Snap to the nearest step boundary: round((value - min)/step)
-        // gives an integer step index, multiplied back to get the
-        // actual snapped value. Add a tiny epsilon before rounding
-        // so float drift doesn't tip a clean step boundary the
-        // wrong way (e.g. 1.9999... rounding down to 1 instead of
-        // up to 2).
+
         float steps = Math.round((rawValue - rangeMin) / step + 1e-6F);
         float snapped = rangeMin + steps * step;
         if (snapped < rangeMin) snapped = rangeMin;
         if (snapped > rangeMax) snapped = rangeMax;
 
-        // Two-decimal cleanup for fractional steps (avoids
-        // 0.300000004 artefacts from FP accumulation).
         BigDecimal bd = BigDecimal.valueOf(snapped).setScale(2, RoundingMode.HALF_UP);
         float newValue = bd.floatValue();
         if (setting.isInteger()) newValue = (int) newValue;

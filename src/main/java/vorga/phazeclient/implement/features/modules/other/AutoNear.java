@@ -9,18 +9,16 @@ import vorga.phazeclient.base.util.ServerUtil;
 public final class AutoNear extends Module {
     private static final AutoNear INSTANCE = new AutoNear();
 
-    // Settings
     public final SectionSetting generalSection = new SectionSetting("General");
     public final ValueSetting delaySeconds = new ValueSetting("Delay", "Delay between /near commands in seconds")
             .range(10, 300)
             .setValue(60);
 
-    // Runtime state
     private long lastCommandMs = 0L;
 
     private AutoNear() {
         super("autonear", "Auto Near", ModuleCategory.UTILITIES);
-        
+
         delaySeconds.setFullWidth(true);
         setup(generalSection, delaySeconds);
     }
@@ -47,10 +45,7 @@ public final class AutoNear extends Module {
     @Override
     public boolean isServerAllowed() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        // Singleplayer is treated as a permitted environment so the user
-        // can test / use the module on their own integrated server, even
-        // though /near won't have any effect there without a backing mod
-        // or datapack. Multiplayer keeps the FunTime allowlist.
+
         if (mc != null && mc.isInSingleplayer()) {
             return true;
         }
@@ -69,7 +64,7 @@ public final class AutoNear extends Module {
 
         long now = System.currentTimeMillis();
         long delayMs = Math.max(10L, delaySeconds.getInt()) * 1000L;
-        
+
         if (now - lastCommandMs < delayMs) {
             return;
         }

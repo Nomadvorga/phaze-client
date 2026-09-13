@@ -7,7 +7,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 
-/** Defers only animated Exordium components; static components remain batched. */
 @Pseudo
 @Mixin(targets = "dev.tr7zw.exordium.render.BufferedComponent", remap = false)
 public abstract class ExordiumBufferedComponentMixin {

@@ -10,33 +10,6 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Stable per-machine identifier used as one of the counters behind the
- * cloud-config quota.
- *
- * <h3>What it is</h3>
- * A SHA-256 digest of a few machine-scoped strings: the MAC addresses
- * of the physical network interfaces, the host name, the OS account
- * name and the OS/architecture pair. Only the digest ever leaves the
- * machine - the underlying values are hashed here and discarded.
- *
- * <h3>What it is not</h3>
- * It is not a security boundary. This code runs on the user's own
- * computer, so anyone willing to patch it can send whatever digest
- * they like. It is also not perfectly stable: swapping a network
- * adapter, or docking a laptop, changes the interface list and
- * therefore the id.
- *
- * <p>Both of those are why the server counts three independent things
- * - source address, install id and this - and refuses when any single
- * one is over the limit. The point is to make casual quota evasion
- * (delete the client_id file, reconnect for a new address) more work
- * than it is worth, not to make it impossible.
- *
- * <p>Loopback, virtual and point-to-point interfaces are skipped:
- * VPNs and container bridges come and go, and including them would
- * change the id every time the user connected to one.
- */
 public final class HardwareId {
 
     private static volatile String cached;
@@ -44,11 +17,6 @@ public final class HardwareId {
     private HardwareId() {
     }
 
-    /**
-     * Lower-case hex SHA-256, or null when the fingerprint could not
-     * be built. Callers treat null as "no hardware counter" rather
-     * than failing - the server still applies the other two.
-     */
     public static String get() {
         String local = cached;
         if (local != null) {
@@ -71,8 +39,6 @@ public final class HardwareId {
             parts.add("os:" + normalize(System.getProperty("os.name"))
                     + "/" + normalize(System.getProperty("os.arch")));
 
-            // Sorted so interface enumeration order - which is not
-            // guaranteed stable across boots - cannot change the id.
             Collections.sort(parts);
 
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -83,8 +49,7 @@ public final class HardwareId {
             }
             return toHex(digest.digest());
         } catch (Throwable t) {
-            // Empty string means "computed and failed", so we do not
-            // retry the whole enumeration on every upload.
+
             return "";
         }
     }
@@ -105,8 +70,7 @@ public final class HardwareId {
                     }
                     macs.add("mac:" + toHex(mac));
                 } catch (Throwable ignored) {
-                    // A single unreadable interface must not sink the
-                    // whole fingerprint.
+
                 }
             }
         } catch (Throwable ignored) {

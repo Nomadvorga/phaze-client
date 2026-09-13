@@ -7,7 +7,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 
-/** Renders live Phaze transforms after Exordium's unchanged cached batch. */
 @Pseudo
 @Mixin(targets = "dev.tr7zw.exordium.util.DelayedRenderCallManager", remap = false)
 public abstract class ExordiumDelayedRenderCallManagerMixin {

@@ -21,14 +21,14 @@ public final class MotionBlur extends Module {
 
     private MotionBlur() {
         super("motion_blur", "Motion Blur", ModuleCategory.OTHER, true, false);
-        
+
         strength.setFullWidth(true);
         useRRC.setFullWidth(true);
         quality.setFullWidth(true);
         handDepthThreshold.setFullWidth(true);
-        
+
         setup(mainSection, strength, useRRC, quality, handDepthThreshold);
-        
+
         shader = new Shader(this);
     }
 

@@ -21,7 +21,7 @@ public final class Zoom extends Module {
     private static final float MIN_ZOOM_LEVEL = 2.0f;
     private static final float SAFE_MAX_ZOOM_LEVEL = 1.0e30f;
     private static final int SCIENTIFIC_ZOOM_ZERO_THRESHOLD = 15;
-    
+
     private static boolean zoomActive = false;
     private static float currentZoomLevel = 7.5f;
     private static float savedZoomLevel = 7.5f;
@@ -47,15 +47,14 @@ public final class Zoom extends Module {
     public final ValueSetting zoomScrollMultiplier = new ValueSetting("Scroll Multiplier", "Zoom scroll multiplier").range(1.0f, 5.0f).setValue(2.0f);
     public final ValueSetting zoomScrollSensitivity = new ValueSetting("Scroll Sensitivity", "Zoom scroll sensitivity").range(0.1f, 5.0f).setValue(1.0f);
     public final BooleanSetting showCurrentZoom = new BooleanSetting("Show Current Zoom", "Show current zoom level above hotbar").setValue(false);
-    
+
     public final SectionSetting limitsSection = new SectionSetting("Limits");
     public final BooleanSetting enableLimits = new BooleanSetting("Enable Limits", "Enable zoom limits").setValue(true);
     public final ValueSetting maxZoom = new ValueSetting("Max Zoom", "Maximum zoom level").range(10, 5000).setValue(100).visible(() -> enableLimits.isValue());
 
     private Zoom() {
         super("zoom", "Zoom", ModuleCategory.OTHER);
-        
-        // Set full width for settings
+
         keybind.setFullWidth(true);
         hold.setFullWidth(true);
         cinematicCamera.setFullWidth(true);
@@ -70,7 +69,7 @@ public final class Zoom extends Module {
         showCurrentZoom.setFullWidth(true);
         enableLimits.setFullWidth(true);
         maxZoom.setFullWidth(true);
-        
+
         setup(zoomSection, keybind, hold, cinematicCamera, defaultZoom, resumeZoom, zoomInDuration, zoomInInterpolation, zoomOutDuration, zoomOutInterpolation, zoomScrollMultiplier, zoomScrollSensitivity, showCurrentZoom, limitsSection, enableLimits, maxZoom);
     }
 
@@ -98,20 +97,19 @@ public final class Zoom extends Module {
         return false;
     }
 
-    // Settings getters
     public float getCurrentZoomLevel() {
         currentZoomLevel = sanitizeZoomLevel(currentZoomLevel);
         return currentZoomLevel;
     }
-    
+
     public void setCurrentZoomLevel(float level) {
         currentZoomLevel = sanitizeZoomLevel(level);
     }
-    
+
     public boolean isHold() {
         return hold.isValue();
     }
-    
+
     public boolean isCinematicCamera() {
         return cinematicCamera.isValue();
     }
@@ -191,23 +189,22 @@ public final class Zoom extends Module {
         }
         return Math.min(level, SAFE_MAX_ZOOM_LEVEL);
     }
-    
+
     public static boolean isZoomActive() {
         return zoomActive;
     }
-    
+
     public static void setZoomActive(boolean active) {
         zoomActive = active;
-        
-        // Resume Zoom logic
+
         if (!active && Zoom.getInstance().isResumeZoom()) {
-            // Save zoom level when disabling
+
             savedZoomLevel = sanitizeZoomLevel(currentZoomLevel);
         } else if (active && Zoom.getInstance().isResumeZoom()) {
-            // Restore zoom level when enabling
+
             currentZoomLevel = sanitizeZoomLevel(savedZoomLevel);
         } else if (active && !Zoom.getInstance().isResumeZoom()) {
-            // Reset to default zoom when enabling without Resume Zoom
+
             currentZoomLevel = sanitizeZoomLevel(Zoom.getInstance().getDefaultZoom());
         } else if (!active) {
             currentZoomLevel = sanitizeZoomLevel(currentZoomLevel);

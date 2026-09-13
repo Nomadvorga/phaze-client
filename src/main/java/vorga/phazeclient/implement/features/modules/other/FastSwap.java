@@ -19,10 +19,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Predicate;
 
-/**
- * Pulse-style hotbar selector: every configured key jumps to the first
- * matching item in the player's hotbar.
- */
 public final class FastSwap extends Module {
     private static final FastSwap INSTANCE = new FastSwap();
     private static final String KEY_DESCRIPTION = "Select the first matching item in your hotbar";

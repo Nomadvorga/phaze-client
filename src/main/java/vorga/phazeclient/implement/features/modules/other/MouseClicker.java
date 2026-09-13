@@ -13,12 +13,6 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.base.util.ServerUtil;
 import vorga.phazeclient.mixins.MinecraftClientMouseInvoker;
 
-/**
- * Auto-click utility (a.k.a. Tape Mouse). Periodically attacks the targeted
- * entity or uses the held item depending on the configured hand.
- *
- * Restricted to a fixed list of supported servers (see {@link ServerUtil#isMouseClickerSupported()}).
- */
 public final class MouseClicker extends Module {
     private static final MouseClicker INSTANCE = new MouseClicker();
 

@@ -85,11 +85,6 @@ public abstract class AbstractBindWindow extends AbstractWindow {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-
-    // 1.21.11: the GUI pose is org.joml.Matrix3x2fStack, not MatrixStack.
-    // Kept as the concrete stack type (not Matrix3x2fc) so the value stays
-    // assignable to both ShapeProperties.create(Matrix3x2fc) and the font
-    // renderer's pose parameter.
     private void drawKeyButton(Matrix3x2fStack matrix) {
         float stringWidth = Fonts.getSize(14).getStringWidth(StringUtil.getBindName(getKey()));
 

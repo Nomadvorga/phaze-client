@@ -13,7 +13,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.other.ChunkAnimator;
 
-/** Keeps separately-rendered containers synchronized with their animated chunk. */
 @Mixin(BlockEntityRenderManager.class)
 public abstract class BlockEntityRenderDispatcherChunkAnimatorMixin {
     @Inject(method = "getRenderState", at = @At("HEAD"), cancellable = true, require = 0)
@@ -21,8 +20,7 @@ public abstract class BlockEntityRenderDispatcherChunkAnimatorMixin {
             E blockEntity, float tickDelta, ModelCommandRenderer.CrumblingOverlayCommand overlay,
             CallbackInfoReturnable<S> cir) {
         if (phaze$shouldHideContainer(blockEntity)) {
-            // The 1.21.11 renderer is state based. A null state is the
-            // established "do not queue this block entity" result.
+
             cir.setReturnValue(null);
         }
     }

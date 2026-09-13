@@ -21,7 +21,7 @@ import java.util.Set;
 public final class HolyWorldHelperRenderer {
     private static final float TRAP_RADIUS = 3.5F;
     private static final float TRAP_SHELL_THICKNESS = 1.0F;
-    /** Was the global {@code RenderSystem.lineWidth(2.0F)}; per-vertex since 1.21.11. */
+
     private static final float OUTLINE_LINE_WIDTH = 2.0F;
     private static final boolean[][][] TRAP_SHELL = createTrapShell();
     private static final boolean[][][] UNDERGROUND_TRAP = createUndergroundTrap();
@@ -54,9 +54,7 @@ public final class HolyWorldHelperRenderer {
         if (type == HolyWorldHelper.HighlightType.NONE) return;
 
         var playerBlock = client.player.getBlockPos();
-        // Build overlay vertices around the camera, like Predictions.
-        // Converting absolute world positions to float breaks block-aligned
-        // geometry once the player is far from spawn.
+
         float centerX = (float) (playerBlock.getX() + 0.5 - cameraPos.x);
         float centerY = (float) (playerBlock.getY() + 1.0 - cameraPos.y);
         float centerZ = (float) (playerBlock.getZ() + 0.5 - cameraPos.z);
@@ -241,27 +239,15 @@ public final class HolyWorldHelperRenderer {
         float blue = (color & 255) / 255.0F;
         float fillAlpha = alpha * fillOpacity;
 
-
         if (fillAlpha > 0.0F) {
-            // 1.21.11: RenderSystem.polygonOffset / enablePolygonOffset /
-            // disablePolygonOffset are gone - depth bias moved onto the
-            // RenderPipeline (.withDepthBias(factor, units)). The -1/-1
-            // bias that kept this fill from z-fighting with the coplanar
-            // world blocks it traces has to be baked into the layer this
-            // buffer is submitted through, so it can no longer leak into
-            // later draws either.
-            // That layer is PhazeRenderLayers.getBlockFill(), built with
-            // .withDepthBias(-1.0F, -1.0F).
+
             BufferBuilder fill = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             for (FaceBox face : geometry.faces) {
                 addFace(fill, matrix, face, offsetX, offsetY, offsetZ, red, green, blue, fillAlpha);
             }
             vorga.phazeclient.util.render.PhazeRenderLayers.getBlockFill().draw(fill.end());
         }
-        // 1.21.11: RenderSystem.lineWidth is gone and VertexFormats.LINES was
-        // replaced by POSITION_COLOR_NORMAL_LINE_WIDTH - the width is a
-        // per-vertex attribute now, so the old global 2.0 travels with each
-        // vertex instead (same width, same look).
+
         BufferBuilder outline = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL_LINE_WIDTH);
         for (Edge edge : geometry.edges) {
             addLine(outline, matrix, edge, offsetX, offsetY, offsetZ, red, green, blue, alpha, OUTLINE_LINE_WIDTH);

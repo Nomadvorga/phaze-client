@@ -53,7 +53,7 @@ public class GeoModelParser {
                }
             }
          }
-         // Parsed using the coordinate conversion from the supplied Phaze renderer.
+
          return var6;
       } else {
          System.err.println("[PhazeCosmetics] No minecraft:geometry found in model");

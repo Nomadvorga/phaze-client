@@ -34,14 +34,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-/**
- * Runtime registry for built-in + user-supplied panorama zip packs.
- *
- * <p>User panoramas live in {@code <gameDir>/Phaze/Panoramas}
- * and follow the same simple archive shape as panorama mods:
- * {@code panorama_0.png .. panorama_5.png} plus optional
- * {@code icon.png} for the preview card.</p>
- */
 public final class MenuPanoramaRegistry {
     private static final String ROOT_DIR = "Phaze";
     private static final String PANORAMAS_DIR = "Panoramas";
@@ -81,9 +73,6 @@ public final class MenuPanoramaRegistry {
                 "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v1/post-soviet-night-preview.png"
         ));
 
-        // Minecraft title-screen panoramas, ordered chronologically.
-        // The archives retain their upstream licenses; attribution is in
-        // THIRD_PARTY_LICENSES.md.
         registerRemote(new RemotePanoramaDescriptor(
                 "remote:legacy", "Legacy", "legacy-panorama.zip",
                 "https://github.com/Nomadvorga/phaze-client/releases/download/panorama-assets-v2/legacy-panorama.zip",
@@ -211,26 +200,10 @@ public final class MenuPanoramaRegistry {
         return MenuUiSettings.PanoramaPreset.VANILLA;
     }
 
-    /**
-     * 1.21.11: MenuPanoramaRenderer has to tell a zip-loaded panorama from a
-     * resource-pack one, because only the latter can go through vanilla's
-     * CubemapTexture. It only knows the cube map Identifier, so the lookup lives
-     * here.
-     */
     static synchronized boolean isDynamicCubeMap(Identifier cubeMapBase) {
         return findByCubeMapBase(cubeMapBase) != null;
     }
 
-    /**
-     * Live faces of a zip-loaded panorama, indexed by PANORAMA FILE NUMBER
-     * (panorama_0 .. panorama_5), or {@code null} when this cube map is not a
-     * custom one or its faces failed to load.
-     *
-     * <p>1.21.11: these NativeImages are what the Phaze cube map is uploaded
-     * from - NativeImageBackedTexture keeps the image it was constructed with
-     * and only releases it on close(), so the zip never has to be re-read. The
-     * array is a copy; the images themselves stay owned by the descriptor.</p>
-     */
     static synchronized NativeImage[] dynamicFacesFor(Identifier cubeMapBase) {
         CustomPanoramaDescriptor descriptor = findByCubeMapBase(cubeMapBase);
         if (descriptor == null || !descriptor.facesLoaded || descriptor.faceTextures == null) {
@@ -309,11 +282,6 @@ public final class MenuPanoramaRegistry {
         return imported;
     }
 
-    /**
-     * Synchronizes the live registry with the archive folder without tearing
-     * down unchanged previews and cube maps. This avoids a visible grid blink
-     * and a full six-face decode whenever one panorama is downloaded.
-     */
     public static synchronized void reload() {
         ensureDirectoryExists();
         MinecraftClient client = MinecraftClient.getInstance();
@@ -559,7 +527,6 @@ public final class MenuPanoramaRegistry {
         }
     }
 
-    /** Box-filter a square panorama preview down to a small cached thumbnail. */
     private static NativeImage downscaleSquare(NativeImage source, int target) {
         int size = Math.min(source.getWidth(), source.getHeight());
         if (size <= target) {
@@ -724,10 +691,7 @@ public final class MenuPanoramaRegistry {
         void close(MinecraftClient client) {
             TextureManager textureManager = client != null ? client.getTextureManager() : null;
             if (textureManager != null) {
-                // 1.21.11: the cube map MenuPanoramaRenderer builds for this
-                // panorama is a plain AbstractTexture, so TextureManager.reload()
-                // never touches it - Phaze owns its GPU memory and has to free it
-                // whenever the panorama is replaced, deleted or reloaded.
+
                 textureManager.destroyTexture(cubeMapBase);
                 textureManager.destroyTexture(previewTextureId);
                 for (Identifier faceTextureId : faceTextureIds) {
@@ -796,7 +760,7 @@ public final class MenuPanoramaRegistry {
                             cropToSquare(NativeImage.read(input)), PREVIEW_CACHE_SIZE);
                     writeCachedPreview(cacheFile, preview, token);
                     previewTextureSize = Math.max(1, preview.getWidth());
-                    // 1.21.11: NativeImageBackedTexture now requires a debug-label Supplier<String> first.
+
                     previewTexture = new NativeImageBackedTexture(previewTextureId::toString, preview);
                     client.getTextureManager().registerTexture(previewTextureId, previewTexture);
                 }
@@ -821,7 +785,7 @@ public final class MenuPanoramaRegistry {
                     try (InputStream input = zip.getInputStream(faceEntry)) {
                         NativeImage face = NativeImage.read(input);
                         Identifier faceTextureId = faceTextureIds[i];
-                        // 1.21.11: NativeImageBackedTexture now requires a debug-label Supplier<String> first.
+
                         loadedTextures[i] = new NativeImageBackedTexture(faceTextureId::toString, face);
                         client.getTextureManager().registerTexture(faceTextureId, loadedTextures[i]);
                     }
@@ -957,8 +921,7 @@ public final class MenuPanoramaRegistry {
             ensureDirectoryExists();
             downloadedBytes.set(0L);
             totalBytes = -1L;
-            // The scanner only accepts .zip, so an interrupted download never
-            // appears as a half-written panorama.
+
             Path temporary = target.resolveSibling(archiveName + ".part");
             HttpRequest request = HttpRequest.newBuilder(downloadUri).GET().build();
             HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
@@ -977,7 +940,7 @@ public final class MenuPanoramaRegistry {
                                 }
                             }
                             try (ZipFile ignored = new ZipFile(temporary.toFile())) {
-                                // Validate before making the panorama visible.
+
                             }
                             Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                             selectDownloaded();

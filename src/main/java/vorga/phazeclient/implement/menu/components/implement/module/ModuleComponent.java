@@ -84,24 +84,13 @@ public class ModuleComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Always run lifecycle bookkeeping first so the rest of the
-        // menu (mouseClicked, isHover) sees consistent component
-        // bounds whether or not the cache short-circuits the draw.
+
         visualX = x;
         visualY = y;
         height = getComponentHeight();
 
         boolean inSearchMode = isInSearchMode();
-        // preUpdateAnimations runs every frame, even on a cache hit.
-        // It mirrors all setDirection calls that the legacy render
-        // body buried inside renderOptionsRow / renderStateRow / the
-        // inSearchMode block at the top of render(). Pulling them
-        // out here is what lets canUseCache() inspect FRESH animation
-        // state (each anim's isDone()) and correctly decide that no
-        // transitions are in flight before reading from the FBO -
-        // otherwise the cache would always look "stable" because the
-        // setDirection calls happen INSIDE the immediate render that
-        // we are about to skip.
+
         preUpdateAnimations(mouseX, mouseY, inSearchMode);
 
         if (canUseCache()) {
@@ -111,32 +100,10 @@ public class ModuleComponent extends AbstractComponent {
         }
     }
 
-    /**
-     * Mirrors every {@code setDirection} / {@code setDirectionAndFinish}
-     * the legacy render path applied to {@code hoverAnimation},
-     * {@code optionsHoverAnimation}, {@code outlineColorAnimation} and
-     * {@code stateRowHoverAnimation}. Centralizing these here means a
-     * cache-hit frame (which skips {@link #renderImmediate}) still
-     * advances animation state, so the moment any animation does
-     * actually start running we see it in {@code canUseCache()} and
-     * fall back to the eager path on the very next frame.
-     *
-     * <p>The duplicate {@code setDirection} calls still remaining
-     * inside {@link #renderOptionsRow} and the inline block before
-     * {@link #renderStateRow} are intentionally left in place: they
-     * are idempotent (setting the same direction twice is a no-op
-     * inside {@code Animation.setDirection}) and removing them would
-     * couple the helper methods to the precondition that this
-     * pre-update ran first, making accidental future call-site
-     * changes harder to validate.
-     */
     private void preUpdateAnimations(int mouseX, int mouseY, boolean inSearchMode) {
         this.isHovered = isHover(mouseX, mouseY);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        // Dynamic cursor: a hovered module card is clickable (toggle /
-        // open settings), so request the hand shape. Commit happens at
-        // ScreenCursorMixin TAIL.
         if (isHovered) {
             vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
         }
@@ -147,10 +114,6 @@ public class ModuleComponent extends AbstractComponent {
             lastModuleState = currentModuleState;
         }
 
-        // Replicate the row-hover bounds checks that renderOptionsRow
-        // and the renderStateRow caller block do, so canUseCache
-        // sees the right direction when the cursor crosses a row
-        // boundary even on a cache-hit frame.
         float baseHeight = getBaseHeightFloat();
         boolean showStateRow = module.isShowEnable();
         float optionsY = y + baseHeight - (showStateRow ? (OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT) : OPTIONS_ROW_HEIGHT);
@@ -173,44 +136,8 @@ public class ModuleComponent extends AbstractComponent {
         }
     }
 
-    /**
-     * Master switch for the per-card FBO snapshot cache. Currently
-     * latched OFF because the capture path (begin/end inside
-     * {@link CardSnapshotCache}) is producing empty / mis-colored
-     * snapshots in the live menu - cards rendered cleanly during
-     * hover animation (which forces the eager {@link #renderImmediate}
-     * path) but disappeared the moment {@link #canUseCache} returned
-     * true and the cache blitted its FBO content. The fix for the
-     * SDF-rect framebuffer-height mismatch
-     * ({@link vorga.phazeclient.api.system.shape.batched.BatchedRectangle#setRenderTargetFbHeight})
-     * did not resolve the visible-pixel symptoms, so until the capture
-     * pass is debugged with proper instrumentation the cache is held
-     * inert at the canUseCache boundary - {@code renderImmediate} runs
-     * every frame, just like the legacy pre-cache code path. Other
-     * pieces of the cache infrastructure (CardSnapshotCache class, the
-     * BatchedRectangle FB-height override, the cache invalidation
-     * hook in CategoryContainerComponent) stay wired in place so
-     * flipping this flag back to {@code true} is the only edit needed
-     * to re-enable it once the underlying issue is found.
-     */
     private static final boolean CARD_SNAPSHOT_CACHE_ENABLED = false;
 
-    /**
-     * Returns true iff every input that affects the captured FBO
-     * pixels is in a stable, non-animating state. While ANY animation
-     * is mid-transition (hover fade-in / fade-out, enabled-state
-     * outline color, options-row hover, state-row hover) the captured
-     * pixels would change every frame - we'd thrash the FBO with
-     * captures and gain nothing. Same logic for the menu's open/close
-     * fade: while {@code globalAlpha} is animating we render eagerly
-     * and let the cache repopulate once the menu is fully visible.
-     *
-     * <p>{@code binding} is treated as un-cacheable not because the
-     * pixels change every frame (they don't - the bind chip just
-     * shows "(NAME) ...") but because key-press transitions back to
-     * a normal bind name, and the user typically clicks bind expecting
-     * an immediate visual update on the very next frame.
-     */
     private boolean canUseCache() {
         if (!CARD_SNAPSHOT_CACHE_ENABLED) {
             return false;
@@ -227,32 +154,13 @@ public class ModuleComponent extends AbstractComponent {
                 && stateRowHoverAnimation.isDone();
     }
 
-    /**
-     * Cache-aware render path. Hashes every visual input the
-     * captured FBO depends on, looks up (or allocates) a per-card
-     * {@link CardSnapshotCache.Snapshot}, re-captures only when the
-     * hash mismatches the previously baked content, and always blits
-     * the FBO to the main framebuffer at the card's screen position.
-     *
-     * <p>The capture path translates the matrix stack by {@code (-x, -y, 0)}
-     * so that the renderImmediate body, which writes positions in
-     * absolute screen coords like {@code (x, y, x+width, y+height)},
-     * lands at FBO-local (0, 0, width, height) under the card-local
-     * orthographic projection that {@link CardSnapshotCache#beginCapture}
-     * sets up.
-     */
     private void renderViaCache(DrawContext context, int mouseX, int mouseY, float delta, boolean inSearchMode) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.getWindow() == null) {
             renderImmediate(context, mouseX, mouseY, delta, inSearchMode);
             return;
         }
-        // FBO size in FRAMEBUFFER pixels: card width/height are in GUI
-        // pixels, multiplied by the window's scale factor to match the
-        // resolution at which the eager path would have rasterized the
-        // same card on the main FB. Without scaling, the cached card
-        // would look pixelated relative to the rest of the menu on
-        // GUI-scale > 1 setups.
+
         int scale = Math.max(1, (int) Math.ceil(mc.getWindow().getScaleFactor()));
         int fbW = Math.max(1, Math.round(width * scale));
         int fbH = Math.max(1, Math.round(height * scale));
@@ -264,8 +172,7 @@ public class ModuleComponent extends AbstractComponent {
             CardSnapshotCache.beginCapture(snapshot, width, height);
             try {
                 context.getMatrices().pushMatrix();
-                // 1.21.11: GUI pose is Matrix3x2fStack - translate is 2D only
-                // (the old third argument was a Z offset the GUI no longer has).
+
                 context.getMatrices().translate(-x, -y);
                 renderImmediate(context, mouseX, mouseY, delta, inSearchMode);
                 context.getMatrices().popMatrix();
@@ -278,17 +185,6 @@ public class ModuleComponent extends AbstractComponent {
         CardSnapshotCache.blit(context, snapshot, x, y, width, height, globalAlpha);
     }
 
-    /**
-     * Hash of every visual input that determines the captured pixels.
-     * Anything NOT in the hash must either be invariant per
-     * {@code ModuleComponent} instance (e.g. the localized module
-     * name, icon path - those are owned by the module ref which is
-     * itself the cache key's identity) or be quantized into a
-     * stable bucket. Animation outputs are bucketed to 8 steps for
-     * defensive parity but in practice {@link #canUseCache} already
-     * gates this hash to settled animations (output ~0 or ~1), so the
-     * bucket value is constant within the cache's freshness window.
-     */
     private int computeStateHash() {
         int h = 1;
         h = h * 31 + Boolean.hashCode(module.isState());
@@ -303,10 +199,6 @@ public class ModuleComponent extends AbstractComponent {
         h = h * 31 + Float.floatToIntBits(width);
         h = h * 31 + Float.floatToIntBits(height);
 
-        // Every MenuStyle palette field that the card content reads
-        // either directly or indirectly. If any of these change
-        // (palette switch / theme transition) the captured pixels
-        // are stale and we re-render.
         h = h * 31 + Integer.hashCode(MenuStyle.BORDER);
         h = h * 31 + Integer.hashCode(MenuStyle.BORDER_LIGHT);
         h = h * 31 + Integer.hashCode(MenuStyle.CARD_OPTIONS);
@@ -316,11 +208,6 @@ public class ModuleComponent extends AbstractComponent {
         h = h * 31 + Integer.hashCode(MenuStyle.TEXT_MUTED);
         h = h * 31 + Integer.hashCode(MenuStyle.ACCENT_GREEN);
 
-        // Animation buckets. Defensive: canUseCache already requires
-        // isDone() on all four, so these are stable within the
-        // capture window. Including them protects against a future
-        // edit relaxing canUseCache without remembering to update
-        // the hash.
         h = h * 31 + (int) (hoverAnimation.getOutputFloat() * 8.0F);
         h = h * 31 + (int) (optionsHoverAnimation.getOutputFloat() * 8.0F);
         h = h * 31 + (int) (outlineColorAnimation.getOutputFloat() * 8.0F);
@@ -329,14 +216,6 @@ public class ModuleComponent extends AbstractComponent {
         return h;
     }
 
-    /**
-     * The legacy eager render body, extracted verbatim so it can be
-     * called either directly (cache miss / not-cacheable) or through
-     * the FBO capture path. State-mutating {@code setDirection} calls
-     * inside the helpers are now duplicates of {@link #preUpdateAnimations}
-     * - left in place because they're idempotent and the helpers
-     * stay independent of caller order.
-     */
     private void renderImmediate(DrawContext context, int mouseX, int mouseY, float delta, boolean inSearchMode) {
         float offsetX = visualX - x;
         float offsetY = visualY - y;
@@ -348,7 +227,7 @@ public class ModuleComponent extends AbstractComponent {
         float optionsY = y + baseHeight - (showStateRow ? (OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT) : OPTIONS_ROW_HEIGHT);
 
         context.getMatrices().pushMatrix();
-        // 1.21.11: 2D GUI pose - no Z component on translate.
+
         context.getMatrices().translate(offsetX, offsetY);
 
         int outlineColor = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, outlineColorAnimation.getOutputFloat() * 0.75f);

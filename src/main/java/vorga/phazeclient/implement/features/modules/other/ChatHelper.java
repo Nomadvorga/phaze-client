@@ -39,18 +39,6 @@ public final class ChatHelper extends Module {
             "Copy taken screenshots to the system clipboard (F2)"
     ).setValue(true);
 
-    /**
-     * Longer Chat History section. Vanilla caps both the visible-message
-     * buffer and the recent-input buffer at 100 entries; this toggle
-     * raises that cap to whatever value the slider is at, mirroring the
-     * upstream
-     * <a href="https://github.com/xBackpack/InfChatHistory">InfChatHistory</a>
-     * mod by xBackpack (CC0). The mixin
-     * {@link vorga.phazeclient.mixins.ChatHudHistoryLimitMixin}
-     * rewrites the three {@code 100} integer constants in
-     * {@link net.minecraft.client.gui.hud.ChatHud} to the value
-     * returned by {@link #getChatHistoryLimit()}.
-     */
     public final SectionSetting historySection = new SectionSetting("Longer Chat History");
     public final BooleanSetting longerHistory = new BooleanSetting(
             "Longer Chat History",
@@ -62,44 +50,20 @@ public final class ChatHelper extends Module {
     ).range(200, 32767).setValue(1000)
             .visible(() -> longerHistory.isValue());
 
-    /**
-     * Anti-Caps section. When the local player sends a chat message
-     * whose alphabetical content is &gt;= {@link #ANTI_CAPS_THRESHOLD}
-     * uppercase, the {@code @ModifyArg} hook in
-     * {@link vorga.phazeclient.mixins.ClientPlayNetworkHandlerAntiCapsMixin}
-     * lowercases the entire string in-place before it leaves the
-     * client, so the recipient sees a non-shouty version. Commands
-     * (slash-prefixed) are intentionally untouched - command
-     * arguments often need exact case (player names, JSON, etc.).
-     */
     public final SectionSetting antiCapsSection = new SectionSetting("Anti Caps");
     public final BooleanSetting antiCaps = new BooleanSetting(
             "Anti Caps",
             "Auto-lowercase outgoing chat messages whose content is at least 75% uppercase"
     ).setValue(false);
 
-    /** Minimum proportion of uppercase letters that triggers the auto-lowercase rewrite. */
     private static final float ANTI_CAPS_THRESHOLD = 0.75F;
 
     private boolean bypass = false;
 
-    /**
-     * The original styled text of the most recent unique message. Stored so
-     * collapsed re-renders can keep the original colors / formatting and
-     * append a separately-colored {@code (Nx)} suffix instead of flattening
-     * everything to plain white.
-     */
     private Text lastBaseStyled;
     private String lastBaseRaw;
     private int lastCount;
 
-    /**
-     * Coalesces same-frame F2 spam into a single clipboard push.
-     * Successive screenshots within 50 ms - which mostly happens when
-     * other mods take their own programmatic screenshots back-to-back
-     * - reuse the first one's clipboard contents instead of fighting
-     * for the AWT clipboard lock.
-     */
     private final AtomicLong lastClipboardWriteMs = new AtomicLong(0L);
     private final AtomicLong lastClipboardErrorMs = new AtomicLong(0L);
     private static volatile Clipboard phaze$nativeClipboard;
@@ -125,39 +89,17 @@ public final class ChatHelper extends Module {
     @Override
     public void activate() {
         super.activate();
-        // The mixin reads getChatHistoryLimit() lazily on every
-        // addMessage / addToMessageHistory call, so the new cap takes
-        // effect for any incoming traffic from this point. We don't
-        // grow the buffers retroactively - that's a non-issue because
-        // they're already small and will fill up naturally.
+
         phaze$applyHistoryLimit();
     }
 
     @Override
     public void deactivate() {
         super.deactivate();
-        // When the user turns the module off we have to actively trim
-        // the buffers back down to vanilla's 100-cap. The mixin reverts
-        // its returned cap immediately (getChatHistoryLimit() now
-        // returns 100), but vanilla only enforces that cap inside
-        // {@code while (size > 100)} guards that fire on the next
-        // addMessage / addToMessageHistory call. Until then any
-        // already-accumulated 200..32767 entries stay in memory and
-        // visible in scrollback / Up-arrow recall, which the user
-        // reasonably reads as "module didn't disable". Trimming
-        // explicitly here makes the disable instant.
+
         phaze$applyHistoryLimit();
     }
 
-    /**
-     * Trims {@link ChatHud}'s three internal lists down to the current
-     * effective cap. Called from {@link #activate()} /
-     * {@link #deactivate()} and from the {@link #longerHistory} toggle's
-     * {@code onChange} callback so any state transition that reduces
-     * the cap takes effect on the very next frame. When the cap is
-     * being raised this is a no-op (every list size is already <= the
-     * new larger cap).
-     */
     private void phaze$applyHistoryLimit() {
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
         if (client == null || client.inGameHud == null) {
@@ -209,22 +151,10 @@ public final class ChatHelper extends Module {
         return -2.0F;
     }
 
-    /**
-     * Set while we're recursively re-adding a message we modified, so the
-     * collapse mixin doesn't reprocess our own output as a duplicate.
-     */
     public boolean isBypassActive() {
         return bypass;
     }
 
-    /**
-     * Inspects the latest message in the {@link ChatHud}. If the new message
-     * matches the most recent unique base (ignoring any prior {@code (Nx)}
-     * suffix), removes the previous occurrence and returns a styled
-     * replacement: the ORIGINAL incoming text (with full color/formatting)
-     * followed by a red {@code (Nx)} sibling. Returns {@code null} when no
-     * collapse should happen.
-     */
     public Text tryCollapse(ChatHud hud, Text incoming) {
         if (!isEnabled() || !collapseRepeats.isValue() || incoming == null) {
             return null;
@@ -232,9 +162,6 @@ public final class ChatHelper extends Module {
 
         String incomingRaw = stripSuffixRaw(incoming.getString());
 
-        // Different message arrived: reset the collapse state so the next
-        // duplicate is counted against THIS one (whose styled form vanilla
-        // is about to render normally).
         if (lastBaseRaw == null || !lastBaseRaw.equals(incomingRaw)) {
             lastBaseStyled = incoming;
             lastBaseRaw = incomingRaw;
@@ -242,9 +169,6 @@ public final class ChatHelper extends Module {
             return null;
         }
 
-        // Duplicate of the previous message - we need to remove whatever is
-        // currently sitting at the top of the chat and re-add a collapsed
-        // version.
         ChatHudAccessor accessor = (ChatHudAccessor) hud;
         List<ChatHudLine> messages = accessor.phaze$getMessages();
         if (messages == null || messages.isEmpty()) {
@@ -253,20 +177,7 @@ public final class ChatHelper extends Module {
         ChatHudLine removed = messages.remove(0);
         List<ChatHudLine.Visible> visible = accessor.phaze$getVisibleMessages();
         if (visible != null && !visible.isEmpty() && removed != null) {
-            // Vanilla's addVisibleMessage breaks long messages into N
-            // wrapped Visible entries, ALL sharing the same addedTime
-            // (= the parent ChatHudLine's creationTick). Removing only
-            // visible.remove(0) drops one wrapped line but leaves the
-            // others as orphans with the same recent timestamp - they
-            // still render in vanilla's loop (their addedTime stays
-            // young, so the unfocused-mode `age >= 200` skip never
-            // triggers) but the matching text has already been pulled,
-            // so the user sees a stack of phantom row backgrounds with
-            // no visible text above the chat - exactly the dark
-            // rectangle reported when "many lines" of collapsible
-            // messages have arrived. Removing every Visible whose
-            // addedTime matches the removed ChatHudLine's creationTick
-            // wipes the whole wrapped block in one pass.
+
             int removedTick = removed.creationTick();
             visible.removeIf(v -> v != null && v.addedTime() == removedTick);
         }
@@ -286,11 +197,6 @@ public final class ChatHelper extends Module {
         }
     }
 
-    /**
-     * Strips a trailing {@code " (Nx)"} suffix from a raw message string so
-     * comparisons treat "hello" and "hello (3x)" as the same base. The numeric
-     * count itself is irrelevant when matching - we keep our own counter.
-     */
     private String stripSuffixRaw(String text) {
         if (text == null) {
             return "";
@@ -302,21 +208,10 @@ public final class ChatHelper extends Module {
         return text;
     }
 
-    /** True when the screenshot mixin should intercept the save and push to clipboard. */
     public boolean shouldCopyScreenshot() {
         return isEnabled() && screencopy.isValue();
     }
 
-    /**
-     * Effective limit on chat-line / recent-message buffers, used by
-     * {@link vorga.phazeclient.mixins.ChatHudHistoryLimitMixin}. Returns
-     * {@code 100} (the vanilla constant) when the module or the
-     * Longer Chat History toggle is off, so disabling either path
-     * leaves the user with the standard limit and no surprise memory
-     * growth on next launch. Slider clamp keeps us under
-     * {@link Short#MAX_VALUE} which matches the upstream
-     * InfChatHistory cap.
-     */
     public int getChatHistoryLimit() {
         if (!isEnabled() || !longerHistory.isValue()) {
             return 100;
@@ -324,25 +219,6 @@ public final class ChatHelper extends Module {
         return Math.max(100, Math.min(Short.MAX_VALUE, historyLimit.getInt()));
     }
 
-    /**
-     * Returns the lowercase form of {@code message} when Anti-Caps
-     * applies, the original string otherwise. Mixin
-     * {@link vorga.phazeclient.mixins.ClientPlayNetworkHandlerAntiCapsMixin}
-     * forwards every outgoing chat message through here right before
-     * {@code ClientPlayNetworkHandler.sendChatMessage} hands it to
-     * the network layer, so the recipient sees the rewritten text.
-     *
-     * <p>The "uppercase ratio" is computed against alphabetic
-     * characters only - digits, spaces, emoji and punctuation don't
-     * pull the ratio either way. A short message of 4 letters
-     * needs 3 uppercase to cross the 75% threshold, which matches
-     * the spec ("на 75% состоит из капса"). Empty / no-letter
-     * messages can't trigger because their alpha count is zero.
-     *
-     * <p>Slash-prefixed commands are skipped: command arguments
-     * (player names, JSON, raw strings) routinely need preserved
-     * case. Anti-Caps is only meaningful for plain chat.
-     */
     public String maybeAntiCaps(String message) {
         if (!isEnabled() || !antiCaps.isValue() || message == null) {
             return message;
@@ -370,20 +246,6 @@ public final class ChatHelper extends Module {
         return message;
     }
 
-    /**
-     * Reads pixels off the {@link NativeImage} synchronously (it's only
-     * alive on the calling IO worker thread, and closing happens right
-     * after the mixin returns), then hands the resulting
-     * {@link BufferedImage} to a daemon thread for the actual clipboard
-     * push. Clipboard system calls can block on a contested clipboard
-     * lock; running them on the IO worker would back up other screenshot
-     * saves queued behind this one.
-     *
-     * <p>Adapted from <a href="https://github.com/ImUrX/screencopy">screencopy</a>
-     * by ImUrX, used under the MIT License (Copyright (c) 2021 ImUrX
-     * contributors). See {@code THIRD_PARTY_LICENSES.md} at the project
-     * root for the full notice.
-     */
     public void copyImageToClipboardAsync(NativeImage image, Consumer<Text> messageReceiver) {
         if (image == null) {
             return;

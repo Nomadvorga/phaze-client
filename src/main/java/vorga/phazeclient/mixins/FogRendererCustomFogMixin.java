@@ -30,34 +30,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import vorga.phazeclient.implement.features.modules.other.CustomFog;
 
-/**
- * Custom Fog: overrides the fog colour and distances from the module's own
- * settings, rather than scaling whatever vanilla computed.
- *
- * <h3>1.21.11 port</h3>
- *
- * <p>{@code BackgroundRenderer} no longer exists. Fog moved to
- * {@link FogRenderer}, and the whole "return a Fog packet" design went with
- * it: {@code Fog} and {@code FogShape} are gone, and the fog parameters are
- * now written into a std140 UBO through
- * {@code applyFog(ByteBuffer, int, Vector4f, float x6)}. The old
- * {@code @Inject ... cancellable} that returned a hand-built {@code Fog} has
- * no equivalent, so this hooks the UBO write instead and rewrites the values
- * on their way in.
- *
- * <p>The six floats are, in order: environmental start/end, render-distance
- * start/end, sky end, cloud end. Sky and cloud only follow the module when
- * "Affect Sky" is on, which is what that setting used to gate via the removed
- * {@code FogType.FOG_SKY} branch.
- *
- * <p><b>Why this cancels rather than amends.</b> An earlier version modified
- * the arguments of vanilla's UBO write, which left the result dependent on
- * everything else that runs in that method. Sodium Extra drives the same path,
- * so the two fought and the distance setting had no visible effect. Cancelling
- * at HEAD and writing the block here makes the module the sole author of the
- * fog state - the same contract the 1.21.4 version had when it returned its own
- * fully specified {@code Fog} object.
- */
 @Mixin(FogRenderer.class)
 public abstract class FogRendererCustomFogMixin {
 
@@ -67,32 +39,12 @@ public abstract class FogRendererCustomFogMixin {
     @Unique private static Constructor<?> phaze$sodiumFogConstructor;
     @Unique private static Field phaze$sodiumFogField;
 
-    /**
-     * Vanilla's own std140 writer for the fog block.
-     *
-     * <p>Reused rather than reimplemented so the byte layout can never drift
-     * from whatever {@code fog.glsl} expects.
-     */
     @Invoker("applyFog")
     abstract void phaze$writeFogBlock(ByteBuffer buffer, int offset, Vector4f color,
                                       float environmentalStart, float environmentalEnd,
                                       float renderDistanceStart, float renderDistanceEnd,
                                       float skyEnd, float cloudEnd);
 
-    /**
-     * Take the fog over completely instead of amending vanilla's result.
-     *
-     * <p>The previous approach hooked the UBO write at the end of vanilla's
-     * calculation, which meant the values still had to survive everything else
-     * in that method - including other mods. Sodium Extra manipulates the same
-     * path, so Custom Fog ended up fighting it and the distance setting could
-     * not move the result.
-     *
-     * <p>Cancelling at HEAD makes this module the sole author of the fog block:
-     * nothing vanilla or anyone else computes downstream is consulted, which is
-     * the same "fully specified fog packet" contract the 1.21.4 version had
-     * when it returned its own {@code Fog} object.
-     */
     @Inject(
             method = "applyFog(Lnet/minecraft/client/render/Camera;ILnet/minecraft/client/render/RenderTickCounter;FLnet/minecraft/client/world/ClientWorld;)Lorg/joml/Vector4f;",
             at = @At("HEAD"),
@@ -122,8 +74,6 @@ public abstract class FogRendererCustomFogMixin {
                 (rgb & 0xFF) / 255.0F,
                 1.0F);
 
-        // Park sky and cloud fog outside the reachable range when the module
-        // is configured to affect terrain only.
         float skyEnd = module.isAffectSky() ? distance : PHAZE_UNREACHABLE;
         float cloudEnd = module.isAffectSky() ? distance : PHAZE_UNREACHABLE;
 
@@ -133,18 +83,12 @@ public abstract class FogRendererCustomFogMixin {
                     view.data(),
                     0,
                     color,
-                    // Environmental is the SPHERICAL term and render-distance the
-                    // CYLINDRICAL one; fog.glsl takes their max. Parking the
-                    // spherical pair out of reach leaves the cylindrical term
-                    // alone, which is FogShape.CYLINDER as 1.21.4 used.
+
                     PHAZE_UNREACHABLE, PHAZE_UNREACHABLE,
                     start, distance,
                     skyEnd, cloudEnd);
         }
 
-        // Sodium snapshots the result of this method for its chunk shaders.
-        // Since Custom Fog intentionally cancels the method at HEAD, Sodium's
-        // normal RETURN hook never runs; update that optional snapshot here.
         phaze$syncSodiumFogSnapshot(color, start, distance);
 
         cir.setReturnValue(color);
@@ -179,33 +123,13 @@ public abstract class FogRendererCustomFogMixin {
                     PHAZE_UNREACHABLE, PHAZE_UNREACHABLE, start, end);
             phaze$sodiumFogField.set(this, parameters);
         } catch (ReflectiveOperationException | LinkageError ignored) {
-            // Sodium is optional; vanilla already consumed the UBO above.
+
         }
     }
 
-    /**
-     * A fog bound no vertex can reach, used to switch a term off.
-     *
-     * <p>Deliberately far below {@code Float.MAX_VALUE}: the shader computes
-     * {@code (d - start) / (end - start)} before the range checks short-circuit
-     * on some drivers, and huge magnitudes there invite inf/NaN. A million
-     * blocks is unreachable in practice and stays in comfortable float range.
-     */
     @Unique
     private static final float PHAZE_UNREACHABLE = 1.0E6F;
 
-    /**
-     * Recolour the fog colour itself.
-     *
-     * <p>The UBO hook above only changes how fog is BLENDED onto geometry. The
-     * sky is different: vanilla clears the background and tints the horizon
-     * band with the value {@code getFogColor} returns, which is why overriding
-     * only the UBO left the middle of the sky untouched while everything else
-     * took the custom tint.
-     *
-     * <p>1.21.11 made this an instance method (it was static on the old
-     * {@code BackgroundRenderer}), so the handler is non-static too.
-     */
     @ModifyReturnValue(method = "getFogColor", at = @At("RETURN"), require = 1)
     private Vector4f phaze$fogColor(Vector4f original,
                                     Camera camera,
@@ -225,19 +149,6 @@ public abstract class FogRendererCustomFogMixin {
                 original.w);
     }
 
-    /**
-     * Keep the fog UBO live even when vanilla fog is switched off.
-     *
-     * <p>{@code getFogBuffer} early-returns an all-zero "empty" slice while
-     * {@code fogEnabled} is false (that flag is what F3+F toggles). Without
-     * this, disabling vanilla fog would silently disable Custom Fog too, since
-     * both read the same buffer. Reporting the flag as true for our own module
-     * lets the values written above reach the shaders regardless.
-     *
-     * <p>Only the read inside {@code getFogBuffer} is touched, so
-     * {@code toggleFog()} still flips the real field and vanilla's own state
-     * stays consistent.
-     */
     @ModifyExpressionValue(
             method = "getFogBuffer",
             at = @At(
@@ -254,12 +165,6 @@ public abstract class FogRendererCustomFogMixin {
         return !phaze$shouldSkip(CustomFog.getInstance());
     }
 
-    /**
-     * Submersion fog (water / lava / powder snow) and the blindness and
-     * darkness effects are left to vanilla on purpose - they are gameplay
-     * visibility cues, and overriding them would hand the user an advantage
-     * the module is not meant to give.
-     */
     @Unique
     private static boolean phaze$shouldSkip(CustomFog module) {
         if (module == null || !module.isEnabled()) {

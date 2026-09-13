@@ -41,23 +41,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Consolidated mixin for {@link ChatHud}. Combines the previous seven
- * sibling mixins (Collapse, FadeIn, HistoryLimit, MentionHighlight,
- * MessageSlide, NickHider, Translator) into a single class to cut the
- * mixin-config entry count without changing semantics. Every original
- * injector is preserved verbatim with a unique {@code phaze$} method
- * name; the shadowed fields belong to MessageSlide and are unused by
- * the other modules. {@code ChatHudAccessor} (interface) stays as a
- * separate file because Mixin doesn't allow merging accessor
- * interfaces with class-form mixins.
- */
 @Mixin(ChatHud.class)
 public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
-
-    // ---------------------------------------------------------------
-    // ChatHudMessageSlideMixin: shadows + unique state
-    // ---------------------------------------------------------------
 
     @Shadow private int scrolledLines;
 
@@ -81,22 +66,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
     @Unique private final Set<Integer> phaze$badgedChatTicks = new LinkedHashSet<>();
     @Unique private final Map<Integer, Boolean> phaze$codeBadgeChatTicks = new LinkedHashMap<>();
     @Unique private final Set<Integer> phaze$drawnBadgeTicksThisFrame = new HashSet<>();
-
-    // ---------------------------------------------------------------
-    // ChatHudNickHiderMixin + MentionHighlight (combined HEAD)
-    // ---------------------------------------------------------------
-    // Order matters: MentionHighlight must see the ORIGINAL text so
-    // it can match against the player's real username; only AFTER the
-    // mention has been processed do we let NickHider replace the
-    // username with the user's configured stand-in. The previous
-    // setup ran the two as separate {@code @ModifyVariable} hooks at
-    // the same HEAD point - the order between sibling ModifyVariable
-    // hooks is undefined per Mixin spec, and on the user's machine it
-    // happened to land NickHider first, which silently stripped the
-    // username before MentionHighlight could match it. Combining the
-    // two into a single hook (mention → hide) guarantees the order
-    // and fixes the "ping doesn't fire when other players say my
-    // name" bug.
 
     @ModifyVariable(
             method = "addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
@@ -130,10 +99,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         return result;
     }
 
-    // ---------------------------------------------------------------
-    // ChatHudCollapseMixin
-    // ---------------------------------------------------------------
-
     @Inject(
             method = "addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
             at = @At("HEAD"),
@@ -155,10 +120,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         helper.runWithBypass(() -> hud.addMessage(replacement));
     }
 
-    // ---------------------------------------------------------------
-    // ChatHudTranslatorMixin
-    // ---------------------------------------------------------------
-
     @Inject(
             method = "addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
             at = @At("HEAD")
@@ -170,22 +131,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         }
         translator.onIncomingChat(message, signature);
     }
-
-    // ---------------------------------------------------------------
-    // ChatHudFadeInMixin
-    // ---------------------------------------------------------------
-    // 1.21.11 deleted {@code ChatHud.getMessageOpacityMultiplier(int)}.
-    // Per-line opacity is now produced by the nested (package-private)
-    // {@code ChatHud$OpacityRule} functional interface: the render pass
-    // builds either {@code OpacityRule.CONSTANT} (chat focused) or
-    // {@code OpacityRule.timeBased(currentTick)}, and
-    // {@code forEachVisibleLine} calls {@code rule.calculate(visible)}
-    // once per visible line. That call site is the exact successor of the
-    // old method, so the fade-in multiplier is applied there instead.
-    // The old {@code messageAge} argument is reconstructed the same way
-    // vanilla used to compute it: {@code inGameHud.getTicks() -
-    // visible.addedTime()} (a Visible's addedTime IS the ChatHudLine's
-    // creationTick, which vanilla stamps from InGameHud.getTicks()).
 
     @ModifyExpressionValue(
             method = "forEachVisibleLine",
@@ -200,8 +145,7 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         if (module == null || !module.isChatFadeEnabled()) {
             return original;
         }
-        // Exordium's source texture must contain the final full-opacity row.
-        // The cached row receives a smooth per-display-frame alpha later.
+
         if (ExordiumAnimationBridge.isCapturingChat()) {
             return original;
         }
@@ -219,10 +163,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         return original * fadeIn;
     }
 
-    // ---------------------------------------------------------------
-    // ChatHudHistoryLimitMixin
-    // ---------------------------------------------------------------
-
     @ModifyExpressionValue(
             method = {
                     "addVisibleMessage",
@@ -239,10 +179,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         return helper.getChatHistoryLimit();
     }
 
-    // ---------------------------------------------------------------
-    // ChatHudMessageSlideMixin: arrival stamp + per-frame compute
-    // ---------------------------------------------------------------
-
     @Inject(
             method = "addMessage(Lnet/minecraft/client/gui/hud/ChatHudLine;)V",
             at = @At("TAIL")
@@ -252,26 +188,20 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         if (!visibleMessages.isEmpty()) {
             phaze$latestAddedTick = visibleMessages.get(0).addedTime();
         }
+
+        Translator translatorForTick = Translator.getInstance();
+        if (translatorForTick != null && line != null) {
+            translatorForTick.captureStoredLine(line.creationTick());
+        }
         if (phaze$pendingBadgeForNextLine && line != null) {
             phaze$rememberBadgedChatTick(line.creationTick(), phaze$pendingCodeBadgeForNextLine);
         }
         phaze$pendingBadgeForNextLine = false;
         phaze$pendingCodeBadgeForNextLine = false;
-        // Do not wait for Exordium's component FPS cooldown: the next HUD
-        // frame captures the new row once, then the animation uses that cache.
+
         ExordiumAnimationBridge.requestImmediateCapture(ExordiumAnimationBridge.CHAT);
     }
 
-    /**
-     * 1.21.11 has three {@code render} overloads on {@link ChatHud}
-     * ({@code (DrawContext, TextRenderer, int, int, int, boolean, boolean)},
-     * {@code (DrawnTextConsumer, int, int, boolean)} and the private
-     * {@code (ChatHud$Backend, int, int, boolean)}), so the bare
-     * {@code method = "render"} selector is now ambiguous. We pin the
-     * DrawContext one - the actual HUD draw pass. The DrawnTextConsumer
-     * overload must NOT tick the animation: it is the click hit-test
-     * replay driven from {@code ChatScreen.mouseClicked}.
-     */
     @Inject(
             method = "render(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/font/TextRenderer;IIIZZ)V",
             at = @At("HEAD")
@@ -297,9 +227,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
 
         float lifetimeMs = (System.nanoTime() - phaze$lastMessageNanos) / 1_000_000.0F;
 
-        // Vanilla-facing Chat Fade uses four 20 TPS steps. The cached row is
-        // instead multiplied continuously between the same endpoints, keeping
-        // the same ~200 ms duration without visible 20/30 FPS stepping.
         float cachedRowAlpha = 1.0F;
         if (module.isChatFadeEnabled() && lifetimeMs < 200.0F) {
             cachedRowAlpha = Math.max(0.0F, Math.min(1.0F, (lifetimeMs + 50.0F) / 200.0F));
@@ -361,11 +288,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         return phaze$frameDy;
     }
 
-    /**
-     * 1.21.11 emits line backgrounds from a static backend helper, before the
-     * text consumer runs. Shift its rectangle explicitly; text itself is
-     * translated by {@link ChatHudBackendMixin} while its line is active.
-     */
     @ModifyArgs(
             method = "method_75802",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/hud/ChatHud$Backend;fill(IIIII)V")
@@ -385,18 +307,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         args.set(3, (Integer) args.get(3) + dy);
     }
 
-    // TODO(1.21.11): INERT. 1.21.11 routes every chat draw through the new
-    // {@code ChatHud$Backend} abstraction: the per-line background is now
-    // {@code Backend.fill(IIIII)} emitted from the static lambda
-    // {@code ChatHud.method_75802}, and only {@code ChatHud$Hud} (the
-    // DrawContext-backed Backend impl) forwards it to
-    // {@code DrawContext.fill}. There is no {@code DrawContext.fill} call
-    // left anywhere in {@code ChatHud.render}, so this operation never
-    // matches and {@code require = 0} keeps it a silent no-op instead of a
-    // launch crash. Restoring the message-slide/Exordium capture needs a
-    // mixin on {@code ChatHud$Hud} (which owns the DrawContext) - it cannot
-    // be done from a {@code ChatHud} mixin, because the Backend interface
-    // hides the DrawContext that {@code recordChatElement} requires.
     @WrapOperation(
             method = "render(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/font/TextRenderer;IIIZZ)V",
             at = @At(value = "INVOKE",
@@ -423,16 +333,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         }
     }
 
-    // TODO(1.21.11): INERT. Same Backend rewrite as phaze$shiftFill above:
-    // chat text is now submitted as {@code Backend.text(int, float,
-    // OrderedText)} from the anonymous {@code ChatHud$1} LineConsumer, and
-    // {@code ChatHud$Hud} hands it to a {@code DrawnTextConsumer} - never to
-    // {@code DrawContext.drawTextWithShadow}. That call no longer exists in
-    // {@code ChatHud.render}, so this stays a no-op under
-    // {@code require = 0}. Consequence: the Phaze chat badge and the
-    // message-slide offset are not drawn on 1.21.11. Re-porting needs a
-    // mixin on {@code ChatHud$Hud} / {@code ChatHud$1}, which owns both the
-    // DrawContext and the pixel coordinates this handler needs.
     @WrapOperation(
             method = "render(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/font/TextRenderer;IIIZZ)V",
             at = @At(value = "INVOKE",

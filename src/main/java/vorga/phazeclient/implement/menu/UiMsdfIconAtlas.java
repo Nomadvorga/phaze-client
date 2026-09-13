@@ -28,14 +28,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * Static UI icon MSDF atlas shared by the main menu and in-game GUI.
- *
- * <p>The atlas itself is generated offline by {@code tools/generate_ui_msdf_icons.py}
- * and loaded here as a regular resource texture. That keeps runtime rendering
- * fast and ensures we actually use real RGB MSDF data instead of a single-channel
- * SDF generated on the client.</p>
- */
 public final class UiMsdfIconAtlas {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
     private static final Identifier ATLAS_TEXTURE_ID = Identifier.of("phaze", "msdf/ui_icons.png");
@@ -341,27 +333,11 @@ public final class UiMsdfIconAtlas {
     private static boolean renderQuad(Matrix4f matrix, AtlasIcon atlasIcon, float x1, float y1, float x2, float y2, int color, boolean legacyImageOrientation) {
         BatchedRectangle.flushIfBatching();
 
-        // 1.21.11: AbstractTexture.setFilter(bilinear, mipmap) is gone -
-        // filtering is a sampler property now. SamplerCache.get(LINEAR) is
-        // the shared (CLAMP_TO_EDGE, LINEAR min/mag, no mipmap) sampler, i.e.
-        // exactly what setFilter(true, false) used to give this MSDF atlas.
-        // The cache owns it, so it is never closed here. PhazeDrawLayers
-        // binds no explicit sampler, and RenderSetup.resolveTextures falls
-        // back to AbstractTexture.getSampler() in that case, so assigning the
-        // field is what makes the draw below sample bilinearly.
         if (!filterApplied && atlasTexture != null && RenderSystem.isOnRenderThread()) {
             atlasTexture.sampler = RenderSystem.getSamplerCache().get(FilterMode.LINEAR);
             filterApplied = true;
         }
 
-        // These icons are multi-channel signed distance fields, exactly like
-        // MSDF glyphs, so they need the MSDF shader to decode them. 1.21.4 drew
-        // them with MSDF_FONT_SHADER_KEY plus Range/Thickness/Smoothness
-        // uniforms; the port swapped in PhazeDrawLayers.positionTexColor, which
-        // is a plain textured pipeline and therefore blitted the raw
-        // distance-field texels - every icon rendered as its red/green/blue
-        // encoding instead of a shape. drawAtlasQuad routes them back through
-        // the MSDF pipeline (and installs the GUI projection itself).
         MsdfRenderer.drawAtlasQuad(
                 atlasTexture == null ? null : atlasTexture.getGlTextureView(),
                 matrix,

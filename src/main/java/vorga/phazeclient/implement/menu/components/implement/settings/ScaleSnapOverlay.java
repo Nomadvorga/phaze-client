@@ -8,7 +8,6 @@ import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.base.util.render.GuiMatrix;
 import vorga.phazeclient.implement.menu.MenuStyle;
 
-/** Centre-screen readout shown while the HUD GUI-scale slider is dragged. */
 public final class ScaleSnapOverlay {
     private static final float VALUE_SIZE = 34.0F;
     private static final float HINT_SIZE = 9.0F;

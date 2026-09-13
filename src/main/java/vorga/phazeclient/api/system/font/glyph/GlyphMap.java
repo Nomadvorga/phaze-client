@@ -139,7 +139,6 @@ public class GlyphMap {
 
         NativeImage nativeImage = new NativeImage(RGBA, imageWidth, imageHeight, false);
 
-
         IntBuffer buffer = MemoryUtil.memIntBuffer(nativeImage.pointer, nativeImage.getWidth() * nativeImage.getHeight());
 
         WritableRaster raster = inputImage.getRaster();
@@ -158,13 +157,6 @@ public class GlyphMap {
             }
         }
 
-        // 1.21.11: NativeImageBackedTexture(NativeImage) is gone - the
-        // constructor now wants a label supplier used for the GPU texture's
-        // debug name, and it allocates the GpuTexture immediately, so it must
-        // run on the render thread. RenderSystem.recordRenderCall is gone as
-        // well; MinecraftClient (a ReentrantThreadExecutor) is the scheduler
-        // now. Both the allocation and the registration are therefore
-        // deferred together instead of only the registration.
         if (RenderSystem.isOnRenderThread()) {
             uploadAndRegister(textureIdentifier, nativeImage);
         } else {

@@ -38,10 +38,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Standalone COSMETICS top-tab. It owns selection, preview and cosmetic
- * settings without exposing cosmetics as a module in the Mods catalog.
- */
 public final class CosmeticsViewComponent extends AbstractComponent {
     private static final float HEADER_OFFSET = 41.0F;
     private static final float SIDE_MARGIN = 9.0F;
@@ -69,10 +65,21 @@ public final class CosmeticsViewComponent extends AbstractComponent {
     private boolean draggingPetFollow;
     private double sliderAnimation = -1.0D;
     private double petSliderAnimation = -1.0D;
+    private EntityRenderState cachedPreviewRenderState;
+    private String cachedPreviewSelection;
+    private float cachedPreviewYaw = Float.NaN;
+    private long cachedPreviewStateNanos;
     private final Animation pageAnimation = new DecelerateAnimation().setMs(180).setValue(1);
     private final CheckComponent hideElytraToggle = new CheckComponent();
     private final Map<String, CardAnimations> cardAnimations = new HashMap<>();
     private final Set<String> cosmeticWarmupRequested = new HashSet<>();
+
+    private List<CatalogItem> cachedCatalogItems = List.of();
+    private List<CosmeticsState.CosmeticEntry> cachedCatalogSource;
+    private String cachedCategory = "";
+    private final Map<String, Boolean> catalogAvailability = new HashMap<>();
+
+    private final Set<String> capeTextureReady = new HashSet<>();
     private long catalogFrameId;
 
     public CosmeticsViewComponent() {
@@ -229,7 +236,7 @@ public final class CosmeticsViewComponent extends AbstractComponent {
                     || cardY > layout.cardsTop + viewportHeight + 1.0F) {
                 continue;
             }
-            boolean available = !item.locked && CosmeticsState.getInstance().isAvailable(item.id);
+            boolean available = !item.locked && isCatalogItemAvailable(item.id);
             boolean selected = item.id.equalsIgnoreCase(previewSelection);
             boolean equipped = !item.locked && CosmeticsState.getInstance().isEquipped(item.id);
             boolean hovered = MathUtil.isHovered(
@@ -270,10 +277,6 @@ public final class CosmeticsViewComponent extends AbstractComponent {
             ));
         }
 
-        // Static cosmetic thumbnails are captured once into small transparent
-        // FBOs. Re-rendering every imported 3D model on every menu frame was
-        // the remaining 400 -> 200 FPS regression; subsequent frames are now
-        // one cheap textured quad per visible card.
         BatchedRectangle.flushIfBatching();
         for (VisibleCard card : visibleCards) {
             if (!card.available) continue;
@@ -283,11 +286,6 @@ public final class CosmeticsViewComponent extends AbstractComponent {
             );
         }
 
-        // Parse files and decode capes away from the render thread. Do not
-        // submit invisible 3D cards here: an alpha-zero special element still
-        // rasterises its FBO, which turned the warm-up loop into one costly
-        // model render every frame. A newly visible card is populated under
-        // the renderer's one-thumbnail-per-frame budget instead.
         for (CatalogItem item : items) {
             if (cosmeticWarmupRequested.add(item.id)) {
                 if (CosmeticsState.isCape(item.id)) {
@@ -296,11 +294,14 @@ public final class CosmeticsViewComponent extends AbstractComponent {
                     CosmeticsRenderer.requestModelWarmup(item.id);
                 }
             }
-            if (CosmeticsState.isCape(item.id)) {
-                CosmeticsRenderer.capePreviewTextureIfReady(item.id);
+
+            if (CosmeticsState.isCape(item.id)
+                    && !capeTextureReady.contains(item.id)
+                    && CosmeticsRenderer.capePreviewTextureIfReady(item.id) != null) {
+                capeTextureReady.add(item.id);
             }
         }
-        // Submit text and markers after models so thumbnails cannot cover UI.
+
         for (VisibleCard card : visibleCards) {
             MsdfRenderer.renderText(
                     MsdfFonts.medium(), card.label, CARD_LABEL_SIZE,
@@ -387,9 +388,7 @@ public final class CosmeticsViewComponent extends AbstractComponent {
                 previewX, previewY, previewW, previewH,
                 globalAlpha, frameId
         )) {
-            // Models are submitted through the 1.21.11 special-GUI path by
-            // CosmeticsRenderer. Keep a readable fallback while an imported
-            // model is still being loaded.
+
             drawWingThumbnail(context, cardX + cardW * 0.5F,
                     cardY + 24.0F, 0xFF8BA0B0, 0xFF566673, false);
         }
@@ -532,11 +531,6 @@ public final class CosmeticsViewComponent extends AbstractComponent {
             return;
         }
 
-        // Render the player directly. The former screen-region cache copied
-        // the panel/world background together with the entity and clipped wide
-        // wings to PREVIEW_WIDTH, which caused the rectangular seam. Card
-        // models are cached separately, so this one live entity is no longer
-        // multiplied by every catalog item.
         BatchedRectangle.flushIfBatching();
         renderPlayerPreviewEntity(
                 context, player, panelX, panelY, globalAlpha
@@ -553,17 +547,28 @@ public final class CosmeticsViewComponent extends AbstractComponent {
         Quaternionf bodyRotation = new Quaternionf()
                 .rotateZ((float) Math.PI)
                 .rotateY((float) Math.toRadians(previewYaw));
-        // Keep the player at one size for every yaw. The cosmetic selection is
-        // carried by the render state because GUI entities are rasterised only
-        // after the screen has finished submitting its DrawContext commands.
+
         float previewScale = 43.0F;
-        EntityPose previousPose = player.getPose();
-        EntityRenderState renderState;
-        try {
-            player.setPose(EntityPose.STANDING);
-            renderState = captureEntityRenderState(player);
-        } finally {
-            player.setPose(previousPose);
+        long now = System.nanoTime();
+        boolean selectionChanged = !previewSelection.equals(cachedPreviewSelection);
+        boolean yawChanged = Float.isNaN(cachedPreviewYaw)
+                || Math.abs(previewYaw - cachedPreviewYaw) > 0.001F;
+
+        long refreshInterval = yawChanged ? 8_333_333L : 33_333_334L;
+        EntityRenderState renderState = cachedPreviewRenderState;
+        if (renderState == null || selectionChanged || yawChanged
+                || now - cachedPreviewStateNanos >= refreshInterval) {
+            EntityPose previousPose = player.getPose();
+            try {
+                player.setPose(EntityPose.STANDING);
+                renderState = captureEntityRenderState(player);
+            } finally {
+                player.setPose(previousPose);
+            }
+            cachedPreviewRenderState = renderState;
+            cachedPreviewSelection = previewSelection;
+            cachedPreviewYaw = previewYaw;
+            cachedPreviewStateNanos = now;
         }
         PreviewMarker marker = (PreviewMarker) (Object) renderState;
         marker.phaze$previewSelection(previewSelection);
@@ -584,6 +589,7 @@ public final class CosmeticsViewComponent extends AbstractComponent {
         EntityRenderManager dispatcher = MinecraftClient.getInstance().getEntityRenderDispatcher();
         EntityRenderer renderer = dispatcher.getRenderer(player);
         EntityRenderState state = renderer.getAndUpdateRenderState(player, 1.0F);
+
         state.light = LightmapTextureManager.MAX_LIGHT_COORDINATE;
         state.shadowPieces.clear();
         state.outlineColor = EntityRenderState.NO_OUTLINE;
@@ -932,9 +938,16 @@ public final class CosmeticsViewComponent extends AbstractComponent {
     }
 
     private List<CatalogItem> allCatalogItems() {
+        List<CosmeticsState.CosmeticEntry> source = CosmeticsState.getInstance().getCatalog();
+        if (source == cachedCatalogSource && category.equals(cachedCategory)) {
+            return cachedCatalogItems;
+        }
+        cachedCatalogSource = source;
+        cachedCategory = category;
+        catalogAvailability.clear();
         List<CatalogItem> items = new java.util.ArrayList<>();
         int index = 0;
-        for (CosmeticsState.CosmeticEntry entry : CosmeticsState.getInstance().getCatalog()) {
+        for (CosmeticsState.CosmeticEntry entry : source) {
             CosmeticsState.CosmeticType type = CosmeticsState.typeOf(entry.name());
             if (!"ALL".equals(category) && !switch (category) {
                 case "WINGS" -> type == CosmeticsState.CosmeticType.WING;
@@ -943,10 +956,18 @@ public final class CosmeticsViewComponent extends AbstractComponent {
                 case "PETS" -> type == CosmeticsState.CosmeticType.PET;
                 default -> false;
             }) continue;
+
+            catalogAvailability.put(entry.name(), CosmeticsState.getInstance().isAvailable(entry.name()));
             int[] colors = cosmeticColors(entry.name(), index++);
             items.add(new CatalogItem(entry.name(), CosmeticsState.displayNameFor(entry.name()), false, colors[0], colors[1]));
         }
+        cachedCatalogItems = items;
         return items;
+    }
+
+    private boolean isCatalogItemAvailable(String id) {
+        Boolean cached = catalogAvailability.get(id);
+        return cached != null && cached;
     }
 
     private static float previewPanelHeight(Layout layout) {

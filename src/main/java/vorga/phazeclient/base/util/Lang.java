@@ -3,30 +3,11 @@ package vorga.phazeclient.base.util;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Tiny i18n dispatcher for the menu's user-facing strings.
- *
- * <p>Two locales right now: {@link #EN} (default) and {@link #RU}.
- * Add a third by extending the static map below; lookup falls back
- * to the EN entry when a key is missing in the active locale, so a
- * partially-translated locale still renders something sane instead
- * of crashing on a {@code null} text.
- *
- * <p>Module names + category labels are intentionally NOT keyed
- * here - the user explicitly asked for those to stay in their
- * canonical (English) form regardless of locale.
- *
- * <p>Active locale is read from {@link
- * vorga.phazeclient.implement.features.modules.client.Theme#language}
- * which routes through SelectSetting + the standard config save
- * pipeline, so the choice survives restarts.
- */
 public final class Lang {
 
     public static final String EN = "English";
     public static final String RU = "Русский";
 
-    /** Active locale key. Set by Theme on every change-listener tick. */
     private static volatile String active = EN;
 
     public static void setActive(String locale) {
@@ -47,23 +28,11 @@ public final class Lang {
             String v = table.get(key);
             if (v != null) return v;
         }
-        // EN fallback: lookup in EN_TABLE so a missing translation
-        // returns the English text rather than a raw key tag like
-        // {@code "modal.share.title"}.
+
         String fallback = EN_TABLE.get(key);
         return fallback != null ? fallback : key;
     }
 
-    /**
-     * Translates a free-form English string to the active locale.
-     * Used by setting names / module descriptions where the source
-     * text IS the canonical English wording (no separate "key" /
-     * "value" pair). Falls back to the input when no translation
-     * is registered, so unknown strings render verbatim.
-     *
-     * <p>Module / category names skip this on purpose - the user
-     * explicitly asked for those to remain English.
-     */
     public static String translate(String english) {
         if (english == null || english.isEmpty()) return english;
         if (!RU.equals(active)) return english;
@@ -71,15 +40,11 @@ public final class Lang {
         return v != null ? v : english;
     }
 
-    /* ============================================================ */
-    /* Tables                                                        */
-    /* ============================================================ */
-
     private static final Map<String, String> EN_TABLE = new HashMap<>();
     private static final Map<String, String> RU_TABLE = new HashMap<>();
 
     static {
-        // Modal: SHARE
+
         en("modal.share.title", "Create Key");
         en("modal.share.subtitle.prefix", "Config");
         en("modal.share.placeholder", "Number of uses");
@@ -87,18 +52,15 @@ public final class Lang {
         en("modal.cloud.title", "Cloud Configs");
         en("modal.cloud.subtitle", "Share a config or load one by code");
 
-        // Modal: RENAME
         en("modal.rename.title", "Rename Config");
         en("modal.rename.placeholder", "New name");
         en("modal.rename.primary", "Save");
 
-        // Modal: IMPORT
         en("modal.import.title", "Load Config from Key");
         en("modal.import.subtitle", "Enter the code from your friend");
         en("modal.import.placeholder", "nomad-9wxf-49k7");
         en("modal.import.primary", "Load");
 
-        // Buttons / common
         en("button.cancel", "Cancel");
         en("status.loading", "Loading...");
         en("status.server_unreachable", "Server unreachable");
@@ -130,7 +92,6 @@ public final class Lang {
         en("status.rename_failed", "Rename failed");
         en("status.rename_error", "Rename error");
 
-        // Configs view kebab popup
         en("kebab.share", "Share");
         en("kebab.rename", "Rename");
         en("kebab.delete", "Delete");
@@ -139,7 +100,6 @@ public final class Lang {
         en("trap_timer.middle", " ends ");
         en("trap_timer.suffix", " seconds");
 
-        // Sidebar / general
         en("sidebar.new_config", "NEW CONFIG");
         en("sidebar.edit_hud", "EDIT HUD LAYOUT");
 
@@ -169,7 +129,6 @@ public final class Lang {
         en("cosmetics.enter_world", "ENTER A WORLD TO PREVIEW");
         en("cosmetics.model_missing", "MODEL FILE NOT FOUND");
 
-        // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
         ru("modal.cloud.subtitle", "Поделись конфигом или загрузи по коду");
         ru("modal.share.title", "Создание ключа");
@@ -314,12 +273,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Better Death", "Улучшенная смерть");
         SETTING_TRANSLATIONS.put("Better F3", "Улучшенный F3");
         SETTING_TRANSLATIONS.put("Bind", "Бинд");
-        // Per-slot Binds module labels - the module preallocates 8
-        // slots numbered 1..8 and synthesises three settings per
-        // slot ({@code "Bind N"} section, {@code "Bind N Key"} bind,
-        // {@code "Bind N Message"} text). Adding the localized
-        // entries here lets the existing Lang.translate dispatch
-        // pick them up without touching the module's storage keys.
+
         for (int i = 1; i <= 8; i++) {
             SETTING_TRANSLATIONS.put("Bind " + i, "Бинд " + i);
             SETTING_TRANSLATIONS.put("Bind " + i + " Key", "Бинд " + i + " - клавиша");
@@ -571,14 +525,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Keybind", "Бинд");
         SETTING_TRANSLATIONS.put("Language", "Язык");
         SETTING_TRANSLATIONS.put("Last modified", "Изменён");
-        // ---- Theme names ----
-        // Translated as a friendly Russian phrase rather than a
-        // literal word-for-word so the picker reads naturally in
-        // the same way the English originals do (e.g. "Mocha Gold"
-        // is a coffee-and-gold mood, not "мокка золото"). Each
-        // entry is also a fixed key in {@code MenuPalettes.byName}
-        // - storage stays English so configs save / load on either
-        // locale, only the displayed label changes.
+
         SETTING_TRANSLATIONS.put("Lunar Blue", "Синий Лунар");
         SETTING_TRANSLATIONS.put("Mocha Gold", "Мокка с золотом");
         SETTING_TRANSLATIONS.put("Rose Quartz", "Розовый кварц");
@@ -602,14 +549,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Violet", "Фиолетовый");
         SETTING_TRANSLATIONS.put("Ocean", "Океан");
         SETTING_TRANSLATIONS.put("Layout", "Расположение");
-        // ---- Select-value lexicon ----
-        // Centralised pool of localised choice labels used by every
-        // SelectSetting in the project. Stored here (instead of next
-        // to each module) so the wording can be tuned in one place;
-        // storage keys remain English so saved configs are
-        // language-agnostic and any
-        // {@code .getSelected().equals("Linear")}-style logic in
-        // module code keeps working untouched.
+
         SETTING_TRANSLATIONS.put("Linear", "Линейная");
         SETTING_TRANSLATIONS.put("Fast", "Быстрая");
         SETTING_TRANSLATIONS.put("Balanced", "Сбалансированная");
@@ -665,53 +605,51 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Hindi", "Хинди");
         SETTING_TRANSLATIONS.put("Vietnamese", "Вьетнамский");
         SETTING_TRANSLATIONS.put("Indonesian", "Индонезийский");
-        // ArmorHud / RectHudModule durability mode
+
         SETTING_TRANSLATIONS.put("Units", "Единицы");
         SETTING_TRANSLATIONS.put("Percent", "Проценты");
-        // Consumable.layout
+
         SETTING_TRANSLATIONS.put("Column", "Столбец");
         SETTING_TRANSLATIONS.put("Table", "Таблица");
-        // InventoryHud.source
+
         SETTING_TRANSLATIONS.put("Main", "Основной");
         SETTING_TRANSLATIONS.put("Ender Chest", "Эндер-сундук");
-        // MemoryHud.format
+
         SETTING_TRANSLATIONS.put("Percentage", "Проценты");
         SETTING_TRANSLATIONS.put("Megabytes", "Мегабайты");
         SETTING_TRANSLATIONS.put("Gigabytes", "Гигабайты");
-        // MovementSpeedHud.precision
+
         SETTING_TRANSLATIONS.put("Nearest", "Ближайшее");
         SETTING_TRANSLATIONS.put("1 Decimal", "1 знак");
         SETTING_TRANSLATIONS.put("2 Decimals", "2 знака");
         SETTING_TRANSLATIONS.put("3 Decimals", "3 знака");
-        // PlayerModelHud.mode
+
         SETTING_TRANSLATIONS.put("Follow Mouse", "Следовать за мышью");
         SETTING_TRANSLATIONS.put("Auto Rotate", "Авто-вращение");
         SETTING_TRANSLATIONS.put("Static", "Статично");
-        // Saturation.mode
+
         SETTING_TRANSLATIONS.put("Yellow Bar", "Жёлтая полоса");
         SETTING_TRANSLATIONS.put("Second Hunger Bar", "Вторая полоса голода");
-        // TrapTimer.mode
+
         SETTING_TRANSLATIONS.put("Normal", "Обычный");
         SETTING_TRANSLATIONS.put("Dragon", "Дракон");
-        // WeatherChanger.weatherType
+
         SETTING_TRANSLATIONS.put("Clear", "Ясно");
         SETTING_TRANSLATIONS.put("Rain", "Дождь");
         SETTING_TRANSLATIONS.put("Thunder", "Гроза");
-        // NoFluid.mode (Water/Lava already share lexicon needs)
+
         SETTING_TRANSLATIONS.put("Water", "Вода");
         SETTING_TRANSLATIONS.put("Lava", "Лава");
-        // MouseClicker.hand
+
         SETTING_TRANSLATIONS.put("Right", "Правая");
-        // Translator.provider
+
         SETTING_TRANSLATIONS.put("Google", "Google");
         SETTING_TRANSLATIONS.put("Apify", "Apify");
-        // Predictions / FTHelper neutral preset
+
         SETTING_TRANSLATIONS.put("Black", "Чёрный");
         SETTING_TRANSLATIONS.put("Quickly selects matching hotbar items on hotkey press", "Быстрый выбор предметов по нажатию клавиш");
         SETTING_TRANSLATIONS.put("Select the first matching item in your hotbar", "Выбирает первый подходящий предмет в хотбаре");
-        // Consumable.itemTypes (vanilla item names; localised for the
-        // Russian audience - storage stays English so each entry maps
-        // back to the canonical ItemRegistry id without ambiguity).
+
         SETTING_TRANSLATIONS.put("Snowball", "Снежок");
         SETTING_TRANSLATIONS.put("Egg", "Яйцо");
         SETTING_TRANSLATIONS.put("Wind Charge", "Заряд ветра");
@@ -725,10 +663,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Ender Pearl", "Жемчуг эндера");
         SETTING_TRANSLATIONS.put("Firework Rocket", "Фейерверк");
         SETTING_TRANSLATIONS.put("Experience Bottle", "Бутылочка опыта");
-        // BetterF3.sections multiselect (sub-set of the F3 overlay).
-        // {@code Coordinates}, {@code Biome}, {@code Light},
-        // {@code Dimension}, {@code Server}, {@code Memory},
-        // {@code Time}, {@code System} are the F3 overlay categories.
+
         SETTING_TRANSLATIONS.put("Coordinates", "Координаты");
         SETTING_TRANSLATIONS.put("Facing", "Направление");
         SETTING_TRANSLATIONS.put("Biome", "Биом");
@@ -1220,14 +1155,16 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Selected items are highlighted immediately", "Выбранные предметы подсвечиваются сразу");
         SETTING_TRANSLATIONS.put("Totem of Undying", "Тотем бессмертия");
         SETTING_TRANSLATIONS.put("Trap", "Трапка");
+        SETTING_TRANSLATIONS.put("Trapka", "Трапка");
+        SETTING_TRANSLATIONS.put("Jake's Lamp", "Лампа Джейка");
+        SETTING_TRANSLATIONS.put("Jake's Lamp Name", "Имя «Лампа Джейка»");
+        SETTING_TRANSLATIONS.put("Explosive Trap", "Взрывная трапка");
         SETTING_TRANSLATIONS.put("Translation Options", "Параметры перевода");
         SETTING_TRANSLATIONS.put("Hud Text Color", "Цвет текста HUD");
         SETTING_TRANSLATIONS.put("Default color for HUD text that does not use its own dynamic tint", "Цвет текста HUD по умолчанию для элементов без собственной динамической окраски");
         SETTING_TRANSLATIONS.put("Render Other Player Cosmetics", "Показывать косметику других игроков");
         SETTING_TRANSLATIONS.put("Render Phaze cosmetics equipped by other players", "Показывать косметику Phaze, надетую другими игроками");
 
-        // Main-menu / configs UI strings that are not module or
-        // category names and should therefore localize to Russian.
         SETTING_TRANSLATIONS.put("Active", "Активная");
         SETTING_TRANSLATIONS.put("Applies to Main Menu, Mod Menu, Sodium and other screens", "Применяется к главному меню, Mod Menu, Sodium и другим экранам");
         SETTING_TRANSLATIONS.put("Castle", "Замок");

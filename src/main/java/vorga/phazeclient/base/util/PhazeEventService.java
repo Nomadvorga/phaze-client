@@ -20,55 +20,17 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * Holds a long-lived connection to {@code GET /api/events} and reacts
- * to what the server pushes down it.
- *
- * <h3>Why a stream instead of polling harder</h3>
- * {@link RemoteRulesService} refreshes rules every ten minutes. That
- * is fine for a rule edit but useless for a kick, which is only worth
- * anything if it lands immediately. Shortening the poll interval would
- * multiply request volume for everyone to serve an event that fires
- * once a week; a stream costs one idle socket and a keepalive comment
- * every twenty-five seconds.
- *
- * <p>The protocol is Server-Sent Events - a response that never ends,
- * with {@code event:} / {@code data:} line pairs separated by blank
- * lines. That is a {@code readLine()} loop here rather than the frame
- * parser a WebSocket would need, and nothing is ever sent upstream.
- *
- * <h3>Events</h3>
- * <ul>
- *   <li>{@code rules} - the rule set changed; trigger a refresh so
- *       the new set applies in seconds rather than on the next tick
- *       of the ten-minute timer.</li>
- *   <li>{@code kick} - disconnect from the current server and show
- *       the operator's message.</li>
- *   <li>{@code hello} / {@code ping} - connection bookkeeping.</li>
- * </ul>
- *
- * <h3>Reconnection</h3>
- * The stream will drop: proxies recycle idle connections, laptops
- * sleep, mobile hotspots move between towers. Reconnects back off from
- * five seconds to five minutes so a server that is down does not get
- * hammered by every client at once, and the delay is jittered so they
- * do not all return in the same instant.
- */
 public final class PhazeEventService {
 
     private static final Logger LOG = LoggerFactory.getLogger("PhazeEvents");
 
     private static final int CONNECT_TIMEOUT_MS = 15_000;
-    /**
-     * Must exceed the server's keepalive interval (25s) or an idle but
-     * healthy stream would be torn down and rebuilt every read timeout.
-     */
+
     private static final int READ_TIMEOUT_MS = 40_000;
 
     private static final long RECONNECT_MIN_MS = 5_000L;
     private static final long RECONNECT_MAX_MS = 5 * 60_000L;
-    // Event names kept for backwards-compatible servers, without exposing
-    // the legacy cosmetic brand in the client-facing code.
+
     private static final String LEGACY_COSMETIC_EVENT = "pu" + "lse_cosmetic";
     private static final String LEGACY_GRAFFITI_EVENT = "pu" + "lse_graffiti";
 
@@ -98,11 +60,6 @@ public final class PhazeEventService {
         return connected;
     }
 
-    /**
-     * Idempotent. Started from {@link RemoteRulesService#start()} so
-     * the two share a lifecycle and neither runs when the rules API is
-     * disabled via {@code -Dphaze.rules.api=}.
-     */
     public void start() {
         RemoteRulesService rules = RemoteRulesService.getInstance();
         if (rules.getApiBase() == null || rules.getApiBase().isEmpty()) {
@@ -118,15 +75,13 @@ public final class PhazeEventService {
         while (true) {
             try {
                 listen();
-                // A clean end of stream is still a disconnect - the
-                // server closed, so back off like any other drop.
+
             } catch (Throwable t) {
                 LOG.debug("event stream ended: {}", t.toString());
             }
             connected = false;
             long delay = reconnectDelayMs;
-            // Jitter so a server restart does not bring every client
-            // back in the same second.
+
             long jitter = (long) (delay * 0.25 * Math.random());
             try {
                 Thread.sleep(delay + jitter);
@@ -165,9 +120,7 @@ public final class PhazeEventService {
             }
 
             connected = true;
-            // Only reset the backoff once a connection actually
-            // succeeded, otherwise a server that accepts and instantly
-            // closes would be retried every five seconds forever.
+
             reconnectDelayMs = RECONNECT_MIN_MS;
 
             try (BufferedReader reader = new BufferedReader(
@@ -185,7 +138,7 @@ public final class PhazeEventService {
                         continue;
                     }
                     if (line.startsWith(":")) {
-                        continue; // comment / keepalive
+                        continue;
                     }
                     if (line.startsWith("event:")) {
                         event = line.substring(6).trim();
@@ -280,24 +233,14 @@ public final class PhazeEventService {
                 }
             }
         } catch (Throwable ignored) {
-            // Fall back to the generic message - a malformed payload
-            // must not turn a kick into a no-op.
+
         }
 
         LOG.info("kick received: {}", message);
-        // One event, one disconnect. Nothing blocks the player from
-        // reconnecting straight away - the kick is a visible "get off
-        // this server now", not a timed ban, and a cooldown that keeps
-        // ejecting someone after the fact is indistinguishable from a
-        // bug when you are on the receiving end of it.
+
         disconnectNow(message);
     }
 
-    /**
-     * Drops the connection on the client thread. Networking objects
-     * are not safe to touch from the poller thread, so the actual
-     * disconnect is handed to Minecraft's own executor.
-     */
     private void disconnectNow(String message) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) {

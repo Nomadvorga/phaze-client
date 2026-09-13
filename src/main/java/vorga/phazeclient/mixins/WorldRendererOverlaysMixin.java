@@ -27,35 +27,9 @@ import vorga.phazeclient.implement.features.modules.other.Predictions;
 import vorga.phazeclient.implement.features.modules.other.PredictionsRenderer;
 import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
 
-/**
- * Drives the world-space overlays: FT Helper, HolyWorld Helper, Predictions,
- * and Hit Range on the local player.
- *
- * <h3>1.21.11 port</h3>
- *
- * <p>All of these hung off the monolithic {@code WorldRendererMixin}, which is
- * still unported - so although each renderer itself survived the port, nothing
- * called any of them and every one of these features was simply dead.
- *
- * <p>The 1.21.4 hook was {@code renderEntities(MatrixStack, Immediate, Camera,
- * RenderTickCounter, List<Entity>)}. 1.21.11 replaced it with
- * {@code pushEntityRenders(MatrixStack, WorldRenderState, OrderedRenderCommandQueue)},
- * which no longer receives the camera, the tick counter or the immediate
- * provider: entities are queued as render commands now. The three missing
- * values are read off the client instead - same objects vanilla itself
- * passes, just fetched rather than handed over.
- */
 @Mixin(WorldRenderer.class)
 public abstract class WorldRendererOverlaysMixin {
 
-    /**
-     * Set once per frame, consumed by the draw below.
-     *
-     * <p>{@code pushEntityRenders} runs exactly once per frame, whereas
-     * {@code renderTargetBlockOutline} is called more than once; arming here
-     * and disarming there keeps the overlays to a single draw per frame without
-     * needing a frame counter.
-     */
     @Unique
     private boolean phaze$overlaysPending;
 
@@ -67,19 +41,6 @@ public abstract class WorldRendererOverlaysMixin {
         phaze$overlaysPending = true;
     }
 
-    /**
-     * Draws the overlays after entities.
-     *
-     * <p>They used to run at the TAIL of {@code pushEntityRenders}, which in
-     * 1.21.11 only ENQUEUES entity render commands - the entities themselves
-     * are drawn later, so anything emitted there ended up underneath them and
-     * a prediction marker was hidden behind the mob it pointed at.
-     *
-     * <p>{@code renderTargetBlockOutline} sits after that dispatch in
-     * {@code renderMain}, which is exactly why vanilla's own block outline
-     * appears over entities. Riding the same point puts the overlays in the
-     * 1.21.4 order again: entities first, overlays on top.
-     */
     @Inject(method = "renderTargetBlockOutline", at = @At("HEAD"), require = 0)
     private void phaze$drawWorldOverlays(VertexConsumerProvider.Immediate vertexConsumers,
                                          MatrixStack matrices,
@@ -116,18 +77,11 @@ public abstract class WorldRendererOverlaysMixin {
             return;
         }
 
-        // Drain anything still buffered in the shared immediate provider before
-        // the overlays go out, so nothing queued earlier lands on top of them.
-        // vertexConsumers is that same provider, passed in by the target.
         VertexConsumerProvider.Immediate immediate = vertexConsumers != null
                 ? vertexConsumers
                 : client.getBufferBuilders().getEntityVertexConsumers();
         immediate.draw();
 
-        // renderTargetBlockOutline itself uses this immutable camera
-        // snapshot. Reading the live Camera object here can be one
-        // update ahead of the render state during lateral movement,
-        // which makes camera-relative overlays slide sideways.
         Vec3d cameraPos = worldRenderState.cameraRenderState.pos;
 
         if (anyOverlay) {
@@ -142,15 +96,6 @@ public abstract class WorldRendererOverlaysMixin {
         }
     }
 
-    /**
-     * Hit Range on the local player.
-     *
-     * <p>Kept separate from {@code LivingEntityRendererMixin}'s path, which
-     * skips the local player precisely so the two do not stack: that mixin has
-     * no camera-relative offset to work with, whereas here the world matrix
-     * stack is live and the player's interpolated position can be translated
-     * into it directly.
-     */
     private static void phaze$drawSelfHitRange(MinecraftClient client,
                                                Camera camera,
                                                RenderTickCounter tickCounter,

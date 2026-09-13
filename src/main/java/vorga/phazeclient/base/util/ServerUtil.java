@@ -9,20 +9,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Utility class for server detection
- */
 public class ServerUtil {
     private static final Set<String> FUN_TIME_SEGMENTS = Set.of("funtime", "funsky");
     private static volatile String cachedAddressInput;
     private static volatile String cachedNormalizedHost = "";
 
-    /**
-     * Mirrors the current remote-rules allow matrix. These local
-     * allowlists act as a fail-safe when the rules backend is down,
-     * so they must stay aligned with the D1 rules the admin panel
-     * serves to the client.
-     */
     private static final Set<String> SHIFT_TAP_SEGMENTS = Set.of(
             "funtime",
             "funmoon",
@@ -140,32 +131,10 @@ public class ServerUtil {
             Map.entry("trap_timer", TRAP_TIMER_SEGMENTS)
     );
 
-    /**
-     * Get current server host address. Returns "" for singleplayer or
-     * when no network handler is available. Public so the remote-rules
-     * service can read it directly without re-implementing the logic.
-     *
-     * <p>Resolution order, falling through to the next on null:
-     * <ol>
-     *   <li>{@code mc.getCurrentServerEntry()} - the entry the player
-     *       opened, includes the address as typed in the server list /
-     *       direct-connect dialog. This survives across server-transfer
-     *       packets ({@code dexland} -> {@code ru.dexland.org}) where
-     *       {@code networkHandler.getServerInfo()} can go null.</li>
-     *   <li>{@code networkHandler.getServerInfo()} - same data via the
-     *       network handler. Older fallback, kept for safety.</li>
-     *   <li>The actual TCP peer address from the live connection.
-     *       Last-resort fallback so we still return *something* even if
-     *       the server-info layer is broken; sometimes that's an IP
-     *       literal which won't match any segment, and that's fine.</li>
-     * </ol>
-     */
     public static String getCurrentServerHost() {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null) return "";
 
-        // Singleplayer never has a remote host. Cheaper than
-        // resolving network handler on each tick from the client thread.
         if (mc.isInSingleplayer()) return "";
 
         ServerInfo entry = mc.getCurrentServerEntry();
@@ -181,8 +150,6 @@ public class ServerUtil {
             return stripPort(handlerInfo.address);
         }
 
-        // Live connection peer fallback - only useful when the
-        // server-info object disappeared mid-session (transfer/relogin).
         SocketAddress peer = handler.getConnection().getAddress();
         if (peer instanceof InetSocketAddress isa && isa.getHostString() != null) {
             return stripPort(isa.getHostString());
@@ -202,9 +169,6 @@ public class ServerUtil {
         return normalized;
     }
 
-    /**
-     * Check if server address contains specific segment
-     */
     private static boolean hasServerSegment(String expectedSegment) {
         String host = getCurrentServerHost();
         if (host.isEmpty()) {
@@ -260,83 +224,42 @@ public class ServerUtil {
         return hasAnyServerSegment(expectedSegments);
     }
 
-    /**
-     * Check if current server is FunTime
-     */
     public static boolean isFunTimeServer() {
         return hasAnyServerSegment(FUN_TIME_SEGMENTS);
     }
 
-    /**
-     * Check if current server is FunTrainer
-     */
     public static boolean isFunTrainerServer() {
         return hasServerSegment("funtrainer");
     }
 
-    /**
-     * Check if current server is FillCube
-     */
     public static boolean isFillCubeServer() {
         return hasServerSegment("fillcube");
     }
 
-    /**
-     * Check if current server is HolyWorld
-     */
     public static boolean isHolyWorldServer() {
         return hasServerSegment("holyworld");
     }
 
-    /**
-     * Check if ShiftTap is supported on current server
-     */
     public static boolean isShiftTapSupported() {
         return isSingleplayerOrHasAnyServerSegment(SHIFT_TAP_SEGMENTS);
     }
 
-    /**
-     * Check if AutoSwap is supported on current server
-     * Mirrors remote rules: FunTime, FunSky, HolyTime, SpookyTime,
-     * FunTrainer, SkyTime, Singleplayer.
-     */
     public static boolean isAutoSwapSupported() {
         return isSingleplayerOrHasAnyServerSegment(AUTO_SWAP_SEGMENTS);
     }
 
-    /**
-     * Check if AutoPotion is supported on current server
-     * Mirrors remote rules: FunTime, FunSky, HolyTime, Space-Times,
-     * SpookyTime, FillCube, SkyTime, Singleplayer.
-     */
     public static boolean isAutoPotionSupported() {
         return isSingleplayerOrHasAnyServerSegment(AUTO_POTION_SEGMENTS);
     }
 
-    /**
-     * Check if ElytraUtility is supported on current server
-     * Mirrors remote rules: FunTime, FunSky, HolyTime, SpookyTime,
-     * FunMoon, SkyTime, FunTrainer, Singleplayer.
-     */
     public static boolean isElytraUtilitySupported() {
         return isSingleplayerOrHasAnyServerSegment(ELYTRA_UTILITY_SEGMENTS);
     }
 
-    /**
-     * Check if ItemScroller is supported on current server
-     * Mirrors remote rules: FunTime, HolyWorld, SkyTime, HolyTime,
-     * FunSky, Space-Times, SpookyTime, FunMoon, Stray, Singleplayer.
-     */
     public static boolean isItemScrollerSupported() {
         return isSingleplayerOrHasAnyServerSegment(ITEM_SCROLLER_SEGMENTS);
     }
 
-    /**
-     * Check if MouseClicker (Tape Mouse) is supported on current server
-     * Mirrors remote rules: FunTime, FunSky, HolyTime, Space-Times,
-     * SpookyTime, FunMoon, FillCube, SkyTime, FunTrainer,
-     * Singleplayer.
-     */
     public static boolean isMouseClickerSupported() {
         return isSingleplayerOrHasAnyServerSegment(MOUSE_CLICKER_SEGMENTS);
     }
@@ -365,9 +288,6 @@ public class ServerUtil {
         return isSingleplayerOrHasAnyServerSegment(allowedSegments);
     }
 
-    /**
-     * Get current server address
-     */
     public static String getServerAddress() {
         return getCurrentServerHost();
     }

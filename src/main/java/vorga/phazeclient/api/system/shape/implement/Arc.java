@@ -23,19 +23,8 @@ import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.color.ColorUtil;
 import net.minecraft.client.gl.UniformType;
 
-/**
- * Arc / ring segment.
- *
- * <h3>1.21.11 port</h3>
- *
- * The eight loose uniforms of the 1.21.4 version (size, location, radius,
- * thickness, start, end, color1, color2) became vertex attributes, since
- * the pipeline model no longer supports loose uniforms at all. The arc
- * maths in the fragment shader is unchanged.
- */
 public class Arc implements Shape, QuickImports {
 
-    /** Shared with {@link InvertedArc}, which needs the same two attributes. */
     static final VertexFormatElement ARC_RECT;
     static final VertexFormatElement ARC_PARAMS;
     private static final VertexFormatElement ARC_COLOR1;
@@ -92,10 +81,7 @@ public class Arc implements Shape, QuickImports {
 
     @Override
     public void render(ShapeProperties shape) {
-        // Arc opens its own Tessellator BufferBuilder; the shared
-        // Tessellator only allows ONE active buffer, so any pending
-        // BatchedRectangle batch must flush first or its tessellator
-        // .begin() would collide with ours.
+
         BatchedRectangle.flushIfBatching();
 
         if (window() == null) return;
@@ -127,9 +113,6 @@ public class Arc implements Shape, QuickImports {
         emit(buffer, matrix4f, x + w, y + h, locX, locY, width, height, round.x, shape, c1, c2);
         emit(buffer, matrix4f, x + w, y, locX, locY, width, height, round.x, shape, c1, c2);
 
-        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-        // immediate draw runs outside the GUI pass and must install the
-        // GUI ortho projection (and its z = -11000 model-view) itself.
         vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             LAYER.draw(buffer.end());

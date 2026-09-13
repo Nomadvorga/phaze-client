@@ -22,10 +22,12 @@ public final class ScoreboardHud extends RectHudModule {
     public final BooleanSetting showTitle = new BooleanSetting("Show Title", "Show scoreboard title").setValue(true);
 
     private ScoreboardHud() {
-        // Default position: right side, vertically centered
+
         super("scoreboard_hud", "Scoreboard", 0.0f, 0.0f, 1.0f);
+
+        showBrackets.visible(() -> false);
         showTitle.setFullWidth(true);
-        setup(otherSection, showTitle);
+        setup(otherSection, showTitle, cornerRounding);
     }
 
     @Override

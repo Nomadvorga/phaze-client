@@ -20,15 +20,6 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 
-/**
- * Best-effort cache of online Phaze usernames.
- *
- * <p>The public rules endpoint currently guarantees the aggregate online
- * count and may optionally include usernames in future payloads. For
- * owners / testers the service can also use the admin online-players
- * endpoint when a token is supplied via JVM property, env var, or
- * {@code <minecraft>/Phaze/files/admin_token}.</p>
- */
 public final class PhazePlayerPresence {
     private static final String[] PUBLIC_PLAYER_ENDPOINTS = {
             "/api/online-players",
@@ -64,12 +55,6 @@ public final class PhazePlayerPresence {
         return knownUsernames.contains(username.toLowerCase(Locale.ROOT));
     }
 
-    /**
-     * Best-effort extraction of a known Phaze username from a richer
-     * nametag string, e.g. ArmorStand-based labels with prefixes,
-     * suffixes, health text, or decorative separators around the real
-     * Minecraft username.
-     */
     public String findKnownUserInText(String text) {
         if (text == null || text.isBlank()) {
             return null;
@@ -135,9 +120,7 @@ public final class PhazePlayerPresence {
             try {
                 fetchPublicPlayers(apiBase, connectTimeoutMs, readTimeoutMs, next);
             } catch (Throwable ignored) {
-                // Public player-list probes are optional. The common
-                // path today is still "self only + aggregate online
-                // count" when the backend doesn't expose usernames.
+
             }
         }
 
@@ -150,8 +133,7 @@ public final class PhazePlayerPresence {
             try {
                 fetchAdminPlayers(apiBase, token, connectTimeoutMs, readTimeoutMs, next);
             } catch (Throwable ignored) {
-                // Best-effort only. Lack of token / endpoint access
-                // must never break the main rules heartbeat.
+
             }
         }
 

@@ -39,12 +39,7 @@ public class MultiColorComponent extends AbstractSettingComponent {
         }
 
         Matrix3x2fStack matrix = context.getMatrices();
-        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
-        // draws through a 4x4 MatrixStack. Promote once per row rather than
-        // once per glyph run - nothing below mutates the GUI pose
-        // (ShapeProperties copies it), so the bake stays valid for the whole
-        // call and the geometry is identical to 1.21.4.
-        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
 
@@ -69,12 +64,6 @@ public class MultiColorComponent extends AbstractSettingComponent {
                     vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
                 }
 
-                // Single SDF rect carries fill + outline: the shader
-                // paints a 1.2 px BORDER_LIGHT ring AND the swatch's
-                // colour fill in one pass. The previous two-rect
-                // pattern (fill, then outlined zero-fill on top) was
-                // a holdover from a renderer that didn't support
-                // both at once.
                 rectangle.render(ShapeProperties.create(matrix, colorX, colorY, 7, 7)
                         .round(3.5F)
                         .thickness(1.2F)
@@ -124,23 +113,6 @@ public class MultiColorComponent extends AbstractSettingComponent {
                             windowManager.delete(existingWindow);
                         } else {
 
-                            // Width bumped from the legacy 150 to make
-                            // room for the two vertical sliders Phaze
-                            // now stacks to the right of the saturation /
-                            // brightness picker, plus each slider's
-                            // left-pointing triangle indicator stuck
-                            // to its right edge. Layout walk:
-                            //   x+6..x+144     picker (138 px)
-                            //   x+148..x+154   hue strip      (6 px)
-                            //   x+154..x+160   hue triangle   (6 px)
-                            //   x+162..x+168   alpha strip    (6 px)
-                            //   x+168..x+174   alpha triangle (6 px)
-                            // Plus a 4 px right margin so the alpha
-                            // triangle doesn't graze the rounded
-                            // window border. SaturationComponent and
-                            // AlphaComponent reference these exact X
-                            // values - changing one without updating
-                            // the others will misalign the strips.
                             int windowWidth = 178;
                             int windowHeight = 165;
 

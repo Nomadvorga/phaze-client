@@ -47,11 +47,8 @@ public final class CoordinatesHud extends RectHudModule {
     private CoordinatesHud() {
         super("coordinates_hud", "Coordinates", 22.0f, 124.0f, 1.0f);
         displayItems.setFullWidth(true);
-        setup(otherSection, displayItems);
-        // Coordinates lines are emitted as multi-line text and have
-        // never round-tripped through the [] wrap path, so the parent-
-        // registered Show Brackets toggle is meaningless here. Hide it
-        // from the panel so the user isn't presented with a no-op.
+        setup(otherSection, displayItems, cornerRounding);
+
         showBrackets.visible(() -> false);
     }
 

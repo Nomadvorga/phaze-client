@@ -8,16 +8,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
 
-/**
- * Consolidated {@link PlayerEntity} mixin for the combo-counter hit
- * hook.
- *
- * <h3>Combo counter</h3>
- * On HEAD of {@code attack}, advance the combo counter only when
- * the target is another {@code PlayerEntity} that isn't ourselves.
- * Hits on mobs / armour stands / item frames don't increment the
- * counter so it tracks PvP combos exclusively.
- */
 @Mixin(PlayerEntity.class)
 public abstract class PlayerEntityMixin {
 

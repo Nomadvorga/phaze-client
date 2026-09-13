@@ -38,17 +38,6 @@ public final class MsdfGlyph {
         }
     }
 
-    /**
-     * Emits one glyph quad.
-     *
-     * <p>Takes a {@link BufferBuilder} rather than a plain
-     * {@code VertexConsumer} because 1.21.11 has no loose shader uniforms:
-     * the MSDF range / thickness / smoothness that used to be uniforms now
-     * ride along as a per-vertex attribute, written through
-     * {@link BufferBuilder#beginElement}. The values are identical on every
-     * vertex, so the interpolated result is constant per fragment - exactly
-     * what the uniform version provided.
-     */
     public float apply(Matrix4f matrix, BufferBuilder consumer, float size, float x, float y, float z, int color,
                        VertexFormatElement paramsElement, float range, float thickness, float smoothness) {
         y -= this.topPosition * size;

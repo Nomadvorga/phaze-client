@@ -167,20 +167,6 @@ public class MenuScreen extends Screen implements QuickImports {
         float alphaAnimation = getAlphaAnimation();
         MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> renderGuiRegionBlur(context));
 
-        // Open a BatchedRectangle scope for the entire component +
-        // window-manager render pass. While this scope is active,
-        // every {@code rectangle.render(props)} from any sub-component
-        // (cards, settings, color pickers, search bar, sidebar, etc.)
-        // routes into a shared BufferBuilder instead of issuing its
-        // own draw call. The flush hooks installed in MsdfRenderer,
-        // Image, FontRenderer.drawGlyphs, Blur and ScissorManager
-        // drain the queue at every text/image/blur/scissor boundary
-        // so the on-screen draw order is identical to the legacy
-        // eager path - cards still appear under text, hover overlays
-        // still appear over base fills, scissor clipping is honored,
-        // etc. The outermost endScope() at the bottom of this lambda
-        // performs the final drain so nothing leaks past the menu's
-        // matrix-pop into whatever renders next on the frame.
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.beginScope();
         try {
             MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> {
@@ -210,12 +196,7 @@ public class MenuScreen extends Screen implements QuickImports {
                     cosmeticsView.render(context, routedMouseX, routedMouseY, delta);
                 }
                 windowManager.render(context, overlayMouseX, overlayMouseY, delta);
-                // ConfigShare modal renders LAST so it floats above
-                // the windowManager output (window dialogs, etc.) and
-                // its dim layer covers the entire menu canvas. We
-                // re-anchor its bounds to the menu rect on every
-                // frame so the centred modal stays centred when the
-                // user resizes the window.
+
                 configShareModal.position(x, y).size(width, height);
                 configShareModal.globalAlpha = alphaAnimation;
                 configShareModal.render(context, overlayMouseX, overlayMouseY, delta);
@@ -224,8 +205,7 @@ public class MenuScreen extends Screen implements QuickImports {
             vorga.phazeclient.api.system.shape.batched.BatchedRectangle.endScope();
         }
         context.getMatrices().popMatrix();
-        // The scale readout intentionally renders after the menu transform has
-        // been popped: it stays centred in physical screen space.
+
         vorga.phazeclient.implement.menu.components.implement.settings.ScaleSnapOverlay.render(context);
     }
 
@@ -283,9 +263,6 @@ public class MenuScreen extends Screen implements QuickImports {
     protected void renderDarkening(DrawContext context, int x, int y, int width, int height) {
     }
 
-    // 1.21.11: Screen.applyBlur() gained a DrawContext parameter. Kept as an empty
-    // override so vanilla's own screen blur stays suppressed - Phaze draws its own
-    // rounded blur in renderGuiRegionBlur().
     @Override
     protected void applyBlur(DrawContext context) {
     }
@@ -300,10 +277,7 @@ public class MenuScreen extends Screen implements QuickImports {
         categoryContainerComponent.ensureCategoryComponentsInitialized();
         prewarmUiIconAtlas();
         closeModuleDetail();
-        // Reset to MODS / ALL on every open. Without this, closing the
-        // GUI while in CONFIGS or SETTINGS would re-open the menu on
-        // the same view next time, which reads as "the menu doesn't
-        // remember the home tab".
+
         closeConfigsView();
         closeCosmeticsView();
         category = ModuleCategory.ALL;
@@ -377,12 +351,6 @@ public class MenuScreen extends Screen implements QuickImports {
         configShareModal.openRename(configName, onRenamed);
     }
 
-    /**
-     * Opens the modal in IMPORT mode so the user can paste a
-     * share-key code and download a config from the server. Refreshes
-     * the configs view list once import completes so the new entry
-     * shows up without a manual reload.
-     */
     public void openConfigImportModal() {
         configShareModal.position(x, y).size(width, height);
         configShareModal.openImport(configsView::refreshAfterImport);
@@ -431,11 +399,6 @@ public class MenuScreen extends Screen implements QuickImports {
         return progress * progress;
     }
 
-
-    // 1.21.11: Element/ParentElement replaced the loose (x, y, button) tuple with a
-    // net.minecraft.client.gui.Click record (plus a "doubled" double-click flag).
-    // Phaze's own component tree still speaks (double, double, int), so the record is
-    // unpacked here at the boundary and everything below is unchanged.
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
         double mouseX = click.x();
@@ -456,28 +419,18 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
-        // ConfigShare modal claims input priority while open so clicks
-        // on the dim backdrop can close it and clicks on the modal's
-        // own widgets aren't intercepted by the search bar / category
-        // grid that lives underneath.
         if (configShareModal.isOpen()) {
             configShareModal.position(x, y).size(width, height);
             configShareModal.mouseClicked(overlayMouseX, overlayMouseY, button);
             return true;
         }
 
-        // Configs view (CONFIGS top-tab content) sits between the
-        // background sidebar / footer and the rest of the menu.
-        // Route clicks here first so kebab pop-ups and row activates
-        // don't fall through to the category grid.
         if (configsView.isOpen()) {
             configsView.position(x, y).size(width, height);
             if (configsView.mouseClicked(overlayMouseX, overlayMouseY, button)) {
                 return true;
             }
-            // Forward to BackgroundComponent so the sidebar (config
-            // list, NEW CONFIG button, top tabs) is still clickable
-            // while the configs view is open.
+
             if (backgroundComponent.mouseClicked(overlayMouseX, overlayMouseY, button)) {
                 return true;
             }
@@ -524,7 +477,6 @@ public class MenuScreen extends Screen implements QuickImports {
         }
         return super.mouseClicked(click, doubled);
     }
-
 
     @Override
     public boolean mouseReleased(Click click) {
@@ -613,14 +565,7 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
-        // Dynamic cursor: announce the wheel event to the cursor
-        // manager so it can flip the OS pointer to the vertical/
-        // horizontal resize shape for the duration of the spin. The
-        // global Mouse.onMouseScroll mixin would normally cover this,
-        // but calling directly from the screen path is the most
-        // reliable trigger - it runs on the render thread inside the
-        // active screen's scroll handler, so the resize shape is
-        // armed before the next render frame's endFrame() commits it.
+
         vorga.phazeclient.api.system.cursor.CursorManager.notifyScroll(horizontal, vertical);
 
         updateOverlayMetrics();
@@ -634,11 +579,6 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
-        // CONFIGS view owns the scroll wheel while open so its row
-        // list can pan past the visible window. Without this branch
-        // the wheel went to the category grid that sits underneath
-        // (which is hidden but still in the components list), so the
-        // user couldn't reach configs that overflow the bottom edge.
         if (configsView.isOpen()) {
             configsView.position(x, y).size(width, height);
             configsView.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
@@ -656,15 +596,12 @@ public class MenuScreen extends Screen implements QuickImports {
         return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
     }
 
-    // 1.21.11: keyPressed/keyReleased take a net.minecraft.client.input.KeyInput
-    // record instead of (keyCode, scanCode, modifiers). Unpacked at the boundary.
     @Override
     public boolean keyPressed(KeyInput input) {
         int keyCode = input.key();
         int scanCode = input.scancode();
         int modifiers = input.modifiers();
-        // Modal owns key input while open so Esc closes it and the
-        // text field gets every keystroke before menu hotkeys.
+
         if (configShareModal.isOpen() && configShareModal.keyPressed(keyCode, scanCode, modifiers)) {
             return true;
         }
@@ -705,7 +642,6 @@ public class MenuScreen extends Screen implements QuickImports {
         return super.keyPressed(input);
     }
 
-
     @Override
     public boolean keyReleased(KeyInput input) {
         int keyCode = input.key();
@@ -725,9 +661,6 @@ public class MenuScreen extends Screen implements QuickImports {
         return super.keyReleased(input);
     }
 
-    // 1.21.11: charTyped takes a CharInput record carrying a full codepoint. Phaze's
-    // text fields are char-based (as vanilla's own callback was before 1.21.6), so the
-    // codepoint is narrowed here; astral-plane input is outside what the menu accepts.
     @Override
     public boolean charTyped(CharInput input) {
         char chr = (char) input.codepoint();
@@ -759,11 +692,7 @@ public class MenuScreen extends Screen implements QuickImports {
         if (animation.isFinished(BACKWARDS)) {
             SelectComponent.closeAllDropdowns();
             MultiSelectComponent.closeAllDropdowns();
-            // Clear the search bar so re-opening the GUI starts on
-            // a blank query. Without this, a user who typed something,
-            // closed the menu, and re-opened it would still see the
-            // old query (and an active SEARCH category), which reads
-            // as "the menu remembers stale typing across sessions".
+
             searchComponent.setText("");
             searchComponent.setCursorPosition(0);
             SearchComponent.typing = false;
@@ -839,11 +768,7 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     private boolean shouldStartMenuDrag(double overlayMouseX, double overlayMouseY, int button, boolean insideMenu) {
-        // While a kebab popup or the share/rename modal is up, the
-        // first click is meant to dismiss / interact with that
-        // overlay - it must NOT also start a menu drag, otherwise
-        // closing the popup also yanks the entire window across the
-        // screen.
+
         if (configShareModal.isOpen() || configsView.isPopupOpen()) {
             return false;
         }

@@ -47,21 +47,12 @@ public class FontRenderer implements QuickImports {
 
     public static double ANIMATION_TIME = 0.0;
 
-    /** Matches a bare decimal run inside a {@code ⏏...⏏} color marker. */
     private static final java.util.regex.Pattern DECIMAL_COLOR_PATTERN =
             java.util.regex.Pattern.compile("\\d+");
 
     private final Object2ObjectMap<Identifier, ObjectList<DrawEntry>> GLYPH_PAGE_CACHE = new Object2ObjectOpenHashMap<>();
     private final ObjectList<GlyphMap> maps = new ObjectArrayList<>();
-    /**
-     * Char-keyed so lookups don't box.
-     *
-     * <p>This was a {@code HashMap<Character, Glyph>}, which meant every
-     * locateGlyph() call autoboxed its argument. {@code Character.valueOf}
-     * only caches 0..127, so every Cyrillic character - i.e. most of the
-     * Russian UI - allocated a fresh Character per lookup, once per glyph
-     * per string per frame.
-     */
+
     private final Char2ObjectOpenHashMap<Glyph> glyphCache = new Char2ObjectOpenHashMap<>();
     @Getter
     private Font font;
@@ -147,16 +138,6 @@ public class FontRenderer implements QuickImports {
         drawString(matrix, text + separation + text, x - MathUtil.textScrolling(textWidth), y, color);
     }
 
-    /**
-     * Scratch stack for promoting a 2D GUI pose.
-     *
-     * <p>{@link #drawGlyphs} needs a {@code MatrixStack} because it pushes,
-     * translates and scales before reading the final matrix. GUI callers
-     * now hold a {@code Matrix3x2fStack} instead, so the overloads below
-     * seed this one-element scratch rather than allocating a stack per
-     * draw - text is drawn dozens of times a frame and this is render
-     * thread only.
-     */
     private final MatrixStack scratchPose = new MatrixStack();
 
     private MatrixStack promote(Matrix3x2fc pose) {
@@ -164,13 +145,6 @@ public class FontRenderer implements QuickImports {
         return scratchPose;
     }
 
-    /**
-     * 2D-pose overloads.
-     *
-     * <p>These are what GUI code should call on 1.21.11:
-     * {@code DrawContext.getMatrices()} is a {@code Matrix3x2fStack}, and
-     * without these every call site had to promote the pose itself.
-     */
     public void drawString(Matrix3x2fc pose, String text, double x, double y, int color) {
         drawString(promote(pose), text, x, y, color);
     }
@@ -196,8 +170,7 @@ public class FontRenderer implements QuickImports {
         float xOffset = 0;
         float yOffset = 0;
         int lineStart = 0;
-        // Allocated only if the string actually carries a ⏏ color marker;
-        // the overwhelming majority of draw calls never touch it.
+
         StringBuilder stringColor = null;
         boolean colorFormat = false;
         boolean textColor = false;
@@ -213,7 +186,7 @@ public class FontRenderer implements QuickImports {
                 colorFormat = false;
                 char c1 = Character.toUpperCase(c);
                 if (ColorUtil.colorCodes.containsKey(c1)) {
-                    // new Color(rgb).getRGB() is just rgb | 0xFF000000.
+
                     clr = ColorUtil.colorCodes.get(c1) | 0xFF000000;
                 } else if (c1 == 'R') {
                     clr = color;
@@ -225,8 +198,7 @@ public class FontRenderer implements QuickImports {
                 if (textColor && stringColor != null) {
                     try {
                         String colorString = stringColor.toString();
-                        // String.matches() recompiles the pattern on every
-                        // call; this one is compiled once.
+
                         if (DECIMAL_COLOR_PATTERN.matcher(colorString).matches()) {
                             clr = Integer.parseInt(colorString) | 0xFF000000;
                         }
@@ -348,11 +320,7 @@ public class FontRenderer implements QuickImports {
     }
 
     private void drawGlyphs(MatrixStack matrix, double x, double y) {
-        // All FontRenderer.drawXxx variants funnel through here for the
-        // actual GPU submission; flushing the BatchedRectangle queue
-        // before the glyph BufferBuilder begins keeps draw order
-        // consistent (text on top of rects) and avoids double-open
-        // tessellator state.
+
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
 
         matrix.push();
@@ -385,9 +353,7 @@ public class FontRenderer implements QuickImports {
                 buffer.vertex(matrix4f, x1 + width, y1 + 0, 0).texture(u2, v1).color(color);
                 buffer.vertex(matrix4f, x1 + 0, y1 + 0, 0).texture(u1, v1).color(color);
             }
-            // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-            // immediate draw runs outside the GUI pass and must install the
-            // GUI ortho projection (and its z = -11000 model-view) itself.
+
             vorga.phazeclient.api.system.draw.GuiProjection.begin();
             try {
                 vorga.phazeclient.api.system.draw.PhazeDrawLayers.positionTexColor(phaze$tex).draw(buffer.end());
@@ -456,21 +422,6 @@ public class FontRenderer implements QuickImports {
         return currentLine + previous;
     }
 
-    /**
-     * Linearly blends two ARGB colors.
-     *
-     * <p>The result used to be memoized in a static {@code HashMap<Long,
-     * Integer>} capped at 10 000 entries. That cache boxed a fresh
-     * {@code Long} key on every call (the values are far outside the
-     * {@code Long.valueOf} cache range), which cost more than the two dozen
-     * arithmetic ops it was avoiding, and retained up to 10 000 boxed pairs
-     * for the process lifetime.
-     *
-     * <p>Side effect of the removal: the cache keyed on {@code t} quantized
-     * to 1/100, so gradients were stepped and the value actually returned
-     * depended on whichever {@code t} first landed in a bucket. They are now
-     * computed continuously, i.e. slightly smoother and deterministic.
-     */
     private int interpolateColor(int colorStart, int colorEnd, float t) {
         float startAlpha = (colorStart >> 24 & 255) / 255.0F;
         float startRed = (colorStart >> 16 & 255) / 255.0F;

@@ -34,9 +34,7 @@ public class Render2DUtil implements QuickImports {
         if (!QUAD.isEmpty()) {
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             QUAD.forEach(quad -> drawEngine.quad(matrix4f, buffer, quad.x, quad.y, quad.width, quad.height, quad.color));
-            // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-            // immediate draw runs outside the GUI pass and must install the
-            // GUI ortho projection (and its z = -11000 model-view) itself.
+
             GuiProjection.begin();
             try {
                 PhazeDrawLayers.POSITION_COLOR.draw(buffer.end());
@@ -89,13 +87,6 @@ public class Render2DUtil implements QuickImports {
             matrix.translate(x, y);
             matrix.scale(size, size);
 
-            // 1.21.11: the two GL40C.glTexParameteri(GL_TEXTURE_2D, ..., GL_NEAREST) calls that
-            // used to sit here are gone. Filtering is no longer per-bound-texture GL state; it is
-            // a GpuSampler chosen when the draw's RenderSetup binds the texture, and no texture is
-            // bound at this point any more (RenderLayer.draw binds it). Poking raw GL here would
-            // also desync GlCommandEncoder's cached state. The skin texture's own sampler applies.
-            // TODO(1.21.11): if heads come out filtered, give PhazeDrawLayers a NEAREST variant via
-            // RenderSetup.Builder.texture(name, id, () -> RenderSystem.getSamplerCache().get(FilterMode.NEAREST)).
             BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
             Matrix4f matrix4f = GuiMatrix.mat4(matrix);
 
@@ -119,7 +110,6 @@ public class Render2DUtil implements QuickImports {
             buffer.vertex(matrix4f, 1, 1, 0).texture(u2_overlay, v2_overlay).color(color);
             buffer.vertex(matrix4f, 1, 0, 0).texture(u2_overlay, v1_overlay).color(color);
 
-            // GUI-space immediate draw: install the GUI ortho projection.
             GuiProjection.begin();
             try {
                 PhazeDrawLayers.positionTexColor(id).draw(buffer.end());
@@ -132,10 +122,6 @@ public class Render2DUtil implements QuickImports {
         }
     }
 
-    // 1.21.11: these four used to take a MatrixStack, which is what DrawContext.getMatrices()
-    // returned. The GUI pose is an org.joml.Matrix3x2fStack now, so they take Matrix3x2fc - the
-    // read-only view every 2D pose (including Matrix3x2fStack) satisfies. Callers that pass
-    // context.getMatrices() compile unchanged; world-space MatrixStack never reached these.
     public void drawSprite(@NonNull Matrix3x2fc matrix, @NonNull Sprite sprite, float x, float y, float width, int height) {
         drawSprite(matrix, sprite, x, y, width, height, -1);
     }
@@ -162,8 +148,7 @@ public class Render2DUtil implements QuickImports {
         buffer.vertex(matrix4f, x1, y2, 0).texture(u1, v2).color(color);
         buffer.vertex(matrix4f, x2, y2, 0).texture(u2, v2).color(color);
         buffer.vertex(matrix4f, x2, y1, 0).texture(u2, v1).color(color);
-        // GUI-space immediate draw (menu icons, title-screen switch button):
-        // install the GUI ortho projection, same as Image.renderRawTexture.
+
         GuiProjection.begin();
         try {
             PhazeDrawLayers.positionTexColor(texture).draw(buffer.end());
@@ -255,7 +240,7 @@ public class Render2DUtil implements QuickImports {
     }
 
     public void drawQuad(float x, float y, float width, float height, int color) {
-        // 1.21.11: RenderSystem.getShaderColor() is gone; the global alpha lives in PhazeAlpha now.
+
         QUAD.add(new Quad(x, y, width, height, ColorUtil.multAlpha(color, PhazeAlpha.get())));
     }
 

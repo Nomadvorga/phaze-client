@@ -16,7 +16,7 @@ public class ColorPresetComponent extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Disabled - removed prepared colors
+
         windowHeight = 132;
     }
 

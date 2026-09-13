@@ -46,13 +46,6 @@ public class ModuleDetailComponent extends AbstractComponent {
     private final List<AbstractSettingComponent> settingComponents = new ArrayList<>();
     private final Animation openAnimation = new DecelerateAnimation().setMs(1).setValue(1);
     private final Animation backHoverAnimation = new DecelerateAnimation().setMs(180).setValue(1);
-    // fadeAnimation was previously used to cross-fade the settings
-    // panel when the user switched modules / opened SETTINGS. Removed
-    // because the user explicitly asked for no fade on tab/category
-    // switching - panelAlpha now drives off the open animation alone,
-    // which is set to 1ms so the panel + settings + theme controls
-    // appear instantly the moment the user clicks SETTINGS, with no
-    // perceptible alpha ramp.
 
     private Module module;
     private double lastMeasuredHeight = 0.0;
@@ -183,12 +176,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         if (description == null || description.isEmpty()) {
             description = "Custom themes for GUI";
         }
-        // Auto-translate the module description through Lang. The
-        // table is keyed by the canonical English string itself, so
-        // modules don't need to be touched - if a translation exists
-        // we render it, otherwise the original English text shows
-        // through (Lang.t falls back to the input). Names of modules
-        // and categories are intentionally NOT translated.
+
         description = Lang.translate(description);
 
         float descX = backButtonX() + BACK_BUTTON_SIZE + 8.0F;
@@ -225,8 +213,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         float innerY = panelY + 2.0F;
         float innerWidth = panelWidth - 4.0F;
         float innerHeight = panelHeight - 4.0F;
-        // Keep column mode stable for the module; do not switch to single-column
-        // dynamically when some settings are hidden, otherwise rows "jump" around.
+
         boolean singleColumnLayout = settingComponents.size() <= 2;
         float columnWidth = singleColumnLayout ? innerWidth : (innerWidth - COLUMN_GAP) / 2.0F;
         float scissorTopLift = 6.0F;
@@ -238,9 +225,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         Matrix4f positionMatrix = GuiMatrix.mat4(matrices);
         ScissorManager scissorManager = Main.getInstance().getScissorManager();
         scissorManager.push(positionMatrix, scissorX, scissorY, scissorWidth, scissorHeight);
-        // DrawContext keeps its own scissor stack for deferred GUI elements
-        // such as item models. Mirror the exact same bounds there so item
-        // icons and immediate text disappear at one shared edge.
+
         context.enableScissor(
                 (int) Math.floor(scissorX),
                 (int) Math.floor(scissorY),
@@ -249,17 +234,7 @@ public class ModuleDetailComponent extends AbstractComponent {
         );
 
         float[] columnOffsets = new float[]{0.0F, 0.0F};
-        // Visible-band cull: any setting whose row strip falls
-        // entirely outside [innerY, innerY + innerHeight] won't be
-        // visible at all. The GL scissor we just pushed clips the
-        // pixels for us, but the per-component render() still runs
-        // expensive layout / hover-animation work for those rows -
-        // visible in the user's screenshot as the bottom rows
-        // bleeding through the panel border (MSDF batches don't
-        // pick up the scissor boundary the way solid-color rects do).
-        // Skipping render() outright AND the hover-tracking branches
-        // for off-screen rows fixes both the visual leak and the
-        // "invisible setting still steals my hover" interaction bug.
+
         float visibleTop = scissorY;
         float visibleBottom = scissorY + scissorHeight;
         for (AbstractSettingComponent component : settingComponents) {
@@ -307,11 +282,6 @@ public class ModuleDetailComponent extends AbstractComponent {
         context.disableScissor();
         scissorManager.pop();
 
-        // {@code columnOffsets} carries an extra trailing
-        // {@code ROW_GAP} after the last row's height. We keep
-        // that extra gap baked into {@code lastMeasuredHeight} so
-        // the user can scroll a few px past the last setting and
-        // its bottom doesn't kiss the panel border.
         lastMeasuredHeight = Math.max(columnOffsets[0], columnOffsets[1]);
         double maxScroll = Math.max(0.0, lastMeasuredHeight - innerHeight);
         scroll = Math.max(0.0, Math.min(scroll, maxScroll));
@@ -322,19 +292,6 @@ public class ModuleDetailComponent extends AbstractComponent {
         return setting != null && setting.isVisible();
     }
 
-    /**
-     * True if the component's row strip overlaps the visible band of
-     * the settings panel for the current scroll position. Used to
-     * gate event delivery so an invisible (scrolled-off) row can't
-     * absorb clicks, hovers, or scroll-wheel events that should fall
-     * through to the user's actual cursor target.
-     *
-     * <p>Recomputes the visible band from {@link #settingsPanelY()}
-     * and {@link #settingsPanelHeight()} rather than caching - the
-     * panel rect can move between frames (window resize, settings
-     * collapse/expand) and an out-of-date cache would re-introduce
-     * the "click absorbed by invisible row" bug we're fixing.
-     */
     private boolean isComponentVisible(AbstractSettingComponent component) {
         float visibleTop = settingsPanelY() - 4.0F;
         float visibleBottom = visibleTop + settingsPanelHeight() + 4.0F;

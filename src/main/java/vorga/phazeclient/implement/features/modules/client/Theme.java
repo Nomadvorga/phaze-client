@@ -70,14 +70,6 @@ public final class Theme extends Module {
             .noAlpha()
             .popupRow();
 
-    /**
-     * UI language for the menu's user-facing strings (modals, kebab
-     * popups, etc). English is the default; selecting Russian flips
-     * {@link Lang} to its RU table on the next render frame.
-     * Module / category names are NOT translated - the user
-     * explicitly asked for those to stay in their canonical English
-     * form regardless of locale.
-     */
     public final SelectSetting language = new SelectSetting("Language", "UI language for menu strings")
             .value(Lang.EN, Lang.RU)
             .selected(Lang.EN);
@@ -95,22 +87,12 @@ public final class Theme extends Module {
         renderOtherPlayerCosmetics.setFullWidth(true);
         setup(menuTheme, blurRadius, language, hudTextColor, guiScale, renderOtherPlayerCosmetics);
 
-        // Push the initial selection through to the Lang table so
-        // any code reading {@link Lang#t} during boot sees the
-        // configured locale, not the default. Subsequent changes
-        // are picked up on each modal render via syncLanguage().
         Lang.setActive(language.getSelected());
 
         applyTheme();
         applyMenuTheme();
     }
 
-    /**
-     * Re-syncs {@link Lang#setActive} with the SelectSetting's
-     * current value. Called from the modal's render path so a
-     * mid-game language switch takes effect immediately without a
-     * restart. Cheap (volatile write) so per-frame is fine.
-     */
     public void syncLanguage() {
         Lang.setActive(language.getSelected());
     }
@@ -135,22 +117,17 @@ public final class Theme extends Module {
 
     public float getMenuBlurRadius() {
         float value = blurRadius.getValue();
-        // Softer logarithmic scaling - the slider's upper half has
-        // strong diminishing returns so raw value 32 tops out around
-        // ~5.3 effective radius (previously ~8.75) instead of turning
-        // the backdrop into a mushy wash. Low values feel roughly the
-        // same because log1p stays near-linear there.
-        // value 0-32 -> effective blur 0-5.3 (non-linear)
+
         return (float) (Math.log1p(value) * 1.5);
     }
 
     public float getHudBlurQualityMultiplier() {
-        // Fixed quality = 70.0
+
         return 0.03f + (0.70f * 0.70f * 0.97f);
     }
 
     public int getHudBlurMode() {
-        // Fixed blur type = Kawase
+
         return 2;
     }
 
@@ -194,7 +171,7 @@ public final class Theme extends Module {
 
     @Override
     public boolean isVisible() {
-        return false; // Hidden from module list, but accessible via search
+        return false;
     }
 
     @Override
@@ -207,10 +184,7 @@ public final class Theme extends Module {
     }
 
     public void applyTheme() {
-        // HUD palette is derived directly from the selected menu
-        // palette via ThemeColorPalette, so picking e.g. "Snow" in the
-        // dropdown automatically lightens HUD surfaces too. Previously
-        // the HUD was locked to DarkPalette regardless of selection.
+
         currentPalette = new ThemeColorPalette(getCurrentMenuPalette());
     }
 }

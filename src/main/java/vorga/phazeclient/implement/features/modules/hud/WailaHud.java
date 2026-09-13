@@ -44,12 +44,7 @@ public final class WailaHud extends RectHudModule {
     private WailaHud() {
         super("waila_hud", "Waila", 22.0f, 544.0f, 1.0f);
         infoItems.setFullWidth(true);
-        // {@code showBrackets} is already wired into the Main section by
-        // {@code RectHudModule}'s constructor (right after Background).
-        // Re-listing it here would have appended a duplicate entry that
-        // surfaced inside the Color Settings region of the panel; the
-        // child setup() call therefore covers ONLY the WAILA-specific
-        // info-display toggles.
+
         setup(infoSection, infoItems);
     }
 

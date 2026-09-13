@@ -59,14 +59,13 @@ public final class TimeChanger extends Module {
     @Override
     public void activate() {
         cooldownTicks = 0;
-        // In singleplayer, save original time and disable daylight cycle to freeze time
+
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.getServer() != null && client.world != null) {
             ServerWorld world = client.getServer().getWorld(client.world.getRegistryKey());
             if (world != null) {
                 originalTime = world.getTimeOfDay();
-                // 1.21.11: GameRules.DO_DAYLIGHT_CYCLE -> GameRules.ADVANCE_TIME (registry id "advance_time"),
-                // and the GameRules.get(rule).get()/.set(v, server) rule-holder API became getValue/setValue.
+
                 originalDaylightCycle = world.getGameRules().getValue(GameRules.ADVANCE_TIME);
                 world.getGameRules().setValue(GameRules.ADVANCE_TIME, false, client.getServer());
             }
@@ -75,8 +74,8 @@ public final class TimeChanger extends Module {
 
     @Override
     public void deactivate() {
-        cooldownTicks = 5; // Cooldown to let server time sync
-        // In singleplayer, restore original time and daylight cycle to unfreeze time
+        cooldownTicks = 5;
+
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.getServer() != null && client.world != null) {
             ServerWorld world = client.getServer().getWorld(client.world.getRegistryKey());
@@ -85,7 +84,7 @@ public final class TimeChanger extends Module {
                     world.setTimeOfDay(originalTime);
                     originalTime = -1;
                 }
-                // 1.21.11: see activate() - DO_DAYLIGHT_CYCLE -> ADVANCE_TIME, setValue replaces get(rule).set(...)
+
                 world.getGameRules().setValue(GameRules.ADVANCE_TIME, originalDaylightCycle, client.getServer());
             }
         }

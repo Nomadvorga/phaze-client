@@ -7,54 +7,6 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
-/**
- * Recolors the sky. Hooks {@code ClientWorld.getSkyColor} via
- * {@code ClientWorldSkyCustomizerMixin} and applies the configured
- * tint blended with the vanilla output, so day-night transitions still
- * happen naturally and the user's custom tint just leans the colour
- * in their preferred direction instead of stamping a flat colour over
- * everything.
- *
- * <h3>Modes</h3>
- * <ul>
- *   <li><b>Tint</b> - linearly interpolate vanilla colour towards
- *       the configured colour by {@code intensity}. {@code 0.0}
- *       leaves vanilla untouched, {@code 1.0} fully replaces it.</li>
- *   <li><b>Replace</b> - hard override, ignores vanilla. Useful for
- *       photoshoots / consistent custom-shader looks.</li>
- *   <li><b>Gradient</b> - sky leans toward {@code colorDay} while
- *       the sun is up and toward {@code colorNight} while it's
- *       down, with a smooth blend driven by {@code skyBrightness}
- *       (vanilla 0..1 day-night phase).</li>
- * </ul>
- *
- * <h3>Sunrise / sunset intensity</h3>
- * The {@code sunsetBoost} slider amplifies the existing vanilla
- * sunset colour pass (the warm orange / red tint Mojang adds during
- * the dawn / dusk window). Implemented inside the colour-mix path
- * by detecting "twilight" via {@code skyBrightness in [0.15, 0.85]}
- * and bumping the red/green channels of the tinted colour by the
- * boost factor before clamping. {@code 1.0} is a no-op, {@code 2.0}
- * roughly doubles the warm component, the cap at {@code 4.0} stops
- * the channel from wrapping to white.
- *
- * <h3>Compatibility</h3>
- * Two mixin points: {@code ClientWorld.getSkyColor} (sky-dome and
- * Iris {@code skyColor} uniform) and {@code BackgroundRenderer.getFogColor}
- * (horizon haze, fog uniform, framebuffer clear). Together they
- * cover vanilla, Sodium, BadOptimizations cache hits, and Iris with
- * shader packs.
- *
- * <p><b>Shader-pack caveat.</b> Packs like Complementary, BSL,
- * Sildur's and Photon draw their own sky through
- * {@code gbuffers_skybasic} which procedurally scatters light from
- * the sun direction and ignores the vanilla sky colour. The dome
- * itself stays on the pack's atmospheric model; what we change in
- * that case is the {@code fogColor} uniform, which most packs read
- * for the horizon haze and distance fade. End result with shaders:
- * the horizon and distant air pick up the tint, the procedural
- * sky-dome stays as the pack drew it.
- */
 public final class SkyCustomizer extends Module {
     private static final SkyCustomizer INSTANCE = new SkyCustomizer();
 
@@ -93,8 +45,6 @@ public final class SkyCustomizer extends Module {
         intensity.setFullWidth(true);
         sunsetBoost.setFullWidth(true);
 
-        // Hide nightColor unless the user actually picked Gradient -
-        // the slider would just confuse Tint/Replace users otherwise.
         nightColor.visible(() -> "Gradient".equalsIgnoreCase(mode.getSelected()));
         intensity.visible(() -> !"Replace".equalsIgnoreCase(mode.getSelected()));
 
@@ -132,11 +82,6 @@ public final class SkyCustomizer extends Module {
         return 21.0F;
     }
 
-    /**
-     * Compute the final sky colour given vanilla's value and the
-     * current sky brightness (0..1, vanilla day-night phase). Called
-     * from the {@code ClientWorld.getSkyColor} mixin.
-     */
     public int applyToSky(int vanillaArgb, float skyBrightness) {
         if (!isEnabled()) {
             return vanillaArgb;
@@ -148,10 +93,7 @@ public final class SkyCustomizer extends Module {
 
     private int pickTargetColor(float skyBrightness) {
         if ("Gradient".equalsIgnoreCase(mode.getSelected())) {
-            // Lerp between night and day colour by skyBrightness.
-            // Vanilla skyBrightness is roughly the sun-up factor:
-            // ~0.0 deep night, ~1.0 high noon. Linear blend reads
-            // naturally as the sky ramps through dawn / dusk.
+
             return blend(nightColor.getColor(), baseColor.getColor(), clamp01(skyBrightness));
         }
         return baseColor.getColor();
@@ -170,11 +112,7 @@ public final class SkyCustomizer extends Module {
         if (boost <= 1.001F) {
             return color;
         }
-        // Twilight window: vanilla sky brightness lives roughly in
-        // [0.0, 1.0]; the warm-tint pass concentrates around
-        // [0.15, 0.85]. Outside that range (full noon / full midnight)
-        // the boost has nothing to amplify, so we taper it off with
-        // a triangular curve peaking at 0.5.
+
         float window = 1.0F - Math.abs(skyBrightness - 0.5F) * 2.0F;
         if (window <= 0.0F) {
             return color;

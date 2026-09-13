@@ -14,38 +14,15 @@ import vorga.phazeclient.api.system.cursor.HudCursorRelay;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 
-/**
- * Slides the chat-screen input field (the box at the bottom of the screen
- * when the player presses T / / ) up from {@code FADE_OFFSET} pixels below
- * its rest position whenever the chat is opened. Uses the same back-out
- * cubic curve as the ChatAnimation reference mod (c1=1.70158), giving a
- * subtle spring overshoot near the end. Speed is intentionally not exposed
- * to the user - this is a pure feel-good polish animation, fixed at
- * {@code FADE_TIME=170} ms regardless of the {@code Chat Scroll Speed}
- * slider.
- *
- * <p>1.21.11 moved the chat input field out of {@code ChatScreen.render}:
- * it is now an {@code addDrawableChild} widget drawn by the
- * {@code super.render} call, so the old "push before the background
- * {@code fill}, pop after {@code TextFieldWidget.render}" pair no longer has
- * a {@code TextFieldWidget.render} call site to hook. The slide is therefore
- * applied as two separate push/pop pairs - one around the background
- * {@code fill}, one around the {@code Screen.render} widget pass - which
- * keeps the exact same coverage (background + input field) while leaving
- * {@code ChatHud.render} in between untranslated, so chat history does not
- * slide with the box. The overlay-rendered {@code ChatInputSuggestor} still
- * stays outside the animation.
- */
 @Mixin(ChatScreen.class)
 public abstract class ChatScreenInputFieldMixin {
 
     @Shadow protected TextFieldWidget chatField;
 
-    /** Fade duration, ms. Hardcoded per ChatAnimation reference. */
     @Unique private static final float FADE_TIME = 170.0F;
-    /** Vertical travel at scale 1080p, in GUI px. */
+
     @Unique private static final float FADE_OFFSET = 8.0F;
-    /** Back-out cubic coefficient (the standard easing magic number). */
+
     @Unique private static final float C1 = 1.70158F;
     @Unique private static final float C3 = C1 + 1.0F;
 
@@ -63,8 +40,7 @@ public abstract class ChatScreenInputFieldMixin {
         if (client == null) {
             return 0.0F;
         }
-        // Stamp the open time on the first render frame after the screen
-        // becomes active (or after the last close, see phaze$onRemoved).
+
         if (!phaze$wasOpenedLastFrame
                 && client.player != null
                 && !client.player.isSleeping()) {
@@ -77,15 +53,10 @@ public abstract class ChatScreenInputFieldMixin {
         if (elapsedMs > FADE_TIME) elapsedMs = FADE_TIME;
         float alpha = 1.0F - (elapsedMs / FADE_TIME);
 
-        // Reverse-form back-out cubic: at alpha=1 (t=0) we sit at +1 of
-        // FADE_OFFSET; at alpha=0 (t=FADE_TIME) we sit at 0; with a brief
-        // negative (overshoot) excursion near the end thanks to the
-        // (C3*a^3 - C1*a^2) shape.
         float modifiedAlpha = C3 * alpha * alpha * alpha - C1 * alpha * alpha;
         return modifiedAlpha * FADE_OFFSET * screenFactor;
     }
 
-    /** Pair 1: the input-box background {@code fill}. */
     @Inject(
             method = "render",
             at = @At(
@@ -100,8 +71,7 @@ public abstract class ChatScreenInputFieldMixin {
         if (phaze$displacement == 0.0F) {
             return;
         }
-        // 1.21.11: DrawContext.getMatrices() is a 2D Matrix3x2fStack - translate
-        // takes (x, y); the old third argument was the (always 0) GUI z.
+
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, phaze$displacement);
     }
@@ -122,13 +92,6 @@ public abstract class ChatScreenInputFieldMixin {
         context.getMatrices().popMatrix();
     }
 
-    /**
-     * Pair 2: the {@code super.render} widget pass, which is where 1.21.11
-     * draws {@code chatField}. The StreamerMode password mask is applied here
-     * too - see {@link #phaze$applyStreamerMask()} - because the old
-     * {@code @Redirect} on {@code TextFieldWidget.render} has no call site to
-     * redirect anymore.
-     */
     @Inject(
             method = "render",
             at = @At(
@@ -164,52 +127,21 @@ public abstract class ChatScreenInputFieldMixin {
 
     @Inject(method = "removed", at = @At("HEAD"))
     private void phaze$onRemoved(CallbackInfo ci) {
-        // Reset so the next open re-triggers the slide.
+
         phaze$wasOpenedLastFrame = false;
     }
 
-    /**
-     * Built-in Phaze HUD editor cursor. The relay only contains a request
-     * while one of our HUD elements is being moved or resized, so ordinary
-     * vanilla chat controls retain their native cursor.
-     */
     @Inject(method = "render", at = @At("TAIL"))
     private void phaze$applyHudEditorCursor(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         HudCursorRelay.apply();
     }
 
-    /**
-     * Stash for the original text between the StreamerMode swap and
-     * the restore around the widget render pass. {@code null} when no
-     * swap happened on the current frame.
-     */
     @Unique
     private String phaze$savedChatText = null;
 
-    /** The field instance whose text is currently swapped, or {@code null}. */
     @Unique
     private TextFieldWidget phaze$maskedField = null;
 
-    /**
-     * Brackets the chat-input field's draw with a temporary text swap
-     * so the StreamerMode password mask actually shows on screen. We
-     * bypass {@code setText} (which would fire
-     * {@code setChangedListener} and trigger a Brigadier re-parse on
-     * the masked text) by writing directly to the {@code private
-     * String text} field via reflection - the swap is a single-frame
-     * visual rewrite and never touches the onChanged path. Restored to
-     * the original text immediately after the render pass so the next
-     * frame / suggestor parse sees the user's actual input.
-     *
-     * <p>1.21.11: this used to be a {@code @Redirect} on
-     * {@code TextFieldWidget.render} inside {@code ChatScreen.render}.
-     * The field is an {@code addDrawableChild} widget now and is drawn
-     * by {@code super.render}, so the swap straddles that call
-     * instead. Same single-frame semantics, same blast radius: only
-     * {@code ChatScreen}'s own {@code chatField} is touched, because
-     * that is the only {@code TextFieldWidget} where a slash-command
-     * can carry a password.
-     */
     @Unique
     private void phaze$applyStreamerMask() {
         phaze$savedChatText = null;
@@ -255,21 +187,11 @@ public abstract class ChatScreenInputFieldMixin {
         try {
             phaze$resolveTextField().set(field, original);
         } catch (Throwable ignored) {
-            // Last-ditch: setText restores even if we can't touch the
-            // field directly, at the cost of one spurious onChanged
-            // callback.
+
             field.setText(original);
         }
     }
 
-    /**
-     * Cached {@code text} field reflection. Resolved lazily on the
-     * first masked render so we don't pay the lookup cost on every
-     * un-masked frame. Yarn still maps the field name to {@code text}
-     * on 1.21.11; mojang-mapped builds carry the same name. We probe
-     * both candidates plus the obfuscated {@code field_2092} as a
-     * fallback so a future remap doesn't silently disable the mask.
-     */
     @Unique
     private static java.lang.reflect.Field phaze$cachedTextField = null;
 

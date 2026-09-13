@@ -45,10 +45,7 @@ public class BindSetting extends Setting {
     @Override
     public void reset() {
         if (defaultKey != null) {
-            // Route through setKey() so notifyChange fires and the
-            // auto-save pipeline persists the reset. Direct assignment
-            // would otherwise leave the on-disk key stale until the
-            // next change.
+
             setKey(defaultKey);
         }
     }

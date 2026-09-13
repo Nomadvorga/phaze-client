@@ -34,19 +34,9 @@ public class ColorComponent extends AbstractSettingComponent {
     private static final float LEFT_PADDING = 10.0F;
     private static final float COLOR_SIZE = 12.0F;
     private static final float COLOR_RIGHT = 10.0F;
-    // Single header rendered above the whole picker so two color
-    // pickers in the same module (e.g. HitRange's Color + In Range
-    // Color) can't be mistaken for each other. Format:
-    // "<module visible name> <setting name>", e.g. "Hit Color Color"
-    // for the HitColor module's "Color" setting. The size matches the
-    // body label size used by ValueComponent so the typography reads
-    // consistent across mixed setting types in the same panel.
+
     private static final float HEADER_TEXT_SIZE = 7.0F;
-    // Vertical gap between the top of our card and the header. The
-    // sliders inside the sub-components draw from their own y + 10.5,
-    // i.e. our y + 15.5 (after the +5 position offset), so leaving
-    // ~3 px of top pad keeps the header centered in the strip above
-    // the slider rectangles without clipping the descenders.
+
     private static final float HEADER_TOP_PAD = 3.0F;
 
     private final ColorSetting setting;
@@ -87,12 +77,6 @@ public class ColorComponent extends AbstractSettingComponent {
 
         Matrix3x2fStack matrix = context.getMatrices();
 
-        // Pump the preset component just to keep its internal state
-        // consistent (it still gets mouseClicked etc.); we no longer
-        // size ourselves off its 132-px windowHeight because that left
-        // ~56 px of dead space below the slider strips, making stacked
-        // color settings (e.g. HitRange's Color + In Range Color)
-        // feel far more spaced out than the rest of the panel.
         ((ColorPresetComponent) colorPresetComponent.position(x, y)).getWindowHeight();
 
         alphaComponent.position(x + 5, y + 5);
@@ -101,11 +85,7 @@ public class ColorComponent extends AbstractSettingComponent {
         colorEditorComponent.position(x + 5, y + 5);
 
         components.forEach(component -> {
-            // Hide the alpha column entirely when the ColorSetting
-            // opted out via {@code noAlpha()}. Skipping render() is
-            // enough - the AlphaComponent is also blocked from
-            // mouse / scroll input below so the click area doesn't
-            // overlap the (now invisible) widget.
+
             if (setting.isNoAlpha() && component == alphaComponent) {
                 return;
             }
@@ -115,24 +95,13 @@ public class ColorComponent extends AbstractSettingComponent {
 
         renderHeader(matrix);
 
-        // Tight height: slider strips inside the sub-components draw
-        // from (y + 5) + 10.5 = y + 15.5 down to y + 65.5 (H = 50).
-        // Add a single trailing pad below the strips (no more 50-plus
-        // px of empty space where the legacy preset palette used to
-        // sit) so two color settings in a row sit close together.
         height = 73;
     }
 
     private void renderPopupRow(DrawContext context, int mouseX, int mouseY) {
-        // 1.21.11: DrawContext.getMatrices() is a Matrix3x2fStack. Grab it once -
-        // ShapeProperties.create and ResetIconComponent.render both take the GUI
-        // pose (Matrix3x2fc) directly since the port.
+
         Matrix3x2fStack matrix = context.getMatrices();
-        // FontRenderer still consumes a world-style MatrixStack, so bake the GUI
-        // pose into one promoted MatrixStack per row instead of once per glyph
-        // run. Nothing below mutates the GUI pose (ShapeProperties copies it), so
-        // the bake stays valid for the whole call - identical geometry to 1.21.4.
-        // TODO(1.21.11): drop this once FontRenderer takes a Matrix3x2fc directly.
+
         MatrixStack textPose = new MatrixStack();
         textPose.multiplyPositionMatrix(GuiMatrix.mat4(matrix));
 
@@ -167,26 +136,6 @@ public class ColorComponent extends AbstractSettingComponent {
                 .build());
     }
 
-    /**
-     * Renders a single "{@code <module> <setting>}" header above the
-     * whole picker, e.g. {@code "Hit Color Color"} for the HitColor
-     * module's {@code Color} setting. Lets the user tell two adjacent
-     * pickers in the same module apart (HitRange's {@code Color} vs
-     * {@code In Range Color}) without having to remember which strip
-     * is which from the module description.
-     *
-     * <p>The module visible name is resolved through
-     * {@link Module#getVisibleName()} via the {@link
-     * vorga.phazeclient.api.feature.module.setting.Setting#getModuleContext()}
-     * identifier that {@code Module.setup} stamps on every setting; if
-     * the lookup fails (orphan setting, identifier mismatch) we fall
-     * back to just the setting's own name so the picker is still
-     * labelled, just without the module prefix.
-     */
-    // 1.21.11: the GUI pose is org.joml.Matrix3x2f(Stack), not MatrixStack. Only
-    // read here (GuiMatrix.mat4 promotes it to the Matrix4f MsdfRenderer wants),
-    // so the read-only Matrix3x2fc interface is enough and accepts the
-    // Matrix3x2fStack that DrawContext.getMatrices() hands out.
     private void renderHeader(Matrix3x2fc matrix) {
         String settingName = setting.getLocalizedName();
         if (settingName == null) settingName = "";
@@ -217,14 +166,6 @@ public class ColorComponent extends AbstractSettingComponent {
         );
     }
 
-    /**
-     * Looks up the visible name of the module that owns this setting,
-     * via the {@code moduleContext} identifier that {@code Module.setup}
-     * stamps on every setting tree it owns. Returns the empty string
-     * (caller treats as "no module prefix") on any lookup miss so a
-     * setting that wasn't installed via {@code setup} - or that races
-     * a module-list mutation - still renders a label.
-     */
     private String resolveModuleVisibleName() {
         String moduleId = setting.getModuleContext();
         if (moduleId == null || moduleId.isEmpty()) {

@@ -92,16 +92,10 @@ public class SearchComponent extends AbstractComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         Matrix3x2fStack matrix = context.getMatrices();
-        // 1.21.11: the GUI pose is a Matrix3x2fStack, but FontRenderer still
-        // consumes a MatrixStack. Bake the promoted GUI pose once per frame
-        // (see fontPose()) instead of handing getMatrices() straight over.
+
         MatrixStack textPose = fontPose(context);
         FontRenderer font = Fonts.getSize(12);
 
-        // Drag-to-extend: while a press is held inside the search box
-        // the cursor follows the mouse and the selection grows from
-        // the original press position. The flag is cleared in
-        // {@link #mouseReleased}.
         if (dragging && typing) {
             cursorPosition = getCursorIndexAt(mouseX);
             if (selectionStart == -1) selectionStart = cursorPosition;
@@ -121,10 +115,6 @@ public class SearchComponent extends AbstractComponent {
         boolean isHovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
         hoverAnimation.setDirection(isHovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
-        // Dynamic cursor: search box is a text input, request the
-        // I-beam shape while the pointer is over it. CursorManager
-        // commits the highest-priority request at end-of-frame, so
-        // touching it from a render path is safe.
         if (isHovered || typing) {
             vorga.phazeclient.api.system.cursor.CursorManager.requestBeam();
         }
@@ -173,16 +163,7 @@ public class SearchComponent extends AbstractComponent {
                     if (s < e) {
                         float selX0 = textX + font.getStringWidth(text.substring(0, s));
                         float selX1 = textX + font.getStringWidth(text.substring(0, e));
-                        // Center the selection band on the input rect
-                        // itself rather than on the baseline-shifted
-                        // text position. Using the rect centre keeps
-                        // the highlight visually balanced above and
-                        // below the glyphs even though the font's
-                        // baseline isn't symmetric inside the line
-                        // box - the previous {@code inputTextY - 2.5}
-                        // pinned the highlight too low because the
-                        // baseline sits in the lower half of the
-                        // rendered glyph height.
+
                         float selH = Math.max(8.0F, renderedTextHeight(font, "I") + 2.0F);
                         float selY = y + (height - selH) * 0.5F;
                         rectangle.render(ShapeProperties.create(matrix, selX0, selY, selX1 - selX0, selH)
@@ -241,21 +222,6 @@ public class SearchComponent extends AbstractComponent {
             }
     }
 
-    /**
-     * Bridges the 1.21.11 GUI pose to the pose type {@link FontRenderer} still takes.
-     *
-     * <p>1.21.6 changed {@code DrawContext.getMatrices()} from {@code MatrixStack} to
-     * {@code org.joml.Matrix3x2fStack}, but {@code FontRenderer.drawString} still accepts a
-     * {@code MatrixStack} and only ever reads {@code peek().getPositionMatrix()} from it.
-     * Baking the promoted 2D pose into a throwaway {@code MatrixStack} therefore reproduces the
-     * 1.21.4 geometry exactly, with no behaviour change.
-     *
-     * <p>One instance per {@code render()} is sufficient: this component never mutates the GUI
-     * pose while drawing, and {@code FontRenderer.drawGlyphs} pushes/pops symmetrically.
-     *
-     * <p>TODO(1.21.11): drop this once FontRenderer itself is ported to take a
-     * {@code Matrix3x2fc} - then {@code context.getMatrices()} can be passed directly again.
-     */
     private static MatrixStack fontPose(DrawContext context) {
         MatrixStack pose = new MatrixStack();
         pose.multiplyPositionMatrix(GuiMatrix.mat4(context.getMatrices()));
@@ -268,7 +234,7 @@ public class SearchComponent extends AbstractComponent {
         if (hovered && button == 0) {
             long currentTime = System.currentTimeMillis();
             if (currentTime - lastClickTime < 250 && typing) {
-                // Double-click selects all text in the search box.
+
                 selectionStart = 0;
                 selectionEnd = text.length();
                 cursorPosition = text.length();
@@ -285,10 +251,7 @@ public class SearchComponent extends AbstractComponent {
                     cursorPosition = 0;
                     xOffset = 0;
                 }
-                // Begin a fresh drag-selection from the click point.
-                // Even if the click was a single tap, this lets the
-                // user immediately drag to extend without releasing
-                // and re-pressing.
+
                 dragging = true;
                 selectionStart = cursorPosition;
                 selectionEnd = cursorPosition;
@@ -334,9 +297,6 @@ public class SearchComponent extends AbstractComponent {
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
-    
-
-    
     @Override
     public boolean charTyped(char chr, int modifiers) {
         float maxTextWidth = EXPANDED_WIDTH - ICON_SIZE - 17;
@@ -353,9 +313,6 @@ public class SearchComponent extends AbstractComponent {
                 }
             }
 
-            // Replace the selected range with the typed character so
-            // typing over a highlight overwrites it - matches the
-            // standard text-editor contract.
             deleteSelectedText();
             text = text.substring(0, cursorPosition) + chr + text.substring(cursorPosition);
             cursorPosition++;
@@ -365,7 +322,6 @@ public class SearchComponent extends AbstractComponent {
         return false;
     }
 
-    
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (typing) {
@@ -413,9 +369,6 @@ public class SearchComponent extends AbstractComponent {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-    
-
-
     private void handleTextModification(int keyCode) {
         if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
             if (hasSelection()) {
@@ -443,7 +396,6 @@ public class SearchComponent extends AbstractComponent {
         }
     }
 
-    
     private void moveCursor(int keyCode, int modifiers) {
         boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
         if (keyCode == GLFW.GLFW_KEY_LEFT && cursorPosition > 0) {
@@ -459,9 +411,6 @@ public class SearchComponent extends AbstractComponent {
         }
     }
 
-    
-
-    
     private int getCursorIndexAt(double mouseX) {
         FontRenderer font = Fonts.getSize(12);
         float relativeX = (float) mouseX - x - 13 + xOffset;
@@ -476,7 +425,6 @@ public class SearchComponent extends AbstractComponent {
         return position;
     }
 
-    
     private void updateXOffset(FontRenderer font, int cursorPosition) {
         float cursorX = font.getStringWidth(text.substring(0, cursorPosition));
         float availableWidth = width - ICON_SIZE - 17;
@@ -486,7 +434,6 @@ public class SearchComponent extends AbstractComponent {
             xOffset = cursorX - availableWidth;
         }
     }
-
 
     private void handleTabCompletion() {
         if (!text.isEmpty()) {

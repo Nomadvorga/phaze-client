@@ -338,27 +338,10 @@ public class Main implements ModInitializer {
 
         configManager.loadCurrentConfig();
 
-        // Auto-save: every Setting.notifyChange() (BindSetting.setKey,
-        // BooleanSetting.setValue, sliders, color pickers, ...) flips the
-        // dirty flag; flushIfDirty drains it on a tick if the debounce
-        // window has elapsed. Listener is wired AFTER loadCurrentConfig so
-        // load-time setValue calls don't immediately mark the config dirty.
         vorga.phazeclient.api.feature.module.setting.Setting.setGlobalChangeListener(
                 setting -> configManager.markDirty()
         );
-        // Module enable / disable + keybind changes go through a
-        // separate state-change channel (Module.notifyStateChange);
-        // wire it to the same dirty flag so toggling a module from the
-        // GUI / a hotkey is persisted by the next flushIfDirty tick.
-        // Without this, the `globalStateChangeListener` is null, so
-        // toggling a module never marks the config dirty, and on a
-        // crash within ~250ms of the toggle (or before the user makes
-        // any OTHER auto-saved change), the enabled state on disk
-        // remains stale - the exact "modules turn off on crash"
-        // symptom users hit. Hooking it AFTER loadCurrentConfig is
-        // critical: load-time setStateSilent calls would otherwise
-        // immediately re-mark the config dirty and trigger a save
-        // pass that overwrites the just-loaded data.
+
         vorga.phazeclient.api.feature.module.Module.setGlobalStateChangeListener(
                 module -> configManager.flushNow()
         );
@@ -367,41 +350,18 @@ public class Main implements ModInitializer {
                 client -> configManager.flushIfDirty()
         );
 
-        // Last-chance save on JVM shutdown. Catches Alt+F4 / window
-        // close / SIGTERM that ClientLifecycleEvents.CLIENT_STOPPING
-        // doesn't fire on, so any change made within the debounce
-        // window before a hard exit still persists. Hard kills (kill
-        // -9 / process tree termination from Task Manager) bypass
-        // shutdown hooks, but those are not recoverable in any
-        // user-mode code.
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 configManager.saveCurrentConfig();
             } catch (Throwable ignored) {
-                // Shutdown hooks must never throw - the JVM is already
-                // tearing down and any exception here is unobservable.
+
             }
         }, "phaze-config-shutdown"));
 
-        // Final save on game close. The tick-based debounce can miss a
-        // change made within ~250ms of quitting; this catches it. We call
-        // saveCurrentConfig() unconditionally rather than flushIfDirty()
-        // because dirty flag may be cleared by an unrelated flush moments
-        // earlier - re-saving a clean config is cheap.
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(
                 client -> configManager.saveCurrentConfig()
         );
 
-        // JVM shutdown hook as the final safety net. CLIENT_STOPPING
-        // only fires on a clean Minecraft shutdown path; it gets
-        // skipped entirely when the game crashes with an uncaught
-        // exception (the more common case for users reporting "my
-        // settings reset after a crash"). Shutdown hooks fire on most
-        // JVM exit paths INCLUDING uncaught exception crashes and the
-        // window-close X button, so adding one catches the crash case
-        // the lifecycle event misses. We swallow exceptions because
-        // we're already inside a shutdown sequence and have nothing
-        // useful to do with an error here.
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 configManager.saveCurrentConfig();
@@ -411,12 +371,6 @@ public class Main implements ModInitializer {
 
         discordManager.init();
 
-        // Kick off the remote-rules poller. It runs on a daemon thread,
-        // is fail-open (network errors -> no extra blocks), and feeds
-        // Module#isServerLocked so any rule pushed from the admin panel
-        // takes effect within ~60s without the player relogging.
-        // Override the API base with -Dphaze.rules.api=https://... ;
-        // setting it to "" disables the service entirely (offline dev).
         vorga.phazeclient.base.util.RemoteRulesService.getInstance().start();
     }
 }

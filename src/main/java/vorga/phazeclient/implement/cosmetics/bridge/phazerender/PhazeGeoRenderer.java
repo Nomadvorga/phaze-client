@@ -11,11 +11,6 @@ import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
-/**
- * Bedrock cosmetic renderer ported from the renderer supplied by the user.
- * The important part is the exact Phaze axis/pivot conversion performed by
- * GeoModelParser + GeckoRenderHelper instead of category-specific root hacks.
- */
 public final class PhazeGeoRenderer {
 
     public static boolean render(CosmeticEntry entry,
@@ -39,7 +34,6 @@ public final class PhazeGeoRenderer {
 
         matrices.push();
 
-        // Exact outer transform order from the supplied Phaze CosmeticRenderer.
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180.0f));
         matrices.translate(source.x, source.y, source.z);
         if (source.yaw != 0f) matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(source.yaw));
@@ -58,14 +52,6 @@ public final class PhazeGeoRenderer {
         return true;
     }
 
-    /**
-     * Pet variant of the supplied Phaze renderer.
-     * PetWorldRenderer already applies the source x/y/z as a world attachment,
-     * so this method intentionally skips the source translation, but keeps the
-     * exact Phaze bone/cube hierarchy and axis conversion. The requested pet
-     * correction is then applied around the source root: +180 degrees on Y and
-     * a VERTICAL (Y-only) mirror. X is never mirrored.
-     */
     public static boolean renderPet(CosmeticEntry entry,
                                     MatrixStack matrices,
                                     VertexConsumerProvider providers,
@@ -88,15 +74,11 @@ public final class PhazeGeoRenderer {
         matrices.push();
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180.0f));
 
-        // x/y/z are applied by PetWorldRenderer so the old world placement is
-        // preserved (including Jaguar's exact -2 block correction).
         if (source.yaw != 0f) matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(source.yaw));
         if (source.pitch != 0f) matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(source.pitch));
         if (source.roll != 0f) matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(source.roll));
         matrices.scale(source.scale, source.scale, source.scale);
 
-        // Apply requested pet orientation around its authored root pivot so the
-        // model rotates/mirrors in place rather than orbiting away from player.
         if (!source.model.topLevelBones.isEmpty()) {
             GeoBone root = source.model.topLevelBones.get(0);
             float px = root.getPivotX() / 16.0f;
@@ -104,7 +86,7 @@ public final class PhazeGeoRenderer {
             float pz = root.getPivotZ() / 16.0f;
             matrices.translate(px, py, pz);
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f));
-            matrices.scale(1.0f, -1.0f, 1.0f); // vertical mirror only
+            matrices.scale(1.0f, -1.0f, 1.0f);
             matrices.translate(-px, -py, -pz);
         } else {
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f));
@@ -198,7 +180,6 @@ public final class PhazeGeoRenderer {
             float ny = normal.y();
             float nz = normal.z();
 
-            // Same zero-thickness normal correction as the supplied Phaze renderer.
             if ((cube.size.getY() == 0.0F || cube.size.getZ() == 0.0F) && nx < 0.0F) nx = -nx;
             if ((cube.size.getX() == 0.0F || cube.size.getZ() == 0.0F) && ny < 0.0F) ny = -ny;
             if ((cube.size.getX() == 0.0F || cube.size.getY() == 0.0F) && nz < 0.0F) nz = -nz;

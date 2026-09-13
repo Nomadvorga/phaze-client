@@ -14,8 +14,7 @@ public class DiscordManager {
     private boolean running = true;
     private DiscordInfo info = new DiscordInfo("Unknown", "", "");
     private long startTimestamp = System.currentTimeMillis() / 1000;
-    /** Reset on world-join so the "World" elapsed mode shows
-     *  time-since-join rather than time-since-launch. */
+
     private long worldJoinTimestamp = System.currentTimeMillis() / 1000;
 
     public void init() {
@@ -26,12 +25,6 @@ public class DiscordManager {
             return;
         }
 
-        // Bail out cleanly when the bundled DLL couldn't be
-        // extracted / loaded - DiscordRPC.INSTANCE returns null in
-        // that case (see DiscordRPC#loadInstance). Without this
-        // check the very next line would NPE through the entire
-        // boot path and the client would silently hang on the
-        // first time the daemon thread tries to use Discord_*.
         if (DiscordRPC.INSTANCE == null) {
             System.err.println("[Phaze] Discord RPC native unavailable - module disabled for this session");
             this.running = false;
@@ -62,10 +55,6 @@ public class DiscordManager {
     private void updatePresence() {
         String imageUrl = "https://i.imgur.com/wJLeuBG.gif";
 
-        // Pull the live config from the DiscordRpc module. If the
-        // user disabled the module entirely we fall back to the
-        // static "Phaze Client" card so the install still has a
-        // visible presence (matches old behaviour).
         vorga.phazeclient.implement.features.modules.other.DiscordRpc rpc =
                 resolveRpcModule();
 
@@ -73,20 +62,11 @@ public class DiscordManager {
                 .setLargeImage(imageUrl, "Phaze Client");
 
         if (rpc == null || !rpc.isEnabled()) {
-            // Module turned off: clear the activity entirely so the
-            // user's Discord profile shows nothing instead of the
-            // legacy "Phaze Client" fallback card. Discord_ClearPresence
-            // tells the daemon to drop the current activity, which
-            // is what the user expects from the toggle.
+
             DiscordRPC.INSTANCE.Discord_ClearPresence();
             return;
         }
 
-        // Hide-in-menus: when the user is on the title / multiplayer /
-        // pause-with-no-world screen the activity is fully cleared
-        // so Discord shows the user as idle. Without ClearPresence
-        // the previous in-world card lingered with the static large
-        // image, which read as "still playing" to other users.
         net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
         boolean inWorld = mc != null && mc.world != null && mc.player != null;
         if (rpc.hideInMenus.isValue() && !inWorld) {
@@ -94,11 +74,6 @@ public class DiscordManager {
             return;
         }
 
-        // Token resolution. Each token is replaced with the live
-        // value pulled from MinecraftClient. If we're in the menu
-        // (no world / no player) every world-dependent token falls
-        // back to a sensible default so the card never displays raw
-        // {token} placeholders.
         String server;
         if (mc != null && mc.getCurrentServerEntry() != null) {
             String addr = mc.getCurrentServerEntry().address;
@@ -112,13 +87,11 @@ public class DiscordManager {
         String dimension = inWorld
                 ? mc.world.getRegistryKey().getValue().getPath()
                 : "menu";
-        // 1.21.11 (authlib 9.x): GameProfile is a record - getName() -> name().
+
         String player = inWorld ? mc.player.getGameProfile().name() : "";
         String gamemode = "?";
         if (inWorld && mc.interactionManager != null && mc.interactionManager.getCurrentGameMode() != null) {
-            // 1.21.11: GameMode.getName() -> getId(); both return the same
-            // lowercase id string ("survival"/"creative"/...), so the {gamemode}
-            // token renders identically to before.
+
             gamemode = mc.interactionManager.getCurrentGameMode().getId();
         }
         String health = inWorld ? String.valueOf((int) mc.player.getHealth()) : "0";
@@ -128,27 +101,17 @@ public class DiscordManager {
         if (!details.isEmpty()) builder.setDetails(details);
         if (!state.isEmpty()) builder.setState(state);
 
-        // Elapsed timestamp. Session = launch time; World = last
-        // world join (worldJoinTimestamp updated externally); Off
-        // skips the timestamp entirely.
         switch (rpc.elapsedMode.getSelected()) {
             case "World" -> builder.setStartTimestamp(worldJoinTimestamp);
-            case "Off" -> { /* no-op - leave timestamp at zero */ }
+            case "Off" -> {   }
             default -> builder.setStartTimestamp(startTimestamp);
         }
 
-        // Telegram channel button - always present on the activity
-        // card. Note: the button is NOT visible to the user
-        // themselves, only to OTHER Discord users viewing their
-        // profile. This is a documented Rich Presence limitation.
         builder.setButtons(new RPCButton("Telegram Channel", "https://t.me/PhazeClient"));
 
         DiscordRPC.INSTANCE.Discord_UpdatePresence(builder.build());
     }
 
-    /** Resolve the configured DiscordRpc module instance. Defensive
-     *  null / class-load handling so the daemon thread never crashes
-     *  on early startup before module registration finishes. */
     private vorga.phazeclient.implement.features.modules.other.DiscordRpc resolveRpcModule() {
         try {
             return vorga.phazeclient.implement.features.modules.other.DiscordRpc.getInstance();
@@ -157,7 +120,6 @@ public class DiscordManager {
         }
     }
 
-    /** Replace {@code {token}} placeholders in a template string. */
     private static String applyTokens(String template, String server, String dimension,
                                       String player, String gamemode, String health) {
         if (template == null || template.isEmpty()) return "";
@@ -169,7 +131,6 @@ public class DiscordManager {
                 .replace("{health}", health);
     }
 
-    /** Reset the World-elapsed anchor when the user joins a world. */
     public void onWorldJoin() {
         worldJoinTimestamp = System.currentTimeMillis() / 1000;
     }

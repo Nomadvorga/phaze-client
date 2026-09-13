@@ -276,7 +276,7 @@ public class MainMenuScreen extends TitleScreen {
         updateThemeUiAnimationTiming();
         renderMainMenuBackground(context, delta);
         context.getMatrices().pushMatrix();
-        // 1.21.11: the GUI pose is a Matrix3x2fStack - scale() is 2D only (the old z was 1.0F anyway).
+
         context.getMatrices().scale(overlayRenderScale, overlayRenderScale);
         int overlayMouseX = Math.round(toOverlayCoordinate(mouseX));
         int overlayMouseY = Math.round(toOverlayCoordinate(mouseY));
@@ -419,12 +419,12 @@ public class MainMenuScreen extends TitleScreen {
             return;
         }
         this.renderPanoramaBackground(context, delta);
-        // Restore the vanilla title-screen background pass: blur the
-        // freshly-rendered panorama, then composite Mojang's darkening
-        // texture over it so the menu regains the subdued backdrop.
         if (this.client != null) {
-            // 1.21.11: Screen.applyBlur() now takes the DrawContext (it records a blur marker on the GUI render state).
-            this.applyBlur(context);
+
+            int blurriness = this.client.options.getMenuBackgroundBlurrinessValue();
+            if (blurriness >= 1) {
+                this.client.gameRenderer.renderBlur();
+            }
             if (!themeSelectorOpen) {
                 this.renderDarkening(context);
             }
@@ -432,9 +432,7 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderThemeSelectorBackdrop(DrawContext context, float overlayW, float overlayH, float alpha) {
-        // 1.21.11: GUI depth is gone (all GUI pipelines are NO_DEPTH_TEST). The old translate z=120
-        // becomes an explicit root layer; the four theme-modal tiers (120/140/180/200) are already
-        // submitted in ascending order, so layer order reproduces the previous stacking exactly.
+
         context.createNewRootLayer();
         context.getMatrices().pushMatrix();
         rectangle.render(ShapeProperties.create(context.getMatrices(), 0.0F, 0.0F, overlayW, overlayH)
@@ -821,7 +819,7 @@ public class MainMenuScreen extends TitleScreen {
             themeSelectorCloseHoverAnim = 0.0F;
             themeSelectorResetHoverAnim = 0.0F;
         }
-        // 1.21.11: former z=140 tier -> its own root layer, submitted after the backdrop layer.
+
         context.createNewRootLayer();
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, modalYOffset);
@@ -959,9 +957,6 @@ public class MainMenuScreen extends TitleScreen {
         themeSelectorCardScrollTarget = Math.max(0.0F, Math.min(themeSelectorCardMaxScroll, themeSelectorCardScrollTarget));
         themeSelectorCardScrollOffset = animateThemeUiValue(themeSelectorCardScrollOffset, themeSelectorCardScrollTarget);
 
-        // Leave room for the rounded top edge and its antialiasing. The card
-        // viewport starts on a fractional GUI coordinate at common scales;
-        // clipping exactly at cardsY could shave its first rendered row.
         float cardClipTop = layout.cardsViewportY - 2.0F * layout.scale;
         float cardClipBottom = layout.cardsViewportY + layout.cardsViewportH;
 
@@ -1069,7 +1064,7 @@ public class MainMenuScreen extends TitleScreen {
         }
 
         if (preset.isRemote()) {
-            // Remote cards stay visibly unavailable until their archive is installed.
+
             float overlayTop = Math.max(previewY + 1.0F, clipTop);
             float overlayBottom = Math.min(previewY + previewH - 1.0F, clipBottom);
             if (overlayBottom > overlayTop) {
@@ -1279,9 +1274,7 @@ public class MainMenuScreen extends TitleScreen {
         if (visibleBottom <= visibleTop) {
             return;
         }
-        // A card only needs its thumbnail. Asking for the renderer here also
-        // decoded and uploaded all six faces of every visible custom ZIP,
-        // causing the selector to hitch while opening or scrolling.
+
         Identifier preview = preset.previewTexture();
         if (!preset.hasPreviewTexture()) {
             boolean fullyVisible = visibleTop == y && visibleBottom == y + size;
@@ -1322,7 +1315,7 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderThemeSettingsBackdrop(DrawContext context, ThemeSelectorLayout layout, float alpha) {
-        // 1.21.11: former z=180 tier -> its own root layer, submitted after the selector modal layer.
+
         context.createNewRootLayer();
         context.getMatrices().pushMatrix();
         rectangle.render(ShapeProperties.create(context.getMatrices(), layout.panelX, layout.panelY, layout.panelW, layout.panelH)
@@ -1410,7 +1403,7 @@ public class MainMenuScreen extends TitleScreen {
         ThemeSettingsLayout layout = getThemeSettingsLayout(themeLayout);
         float modalAlpha = modalProgress;
         float modalYOffset = (1.0F - modalProgress) * 16.0F * layout.scale;
-        // 1.21.11: former z=200 tier -> the last root layer, so the settings modal stays on top.
+
         context.createNewRootLayer();
         context.getMatrices().pushMatrix();
         context.getMatrices().translate(0.0F, modalYOffset);
@@ -2299,8 +2292,6 @@ public class MainMenuScreen extends TitleScreen {
         return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
     }
 
-    // 1.21.11: Screen.resize lost its MinecraftClient parameter (the client is a final field now),
-    // and Screen.init(int, int) replaces init(MinecraftClient, int, int).
     @Override
     public void resize(int width, int height) {
         super.resize(width, height);
@@ -2313,9 +2304,6 @@ public class MainMenuScreen extends TitleScreen {
         super.removed();
     }
 
-    // 1.21.11: Element.mouseClicked takes a Click record (x, y, MouseInput) plus a "double click" flag.
-    // The overlay-space remap that used to be done on the loose doubles is now done by rebuilding the
-    // Click with scaled coordinates before it is handed to vanilla.
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
         updateOverlayMetrics();
@@ -2412,7 +2400,6 @@ public class MainMenuScreen extends TitleScreen {
         return super.mouseClicked(overlayClick, doubled);
     }
 
-    /** Rebuilds a Click in overlay space; the button/modifier info is carried over untouched. */
     private Click toOverlayClick(Click click) {
         return new Click(toOverlayCoordinate(click.x()), toOverlayCoordinate(click.y()), click.buttonInfo());
     }
@@ -2427,7 +2414,6 @@ public class MainMenuScreen extends TitleScreen {
         return super.mouseReleased(toOverlayClick(click));
     }
 
-    // 1.21.11: mouseDragged(Click, double offsetX, double offsetY) - the button now lives in the Click.
     @Override
     public boolean mouseDragged(Click click, double offsetX, double offsetY) {
         updateOverlayMetrics();
@@ -2485,9 +2471,6 @@ public class MainMenuScreen extends TitleScreen {
         }
     }
 
-    // 1.21.11: keyPressed(KeyInput) - key/scancode/modifiers are bundled in the record, and
-    // Screen.hasControlDown() is gone; KeyInput.hasCtrlOrCmd() is the platform-aware replacement
-    // (it tests SystemKeycodes.CTRL_MOD, i.e. Cmd on macOS, exactly like the old helper).
     @Override
     public boolean keyPressed(KeyInput input) {
         int keyCode = input.key();
@@ -2526,8 +2509,6 @@ public class MainMenuScreen extends TitleScreen {
         return super.keyPressed(input);
     }
 
-    // 1.21.11: charTyped(CharInput) carries a codepoint instead of a char. isValidChar() is vanilla's
-    // own control-character filter and asString() handles codepoints outside the BMP correctly.
     @Override
     public boolean charTyped(CharInput input) {
         if (themeSelectorOpen && !themeSelectorSettingsOpen && themeSelectorSearchFocused && input.isValidChar()) {
@@ -2590,8 +2571,6 @@ public class MainMenuScreen extends TitleScreen {
         return builder.toString();
     }
 
-    // 1.21.11: ButtonWidget gained a nested subclass named `Text`, which shadows net.minecraft.text.Text
-    // for every simple-name reference inside this subclass - hence the fully qualified message types below.
     private static class MainMenuButtonWidget extends ButtonWidget {
         private enum ButtonVisualStyle {
             DEFAULT,
@@ -2638,9 +2617,6 @@ public class MainMenuScreen extends TitleScreen {
             this.height = height;
         }
 
-        // 1.21.11: PressableWidget.renderWidget is final and now simply calls drawIcon(...) + setCursor(...),
-        // so the whole custom look moves into drawIcon. Vanilla's own button chrome (drawButton) is only
-        // drawn by ButtonWidget.Text, which we do not extend - the Phaze visuals stay the sole rendering.
         @Override
         protected void drawIcon(DrawContext context, int mouseX, int mouseY, float delta) {
             boolean hovered = this.isHovered();

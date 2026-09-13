@@ -21,23 +21,6 @@ import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
 import net.minecraft.client.gl.UniformType;
 
-/**
- * Inverting rounded rectangle.
- *
- * <h3>1.21.11 port</h3>
- *
- * The 1.21.4 version bound {@code phaze:core/round_inverted} through a
- * {@code ShaderProgramKey}, pushed four loose uniforms and drew with
- * {@code BufferRenderer}. None of that exists any more: loose uniforms
- * are gone from the pipeline model, so the four parameters ride along as
- * vertex attributes - identical across the quad's four vertices, which
- * makes them constant per fragment exactly as uniforms were.
- *
- * <p>The inverting blend that used to be configured imperatively via
- * {@code RenderSystem.blendFuncSeparate(ONE_MINUS_DST_COLOR, ...)} is now
- * baked into the pipeline as {@link BlendFunction#INVERT}, so it travels
- * with the draw and cannot leak into the next one.
- */
 public class InvertedRectangle implements Shape, QuickImports {
 
     private static final VertexFormatElement INV_RECT;
@@ -47,9 +30,7 @@ public class InvertedRectangle implements Shape, QuickImports {
     private static final RenderLayer LAYER;
 
     static {
-        // Slots are claimed the same way BatchedRectangle does it: probe
-        // for free ids rather than hard-coding, so the shapes coexist with
-        // each other and with vanilla's 0..6.
+
         INV_RECT = registerGeneric(4);
         INV_RADIUS = registerGeneric(4);
         INV_PARAMS = registerGeneric(2);
@@ -110,8 +91,6 @@ public class InvertedRectangle implements Shape, QuickImports {
         float width = shape.getWidth() * size.x;
         float height = shape.getHeight() * size.y;
 
-        // Same framebuffer-relative origin the batched rect uses, so this
-        // shape keeps working while a card FBO is bound for capture.
         float locX = pos.x;
         float locY = BatchedRectangle.getActiveFbHeight() - height - pos.y;
 
@@ -126,9 +105,6 @@ public class InvertedRectangle implements Shape, QuickImports {
         emit(buffer, matrix4f, x0 + w, y0 + h, locX, locY, width, height, round, softness);
         emit(buffer, matrix4f, x0 + w, y0, locX, locY, width, height, round, softness);
 
-        // 1.21.11 defers DrawContext work into a GuiRenderState, so this
-        // immediate draw runs outside the GUI pass and must install the
-        // GUI ortho projection (and its z = -11000 model-view) itself.
         vorga.phazeclient.api.system.draw.GuiProjection.begin();
         try {
             LAYER.draw(buffer.end());

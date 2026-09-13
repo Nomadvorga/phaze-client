@@ -19,13 +19,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.itemphysics.ItemPhysicsManager;
+import vorga.phazeclient.api.system.itemphysics.PhazeItemEntityRenderState;
 import vorga.phazeclient.implement.features.modules.other.ItemPhysics;
 
 @Mixin(ItemEntityRenderer.class)
 public class ItemEntityRendererPhysicsMixin {
 
-    // 1.21.11: vanilla's own "is this a 3D block model" test - ItemRenderState.hasDepth()
-    // was removed, ItemEntityRenderer now compares the model bounding box depth to 1/16.
     @Unique
     private static final float PHAZE_DEPTH_THRESHOLD = 0.0625f;
 
@@ -34,39 +33,29 @@ public class ItemEntityRendererPhysicsMixin {
     private Random random;
 
     @Unique
-    private int phaze$currentEntityId = -1;
-
-    @Unique
     private boolean phaze$currentIsBlock = false;
 
     @Inject(method = "updateRenderState(Lnet/minecraft/entity/ItemEntity;Lnet/minecraft/client/render/entity/state/ItemEntityRenderState;F)V", at = @At("TAIL"))
     private void captureEntityId(ItemEntity entity, ItemEntityRenderState state, float tickDelta, CallbackInfo ci) {
         if (ItemPhysics.getInstance().isEnabled()) {
-            phaze$currentEntityId = entity.getId();
             phaze$currentIsBlock = !state.itemRenderState.isEmpty() && phaze$hasDepth(state.itemRenderState);
             ItemPhysicsManager.getInstance().updateRotation(entity, phaze$currentIsBlock);
+            ((PhazeItemEntityRenderState) (Object) state).phaze$entityId(entity.getId());
         }
     }
 
-    // 1.21.11: ItemEntityRenderer.render lost the VertexConsumerProvider + light params.
-    // Draws now go through an OrderedRenderCommandQueue and the light level lives on the
-    // render state; a CameraRenderState was appended.
     @Inject(method = "render(Lnet/minecraft/client/render/entity/state/ItemEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/render/state/CameraRenderState;)V", at = @At("HEAD"), cancellable = true)
     private void applyPhysics(ItemEntityRenderState state, MatrixStack matrixStack, OrderedRenderCommandQueue queue, CameraRenderState cameraState, CallbackInfo ci) {
         if (!ItemPhysics.getInstance().isEnabled()) return;
-        if (phaze$currentEntityId < 0) return;
         if (state.itemRenderState.isEmpty()) return;
 
-        ItemPhysicsManager.ItemPhysicsData data = ItemPhysicsManager.getInstance().getItemData(phaze$currentEntityId);
+        ItemPhysicsManager.ItemPhysicsData data = ItemPhysicsManager.getInstance()
+                .getItemData(((PhazeItemEntityRenderState) (Object) state).phaze$entityId());
         if (data == null) return;
 
         final int light = state.light;
         final int outlineColor = state.outlineColor;
 
-        // 1.21.11: ItemRenderState.getTransformation() is gone (the display transform is now a
-        // package-private per-layer field). The model bounding box is already expressed in
-        // post-transform space, so its extents carry the same scale the old transform did:
-        // a full block on GROUND is 0.25 tall/deep, a flat item is 0.03125 deep.
         final Box box = state.itemRenderState.getModelBoundingBox();
         final float depth = (float) box.getLengthZ();
 
@@ -75,22 +64,20 @@ public class ItemEntityRendererPhysicsMixin {
         random.setSeed(state.seed);
         boolean isBlock = depth > PHAZE_DEPTH_THRESHOLD;
 
-        // Lay flat: rotate 90 degrees on X axis
         matrixStack.multiply(RotationAxis.POSITIVE_X.rotationDegrees(90.0f));
-        // Apply Y rotation (entity yaw)
+
         matrixStack.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(data.yRot));
 
-        // Was transformation.scale.y() - box height is the same 0.25 for a full block model.
         float scaleY = (float) box.getLengthY();
 
         if (isBlock) {
-            // Block items: offset down and apply rotation around center
+
             matrixStack.translate(0.0f, -0.2f, -0.08f);
             matrixStack.translate(0.0f, scaleY, 0.0f);
             matrixStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(data.xRot));
             matrixStack.translate(0.0f, -scaleY, 0.0f);
         } else {
-            // Flat items: small offset
+
             matrixStack.translate(0.0f, 0.0f, -0.04f);
             matrixStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(data.xRot));
         }
@@ -104,8 +91,6 @@ public class ItemEntityRendererPhysicsMixin {
             matrixStack.translate(f7, f8, f9);
         }
 
-        // Was 0.09375f * transformation.scale.z(); depth * 1.5f is the identical value
-        // (0.09375 == 1.5 / 16) and is what vanilla 1.21.11 uses for stack spacing.
         float stackStep = depth * 1.5f;
 
         for (int k = 0; k < renderedAmount; k++) {
