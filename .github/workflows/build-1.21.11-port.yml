@@ -179,9 +179,14 @@ jobs:
             $depth = [math]::Min($parts.Count - 1, 1)
             if ($parts.Count -gt 1 -and $parts[0] -eq 'assets') { $depth = [math]::Min($parts.Count - 1, 3) }
             $key = ($parts[0..$depth] -join '/')
-            if (-not $groups.ContainsKey($key)) { $groups[$key] = @{ count = 0; size = 0 } }
+            # Split the bundled JNA jar per platform - that is where the
+            # removable weight lives.
+            if ($p -match '^com/sun/jna/[^/]+\.class$') { $key = 'com/sun/jna (classes)' }
+            elseif ($p -like 'com/sun/jna/*/*') { $key = ($parts[0..3] -join '/') }
+            if (-not $groups.ContainsKey($key)) { $groups[$key] = @{ count = 0; size = 0; packed = 0 } }
             $groups[$key].count++
             $groups[$key].size += $e.Length
+            $groups[$key].packed += $e.CompressedLength
             $largest.Add([pscustomobject]@{ Path = $p; Size = $e.Length })
           }
           $zip.Dispose()
@@ -190,11 +195,19 @@ jobs:
           $totalCount = ($groups.Values | Measure-Object -Property count -Sum).Sum
           $out.Add("`$($main.Name)` - $([math]::Round($main.Length / 1MB, 2)) MB packed, $totalCount entries, $([math]::Round($totalSize / 1MB, 2)) MB unpacked")
           $out.Add('')
-          $out.Add('| group | entries | unpacked |')
-          $out.Add('| --- | --- | --- |')
-          foreach ($g in $groups.GetEnumerator() | Sort-Object { -$_.Value.size } | Select-Object -First 30) {
-            $out.Add("| ``$($g.Key)`` | $($g.Value.count) | $([math]::Round($g.Value.size / 1MB, 3)) MB |")
+          $out.Add('| group | entries | unpacked | in jar (packed) |')
+          $out.Add('| --- | --- | --- | --- |')
+          foreach ($g in $groups.GetEnumerator() | Sort-Object { -$_.Value.packed } | Select-Object -First 35) {
+            $out.Add("| ``$($g.Key)`` | $($g.Value.count) | $([math]::Round($g.Value.size / 1MB, 3)) MB | $([math]::Round($g.Value.packed / 1MB, 3)) MB |")
           }
+          $out.Add('')
+          $assetPacked = 0
+          $libPacked = 0
+          foreach ($g in $groups.GetEnumerator()) {
+            if ($g.Key -like 'assets/*') { $assetPacked += $g.Value.packed }
+            elseif ($g.Key -like 'com/sun/*' -or $g.Key -like 'natives/*') { $libPacked += $g.Value.packed }
+          }
+          $out.Add("assets/* costs $([math]::Round($assetPacked / 1MB, 2)) MB packed; bundled native/library code costs $([math]::Round($libPacked / 1MB, 2)) MB packed")
           $out.Add('')
           $out.Add('Largest single entries:')
           $out.Add('')
