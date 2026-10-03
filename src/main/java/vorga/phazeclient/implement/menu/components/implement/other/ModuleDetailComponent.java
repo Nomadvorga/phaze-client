@@ -51,7 +51,7 @@ public class ModuleDetailComponent extends AbstractComponent {
     private double lastMeasuredHeight = 0.0;
 
     public void open(Module module) {
-        if (module == null) {
+        if (module == null || module.isServerLocked()) {
             return;
         }
 
@@ -76,6 +76,10 @@ public class ModuleDetailComponent extends AbstractComponent {
     }
 
     public boolean isOpen() {
+        if (module != null && module.isServerLocked()) {
+            MenuScreen.INSTANCE.closeModuleDetail();
+            return false;
+        }
         return module != null;
     }
 
