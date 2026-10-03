@@ -355,6 +355,9 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     public void openModuleDetail(vorga.phazeclient.api.feature.module.Module module) {
+        if (module == null || module.isServerLocked()) {
+            return;
+        }
         windowManager.closeAll();
         SelectComponent.closeAllDropdowns();
         MultiSelectComponent.closeAllDropdowns();

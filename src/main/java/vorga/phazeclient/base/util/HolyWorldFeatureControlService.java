@@ -14,6 +14,8 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.core.Main;
+import vorga.phazeclient.implement.menu.MenuScreen;
+import vorga.phazeclient.implement.menu.components.implement.other.ModuleDetailComponent;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -37,7 +39,7 @@ public final class HolyWorldFeatureControlService {
     private static final String HOLYWORLD_SEGMENT = "holyworld";
     private static final long REQUEST_COOLDOWN_MS = 10_000L;
     private static final String FIXED_CLIENT_ID = "phaze-client";
-    private static final long RETRY_INTERVAL_MS = 2_000L;
+    private static final long RETRY_INTERVAL_MS = 10_000L;
     private static final int MAX_RETRIES = 5;
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -82,7 +84,7 @@ public final class HolyWorldFeatureControlService {
             resetCache();
             client.execute(() -> {
                 if (isHolyWorldServer()) {
-                    requestServerRules("", true);
+                    requestServerRules("");
                     startRetryTask();
                     enforceServerLocks();
                 }
@@ -99,14 +101,13 @@ public final class HolyWorldFeatureControlService {
         disabledFeatures.clear();
         receivedInitialResponse.set(false);
         pendingRequestId.set(null);
-        lastRequestAt.set(0L);
         retryCount.set(0);
     }
 
     public void onHostChange() {
         if (isHolyWorldServer()) {
             if (!receivedInitialResponse.get() && pendingRequestId.get() == null) {
-                requestServerRules("", true);
+                requestServerRules("");
                 startRetryTask();
                 enforceServerLocks();
             }
@@ -118,6 +119,16 @@ public final class HolyWorldFeatureControlService {
     private synchronized void startRetryTask() {
         stopRetryTask();
         retryCount.set(0);
+
+        long now = System.currentTimeMillis();
+        long elapsed = now - lastRequestAt.get();
+        long initialDelay;
+        if (elapsed < REQUEST_COOLDOWN_MS) {
+            initialDelay = (REQUEST_COOLDOWN_MS - elapsed) + 100L;
+        } else {
+            initialDelay = RETRY_INTERVAL_MS;
+        }
+
         retryFuture = scheduler.scheduleWithFixedDelay(() -> {
             try {
                 if (!isHolyWorldServer() || receivedInitialResponse.get()) {
@@ -132,13 +143,13 @@ public final class HolyWorldFeatureControlService {
                 if (mc != null) {
                     mc.execute(() -> {
                         if (isHolyWorldServer() && !receivedInitialResponse.get()) {
-                            requestServerRules("", true);
+                            requestServerRules("");
                         }
                     });
                 }
             } catch (Throwable ignored) {
             }
-        }, RETRY_INTERVAL_MS, RETRY_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        }, initialDelay, RETRY_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     private synchronized void stopRetryTask() {
@@ -163,25 +174,21 @@ public final class HolyWorldFeatureControlService {
     }
 
     public void requestFeatureStatus(String featureName) {
-        requestServerRules(featureName, false);
+        requestServerRules(featureName);
     }
 
-    private void requestServerRules(String featureName, boolean force) {
+    private boolean requestServerRules(String featureName) {
         if (!isHolyWorldServer()) {
-            return;
+            return false;
         }
 
         long now = System.currentTimeMillis();
         long previous = lastRequestAt.get();
-        if (!force && now - previous < REQUEST_COOLDOWN_MS) {
-            return;
+        if (now - previous < REQUEST_COOLDOWN_MS) {
+            return false;
         }
-        if (!force) {
-            if (!lastRequestAt.compareAndSet(previous, now)) {
-                return;
-            }
-        } else {
-            lastRequestAt.set(now);
+        if (!lastRequestAt.compareAndSet(previous, now)) {
+            return false;
         }
 
         String requestId = UUID.randomUUID().toString();
@@ -198,7 +205,9 @@ public final class HolyWorldFeatureControlService {
 
         try {
             ClientPlayNetworking.send(new HolyWorldPayload(request.toString()));
+            return true;
         } catch (Throwable ignored) {
+            return false;
         }
     }
 
@@ -296,6 +305,17 @@ public final class HolyWorldFeatureControlService {
                     module.deactivate();
                 }
             }
+        }
+
+        try {
+            MenuScreen menuScreen = MenuScreen.INSTANCE;
+            if (menuScreen != null && menuScreen.getModuleDetailComponent() != null) {
+                ModuleDetailComponent detail = menuScreen.getModuleDetailComponent();
+                if (detail.isOpen() && detail.getModule() != null && detail.getModule().isServerLocked()) {
+                    menuScreen.closeModuleDetail();
+                }
+            }
+        } catch (Throwable ignored) {
         }
     }
 
