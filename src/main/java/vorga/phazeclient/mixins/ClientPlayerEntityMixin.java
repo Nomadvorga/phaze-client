@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.api.feature.module.Module;
+import vorga.phazeclient.base.util.HolyWorldFeatureControlService;
 import vorga.phazeclient.base.util.RemoteRulesService;
 import vorga.phazeclient.base.util.ServerUtil;
 import vorga.phazeclient.core.Main;
@@ -67,6 +68,7 @@ public class ClientPlayerEntityMixin {
         if (!current.equals(phaze$lastObservedHost)) {
             phaze$lastObservedHost = current;
             RemoteRulesService.getInstance().requestRefresh();
+            HolyWorldFeatureControlService.getInstance().onHostChange();
         }
     }
 
@@ -86,6 +88,6 @@ public class ClientPlayerEntityMixin {
     }
 
     private static void phaze$enforceServerLocks() {
-
+        HolyWorldFeatureControlService.enforceServerLocks();
     }
 }

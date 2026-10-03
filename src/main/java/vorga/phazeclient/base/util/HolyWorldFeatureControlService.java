@@ -1,12 +1,13 @@
 package vorga.phazeclient.base.util;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
@@ -14,26 +15,45 @@ import net.minecraft.util.Identifier;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.core.Main;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.UUID;
-import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class HolyWorldFeatureControlService {
     private static final String REQUEST_METHOD_NAME = "checkFeatures";
     private static final String HOLYWORLD_SEGMENT = "holyworld";
     private static final long REQUEST_COOLDOWN_MS = 10_000L;
     private static final String FIXED_CLIENT_ID = "phaze-client";
+    private static final long RETRY_INTERVAL_MS = 2_000L;
+    private static final int MAX_RETRIES = 5;
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Set<String> disabledFeatures = ConcurrentHashMap.newKeySet();
     private final AtomicLong lastRequestAt = new AtomicLong(0L);
+
+    private final AtomicBoolean receivedInitialResponse = new AtomicBoolean(false);
+    private final AtomicReference<String> pendingRequestId = new AtomicReference<>(null);
+    private final AtomicInteger retryCount = new AtomicInteger(0);
+
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "HolyWorld-FeatureControl");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private ScheduledFuture<?> retryFuture = null;
 
     private HolyWorldFeatureControlService() {
     }
@@ -61,7 +81,11 @@ public final class HolyWorldFeatureControlService {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             resetCache();
             client.execute(() -> {
-                requestServerRules("", true);
+                if (isHolyWorldServer()) {
+                    requestServerRules("", true);
+                    startRetryTask();
+                    enforceServerLocks();
+                }
             });
         });
 
@@ -70,14 +94,66 @@ public final class HolyWorldFeatureControlService {
         });
     }
 
-    public void resetCache() {
+    public synchronized void resetCache() {
+        stopRetryTask();
         disabledFeatures.clear();
+        receivedInitialResponse.set(false);
+        pendingRequestId.set(null);
         lastRequestAt.set(0L);
+        retryCount.set(0);
+    }
+
+    public void onHostChange() {
+        if (isHolyWorldServer()) {
+            if (!receivedInitialResponse.get() && pendingRequestId.get() == null) {
+                requestServerRules("", true);
+                startRetryTask();
+                enforceServerLocks();
+            }
+        } else {
+            resetCache();
+        }
+    }
+
+    private synchronized void startRetryTask() {
+        stopRetryTask();
+        retryCount.set(0);
+        retryFuture = scheduler.scheduleWithFixedDelay(() -> {
+            try {
+                if (!isHolyWorldServer() || receivedInitialResponse.get()) {
+                    stopRetryTask();
+                    return;
+                }
+                if (retryCount.incrementAndGet() > MAX_RETRIES) {
+                    stopRetryTask();
+                    return;
+                }
+                MinecraftClient mc = MinecraftClient.getInstance();
+                if (mc != null) {
+                    mc.execute(() -> {
+                        if (isHolyWorldServer() && !receivedInitialResponse.get()) {
+                            requestServerRules("", true);
+                        }
+                    });
+                }
+            } catch (Throwable ignored) {
+            }
+        }, RETRY_INTERVAL_MS, RETRY_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private synchronized void stopRetryTask() {
+        if (retryFuture != null) {
+            retryFuture.cancel(false);
+            retryFuture = null;
+        }
     }
 
     public boolean isFeatureDisabled(String featureName) {
         if (!isHolyWorldServer()) {
             return false;
+        }
+        if (!receivedInitialResponse.get()) {
+            return true;
         }
         return disabledFeatures.contains(normalize(featureName));
     }
@@ -87,10 +163,6 @@ public final class HolyWorldFeatureControlService {
     }
 
     public void requestFeatureStatus(String featureName) {
-        requestServerRules(featureName);
-    }
-
-    private void requestServerRules(String featureName) {
         requestServerRules(featureName, false);
     }
 
@@ -112,9 +184,12 @@ public final class HolyWorldFeatureControlService {
             lastRequestAt.set(now);
         }
 
+        String requestId = UUID.randomUUID().toString();
+        pendingRequestId.set(requestId);
+
         JsonObject request = new JsonObject();
         request.addProperty("method", REQUEST_METHOD_NAME);
-        request.addProperty("id", UUID.randomUUID().toString());
+        request.addProperty("id", requestId);
 
         JsonObject payload = new JsonObject();
         payload.addProperty("client", FIXED_CLIENT_ID);
@@ -129,7 +204,7 @@ public final class HolyWorldFeatureControlService {
 
     private void handlePayload(String json) {
         if (!isHolyWorldServer()) {
-            disabledFeatures.clear();
+            resetCache();
             return;
         }
 
@@ -140,31 +215,87 @@ public final class HolyWorldFeatureControlService {
             }
 
             JsonObject object = parsed.getAsJsonObject();
-            if (!object.has("ok") || !object.get("ok").getAsBoolean()) {
-                return;
-            }
-            JsonElement payloadElement = object.get("payload");
-            if (payloadElement == null || !payloadElement.isJsonObject()) {
-                return;
-            }
-            JsonElement blocklistElement = payloadElement.getAsJsonObject().get("blocklist");
-            if (blocklistElement == null || !blocklistElement.isJsonArray()) {
-                return;
-            }
-            Set<String> nextDisabled = ConcurrentHashMap.newKeySet();
-            for (JsonElement entry : blocklistElement.getAsJsonArray()) {
-                if (entry == null || entry.isJsonNull()) {
-                    continue;
-                }
-                String normalized = normalize(entry.getAsString());
-                if (!normalized.isEmpty()) {
-                    nextDisabled.add(normalized);
-                }
-            }
-            disabledFeatures.clear();
-            disabledFeatures.addAll(nextDisabled);
-        } catch (Throwable ignored) {
+            boolean isRpcResponse = object.has("ok");
+            boolean isPushUpdate = object.has("event") || object.has("type")
+                    || object.has("action") || (!isRpcResponse && object.has("payload"));
 
+            Set<String> nextDisabled = null;
+
+            if (isRpcResponse) {
+                if (!object.get("ok").getAsBoolean()) {
+                    return;
+                }
+                String respId = getString(object, "id");
+                String expectedId = pendingRequestId.get();
+                if (expectedId == null || !expectedId.equals(respId)) {
+                    return;
+                }
+                pendingRequestId.set(null);
+                nextDisabled = parseBlocklist(object.get("payload"));
+            } else if (isPushUpdate) {
+                nextDisabled = parseBlocklist(object.get("payload"));
+            }
+
+            if (nextDisabled != null) {
+                disabledFeatures.clear();
+                disabledFeatures.addAll(nextDisabled);
+                receivedInitialResponse.set(true);
+                stopRetryTask();
+                enforceServerLocks();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private Set<String> parseBlocklist(JsonElement payloadElement) {
+        if (payloadElement == null || payloadElement.isJsonNull()) {
+            return null;
+        }
+        Set<String> nextDisabled = ConcurrentHashMap.newKeySet();
+        JsonArray array = null;
+
+        if (payloadElement.isJsonArray()) {
+            array = payloadElement.getAsJsonArray();
+        } else if (payloadElement.isJsonObject()) {
+            JsonObject obj = payloadElement.getAsJsonObject();
+            if (obj.has("blocklist") && obj.get("blocklist").isJsonArray()) {
+                array = obj.getAsJsonArray("blocklist");
+            } else if (obj.has("features") && obj.get("features").isJsonArray()) {
+                array = obj.getAsJsonArray("features");
+            } else if (obj.has("disabled") && obj.get("disabled").isJsonArray()) {
+                array = obj.getAsJsonArray("disabled");
+            }
+        }
+
+        if (array != null) {
+            for (JsonElement entry : array) {
+                if (entry != null && !entry.isJsonNull() && entry.isJsonPrimitive()) {
+                    String normalized = normalize(entry.getAsString());
+                    if (!normalized.isEmpty()) {
+                        nextDisabled.add(normalized);
+                    }
+                }
+            }
+            return nextDisabled;
+        }
+        return null;
+    }
+
+    public static void enforceServerLocks() {
+        Main main = Main.getInstance();
+        if (main == null || main.getModuleProvider() == null) {
+            return;
+        }
+
+        for (Module module : main.getModuleProvider().getModules()) {
+            if (module != null && module.isServerLocked()) {
+                if (module.state) {
+                    module.setState(false);
+                }
+                if (module.isEnabled()) {
+                    module.deactivate();
+                }
+            }
         }
     }
 
