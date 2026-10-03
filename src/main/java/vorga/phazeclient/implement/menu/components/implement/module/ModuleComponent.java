@@ -484,6 +484,9 @@ public class ModuleComponent extends AbstractComponent {
         boolean settingsClick = button == 0 || button == 1;
 
         if (showOptionsRow && settingsClick && optionsHovered) {
+            if (module.isServerLocked()) {
+                return true;
+            }
             playButtonClickSound();
             MenuScreen.INSTANCE.openModuleDetail(module);
             return true;
