@@ -322,6 +322,9 @@ public class MenuScreen extends Screen implements QuickImports {
     }
 
     public void openModuleDetail(vorga.phazeclient.api.feature.module.Module module) {
+        if (module == null || module.isServerLocked()) {
+            return;
+        }
         closeCosmeticsView();
         closeConfigsView();
         windowManager.closeAll();
