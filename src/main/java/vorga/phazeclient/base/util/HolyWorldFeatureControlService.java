@@ -59,11 +59,20 @@ public final class HolyWorldFeatureControlService {
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            resetCache();
             client.execute(() -> {
-                disabledFeatures.clear();
-                requestServerRules("");
+                requestServerRules("", true);
             });
         });
+
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            resetCache();
+        });
+    }
+
+    public void resetCache() {
+        disabledFeatures.clear();
+        lastRequestAt.set(0L);
     }
 
     public boolean isFeatureDisabled(String featureName) {
@@ -82,17 +91,25 @@ public final class HolyWorldFeatureControlService {
     }
 
     private void requestServerRules(String featureName) {
+        requestServerRules(featureName, false);
+    }
+
+    private void requestServerRules(String featureName, boolean force) {
         if (!isHolyWorldServer()) {
             return;
         }
 
         long now = System.currentTimeMillis();
         long previous = lastRequestAt.get();
-        if (now - previous < REQUEST_COOLDOWN_MS) {
+        if (!force && now - previous < REQUEST_COOLDOWN_MS) {
             return;
         }
-        if (!lastRequestAt.compareAndSet(previous, now)) {
-            return;
+        if (!force) {
+            if (!lastRequestAt.compareAndSet(previous, now)) {
+                return;
+            }
+        } else {
+            lastRequestAt.set(now);
         }
 
         JsonObject request = new JsonObject();
@@ -104,7 +121,10 @@ public final class HolyWorldFeatureControlService {
         payload.add("features", buildFeatureArray(featureName));
         request.add("payload", payload);
 
-        ClientPlayNetworking.send(new HolyWorldPayload(request.toString()));
+        try {
+            ClientPlayNetworking.send(new HolyWorldPayload(request.toString()));
+        } catch (Throwable ignored) {
+        }
     }
 
     private void handlePayload(String json) {
