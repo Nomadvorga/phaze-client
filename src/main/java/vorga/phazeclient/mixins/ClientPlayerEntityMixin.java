@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.api.feature.module.Module;
+import vorga.phazeclient.base.util.HolyWorldFeatureControlService;
 import vorga.phazeclient.base.util.RemoteRulesService;
 import vorga.phazeclient.base.util.ServerUtil;
 import vorga.phazeclient.core.Main;
@@ -63,17 +64,14 @@ public class ClientPlayerEntityMixin {
         // FT helper prunes its dead / removed tracked snowballs
         // once per tick so the renderer never has to filter (formerly
         // a separate SnowballTracker module, merged into FT helper
-        // because the two were always used together for the
-        // "снежок заморозки" indicator).
+        // so its lifetime matches the snowballs themselves).
         vorga.phazeclient.implement.features.modules.other.FTHelper.getInstance().tickTrackedSnowballs();
-        // Predictions: tick the projectile-trail trackers so each
-        // live projectile gets its current position appended to the
-        // trail. Cheap when disabled (early return inside).
+        // Predictions trails prune stale trail positions.
         vorga.phazeclient.implement.features.modules.other.Predictions.getInstance().tickTrails();
-        // TPS HUD samples the world-time advancement here so the
-        // tick boundary is the natural sample point. The module
-        // gates internally on isEnabled() and self-throttles to a
-        // 200ms interval, so calling unconditionally is cheap.
+
+        // Sample the server tick time so the TPS HUD has a fresh
+        // rolling window. Client tick is 20Hz lockstep with render,
+        // but world time advances on the server schedule.
         net.minecraft.client.MinecraftClient mc =
                 net.minecraft.client.MinecraftClient.getInstance();
         if (mc != null && mc.world != null) {
@@ -83,15 +81,14 @@ public class ClientPlayerEntityMixin {
     }
 
     /**
-     * Out-of-band trigger for {@link RemoteRulesService#requestRefresh()}.
+     * Poll the current server host every tick and trigger an async
+     * remote-rules fetch when it differs from the last sampled host.
      *
-     * <p>{@link RemoteRulesService} runs its own scheduler at a 10-minute
-     * cadence ({@code HEARTBEAT_SECONDS=600}) - that's the cap on how
-     * often we'll hit the rules API for a player who stays on the same
-     * server. But if the player swaps servers between heartbeats, we
-     * don't want them to keep applying the OLD server's lock list for
-     * up to a minute on the new server (or, worse, NO lock list if
-     * they came from singleplayer). Watching the host string on every
+     * <p>We intentionally hook {@code tick()} instead of connection
+     * lifecycle events like {@code ClientPlayConnectionEvents.JOIN}:
+     * BungeeCord / Velocity networks swap the backend server without
+     * firing Fabric's play-join event again, leaving the client running
+     * on a new server under the old server's rules. Sampling on the
      * client tick is essentially free (~20Hz string compare) and lets
      * us shove a refresh request straight into the rules-service queue
      * the moment a transition is detected.
@@ -109,6 +106,7 @@ public class ClientPlayerEntityMixin {
         if (!current.equals(phaze$lastObservedHost)) {
             phaze$lastObservedHost = current;
             RemoteRulesService.getInstance().requestRefresh();
+            HolyWorldFeatureControlService.getInstance().onHostChange();
         }
     }
 
@@ -127,8 +125,6 @@ public class ClientPlayerEntityMixin {
     }
 
     private static void phaze$enforceServerLocks() {
-        // Intentionally left blank: a locked module should stop
-        // functioning via Module.isEnabled(), but keep its stored
-        // ON/OFF state so unlocking restores the previous user choice.
+        HolyWorldFeatureControlService.enforceServerLocks();
     }
 }
