@@ -110,6 +110,9 @@ public class Module extends SettingRepository implements QuickImports {
     }
 
     public void setState(boolean state) {
+        if (state && isServerLocked()) {
+            return;
+        }
         if (state) {
             HolyWorldFeatureControlService.getInstance().requestFeatureStatus(getIdentifier());
         }
@@ -135,6 +138,9 @@ public class Module extends SettingRepository implements QuickImports {
     }
 
     public void setStateSilent(boolean state) {
+        if (state && isServerLocked()) {
+            return;
+        }
         animation.setDirection(state ? Direction.FORWARDS : Direction.BACKWARDS);
         if (state != this.state) {
             this.state = state;
@@ -165,7 +171,10 @@ public class Module extends SettingRepository implements QuickImports {
     }
 
     public boolean isEnabled() {
-        return !showEnable || (state && !isServerLocked());
+        if (isServerLocked()) {
+            return false;
+        }
+        return !showEnable || state;
     }
 
     /** Initial state for fresh configs; a saved state still takes priority. */
