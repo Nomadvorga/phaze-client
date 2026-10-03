@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: build-1.21.11-${{ github.ref }}
@@ -128,6 +129,88 @@ jobs:
       - name: Build from clean source
         shell: pwsh
         run: .\gradlew.bat clean build --no-daemon --stacktrace "-Dorg.gradle.java.home=$env:JAVA_HOME"
+
+      # Prints (and comments on the PR) a size breakdown of the built jar, so
+      # regressions in packaged weight are visible without downloading it.
+      - name: Analyze jar contents
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+          $jars = @(Get-ChildItem build/libs -Filter *.jar -ErrorAction SilentlyContinue)
+          if ($jars.Count -eq 0) { Write-Host 'no jars to analyze'; exit 0 }
+
+          $out = New-Object System.Collections.Generic.List[string]
+          $out.Add('### Jar content breakdown (CI build)')
+          $out.Add('')
+          $out.Add('`build/libs` in this run:')
+          $out.Add('')
+          $out.Add('| file | size |')
+          $out.Add('| --- | --- |')
+          foreach ($f in $jars) {
+            $out.Add("| $($f.Name) | $([math]::Round($f.Length / 1MB, 2)) MB |")
+          }
+          $out.Add('')
+          $out.Add("Bundled `libs/*.jar` (unpacked straight into the mod jar):")
+          $out.Add('')
+          if (Test-Path libs) {
+            $libs = @(Get-ChildItem libs -Filter *.jar -ErrorAction SilentlyContinue)
+            if ($libs.Count -eq 0) { $out.Add('- none') }
+            else {
+              foreach ($l in $libs) { $out.Add("- ``$($l.Name)`` - $([math]::Round($l.Length / 1MB, 2)) MB") }
+            }
+          } else { $out.Add('- `libs/` missing') }
+          $out.Add('')
+
+          $main = $jars | Where-Object { $_.Name -notmatch 'sources' } | Select-Object -First 1
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($main.FullName)
+          $groups = @{}
+          $largest = New-Object System.Collections.Generic.List[object]
+
+          foreach ($e in $zip.Entries) {
+            if ($e.Length -le 0) { continue }
+            $p = $e.FullName
+            $parts = $p -split '/'
+            $depth = [math]::Min($parts.Count - 1, 1)
+            if ($parts.Count -gt 1 -and $parts[0] -eq 'assets') { $depth = [math]::Min($parts.Count - 1, 3) }
+            $key = ($parts[0..$depth] -join '/')
+            if (-not $groups.ContainsKey($key)) { $groups[$key] = @{ count = 0; size = 0 } }
+            $groups[$key].count++
+            $groups[$key].size += $e.Length
+            $largest.Add([pscustomobject]@{ Path = $p; Size = $e.Length })
+          }
+          $zip.Dispose()
+
+          $totalSize = ($groups.Values | Measure-Object -Property size -Sum).Sum
+          $totalCount = ($groups.Values | Measure-Object -Property count -Sum).Sum
+          $out.Add("`$($main.Name)` - $([math]::Round($main.Length / 1MB, 2)) MB packed, $totalCount entries, $([math]::Round($totalSize / 1MB, 2)) MB unpacked")
+          $out.Add('')
+          $out.Add('| group | entries | unpacked |')
+          $out.Add('| --- | --- | --- |')
+          foreach ($g in $groups.GetEnumerator() | Sort-Object { -$_.Value.size } | Select-Object -First 30) {
+            $out.Add("| ``$($g.Key)`` | $($g.Value.count) | $([math]::Round($g.Value.size / 1MB, 3)) MB |")
+          }
+          $out.Add('')
+          $out.Add('Largest single entries:')
+          $out.Add('')
+          $out.Add('| entry | size |')
+          $out.Add('| --- | --- |')
+          foreach ($l in ($largest | Sort-Object -Property Size -Descending | Select-Object -First 25)) {
+            $out.Add("| ``$($l.Path)`` | $([math]::Round($l.Size / 1MB, 3)) MB |")
+          }
+
+          $out | Set-Content jar-inventory.md -Encoding UTF8
+          $out | Add-Content $env:GITHUB_STEP_SUMMARY
+          Write-Host ($out -join "`n")
+
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request' -and $env:PR_NUMBER) {
+            gh pr comment $env:PR_NUMBER --body-file jar-inventory.md
+          }
 
       - name: Record release checksums
         if: always()
