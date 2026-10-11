@@ -421,7 +421,7 @@ public class InGameHudMixin {
                 Blur.INSTANCE.captureBaseFrameForBlur();
             }
 
-            if (hudHidden) {
+            if (hudHidden || !hasAnyHudEnabled()) {
                 BatchedHudBuffer.INSTANCE.invalidate();
             } else if (!HudOptimizer.getInstance().isEnabled()) {
                 BatchedHudBuffer.INSTANCE.invalidate();
@@ -2424,9 +2424,9 @@ public class InGameHudMixin {
         int topInset = module.showTitle.isValue() ? 10 : 1;
         float baseHeight = entryCount * 9.0f + topInset;
 
-        // If the HUD is still at its constructor default (0,0), place it at
+        // If the HUD has not been placed/loaded yet, place it at
         // vanilla-like sidebar position (right side, vertically centered).
-        if (module.getHudX() <= 1.0f && module.getHudY() <= 1.0f) {
+        if (!module.isPositionInitialized()) {
             float scale = module.getRenderHudScale();
             float hudWidth = baseWidth * scale;
             float hudHeight = baseHeight * scale;
@@ -2434,6 +2434,7 @@ public class InGameHudMixin {
             float vanillaY = Math.max(0.0f, (screenHeight - hudHeight) * 0.5f);
             module.setHudX(vanillaX);
             module.setHudY(vanillaY);
+            module.setPositionInitialized(true);
         }
 
         // Keep drag/resize logic from RectHud, but prevent its own background
@@ -3696,7 +3697,9 @@ public class InGameHudMixin {
                 || HealthIndicator.getInstance().isEnabled()
                 || TrapTimer.getInstance().isEnabled()
                 || vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance().isEnabled()
-                || PlayerModelHud.getInstance().isEnabled();
+                || PlayerModelHud.getInstance().isEnabled()
+                || InventoryHud.getInstance().isEnabled()
+                || ScoreboardHud.getInstance().isEnabled();
     }
 
     private static boolean isAnyHudInteractionActive() {
