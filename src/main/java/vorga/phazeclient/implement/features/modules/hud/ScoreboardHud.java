@@ -16,6 +16,8 @@ public final class ScoreboardHud extends RectHudModule {
         return INSTANCE;
     }
 
+    private boolean positionInitialized = false;
+
     public final BooleanLike showNumbers = () -> true;
     public final BooleanLike showZeros = () -> true;
     public final BooleanSetting showTitle = new BooleanSetting("Show Title", "Show scoreboard title").setValue(true);
@@ -25,6 +27,50 @@ public final class ScoreboardHud extends RectHudModule {
         super("scoreboard_hud", "Scoreboard", 0.0f, 0.0f, 1.0f);
         showTitle.setFullWidth(true);
         setup(showTitle);
+    }
+
+    public boolean isPositionInitialized() {
+        return positionInitialized;
+    }
+
+    public void setPositionInitialized(boolean positionInitialized) {
+        this.positionInitialized = positionInitialized;
+    }
+
+    @Override
+    public void setHudPosition(float x, float y, int refWidth, int refHeight) {
+        super.setHudPosition(x, y, refWidth, refHeight);
+        this.positionInitialized = true;
+    }
+
+    @Override
+    public void setHudX(float hudX) {
+        super.setHudX(hudX);
+        this.positionInitialized = true;
+    }
+
+    @Override
+    public void setHudY(float hudY) {
+        super.setHudY(hudY);
+        this.positionInitialized = true;
+    }
+
+    @Override
+    public void setHudXRatio(float ratio) {
+        super.setHudXRatio(ratio);
+        this.positionInitialized = true;
+    }
+
+    @Override
+    public void setHudYRatio(float ratio) {
+        super.setHudYRatio(ratio);
+        this.positionInitialized = true;
+    }
+
+    @Override
+    public void resetHudTransform() {
+        super.resetHudTransform();
+        this.positionInitialized = false;
     }
 
     @Override

@@ -72,3 +72,14 @@ last-crash.txt
 fix_user_folder.ps1
 find_sodium.ps1
 inspect_sodium.ps1
+_tmp_world_colors_ref/
+bin/
+clean-build-output/
+CODEX_CONTEXT.md
+ARCHITECTURE.md
+build-desktop-codex.bat
+run_free_codex_desktop.bat
+pretty_json.py
+read.md
+LICENSE
+

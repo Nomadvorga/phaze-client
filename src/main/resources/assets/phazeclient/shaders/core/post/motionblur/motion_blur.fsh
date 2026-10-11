@@ -16,7 +16,7 @@ uniform int halfSamples;
 uniform int blurAlgorithm;
 uniform float handDepthThreshold;
 in vec2 texCoord;
-layout(location = 0) out vec4 color;
+layout(location = 0) out vec4 fragColor;
 
 #define rcp(x) (1.0 / (x))
 
@@ -41,15 +41,13 @@ float noise(vec2 pos) {
 }
 
 void main() {
-    ivec2 texel = ivec2(gl_FragCoord.xy);
-
-    float depth = texelFetch(MainDepthSampler, texel, 0).x;
+    float depth = texture(MainDepthSampler, texCoord).r;
     
     // Исключаем руки из размытия
     // Руки рендерятся с depth близким к 0 (очень близко к камере)
     // Используем настраиваемый порог для точной настройки
     if (depth < handDepthThreshold) {
-        color = texture(MainSampler, texCoord);
+        fragColor = texture(MainSampler, texCoord);
         return;
     }
     
@@ -68,7 +66,7 @@ void main() {
     // неподвижная камера перестаёт стоить целого прохода с выборками.
     vec2 spanPixels = totalOffset * view_res;
     if (dot(spanPixels, spanPixels) < 0.0625) {
-        color = vec4(texture(MainSampler, texCoord).rgb, 1.0);
+        fragColor = vec4(texture(MainSampler, texCoord).rgb, 1.0);
         return;
     }
 
@@ -87,9 +85,10 @@ void main() {
         float sample_offset = sample_index + jitter;
 
         vec2 pos = texCoord + sample_offset * baseStep;
-        vec3 color = texture(MainSampler, pos).rgb;
+        vec3 sampleColor = texture(MainSampler, pos).rgb;
 
-        color_sum += color * color;
+        color_sum += sampleColor * sampleColor;
     }
-    color = vec4(sqrt(color_sum * inverseSamples), 1.0);
+    fragColor = vec4(sqrt(color_sum * inverseSamples), 1.0);
 }
+
