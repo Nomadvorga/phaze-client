@@ -6,11 +6,14 @@ import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
 import net.minecraft.world.BlockView;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import vorga.phazeclient.implement.features.modules.other.OldAnimations;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
@@ -28,6 +31,8 @@ import vorga.phazeclient.implement.features.modules.other.SmoothCamera;
  */
 @Mixin(Camera.class)
 public abstract class CameraMixin {
+    @Shadow private float cameraY;
+    @Shadow private float lastCameraY;
 
     // SmoothCamera state — VISUAL-ONLY low-pass on Camera.setRotation.
     // Server-bound rotation packets carry the player's real yaw/pitch,
@@ -228,5 +233,29 @@ public abstract class CameraMixin {
         } else if (type == CameraSubmersionType.LAVA && mod.shouldHideLava()) {
             cir.setReturnValue(CameraSubmersionType.NONE);
         }
+    }
+
+    /**
+     * 1.7 Sneak: redirect standing eye height inside {@code updateEyeHeight()}.
+     * Instead of modern 1.14+ 0.35m deep plunge (1.27F), 1.7/1.8 had a shallow 0.08m
+     * drop (1.54F). Preserves vanilla's 50% per-tick interpolation so the transition
+     * completes in 2-3 ticks with the authentic snappy, slightly twitchy feel
+     * without teleporting instantaneously in 1 frame.
+     */
+    @Redirect(
+            method = "updateEyeHeight",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/entity/Entity;getStandingEyeHeight()F"
+            )
+    )
+    private float phaze$oldSneakEyeHeight(Entity entity) {
+        OldAnimations oldAnim = OldAnimations.getInstance();
+        if (oldAnim != null && oldAnim.isEnabled() && oldAnim.oldSneak.isValue()) {
+            if (entity.isInSneakingPose() || entity.isSneaking()) {
+                return 1.54F;
+            }
+        }
+        return entity.getStandingEyeHeight();
     }
 }

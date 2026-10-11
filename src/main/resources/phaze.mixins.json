@@ -103,7 +103,8 @@
     "EntryListWidgetCursorMixin",
     "ScreenshotRecorderScreencopyMixin",
     "NativeImageGetColorInvoker",
-    "NativeImageSetColorInvoker"
+    "NativeImageSetColorInvoker",
+    "UsingItemPropertyMixin"
   ],
   "injectors": {
     "defaultRequire": 0

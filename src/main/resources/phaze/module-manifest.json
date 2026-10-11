@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 4,
-  "clientVersion": "1.1",
+  "manifestVersion": 5,
+  "clientVersion": "1.2",
   "modules": [
     {
       "id": "animations",
@@ -311,6 +311,11 @@
     {
       "id": "no_render",
       "name": "Render Tweaks",
+      "category": "OTHER"
+    },
+    {
+      "id": "oldanimations",
+      "name": "Old Animations",
       "category": "OTHER"
     },
     {

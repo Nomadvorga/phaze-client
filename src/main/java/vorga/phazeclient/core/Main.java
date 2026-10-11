@@ -301,6 +301,9 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChangeHand.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChangeHand.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.OldAnimations.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.OldAnimations.getInstance());
+        }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.HitRange.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.HitRange.getInstance());
         }
