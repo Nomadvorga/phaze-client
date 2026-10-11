@@ -46,4 +46,29 @@ public abstract class PlayerEntityRendererCapeStateMixin {
                 original.secure()
         );
     }
+
+    @Inject(
+            method = "updateRenderState(Lnet/minecraft/client/network/AbstractClientPlayerEntity;Lnet/minecraft/client/render/entity/state/PlayerEntityRenderState;F)V",
+            at = @At("RETURN")
+    )
+    private void phaze$applyOldAnimationsThirdPerson(
+            AbstractClientPlayerEntity player,
+            PlayerEntityRenderState state,
+            float tickDelta,
+            CallbackInfo ci
+    ) {
+        if (vorga.phazeclient.implement.features.modules.other.OldAnimations.isSwordBlockingActive(player)) {
+            if (state.mainArm == net.minecraft.util.Arm.RIGHT) {
+                state.rightArmPose = net.minecraft.client.render.entity.model.BipedEntityModel.ArmPose.BLOCK;
+                if (state.leftArmPose == net.minecraft.client.render.entity.model.BipedEntityModel.ArmPose.BLOCK) {
+                    state.leftArmPose = net.minecraft.client.render.entity.model.BipedEntityModel.ArmPose.ITEM;
+                }
+            } else {
+                state.leftArmPose = net.minecraft.client.render.entity.model.BipedEntityModel.ArmPose.BLOCK;
+                if (state.rightArmPose == net.minecraft.client.render.entity.model.BipedEntityModel.ArmPose.BLOCK) {
+                    state.rightArmPose = net.minecraft.client.render.entity.model.BipedEntityModel.ArmPose.ITEM;
+                }
+            }
+        }
+    }
 }
