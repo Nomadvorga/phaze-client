@@ -62,9 +62,12 @@ public abstract class HeldItemFeatureRendererPreviewAlphaMixin {
                         || playerState.leftArmPose == BipedEntityModel.ArmPose.BLOCK);
                 if (isBlockingArm) {
                     float sign = (arm == Arm.LEFT) ? -1.0F : 1.0F;
-                    // Exact 1.8 stance matching reference photo: flat 2D texture facing camera across body
-                    matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(sign * 90.0F));
-                    matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(sign * -35.0F));
+                    float rx = mod.f5RotX.getValue();
+                    float ry = mod.f5RotY.getValue();
+                    float rz = mod.f5RotZ.getValue();
+                    if (rx != 0.0F) matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sign * rx));
+                    if (ry != 0.0F) matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(sign * ry));
+                    if (rz != 0.0F) matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(sign * rz));
                 }
             }
         }

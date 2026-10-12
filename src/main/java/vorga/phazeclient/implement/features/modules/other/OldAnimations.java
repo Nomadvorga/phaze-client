@@ -54,6 +54,18 @@ public final class OldAnimations extends Module {
             "Lower Shield",
             "Lowers the offhand shield so it does not obstruct your crosshair or view while blocking"
     ).setValue(true);
+    public final ValueSetting f5RotX = new ValueSetting(
+            "F5 Sword X",
+            "F5 sword block X rotation"
+    ).range(-180.0f, 180.0f).step(5.0f).setValue(0.0f);
+    public final ValueSetting f5RotY = new ValueSetting(
+            "F5 Sword Y",
+            "F5 sword block Y rotation"
+    ).range(-180.0f, 180.0f).step(5.0f).setValue(90.0f);
+    public final ValueSetting f5RotZ = new ValueSetting(
+            "F5 Sword Z",
+            "F5 sword block Z rotation"
+    ).range(-180.0f, 180.0f).step(5.0f).setValue(-35.0f);
 
     // --- Swing & Equip ---------------------------------------------
     public final SectionSetting swingSection = new SectionSetting("Swing & Equip");
@@ -101,6 +113,12 @@ public final class OldAnimations extends Module {
         blockHitStyle.visible(blockHit::isValue);
         lowerShield.setFullWidth(true);
         lowerShield.visible(swordBlocking::isValue);
+        f5RotX.setFullWidth(true);
+        f5RotX.visible(swordBlocking::isValue);
+        f5RotY.setFullWidth(true);
+        f5RotY.visible(swordBlocking::isValue);
+        f5RotZ.setFullWidth(true);
+        f5RotZ.visible(swordBlocking::isValue);
 
         oldSwing.setFullWidth(true);
         noReEquip.setFullWidth(true);
@@ -113,7 +131,7 @@ public final class OldAnimations extends Module {
         oldSneak.setFullWidth(true);
 
         setup(
-                blockHitSection, swordBlocking, blockHit, blockHitStyle, lowerShield,
+                blockHitSection, swordBlocking, blockHit, blockHitStyle, lowerShield, f5RotX, f5RotY, f5RotZ,
                 swingSection, oldSwing, noReEquip, swingSpeed,
                 actionsSection, oldEating, oldBow, oldRod,
                 sneakSection, oldSneak
