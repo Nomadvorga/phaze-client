@@ -270,7 +270,7 @@ public final class OldAnimations extends Module {
             float swingProgress,
             float equipProgress
     ) {
-        float f = -0.4F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
+        float f = -0.44F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
         float g = 0.2F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) (Math.PI * 2));
         float h = -0.2F * MathHelper.sin(swingProgress * (float) Math.PI);
         matrices.translate(armSign * f, g, h);
@@ -278,12 +278,12 @@ public final class OldAnimations extends Module {
         // Base item position
         matrices.translate(armSign * 0.56F, -0.52F + equipProgress * -0.6F, -0.72F);
 
-        // 1.7 swing rotations
+        // 1.7 swing rotations with subtle inward curve (Photo 2)
         float sin1 = MathHelper.sin(swingProgress * swingProgress * (float) Math.PI);
         float sinSqrt = MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F)));
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -20.0F));
-        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -80.0F));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -24.0F));
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -82.0F));
     }
 
     /**
