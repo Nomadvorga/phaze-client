@@ -54,6 +54,10 @@ public final class OldAnimations extends Module {
             "Lower Shield",
             "Lowers the offhand shield so it does not obstruct your crosshair or view while blocking"
     ).setValue(true);
+    public final ValueSetting thirdPersonBlockZ = new ValueSetting(
+            "3rd Person Block Z",
+            "Debug slider: tune 3rd person sword blocking Z rotation"
+    ).range(-180.0f, 180.0f).step(1.0f).setValue(-45.0f);
 
     // --- Swing & Equip ---------------------------------------------
     public final SectionSetting swingSection = new SectionSetting("Swing & Equip");
@@ -61,6 +65,10 @@ public final class OldAnimations extends Module {
             "1.7 Swing",
             "Classic 1.7/1.8 snappy swing curve and motion"
     ).setValue(true);
+    public final ValueSetting swingZ = new ValueSetting(
+            "Swing Z Angle",
+            "Debug slider: tune first-person swing Z rotation curve"
+    ).range(-90.0f, 90.0f).step(1.0f).setValue(-20.0f);
     public final BooleanSetting noReEquip = new BooleanSetting(
             "No Re-Equip",
             "Prevent item from lowering down when taking durability damage, consuming items, or attacking"
@@ -101,8 +109,12 @@ public final class OldAnimations extends Module {
         blockHitStyle.visible(blockHit::isValue);
         lowerShield.setFullWidth(true);
         lowerShield.visible(swordBlocking::isValue);
+        thirdPersonBlockZ.setFullWidth(true);
+        thirdPersonBlockZ.visible(swordBlocking::isValue);
 
         oldSwing.setFullWidth(true);
+        swingZ.setFullWidth(true);
+        swingZ.visible(oldSwing::isValue);
         noReEquip.setFullWidth(true);
         swingSpeed.setFullWidth(true);
 
@@ -113,8 +125,8 @@ public final class OldAnimations extends Module {
         oldSneak.setFullWidth(true);
 
         setup(
-                blockHitSection, swordBlocking, blockHit, blockHitStyle, lowerShield,
-                swingSection, oldSwing, noReEquip, swingSpeed,
+                blockHitSection, swordBlocking, blockHit, blockHitStyle, lowerShield, thirdPersonBlockZ,
+                swingSection, oldSwing, swingZ, noReEquip, swingSpeed,
                 actionsSection, oldEating, oldBow, oldRod,
                 sneakSection, oldSneak
         );
@@ -276,8 +288,9 @@ public final class OldAnimations extends Module {
         // Turn sword inward edge-on during strike so less broad texture is visible
         float sin1 = MathHelper.sin(swingProgress * swingProgress * (float) Math.PI);
         float sinSqrt = MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
+        float zAngle = INSTANCE != null ? INSTANCE.swingZ.getValue() : -20.0F;
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -25.0F - sinSqrt * 20.0F)));
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -20.0F));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * zAngle));
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -80.0F));
     }
 
