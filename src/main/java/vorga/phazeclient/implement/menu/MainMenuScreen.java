@@ -407,15 +407,6 @@ public class MainMenuScreen extends TitleScreen {
             return;
         }
         this.renderPanoramaBackground(context, delta);
-        // Restore the vanilla title-screen background pass: blur the
-        // freshly-rendered panorama, then composite Mojang's darkening
-        // texture over it so the menu regains the subdued backdrop.
-        if (this.client != null) {
-            this.applyBlur();
-            if (!themeSelectorOpen) {
-                this.renderDarkening(context);
-            }
-        }
     }
 
     private void renderThemeSelectorBackdrop(DrawContext context, float overlayW, float overlayH, float alpha) {
