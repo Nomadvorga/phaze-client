@@ -194,10 +194,7 @@ public final class OldAnimations extends Module {
         // Base first-person item positioning (mirrors vanilla applyEquipOffset)
         matrices.translate(armSign * 0.56F, -0.52F + equipProgress * -0.6F, -0.72F);
 
-        // 1.8 transformFirstPersonItem base Y rotation (crucial for 45° diagonal angle)
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 45.0F));
-
-        // 1.8 doBlockTransformations
+        // 1.7 sword block translation and rotation
         matrices.translate(armSign * -0.14142136F, 0.08F, 0.14142136F);
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-102.25F));
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 13.365F));
@@ -222,16 +219,14 @@ public final class OldAnimations extends Module {
         float sinSqrt = MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
 
         if ("Push".equalsIgnoreCase(style)) {
-            // 1.8 base block pose + forward punch translation
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 45.0F));
+            // 1.7 block transforms + forward punch translation
             matrices.translate(armSign * -0.14142136F, 0.08F, 0.14142136F);
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-102.25F));
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 13.365F));
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * 78.05F));
             matrices.translate(0.0F, sinSqrt * 0.05F, sinSqrt * 0.22F);
         } else if ("Slide".equalsIgnoreCase(style)) {
-            // 1.8 base block pose + vertical slash translation
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 45.0F));
+            // 1.7 block transforms + vertical slash translation
             matrices.translate(armSign * -0.14142136F, 0.08F, 0.14142136F);
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-102.25F));
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 13.365F));
@@ -270,20 +265,20 @@ public final class OldAnimations extends Module {
             float swingProgress,
             float equipProgress
     ) {
-        float f = -0.44F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
-        float g = 0.2F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) (Math.PI * 2));
-        float h = -0.2F * MathHelper.sin(swingProgress * (float) Math.PI);
+        float f = -0.56F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
+        float g = 0.22F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) (Math.PI * 2));
+        float h = -0.22F * MathHelper.sin(swingProgress * (float) Math.PI);
         matrices.translate(armSign * f, g, h);
 
         // Base item position
         matrices.translate(armSign * 0.56F, -0.52F + equipProgress * -0.6F, -0.72F);
 
-        // 1.7 swing rotations with subtle inward curve (Photo 2)
+        // 1.7 swing rotations curving deeper inward (Photo 2)
         float sin1 = MathHelper.sin(swingProgress * swingProgress * (float) Math.PI);
         float sinSqrt = MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F)));
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -24.0F));
-        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -82.0F));
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F - sinSqrt * 6.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -32.0F));
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -85.0F));
     }
 
     /**
