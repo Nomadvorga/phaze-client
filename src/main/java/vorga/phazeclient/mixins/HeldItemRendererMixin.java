@@ -27,6 +27,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.other.ChangeHand;
+import vorga.phazeclient.implement.features.modules.other.NoRender;
 import vorga.phazeclient.implement.features.modules.other.OldAnimations;
 
 /**
@@ -64,13 +65,16 @@ public abstract class HeldItemRendererMixin {
         float xSign = (player.getMainArm() == Arm.LEFT) ? -1.0f : 1.0f;
         boolean isMain = (hand == Hand.MAIN_HAND);
 
-        // --- Old Animations extras (Lower Shield, 1.7 Rod, 1.7 Bow) ---
+        // --- Render Tweaks: Lower Shield ---
+        NoRender noRender = NoRender.getInstance();
+        if (noRender != null && noRender.isEnabled() && !isMain && item.getItem() instanceof ShieldItem && noRender.lowerShield.isValue()) {
+            matrices.translate(0.0F, -0.2F, 0.0F);
+            matrices.scale(0.85F, 0.85F, 0.85F);
+        }
+
+        // --- Old Animations extras (1.7 Rod, 1.7 Bow) ---
         OldAnimations oldAnim = OldAnimations.getInstance();
         if (oldAnim != null && oldAnim.isEnabled()) {
-            if (!isMain && item.getItem() instanceof ShieldItem && oldAnim.lowerShield.isValue()) {
-                matrices.translate(0.0F, -0.2F, 0.0F);
-                matrices.scale(0.85F, 0.85F, 0.85F);
-            }
             if (isMain && item.getItem() instanceof FishingRodItem && oldAnim.oldRod.isValue()) {
                 matrices.translate(xSign * -0.05F, 0.05F, -0.05F);
                 matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(xSign * 8.0F));
@@ -177,18 +181,7 @@ public abstract class HeldItemRendererMixin {
         boolean isBlocking = isMainHand && OldAnimations.isSwordBlockingActive(mc.player);
 
         if (isBlocking) {
-            if (swingProgress > 0.0F && mod.blockHit.isValue()) {
-                ci.cancel();
-                OldAnimations.renderBlockHit(
-                        matrices,
-                        arm,
-                        armSign,
-                        swingProgress,
-                        equipProgress,
-                        mod.blockHitStyle.getSelected()
-                );
-                return;
-            } else if (mod.swordBlocking.isValue()) {
+            if (mod.swordBlocking.isValue()) {
                 ci.cancel();
                 OldAnimations.renderSwordBlock(matrices, arm, armSign, equipProgress);
                 return;
@@ -228,26 +221,5 @@ public abstract class HeldItemRendererMixin {
             return 1.0F;
         }
         return player.getAttackCooldownProgress(baseTime);
-    }
-
-    // =========================================================================
-    // Old Animations: 1.7 Eating
-    // =========================================================================
-
-    @Inject(method = "applyEatOrDrinkTransformation", at = @At("HEAD"), cancellable = true)
-    private void phaze$oldEatingTransform(
-            MatrixStack matrices,
-            float tickDelta,
-            Arm arm,
-            ItemStack stack,
-            PlayerEntity player,
-            CallbackInfo ci
-    ) {
-        OldAnimations mod = OldAnimations.getInstance();
-        if (mod == null || !mod.isEnabled() || !mod.oldEating.isValue()) {
-            return;
-        }
-        ci.cancel();
-        OldAnimations.renderOldEating(matrices, tickDelta, arm, stack, player);
     }
 }

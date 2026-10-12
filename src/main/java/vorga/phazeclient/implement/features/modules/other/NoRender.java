@@ -57,6 +57,11 @@ public final class NoRender extends Module {
             "Hide the burning fire overlay drawn over the screen while on fire"
     ).setValue(true);
 
+    public final BooleanSetting lowerShield = new BooleanSetting(
+            "Lower Shield",
+            "Lowers the offhand shield so it does not obstruct your crosshair or view"
+    ).setValue(true);
+
     public final BooleanSetting particles = new BooleanSetting(
             "Particles",
             "Skip every particle the client would spawn (ambient, weather, hit, etc.)"
@@ -111,13 +116,14 @@ public final class NoRender extends Module {
         super("no_render", "Render Tweaks", ModuleCategory.OTHER);
         glowing.setFullWidth(true);
         fire.setFullWidth(true);
+        lowerShield.setFullWidth(true);
         particles.setFullWidth(true);
         // Hide the multiselect while {@code Particles=ON} - everything
         // it offers is already a no-op when the broader switch wins,
         // so collapsing the picker keeps the panel readable.
         particleTypes.setFullWidth(true);
         particleTypes.visible(() -> !particles.isValue());
-        setup(glowing, fire, particles, particleTypes);
+        setup(glowing, fire, lowerShield, particles, particleTypes);
     }
 
     public static NoRender getInstance() {
