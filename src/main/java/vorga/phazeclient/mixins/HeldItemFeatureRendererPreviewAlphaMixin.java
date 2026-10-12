@@ -61,19 +61,10 @@ public abstract class HeldItemFeatureRendererPreviewAlphaMixin {
                 boolean isBlockingArm = isMainArm && (playerState.rightArmPose == BipedEntityModel.ArmPose.BLOCK
                         || playerState.leftArmPose == BipedEntityModel.ArmPose.BLOCK);
                 if (isBlockingArm) {
-                    // Orient the sword sideways from the hand across the chest (not pointing forward into the world)
-                    // with flat 2D texture facing directly outward towards the camera (1:1 with photo reference).
-                    if (arm == Arm.RIGHT) {
-                        matrices.translate(-0.06F, 0.05F, -0.02F);
-                        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-80.0F));
-                        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(140.0F));
-                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(45.0F));
-                    } else {
-                        matrices.translate(0.06F, 0.05F, -0.02F);
-                        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-30.0F));
-                        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-30.0F));
-                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(35.0F));
-                    }
+                    float sign = (arm == Arm.LEFT) ? -1.0F : 1.0F;
+                    // Exact 1.8 stance matching reference photo: flat 2D texture facing camera across body
+                    matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(sign * 90.0F));
+                    matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(sign * -35.0F));
                 }
             }
         }
