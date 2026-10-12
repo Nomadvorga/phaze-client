@@ -3,10 +3,20 @@ package vorga.phazeclient.mixins;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.feature.HeldItemFeatureRenderer;
+import net.minecraft.client.render.entity.model.BipedEntityModel;
+import net.minecraft.client.render.entity.state.ArmedEntityRenderState;
+import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
+import net.minecraft.client.render.item.ItemRenderState;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Arm;
+import net.minecraft.util.math.RotationAxis;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.cosmetics.CosmeticsRenderer;
+import vorga.phazeclient.implement.features.modules.other.OldAnimations;
 
 /**
  * Vanilla held-item features write their own vertex colors and therefore
@@ -26,6 +36,39 @@ public abstract class HeldItemFeatureRendererPreviewAlphaMixin {
         float alpha = CosmeticsRenderer.previewAlpha();
         if (alpha >= 0.999F) return original;
         return layer -> new AlphaVertexConsumer(original.getBuffer(layer), alpha);
+    }
+
+    @Inject(
+            method = "renderItem",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/render/item/ItemRenderState;render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;II)V"
+            )
+    )
+    private void phaze$alignSwordBlockingThirdPerson(
+            ArmedEntityRenderState entityState,
+            ItemRenderState itemState,
+            Arm arm,
+            MatrixStack matrices,
+            VertexConsumerProvider vertexConsumers,
+            int light,
+            CallbackInfo ci
+    ) {
+        if (entityState instanceof PlayerEntityRenderState playerState) {
+            OldAnimations mod = OldAnimations.getInstance();
+            if (mod != null && mod.isEnabled() && mod.swordBlocking.isValue()) {
+                boolean isMainArm = (arm == playerState.mainArm);
+                boolean isBlockingArm = isMainArm && (playerState.rightArmPose == BipedEntityModel.ArmPose.BLOCK
+                        || playerState.leftArmPose == BipedEntityModel.ArmPose.BLOCK);
+                if (isBlockingArm) {
+                    float sign = (arm == Arm.LEFT) ? -1.0F : 1.0F;
+                    // Rotate the blade around its axis so the flat 2D texture faces directly towards the camera
+                    // and pitch diagonally across chest (1:1 with authentic 1.8 third person)
+                    matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(sign * 90.0F));
+                    matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(sign * -35.0F));
+                }
+            }
+        }
     }
 
     private static final class AlphaVertexConsumer implements VertexConsumer {

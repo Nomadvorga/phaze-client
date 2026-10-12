@@ -77,10 +77,9 @@ public abstract class HeldItemRendererMixin {
                 matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(8.0F));
             }
             if (oldAnim.oldBow.isValue() && item.isOf(Items.BOW) && player.isUsingItem()) {
-                // In vanilla 1.21.4, a negative 45 deg Y rotation is added at the end, twisting the bow inward.
-                // Rotating positive Y turns the bow outward to the right, matching 1.7/1.8 (Photo 2).
-                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(xSign * 45.0F));
-                matrices.translate(xSign * 0.05F, 0.0F, 0.0F);
+                // Slightly turn bow outward to the right without pushing it too far off-screen
+                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(xSign * 25.0F));
+                matrices.translate(xSign * 0.02F, 0.0F, 0.0F);
             }
         }
 

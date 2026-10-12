@@ -238,21 +238,21 @@ public final class OldAnimations extends Module {
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * 78.05F));
             matrices.translate(0.0F, -sinSqrt * 0.22F, 0.0F);
         } else if ("Lunar".equalsIgnoreCase(style)) {
-            // Snappy Lunar/1.8 block-hit flick
-            matrices.translate(armSign * -0.15F * sinSqrt, 0.15F * sinSqrt, 0.0F);
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F)));
-            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -20.0F));
-            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -80.0F));
+            // Snappy Lunar/1.8 block-hit flick with authentic inward curve
+            matrices.translate(armSign * -0.16F * sinSqrt, 0.16F * sinSqrt, 0.0F);
+            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F - sinSqrt * 12.0F)));
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -22.0F));
+            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -82.0F));
             matrices.translate(armSign * -0.14142136F, 0.08F, 0.14142136F);
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-102.25F));
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 13.365F));
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * 78.05F));
         } else {
-            // 1.7 Classic: Authentic 1.7.10 swing + block transformation
-            matrices.translate(armSign * -0.15F * sinSqrt, 0.15F * sinSqrt, 0.0F);
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F)));
-            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -20.0F));
-            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -80.0F));
+            // 1.7 Classic: Authentic 1.7.10 swing + block transformation with inward tilt
+            matrices.translate(armSign * -0.16F * sinSqrt, 0.16F * sinSqrt, 0.0F);
+            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F - sinSqrt * 12.0F)));
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -22.0F));
+            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -82.0F));
             matrices.translate(armSign * -0.14142136F, 0.08F, 0.14142136F);
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-102.25F));
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 13.365F));
@@ -270,20 +270,20 @@ public final class OldAnimations extends Module {
             float swingProgress,
             float equipProgress
     ) {
-        float f = -0.4F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
-        float g = 0.2F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) (Math.PI * 2));
-        float h = -0.2F * MathHelper.sin(swingProgress * (float) Math.PI);
+        float f = -0.48F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
+        float g = 0.22F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) (Math.PI * 2));
+        float h = -0.22F * MathHelper.sin(swingProgress * (float) Math.PI);
         matrices.translate(armSign * f, g, h);
 
         // Base item position
         matrices.translate(armSign * 0.56F, -0.52F + equipProgress * -0.6F, -0.72F);
 
-        // 1.7 swing rotations
+        // 1.7 swing rotations with authentic inward tilt (Photo 2)
         float sin1 = MathHelper.sin(swingProgress * swingProgress * (float) Math.PI);
         float sinSqrt = MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F)));
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -20.0F));
-        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -80.0F));
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F - sinSqrt * 12.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -22.0F));
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -82.0F));
     }
 
     /**
