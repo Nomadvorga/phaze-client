@@ -63,17 +63,19 @@ public abstract class HeldItemFeatureRendererPreviewAlphaMixin {
                 if (isBlockingArm) {
                     // Orient the sword sideways from the hand across the chest (not pointing forward into the world)
                     // with flat 2D texture facing directly outward towards the camera (1:1 with photo reference).
-                    float zRot = mod.thirdPersonBlockZ.getValue();
+                    float roll = mod.thirdPersonBlockRoll.getValue();
                     if (arm == Arm.RIGHT) {
+                        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(roll));
                         matrices.translate(-0.06F, 0.02F, 0.0F);
                         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-80.0F));
                         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(140.0F));
-                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(zRot));
+                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-45.0F));
                     } else {
+                        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-roll));
                         matrices.translate(0.06F, 0.02F, 0.0F);
                         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-30.0F));
                         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-30.0F));
-                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-zRot + 80.0F));
+                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(125.0F));
                     }
                 }
             }
