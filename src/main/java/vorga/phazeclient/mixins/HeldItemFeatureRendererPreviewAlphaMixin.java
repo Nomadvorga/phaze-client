@@ -67,12 +67,12 @@ public abstract class HeldItemFeatureRendererPreviewAlphaMixin {
                         matrices.translate(-0.06F, 0.02F, 0.0F);
                         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-80.0F));
                         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(140.0F));
-                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-50.0F));
+                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-45.0F));
                     } else {
                         matrices.translate(0.06F, 0.02F, 0.0F);
                         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-30.0F));
                         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-30.0F));
-                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(120.0F));
+                        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(125.0F));
                     }
                 }
             }
