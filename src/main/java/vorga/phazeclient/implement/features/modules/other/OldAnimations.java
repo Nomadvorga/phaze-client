@@ -54,10 +54,6 @@ public final class OldAnimations extends Module {
             "Lower Shield",
             "Lowers the offhand shield so it does not obstruct your crosshair or view while blocking"
     ).setValue(true);
-    public final ValueSetting thirdPersonBlockRoll = new ValueSetting(
-            "3rd Person Block Angle",
-            "Debug slider: rotate sword around arm (clockwise / counter-clockwise)"
-    ).range(-180.0f, 180.0f).step(1.0f).setValue(0.0f);
 
     // --- Swing & Equip ---------------------------------------------
     public final SectionSetting swingSection = new SectionSetting("Swing & Equip");
@@ -105,8 +101,6 @@ public final class OldAnimations extends Module {
         blockHitStyle.visible(blockHit::isValue);
         lowerShield.setFullWidth(true);
         lowerShield.visible(swordBlocking::isValue);
-        thirdPersonBlockRoll.setFullWidth(true);
-        thirdPersonBlockRoll.visible(swordBlocking::isValue);
 
         oldSwing.setFullWidth(true);
         noReEquip.setFullWidth(true);
@@ -119,7 +113,7 @@ public final class OldAnimations extends Module {
         oldSneak.setFullWidth(true);
 
         setup(
-                blockHitSection, swordBlocking, blockHit, blockHitStyle, lowerShield, thirdPersonBlockRoll,
+                blockHitSection, swordBlocking, blockHit, blockHitStyle, lowerShield,
                 swingSection, oldSwing, noReEquip, swingSpeed,
                 actionsSection, oldEating, oldBow, oldRod,
                 sneakSection, oldSneak
