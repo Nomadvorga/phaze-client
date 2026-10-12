@@ -104,7 +104,16 @@
     "ScreenshotRecorderScreencopyMixin",
     "NativeImageGetColorInvoker",
     "NativeImageSetColorInvoker",
-    "UsingItemPropertyMixin"
+    "UsingItemPropertyMixin",
+    "BossBarHudMixin",
+    "ItemStackMixin",
+    "PackScreenMixin",
+    "TntEntityRendererMixin",
+    "ChunkBorderDebugRendererMixin",
+    "ItemMixin",
+    "GlintColorizerMixin",
+    "ModelPartAccessor",
+    "PlayerSkinTextureDownloaderMixin"
   ],
   "injectors": {
     "defaultRequire": 0

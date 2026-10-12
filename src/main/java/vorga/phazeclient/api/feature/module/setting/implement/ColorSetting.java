@@ -37,7 +37,7 @@ public class ColorSetting extends Setting {
      *  RGB and writes alpha itself). Set via {@link #noAlpha()}. */
     private boolean noAlpha = false;
     /** Render this setting as a compact row that opens a popup picker. */
-    private boolean popupRow = false;
+    private boolean popupRow = true;
 
     public ColorSetting(String name, String description) {
         super(name, description);

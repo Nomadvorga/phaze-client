@@ -11,7 +11,7 @@ import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.window.AbstractWindow;
-import vorga.phazeclient.implement.menu.components.implement.window.implement.settings.color.ColorWindow;
+import vorga.phazeclient.implement.menu.components.implement.window.implement.settings.color.SettingColorPickerWindow;
 
 import static vorga.phazeclient.api.system.font.Fonts.Type.*;
 
@@ -103,7 +103,7 @@ public class MultiColorComponent extends AbstractSettingComponent {
                         AbstractWindow existingWindow = null;
 
                         for (AbstractWindow window : windowManager.getWindows()) {
-                            if (window instanceof ColorWindow) {
+                            if (window instanceof SettingColorPickerWindow) {
                                 existingWindow = window;
                                 break;
                             }
@@ -130,8 +130,8 @@ public class MultiColorComponent extends AbstractSettingComponent {
                             // AlphaComponent reference these exact X
                             // values - changing one without updating
                             // the others will misalign the strips.
-                            int windowWidth = 178;
-                            int windowHeight = 165;
+                            int windowWidth = Math.round(SettingColorPickerWindow.WINDOW_WIDTH);
+                            int windowHeight = Math.round(SettingColorPickerWindow.getWindowHeight(selectedColor));
 
                             int windowX = (int) (mouseX + 10);
                             int windowY = (int) (mouseY + 10);
@@ -139,10 +139,10 @@ public class MultiColorComponent extends AbstractSettingComponent {
                             windowX = MenuScreen.INSTANCE.clampOverlayX(windowX, windowWidth);
                             windowY = MenuScreen.INSTANCE.clampOverlayY(windowY, windowHeight);
 
-                            AbstractWindow colorWindow = new ColorWindow(selectedColor)
+                            AbstractWindow colorWindow = new SettingColorPickerWindow(selectedColor)
                                     .position(windowX, windowY)
                                     .size(windowWidth, windowHeight)
-                                    .draggable(true);
+                                    .draggable(false);
 
                             windowManager.add(colorWindow);
                         }

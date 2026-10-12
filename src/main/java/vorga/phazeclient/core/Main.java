@@ -334,6 +334,51 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(ScoreboardHud.class) == null) {
             moduleProvider.getModules().add(ScoreboardHud.getInstance());
         }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.TntCountdown.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.TntCountdown.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ShinyPots.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ShinyPots.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.KillSounds.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.KillSounds.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.LowHealthWarning.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.LowHealthWarning.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.KillStreakHud.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.KillStreakHud.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.PackDisplayHud.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.PackDisplayHud.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.BossbarTweakerHud.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.BossbarTweakerHud.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.DamageIndicator.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.DamageIndicator.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChunkBorders.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChunkBorders.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Waypoints.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Waypoints.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ScreenshotManager.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ScreenshotManager.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.PackOrganizer.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.PackOrganizer.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.GlintColorizer.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.GlintColorizer.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ThreeDSkins.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ThreeDSkins.getInstance());
+        }
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.WaveCapes.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.WaveCapes.getInstance());
+        }
 
         configManager.loadCurrentConfig();
 

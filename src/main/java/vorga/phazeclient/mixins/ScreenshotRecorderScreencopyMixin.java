@@ -64,6 +64,10 @@ public abstract class ScreenshotRecorderScreencopyMixin {
                 }
             }
         }
+        vorga.phazeclient.implement.features.modules.other.ScreenshotManager manager = vorga.phazeclient.implement.features.modules.other.ScreenshotManager.getInstance();
+        if (manager != null && manager.isEnabled()) {
+            manager.onScreenshotCaptured(fileName != null ? fileName : "screenshot.png");
+        }
         return image;
     }
 }

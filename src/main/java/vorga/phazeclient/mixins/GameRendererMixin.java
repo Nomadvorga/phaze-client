@@ -19,11 +19,6 @@ import vorga.phazeclient.implement.features.modules.other.MotionBlur;
  * pre-hand pass. All three share {@code priority = 1100} so they
  * compose into a single file without changing ordering relative to
  * vanilla / other mods.
- *
- * <p>{@code GameRendererZoomMixin} stays separate because it uses
- * the default priority (1000), and {@code GameRendererAccessor} is
- * an interface, neither of which compose with this class-form
- * mixin.
  */
 @Mixin(value = GameRenderer.class, priority = 1100)
 public abstract class GameRendererMixin {
