@@ -10,6 +10,7 @@ import net.minecraft.client.render.entity.feature.FeatureRendererContext;
 import net.minecraft.client.render.entity.model.BipedEntityModel;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
+import net.minecraft.client.util.SkinTextures;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Final;
@@ -20,11 +21,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.cosmetics.CosmeticsRenderer;
 import vorga.phazeclient.implement.cosmetics.CosmeticsState;
+import vorga.phazeclient.implement.features.modules.other.WaveCapes;
+import vorga.phazeclient.implement.features.modules.other.WavyCapeRenderer;
 
 /**
- * Renders a selected Phaze cape through Minecraft's PlayerCapeModel directly.
- * This does not depend on the account owning an official Mojang cape and
- * intentionally replaces the vanilla cape texture when both are present.
+ * Renders Phaze capes and handles WaveCapes 16-segment cloth physics for
+ * both custom Phaze capes and vanilla player capes.
  */
 @Mixin(CapeFeatureRenderer.class)
 public abstract class CapeFeatureRendererMixin
@@ -40,7 +42,7 @@ public abstract class CapeFeatureRendererMixin
     }
 
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
-    private void phaze$renderCustomCape(
+    private void phaze$renderCape(
             MatrixStack matrices,
             VertexConsumerProvider vertexConsumers,
             int light,
@@ -48,24 +50,39 @@ public abstract class CapeFeatureRendererMixin
             float limbAngle,
             float limbDistance,
             CallbackInfo ci
-
-        ) {
-        String selection = CosmeticsRenderer.capeSelectionFor(state);
-        if (!CosmeticsState.isCape(selection)) return;
-
-        // A Phaze cape fully owns this feature pass, including the case where
-        // the account also has a vanilla cape or wears an elytra.
-        ci.cancel();
+    ) {
         if (state.invisible || !state.capeVisible) return;
-        Identifier texture = CosmeticsRenderer.capeTexture(selection);
-        if (texture == null) return;
 
-        matrices.push();
-        VertexConsumer vertices =
-                vertexConsumers.getBuffer(RenderLayer.getEntitySolid(texture));
-        getContextModel().copyTransforms(model);
-        model.setAngles(state);
-        model.render(matrices, vertices, light, OverlayTexture.DEFAULT_UV);
-        matrices.pop();
+        WaveCapes waveCapes = WaveCapes.getInstance();
+        boolean wavy = waveCapes != null && waveCapes.isEnabled();
+
+        // 1. Phaze Custom Cape check
+        String selection = CosmeticsRenderer.capeSelectionFor(state);
+        if (CosmeticsState.isCape(selection)) {
+            ci.cancel();
+            Identifier texture = CosmeticsRenderer.capeTexture(selection);
+            if (texture == null) return;
+
+            if (wavy) {
+                WavyCapeRenderer.renderWavyCape(matrices, vertexConsumers, texture, light, state);
+            } else {
+                matrices.push();
+                VertexConsumer vertices = vertexConsumers.getBuffer(RenderLayer.getEntitySolid(texture));
+                getContextModel().copyTransforms(model);
+                model.setAngles(state);
+                model.render(matrices, vertices, light, OverlayTexture.DEFAULT_UV);
+                matrices.pop();
+            }
+            return;
+        }
+
+        // 2. Vanilla / Official Cape with WavyCapes enabled
+        if (wavy) {
+            SkinTextures skinTextures = state.skinTextures;
+            if (skinTextures != null && skinTextures.capeTexture() != null) {
+                ci.cancel();
+                WavyCapeRenderer.renderWavyCape(matrices, vertexConsumers, skinTextures.capeTexture(), light, state);
+            }
+        }
     }
 }

@@ -1,0 +1,44 @@
+{
+  "heartbeat": {
+    "subtitle": "subtitles.phaze.heartbeat",
+    "sounds": [
+      "phaze:heartbeat"
+    ]
+  },
+  "kill_laser": {
+    "subtitle": "subtitles.phaze.kill_laser",
+    "sounds": [
+      "phaze:kill_laser"
+    ]
+  },
+  "kill_ding": {
+    "subtitle": "subtitles.phaze.kill_ding",
+    "sounds": [
+      "phaze:kill_ding"
+    ]
+  },
+  "kill_destroy": {
+    "subtitle": "subtitles.phaze.kill_destroy",
+    "sounds": [
+      "phaze:kill_destroy"
+    ]
+  },
+  "kill_hit": {
+    "subtitle": "subtitles.phaze.kill_hit",
+    "sounds": [
+      "phaze:kill_hit"
+    ]
+  },
+  "kill_crunch": {
+    "subtitle": "subtitles.phaze.kill_crunch",
+    "sounds": [
+      "phaze:kill_crunch"
+    ]
+  },
+  "kill_pop": {
+    "subtitle": "subtitles.phaze.kill_pop",
+    "sounds": [
+      "phaze:kill_pop"
+    ]
+  }
+}

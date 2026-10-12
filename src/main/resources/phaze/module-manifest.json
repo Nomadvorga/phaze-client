@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 5,
-  "clientVersion": "1.2",
+  "manifestVersion": 8,
+  "clientVersion": "1.1",
   "modules": [
     {
       "id": "animations",
@@ -84,6 +84,11 @@
       "category": "OTHER"
     },
     {
+      "id": "bossbar_tweaker",
+      "name": "Bossbar Tweaker",
+      "category": "HUD"
+    },
+    {
       "id": "changehand",
       "name": "Change Hand",
       "category": "OTHER"
@@ -96,6 +101,11 @@
     {
       "id": "chunk_animator",
       "name": "World Animator",
+      "category": "OTHER"
+    },
+    {
+      "id": "chunk_borders",
+      "name": "Chunk Borders",
       "category": "OTHER"
     },
     {
@@ -136,6 +146,11 @@
     {
       "id": "custom_fog",
       "name": "Custom Fog",
+      "category": "OTHER"
+    },
+    {
+      "id": "damage_indicator",
+      "name": "Damage Indicator",
       "category": "OTHER"
     },
     {
@@ -191,6 +206,11 @@
     {
       "id": "full_bright",
       "name": "Full Bright",
+      "category": "OTHER"
+    },
+    {
+      "id": "glint_colorizer",
+      "name": "Custom Glint",
       "category": "OTHER"
     },
     {
@@ -259,9 +279,24 @@
       "category": "HUD"
     },
     {
+      "id": "kill_sounds",
+      "name": "Kill Sounds",
+      "category": "OTHER"
+    },
+    {
+      "id": "killstreak_hud",
+      "name": "Killstreak",
+      "category": "HUD"
+    },
+    {
       "id": "lockslot",
       "name": "Lock Slot",
       "category": "UTILITIES"
+    },
+    {
+      "id": "low_health_warning",
+      "name": "Low HP Warning",
+      "category": "OTHER"
     },
     {
       "id": "mace_indicator",
@@ -319,6 +354,16 @@
       "category": "OTHER"
     },
     {
+      "id": "pack_display_hud",
+      "name": "Pack Display",
+      "category": "HUD"
+    },
+    {
+      "id": "pack_organizer",
+      "name": "Pack Organizer",
+      "category": "OTHER"
+    },
+    {
       "id": "pickaxe_notifier",
       "name": "Pickaxe Notifier",
       "category": "UTILITIES"
@@ -359,6 +404,11 @@
       "category": "HUD"
     },
     {
+      "id": "screenshot_manager",
+      "name": "Screenshot Toast",
+      "category": "OTHER"
+    },
+    {
       "id": "server_address_hud",
       "name": "Server Address",
       "category": "HUD"
@@ -372,6 +422,11 @@
       "id": "shifttap",
       "name": "Shift Tap",
       "category": "UTILITIES"
+    },
+    {
+      "id": "shiny_pots",
+      "name": "Shiny Pots",
+      "category": "OTHER"
     },
     {
       "id": "shulker_preview",
@@ -409,6 +464,11 @@
       "category": "OTHER"
     },
     {
+      "id": "three_d_skins",
+      "name": "3D Skins",
+      "category": "OTHER"
+    },
+    {
       "id": "time_changer",
       "name": "Time Changer",
       "category": "OTHER"
@@ -417,6 +477,11 @@
       "id": "time_hud",
       "name": "Time",
       "category": "HUD"
+    },
+    {
+      "id": "tnt_countdown",
+      "name": "TNT Countdown",
+      "category": "OTHER"
     },
     {
       "id": "totem_tracker",
@@ -442,6 +507,16 @@
       "id": "waila_hud",
       "name": "Waila",
       "category": "HUD"
+    },
+    {
+      "id": "wave_capes",
+      "name": "Wave Capes",
+      "category": "OTHER"
+    },
+    {
+      "id": "waypoints",
+      "name": "Waypoints",
+      "category": "OTHER"
     },
     {
       "id": "weather_changer",

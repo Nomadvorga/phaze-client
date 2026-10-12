@@ -241,4 +241,35 @@ public abstract class LivingEntityRendererMixin<
         }
     }
 
+    @Inject(
+            method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At("HEAD")
+    )
+    private void phaze$applyThreeDSkins(
+            S state,
+            MatrixStack matrices,
+            VertexConsumerProvider vertexConsumers,
+            int light,
+            CallbackInfo ci
+    ) {
+        if (state instanceof PlayerEntityRenderState playerState && this.model instanceof PlayerEntityModel playerModel) {
+            vorga.phazeclient.implement.features.modules.other.ThreeDSkinsHelper.apply(playerModel, playerState);
+        }
+    }
+
+    @Inject(
+            method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At("TAIL")
+    )
+    private void phaze$restoreThreeDSkins(
+            S state,
+            MatrixStack matrices,
+            VertexConsumerProvider vertexConsumers,
+            int light,
+            CallbackInfo ci
+    ) {
+        if (this.model instanceof PlayerEntityModel playerModel) {
+            vorga.phazeclient.implement.features.modules.other.ThreeDSkinsHelper.restore(playerModel);
+        }
+    }
 }
