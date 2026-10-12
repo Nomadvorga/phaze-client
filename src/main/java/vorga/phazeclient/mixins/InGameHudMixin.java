@@ -1374,15 +1374,9 @@ public class InGameHudMixin {
             return;
         }
 
-        // Rebuild the armor list every frame. Caching it across frames was
-        // causing the HUD to stay invisible if the player joined the world
-        // without armor: the cache was only invalidated on world change, so
-        // equipping a piece of armor mid-game never refreshed it and the
-        // empty-list early return below kept the HUD permanently hidden.
-        // The list has at most 5 entries (4 armor + 1 shield) so the
-        // per-frame cost is negligible.
-        List<ItemStack> updatedStacks = new ArrayList<>();
-        List<String> updatedDurabilityTexts = new ArrayList<>();
+        // Reuse cached list instances to eliminate per-frame GC allocations
+        armorStacksCache.clear();
+        armorDurabilityTextsCache.clear();
 
         var inventory = client.player.getInventory();
         for (int slot = 3; slot >= 0; slot--) {
@@ -1390,28 +1384,25 @@ public class InGameHudMixin {
             if (stack.isEmpty()) {
                 continue;
             }
-            updatedStacks.add(stack);
-            updatedDurabilityTexts.add(formatDurabilityText(module, stack));
+            armorStacksCache.add(stack);
+            armorDurabilityTextsCache.add(formatDurabilityText(module, stack));
         }
 
         ItemStack offHand = client.player.getOffHandStack();
         if (!offHand.isEmpty() && offHand.isOf(Items.SHIELD)) {
-            updatedStacks.add(offHand);
-            updatedDurabilityTexts.add(formatDurabilityText(module, offHand));
+            armorStacksCache.add(offHand);
+            armorDurabilityTextsCache.add(formatDurabilityText(module, offHand));
         }
 
-        if (updatedStacks.isEmpty() && chatEditing) {
-            updatedStacks.add(new ItemStack(Items.DIAMOND_HELMET));
-            updatedStacks.add(new ItemStack(Items.DIAMOND_CHESTPLATE));
-            updatedStacks.add(new ItemStack(Items.DIAMOND_LEGGINGS));
-            updatedStacks.add(new ItemStack(Items.DIAMOND_BOOTS));
-            for (ItemStack stack : updatedStacks) {
-                updatedDurabilityTexts.add(module.formatDurability(stack.getMaxDamage(), stack.getMaxDamage()));
+        if (armorStacksCache.isEmpty() && chatEditing) {
+            armorStacksCache.add(new ItemStack(Items.DIAMOND_HELMET));
+            armorStacksCache.add(new ItemStack(Items.DIAMOND_CHESTPLATE));
+            armorStacksCache.add(new ItemStack(Items.DIAMOND_LEGGINGS));
+            armorStacksCache.add(new ItemStack(Items.DIAMOND_BOOTS));
+            for (ItemStack stack : armorStacksCache) {
+                armorDurabilityTextsCache.add(module.formatDurability(stack.getMaxDamage(), stack.getMaxDamage()));
             }
         }
-
-        armorStacksCache = updatedStacks;
-        armorDurabilityTextsCache = updatedDurabilityTexts;
 
         List<ItemStack> stacks = armorStacksCache;
         List<String> durabilityTexts = armorDurabilityTextsCache;

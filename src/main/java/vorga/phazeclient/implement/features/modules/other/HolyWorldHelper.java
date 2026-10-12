@@ -92,9 +92,13 @@ public final class HolyWorldHelper extends Module {
         if (!isEnabled() || client == null || client.player == null) {
             return HighlightType.NONE;
         }
-        String itemName = client.player.getMainHandStack().getName().getString().toLowerCase(java.util.Locale.ROOT);
+        net.minecraft.item.ItemStack mainHand = client.player.getMainHandStack();
+        if (mainHand == null || mainHand.isEmpty()) {
+            return HighlightType.NONE;
+        }
+        String itemName = mainHand.getName().getString().toLowerCase(java.util.Locale.ROOT);
         if (enabledAbilities.getSelected().contains("Trap")
-                && client.player.getMainHandStack().isOf(Items.POPPED_CHORUS_FRUIT)
+                && mainHand.isOf(Items.POPPED_CHORUS_FRUIT)
                 && matches(itemName, trapName.getText())) {
             return HighlightType.TRAP;
         }

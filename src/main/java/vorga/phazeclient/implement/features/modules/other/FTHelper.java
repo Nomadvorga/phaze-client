@@ -301,10 +301,23 @@ public final class FTHelper extends Module {
         if (mainHand == null || mainHand.isEmpty()) {
             return HighlightType.NONE;
         }
+
+        // Fast-path: check if held item matches ANY of the target ability items first
+        // to avoid allocating name strings on every non-ability item (swords, picks, blocks, etc.)
+        net.minecraft.item.Item item = mainHand.getItem();
+        if (item != Items.NETHERITE_SCRAP
+                && item != Items.ENDER_EYE
+                && item != Items.SUGAR
+                && item != Items.FIRE_CHARGE
+                && item != Items.DRIED_KELP
+                && item != Items.PHANTOM_MEMBRANE
+                && item != Items.SNOWBALL) {
+            return HighlightType.NONE;
+        }
+
         String itemName = mainHand.getName().getString().toLowerCase();
 
-        if (trapkaEnabled.isValue()
-                && mainHand.getItem() == Items.NETHERITE_SCRAP) {
+        if (trapkaEnabled.isValue() && item == Items.NETHERITE_SCRAP) {
             // Dragon trapka FIRST: its name ("драконья трапка")
             // contains "трапка" as a substring, so checking the
             // base trapka match first would always claim it before
@@ -318,32 +331,32 @@ public final class FTHelper extends Module {
             }
         }
         if (dezorientationEnabled.isValue()
-                && mainHand.getItem() == Items.ENDER_EYE
+                && item == Items.ENDER_EYE
                 && itemName.contains(dezorientationName.getText().toLowerCase())) {
             return HighlightType.CIRCLE_10;
         }
         if (yavnayaPylEnabled.isValue()
-                && mainHand.getItem() == Items.SUGAR
+                && item == Items.SUGAR
                 && itemName.contains(yavnayaPylName.getText().toLowerCase())) {
             return HighlightType.CIRCLE_10;
         }
         if (ognennyiSmerchEnabled.isValue()
-                && mainHand.getItem() == Items.FIRE_CHARGE
+                && item == Items.FIRE_CHARGE
                 && itemName.contains(ognennyiSmerchName.getText().toLowerCase())) {
             return HighlightType.CIRCLE_10;
         }
         if (plastEnabled.isValue()
-                && mainHand.getItem() == Items.DRIED_KELP
+                && item == Items.DRIED_KELP
                 && itemName.contains(plastName.getText().toLowerCase())) {
             return HighlightType.PLAST;
         }
         if (bozhestvennayaAuraEnabled.isValue()
-                && mainHand.getItem() == Items.PHANTOM_MEMBRANE
+                && item == Items.PHANTOM_MEMBRANE
                 && itemName.contains(bozhestvennayaAuraName.getText().toLowerCase())) {
             return HighlightType.BOZHESTVENNAYA_AURA;
         }
         if (snezhokZamorozkaEnabled.isValue()
-                && mainHand.getItem() == Items.SNOWBALL
+                && item == Items.SNOWBALL
                 && itemName.contains(snezhokZamorozkaName.getText().toLowerCase())) {
             return HighlightType.SNEZHOK_PREDICTION;
         }
