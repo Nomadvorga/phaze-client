@@ -64,7 +64,10 @@ public abstract class CapeFeatureRendererMixin
             if (texture == null) return;
 
             if (wavy) {
+                matrices.push();
+                getContextModel().body.rotate(matrices);
                 WavyCapeRenderer.renderWavyCape(matrices, vertexConsumers, texture, light, state);
+                matrices.pop();
             } else {
                 matrices.push();
                 VertexConsumer vertices = vertexConsumers.getBuffer(RenderLayer.getEntitySolid(texture));
@@ -81,7 +84,10 @@ public abstract class CapeFeatureRendererMixin
             SkinTextures skinTextures = state.skinTextures;
             if (skinTextures != null && skinTextures.capeTexture() != null) {
                 ci.cancel();
+                matrices.push();
+                getContextModel().body.rotate(matrices);
                 WavyCapeRenderer.renderWavyCape(matrices, vertexConsumers, skinTextures.capeTexture(), light, state);
+                matrices.pop();
             }
         }
     }
