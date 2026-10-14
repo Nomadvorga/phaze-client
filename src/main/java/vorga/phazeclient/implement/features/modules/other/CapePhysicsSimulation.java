@@ -3,13 +3,11 @@ package vorga.phazeclient.implement.features.modules.other;
 import net.minecraft.util.math.MathHelper;
 
 /**
- * Clean-room Verlet integration cloth physics simulation for player capes,
- * based on the physics engine of WaveyCapes (tr7zw) and Sebastian Lague's rope physics.
- * 16 linked point masses with distance constraints, inertia, gravity, and travelling wind waves.
+ * 1:1 Clean-room cloth physics engine based on WaveyCapes (tr7zw) stick simulation.
+ * 16 point masses connected by rigid distance constraints with torso clipping avoidance and inertia.
  */
 public final class CapePhysicsSimulation {
     public static final int PART_COUNT = 16;
-    public static final float SEGMENT_LENGTH = 1.0f / (float) PART_COUNT; // 0.0625 blocks per segment
 
     private final float[] x = new float[PART_COUNT];
     private final float[] y = new float[PART_COUNT];
@@ -20,7 +18,8 @@ public final class CapePhysicsSimulation {
     private final float[] prevZ = new float[PART_COUNT];
 
     private boolean initialized = false;
-    private long lastSimulationTime = 0;
+    private boolean sneaking = false;
+    private float dirX, dirY, dirZ;
 
     public CapePhysicsSimulation() {
         reset();
@@ -28,149 +27,135 @@ public final class CapePhysicsSimulation {
 
     public void reset() {
         for (int i = 0; i < PART_COUNT; i++) {
-            x[i] = 0;
-            y[i] = -i * SEGMENT_LENGTH;
+            x[i] = -i;
+            y[i] = -i;
             z[i] = 0;
-            prevX[i] = x[i];
-            prevY[i] = prevZ[i] = prevX[i];
-        }
-        initialized = false;
-    }
-
-    /**
-     * Advances the cloth physics tick.
-     */
-    public void update(
-            float forwardVelocity,
-            float verticalVelocity,
-            float strafeVelocity,
-            float gravityStrength,
-            float waveSpeed,
-            float waveStrength,
-            boolean sneaking,
-            boolean underwater
-    ) {
-        long now = System.currentTimeMillis();
-        if (!initialized) {
-            reset();
-            initialized = true;
-            lastSimulationTime = now;
-            return;
-        }
-
-        float dt = MathHelper.clamp((now - lastSimulationTime) / 1000.0f, 0.001f, 0.05f);
-        lastSimulationTime = now;
-
-        // Save previous positions for frame-rate independent interpolation (lerp)
-        for (int i = 0; i < PART_COUNT; i++) {
             prevX[i] = x[i];
             prevY[i] = y[i];
             prevZ[i] = z[i];
         }
+        initialized = false;
+    }
 
-        // Point 0 is anchored to player back
-        x[0] = 0;
-        y[0] = sneaking ? -0.1f : 0;
-        z[0] = sneaking ? 0.05f : 0;
+    public void update(
+            float forwardDelta,
+            float verticalDelta,
+            float strafeDelta,
+            float gravityStrength,
+            float heightMultiplier,
+            float strafeMultiplier,
+            boolean isSneaking,
+            boolean isUnderwater
+    ) {
+        if (!initialized) {
+            reset();
+            initialized = true;
+            return;
+        }
 
-        // Apply external forces (movement inertia, gravity, wind)
-        float gravity = 9.8f * gravityStrength;
-        float windTime = (float) ((now / (underwater ? 9.0 : 3.0)) % 360.0);
+        // Save previous positions for frame interpolation
+        System.arraycopy(x, 0, prevX, 0, PART_COUNT);
+        System.arraycopy(y, 0, prevY, 0, PART_COUNT);
+        System.arraycopy(z, 0, prevZ, 0, PART_COUNT);
 
+        // Player movement delta on anchor point 0
+        double changeX = forwardDelta + (isSneaking && !sneaking ? 3.0 : 0.0);
+        double changeY = (verticalDelta * heightMultiplier) + (isSneaking && !sneaking ? 1.0 : 0.0);
+        double changeZ = -strafeDelta * strafeMultiplier;
+        sneaking = isSneaking;
+
+        x[0] += (float) changeX;
+        y[0] += (float) changeY;
+        z[0] += (float) changeZ;
+
+        // Apply downward gravity (fixed 50ms timescale factor)
+        float fall = (isUnderwater ? gravityStrength / 10.0f : gravityStrength) * 0.05f;
         for (int i = 1; i < PART_COUNT; i++) {
-            // Inertia from movement (cape flows backwards when walking/sprinting)
-            float rel = (float) i / (float) PART_COUNT;
-            float movementDragZ = forwardVelocity * 1.8f * rel;
-            float movementDragY = -verticalVelocity * 0.8f * rel;
-            float movementDragX = -strafeVelocity * 1.5f * rel;
-
-            // Gravity pulling downwards
-            y[i] -= gravity * dt * dt * 8.0f;
-            y[i] += movementDragY * dt * 5.0f;
-
-            // Backward drag from running
-            z[i] -= movementDragZ * dt * 8.0f;
-            x[i] += movementDragX * dt * 8.0f;
-
-            // Travelling sine wave flutter
-            float wavePhase = (float) Math.toRadians(rel * 360.0f - windTime * waveSpeed);
-            float windSwing = (float) Math.sin(wavePhase) * 0.012f * waveStrength;
-            z[i] += windSwing;
-            x[i] += (float) Math.cos(wavePhase * 0.7f) * (windSwing * 0.5f);
+            y[i] -= fall;
         }
 
         // Prevent cape clipping into player body
         for (int i = 1; i < PART_COUNT; i++) {
-            float maxZ = ((float) i / (float) PART_COUNT) * 0.8f;
-            if (z[i] > 0.02f) {
-                z[i] = 0.02f;
+            if (x[i] - x[0] > 0) {
+                x[i] = x[0];
             }
-            if (z[i] < -maxZ) {
-                z[i] = -maxZ;
+            float fraction = (float) i / (float) PART_COUNT;
+            float maxZ = fraction * fraction * 5.0f;
+            float offset = z[0] - z[i];
+            if (offset > maxZ) {
+                z[i] = z[0] - maxZ;
             }
-        }
-
-        // Verlet relaxation iterations to maintain strict distance between segments
-        int iterations = 4;
-        for (int iter = 0; iter < iterations; iter++) {
-            for (int i = 0; i < PART_COUNT - 1; i++) {
-                int a = i;
-                int b = i + 1;
-
-                float dx = x[b] - x[a];
-                float dy = y[b] - y[a];
-                float dz = z[b] - z[a];
-
-                float dist = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-                if (dist < 1.0E-4F) continue;
-
-                float diff = (dist - SEGMENT_LENGTH) / dist;
-
-                if (a != 0) {
-                    x[a] += dx * 0.5f * diff;
-                    y[a] += dy * 0.5f * diff;
-                    z[a] += dz * 0.5f * diff;
-                }
-                x[b] -= dx * (a == 0 ? 1.0f : 0.5f) * diff;
-                y[b] -= dy * (a == 0 ? 1.0f : 0.5f) * diff;
-                z[b] -= dz * (a == 0 ? 1.0f : 0.5f) * diff;
+            if (offset < -maxZ) {
+                z[i] = z[0] + maxZ;
             }
         }
-    }
 
-    public float getLerpX(int index, float delta) {
-        if (index < 0 || index >= PART_COUNT) return 0;
-        return MathHelper.lerp(delta, prevX[index], x[index]);
-    }
-
-    public float getLerpY(int index, float delta) {
-        if (index < 0 || index >= PART_COUNT) return 0;
-        return MathHelper.lerp(delta, prevY[index], y[index]);
-    }
-
-    public float getLerpZ(int index, float delta) {
-        if (index < 0 || index >= PART_COUNT) return 0;
-        return MathHelper.lerp(delta, prevZ[index], z[index]);
-    }
-
-    /**
-     * Calculates the rotation angle between segment i and i+1 in degrees.
-     */
-    public float getSegmentPitch(int index, float delta) {
-        if (index >= PART_COUNT - 1) {
-            return getSegmentPitch(PART_COUNT - 2, delta);
+        // Relaxation solver: 3 passes backwards
+        for (int iter = 0; iter < 3; iter++) {
+            for (int a = PART_COUNT - 2; a >= 0; a--) {
+                direction(a, a + 1);
+                separate(a, a + 1);
+            }
         }
-        float dy = getLerpY(index + 1, delta) - getLerpY(index, delta);
-        float dz = getLerpZ(index + 1, delta) - getLerpZ(index, delta);
-        return (float) Math.toDegrees(Math.atan2(-dz, -dy));
+
+        // Limit length: rigidly lock segment lengths to prevent stretching/springiness
+        for (int a = 0; a < PART_COUNT - 1; a++) {
+            direction(a, a + 1);
+            x[a + 1] = x[a] - dirX;
+            y[a + 1] = y[a] - dirY;
+            z[a + 1] = z[a] - dirZ;
+        }
     }
 
-    public float getSegmentRoll(int index, float delta) {
-        if (index >= PART_COUNT - 1) {
-            return getSegmentRoll(PART_COUNT - 2, delta);
+    private void direction(int a, int b) {
+        dirX = x[a] - x[b];
+        dirY = y[a] - y[b];
+        dirZ = z[a] - z[b];
+        float len = (float) Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+        if (len < 1.0E-4F) {
+            dirX = dirY = dirZ = 0;
+        } else {
+            dirX /= len;
+            dirY /= len;
+            dirZ /= len;
         }
-        float dx = getLerpX(index + 1, delta) - getLerpX(index, delta);
-        float dy = getLerpY(index + 1, delta) - getLerpY(index, delta);
-        return (float) Math.toDegrees(Math.atan2(dx, -dy));
+    }
+
+    private void separate(int a, int b) {
+        float cx = (x[a] + x[b]) / 2.0f;
+        float cy = (y[a] + y[b]) / 2.0f;
+        float cz = (z[a] + z[b]) / 2.0f;
+        if (a != 0) {
+            x[a] = cx + dirX / 2.0f;
+            y[a] = cy + dirY / 2.0f;
+            z[a] = cz + dirZ / 2.0f;
+        }
+        x[b] = cx - dirX / 2.0f;
+        y[b] = cy - dirY / 2.0f;
+        z[b] = cz - dirZ / 2.0f;
+    }
+
+    public float getLerpX(int part, float delta) {
+        if (part < 0 || part >= PART_COUNT) return 0;
+        return MathHelper.lerp(delta, prevX[part], x[part]);
+    }
+
+    public float getLerpY(int part, float delta) {
+        if (part < 0 || part >= PART_COUNT) return 0;
+        return MathHelper.lerp(delta, prevY[part], y[part]);
+    }
+
+    public float getLerpZ(int part, float delta) {
+        if (part < 0 || part >= PART_COUNT) return 0;
+        return MathHelper.lerp(delta, prevZ[part], z[part]);
+    }
+
+    public float getSegmentRotation(int part, float delta) {
+        if (part >= PART_COUNT - 1) {
+            return getSegmentRotation(PART_COUNT - 2, delta);
+        }
+        float dx = getLerpX(part + 1, delta) - getLerpX(part, delta);
+        float dy = getLerpY(part + 1, delta) - getLerpY(part, delta);
+        return (float) Math.toDegrees(Math.atan2(dx, dy)) + 180.0f;
     }
 }

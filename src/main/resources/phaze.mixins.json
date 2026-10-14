@@ -113,6 +113,7 @@
     "ItemMixin",
     "GlintColorizerMixin",
     "ModelPartAccessor",
+    "ModelPartCuboidAccessor",
     "PlayerSkinTextureDownloaderMixin"
   ],
   "injectors": {

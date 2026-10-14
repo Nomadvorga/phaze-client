@@ -10,21 +10,36 @@ import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
 /**
- * 1:1 Clean-room WaveyCapes cloth renderer.
- * Renders 16 interconnected segments driven by Verlet physics simulation.
+ * 1:1 Clean-room continuous cloth ribbon renderer based on WaveyCapes (tr7zw).
+ * Replaces stacked box approximations with a smooth continuous mesh ribbon
+ * where vertices between adjacent segments share exact transformation matrices.
  */
 public final class WavyCapeRenderer {
-    private static final int SEGMENTS = CapePhysicsSimulation.PART_COUNT;
+    public static final int PART_COUNT = CapePhysicsSimulation.PART_COUNT; // 16
     private static final float CAPE_WIDTH = 10.0f / 16.0f; // 0.625 blocks
-    private static final float CAPE_DEPTH = 0.02f; // thin cloth sheet
-    private static final float SEGMENT_HEIGHT = CapePhysicsSimulation.SEGMENT_LENGTH;
+    private static final float CAPE_HEIGHT = 1.0f;         // 1.0 block
+    private static final float CAPE_DEPTH = 1.0f / 16.0f;  // 0.0625 blocks
+
+    // Reusable matrices & vector scratch to guarantee zero allocations during render loop
+    private static final Matrix4f[] POSITION_MATRICES = new Matrix4f[PART_COUNT];
+    private static final Vector4f V_A = new Vector4f();
+    private static final Vector4f V_B = new Vector4f();
+    private static final Vector4f V_C = new Vector4f();
 
     private static final Int2ObjectOpenHashMap<CapePhysicsSimulation> SIMULATIONS = new Int2ObjectOpenHashMap<>();
     private static long lastPurge = 0;
+
+    static {
+        for (int i = 0; i < PART_COUNT; i++) {
+            POSITION_MATRICES[i] = new Matrix4f();
+        }
+    }
 
     private WavyCapeRenderer() {}
 
@@ -50,197 +65,242 @@ public final class WavyCapeRenderer {
             }
         }
 
-        CapePhysicsSimulation sim = SIMULATIONS.computeIfAbsent(state.id, id -> new CapePhysicsSimulation());
-
-        // Derive movement velocity from entity if available
-        float forwardVel = 0.0f;
-        float verticalVel = 0.0f;
-        float strafeVel = 0.0f;
-        boolean underwater = false;
-
         Entity entity = client.world.getEntityById(state.id);
-        if (entity != null) {
-            forwardVel = (float) entity.getVelocity().horizontalLength();
-            verticalVel = (float) entity.getVelocity().y;
-            underwater = entity.isSubmergedInWater();
-        }
-
-        sim.update(
-                forwardVel,
-                verticalVel,
-                strafeVel,
-                module.gravity.getValue(),
-                module.waveSpeed.getValue(),
-                module.waveStrength.getValue(),
-                state.sneaking,
-                underwater
-        );
-
-        VertexConsumer consumer = vertexConsumers.getBuffer(RenderLayer.getEntitySolid(texture));
-
-        matrices.push();
-        // Vanilla collar attachment:
-        matrices.translate(0.0D, 0.0D, 0.125D);
-        if (state.sneaking) {
-            matrices.translate(0.0F, 0.1F, 0.05F);
-            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(20.0F));
-        }
-
-        float halfW = CAPE_WIDTH / 2.0f;
-        float halfD = CAPE_DEPTH / 2.0f;
-        float h = SEGMENT_HEIGHT;
+        boolean underwater = entity != null && entity.isSubmergedInWater();
         float delta = client.getRenderTickCounter().getTickDelta(false);
 
-        int pushed = 0;
-        try {
-            for (int i = 0; i < SEGMENTS; i++) {
-                float segPitch = sim.getSegmentPitch(i, delta);
-                float segRoll = sim.getSegmentRoll(i, delta);
+        boolean isPhysics3D = module.mode.isSelected("Physics 3D");
 
+        if (isPhysics3D) {
+            CapePhysicsSimulation sim = SIMULATIONS.computeIfAbsent(state.id, id -> new CapePhysicsSimulation());
+
+            float forwardDelta = 0.0f;
+            float verticalDelta = 0.0f;
+            float strafeDelta = 0.0f;
+
+            if (entity != null) {
+                float yawRad = (float) Math.toRadians(-entity.getYaw());
+                float dx = (float) (entity.getX() - entity.lastRenderX);
+                float dy = (float) (entity.getY() - entity.lastRenderY);
+                float dz = (float) (entity.getZ() - entity.lastRenderZ);
+                strafeDelta = MathHelper.cos(yawRad) * dx - MathHelper.sin(yawRad) * dz;
+                verticalDelta = dy;
+                forwardDelta = (float) Math.sqrt(dx * dx + dz * dz) * 10.0f;
+            }
+
+            sim.update(
+                    forwardDelta,
+                    verticalDelta,
+                    strafeDelta,
+                    module.gravity.getValue(),
+                    module.heightMultiplier.getValue(),
+                    module.strafeMultiplier.getValue(),
+                    state.sneaking,
+                    underwater
+            );
+
+            // Compute independent pose matrix for each segment
+            for (int part = 0; part < PART_COUNT; part++) {
                 matrices.push();
-                pushed++;
+                matrices.translate(0.0D, 0.0D, 0.125D);
+                if (state.sneaking) {
+                    matrices.translate(0.0F, 0.1F, 0.05F);
+                }
 
-                // Apply segment position and rotational bending
-                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(segPitch));
-                matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(segRoll));
+                float firstX = sim.getLerpX(0, delta);
+                float currX = sim.getLerpX(part, delta);
+                float x = currX - firstX;
+                if (x > 0) x = 0;
+                float y = sim.getLerpY(0, delta) - part - sim.getLerpY(part, delta);
+                float z = sim.getLerpZ(0, delta) - sim.getLerpZ(part, delta);
+                float partRotation = sim.getSegmentRotation(part, delta);
 
-                drawSegment(matrices, consumer, light, i, halfW, halfD, h);
+                float naturalWind = 0.0f;
+                if (module.windEffect.isValue()) {
+                    long waveTime = (now / (underwater ? 9L : 3L)) % 360L;
+                    float partFraction = (float) (part + 1) / PART_COUNT;
+                    float wavePhase = (float) Math.toRadians(partFraction * 360.0f - waveTime * module.waveSpeed.getValue());
+                    naturalWind = (float) (Math.sin(wavePhase) * 3.0f * module.waveStrength.getValue());
+                }
 
-                matrices.translate(0.0F, h, 0.0F);
-            }
-        } finally {
-            while (pushed > 0) {
+                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(6.0f + naturalWind));
+                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f));
+
+                matrices.translate(-z / PART_COUNT, y / PART_COUNT, x / PART_COUNT);
+                matrices.translate(0.0f, 0.48f / 16.0f, -0.48f / 16.0f);
+                matrices.translate(0.0f, part * 1.0f / PART_COUNT, 0.0f);
+                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-partRotation));
+                matrices.translate(0.0f, -part * 1.0f / PART_COUNT, 0.0f);
+                matrices.translate(0.0f, -0.48f / 16.0f, 0.48f / 16.0f);
+
+                POSITION_MATRICES[part].set(matrices.peek().getPositionMatrix());
                 matrices.pop();
-                pushed--;
             }
-            matrices.pop(); // pop collar
+        } else {
+            // Smooth Waves Mode (Vanilla curve easing + travelling cloth ripples)
+            for (int part = 0; part < PART_COUNT; part++) {
+                matrices.push();
+                matrices.translate(0.0D, 0.0D, 0.125D);
+                if (state.sneaking) {
+                    matrices.translate(0.0F, 0.1F, 0.05F);
+                }
+
+                float partFraction = (float) (part + 1) / (float) PART_COUNT;
+                float ease = (float) Math.sin((partFraction * Math.PI) / 2.0);
+
+                float swing = state.field_53537 * ease;
+                swing = MathHelper.clamp(swing, 0.0f, 150.0f * ease);
+                float sideways = MathHelper.clamp(state.field_53538 * ease, -20.0f, 20.0f);
+
+                float naturalWind = 0.0f;
+                if (module.windEffect.isValue()) {
+                    long waveTime = (now / (underwater ? 9L : 3L)) % 360L;
+                    float wavePhase = (float) Math.toRadians(partFraction * 360.0f - waveTime * module.waveSpeed.getValue());
+                    naturalWind = (float) (Math.sin(wavePhase) * 3.0f * module.waveStrength.getValue());
+                }
+
+                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(6.0f + swing / 2.0f + state.field_53536 + naturalWind));
+                matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(sideways / 2.0f));
+                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f - sideways / 2.0f));
+
+                POSITION_MATRICES[part].set(matrices.peek().getPositionMatrix());
+                matrices.pop();
+            }
         }
+
+        VertexConsumer consumer = vertexConsumers.getBuffer(RenderLayer.getEntitySolid(texture));
+        drawSmoothMesh(consumer, light);
     }
 
-    private static void drawSegment(
-            MatrixStack matrices,
-            VertexConsumer consumer,
-            int light,
-            int segmentIndex,
-            float halfW,
-            float halfD,
-            float h
-    ) {
-        Matrix4f mat = matrices.peek().getPositionMatrix();
+    private static void drawSmoothMesh(VertexConsumer consumer, int light) {
+        float texelU = 1.0f / 64.0f;
+        float texelV = 1.0f / 32.0f;
+        float halfW = CAPE_WIDTH / 2.0f;
 
-        float x0 = -halfW;
-        float x1 = halfW;
-        float y0 = 0.0f;
-        float y1 = h;
-        float z0 = -halfD;
-        float z1 = halfD;
+        for (int part = 0; part < PART_COUNT; part++) {
+            int prev = Math.max(part - 1, 0);
+            Matrix4f matPrev = POSITION_MATRICES[prev];
+            Matrix4f matCurr = POSITION_MATRICES[part];
 
-        float invTexW = 1.0f / 64.0f;
-        float invTexH = 1.0f / 32.0f;
+            float yTop = part * (CAPE_HEIGHT / PART_COUNT);
+            float yBot = (part + 1) * (CAPE_HEIGHT / PART_COUNT);
 
-        float v0 = (1.0f + segmentIndex) * invTexH;
-        float v1 = (1.0f + segmentIndex + 1.0f) * invTexH;
+            // 1. Top End Cap (only on part 0)
+            if (part == 0) {
+                float minU = 1.0f * texelU;
+                float maxU = 11.0f * texelU;
+                float v0 = 0.0f;
+                float v1 = texelV;
+                drawQuad(consumer, light,
+                        matPrev,  halfW, 0.0f, 0.0f, maxU, v1,
+                        matPrev, -halfW, 0.0f, 0.0f, minU, v1,
+                        matPrev, -halfW, 0.0f, -CAPE_DEPTH, minU, v0,
+                        matPrev,  halfW, 0.0f, -CAPE_DEPTH, maxU, v0,
+                        false);
+            }
 
-        // Front face (inward towards player body, u: 1..11)
-        float uFront0 = 1.0f * invTexW;
-        float uFront1 = 11.0f * invTexW;
-        drawQuad(consumer, mat, matrices, light,
-                x0, y0, z1, uFront1, v0,
-                x1, y0, z1, uFront0, v0,
-                x1, y1, z1, uFront0, v1,
-                x0, y1, z1, uFront1, v1,
-                0, 0, 1);
+            // 2. Bottom End Cap (only on last segment)
+            if (part == PART_COUNT - 1) {
+                float minU = 11.0f * texelU;
+                float maxU = 21.0f * texelU;
+                float v0 = 0.0f;
+                float v1 = texelV;
+                drawQuad(consumer, light,
+                        matCurr,  halfW, CAPE_HEIGHT, -CAPE_DEPTH, maxU, v0,
+                        matCurr, -halfW, CAPE_HEIGHT, -CAPE_DEPTH, minU, v0,
+                        matCurr, -halfW, CAPE_HEIGHT, 0.0f, minU, v1,
+                        matCurr,  halfW, CAPE_HEIGHT, 0.0f, maxU, v1,
+                        false);
+            }
 
-        // Back face (outward facing cape pattern, u: 12..22)
-        float uBack0 = 12.0f * invTexW;
-        float uBack1 = 22.0f * invTexW;
-        drawQuad(consumer, mat, matrices, light,
-                x1, y0, z0, uBack1, v0,
-                x0, y0, z0, uBack0, v0,
-                x0, y1, z0, uBack0, v1,
-                x1, y1, z0, uBack1, v1,
-                0, 0, -1);
+            // 3. Left Edge (u: 0..1, v: row part + 1)
+            float minU = 0.0f;
+            float maxU = 1.0f * texelU;
+            float minV = texelV * (part + 1);
+            float maxV = minV + texelV;
+            drawQuad(consumer, light,
+                    matCurr, -halfW, yBot, 0.0f, minU, maxV,
+                    matCurr, -halfW, yBot, -CAPE_DEPTH, maxU, maxV,
+                    matPrev, -halfW, yTop, -CAPE_DEPTH, maxU, minV,
+                    matPrev, -halfW, yTop, 0.0f, minU, minV,
+                    false);
 
-        // Left edge (u: 0..1)
-        float uLeft0 = 0.0f * invTexW;
-        float uLeft1 = 1.0f * invTexW;
-        drawQuad(consumer, mat, matrices, light,
-                x0, y0, z0, uLeft0, v0,
-                x0, y0, z1, uLeft1, v0,
-                x0, y1, z1, uLeft1, v1,
-                x0, y1, z0, uLeft0, v1,
-                -1, 0, 0);
+            // 4. Right Edge (u: 11..12, v: row part + 1)
+            minU = 11.0f * texelU;
+            maxU = 12.0f * texelU;
+            drawQuad(consumer, light,
+                    matCurr, halfW, yBot, -CAPE_DEPTH, minU, maxV,
+                    matCurr, halfW, yBot, 0.0f, maxU, maxV,
+                    matPrev, halfW, yTop, 0.0f, maxU, minV,
+                    matPrev, halfW, yTop, -CAPE_DEPTH, minU, minV,
+                    false);
 
-        // Right edge (u: 11..12)
-        float uRight0 = 11.0f * invTexW;
-        float uRight1 = 12.0f * invTexW;
-        drawQuad(consumer, mat, matrices, light,
-                x1, y0, z1, uRight0, v0,
-                x1, y0, z0, uRight1, v0,
-                x1, y1, z0, uRight1, v1,
-                x1, y1, z1, uRight0, v1,
-                1, 0, 0);
+            // 5. Front Face (facing player's body at z = -CAPE_DEPTH)
+            minU = 1.0f * texelU;
+            maxU = 11.0f * texelU;
+            drawQuad(consumer, light,
+                    matPrev,  halfW, yTop, -CAPE_DEPTH, maxU, minV,
+                    matPrev, -halfW, yTop, -CAPE_DEPTH, minU, minV,
+                    matCurr, -halfW, yBot, -CAPE_DEPTH, minU, maxV,
+                    matCurr,  halfW, yBot, -CAPE_DEPTH, maxU, maxV,
+                    false);
 
-        // Top face (only segment 0: u: 1..11, v: 0..1)
-        if (segmentIndex == 0) {
-            float uTop0 = 1.0f * invTexW;
-            float uTop1 = 11.0f * invTexW;
-            float vTop0 = 0.0f * invTexH;
-            float vTop1 = 1.0f * invTexH;
-            drawQuad(consumer, mat, matrices, light,
-                    x0, y0, z0, uTop0, vTop0,
-                    x1, y0, z0, uTop1, vTop0,
-                    x1, y0, z1, uTop1, vTop1,
-                    x0, y0, z1, uTop0, vTop1,
-                    0, -1, 0);
-        }
-
-        // Bottom face (only last segment: u: 11..21, v: 0..1)
-        if (segmentIndex == SEGMENTS - 1) {
-            float uBot0 = 11.0f * invTexW;
-            float uBot1 = 21.0f * invTexW;
-            float vBot0 = 0.0f * invTexH;
-            float vBot1 = 1.0f * invTexH;
-            drawQuad(consumer, mat, matrices, light,
-                    x0, y1, z1, uBot0, vBot0,
-                    x1, y1, z1, uBot1, vBot0,
-                    x1, y1, z0, uBot1, vBot1,
-                    x0, y1, z0, uBot0, vBot1,
-                    0, 1, 0);
+            // 6. Back Face (outer visible cape pattern at z = 0)
+            minU = 12.0f * texelU;
+            maxU = 22.0f * texelU;
+            drawQuad(consumer, light,
+                    matPrev,  halfW, yTop, 0.0f, minU, minV,
+                    matPrev, -halfW, yTop, 0.0f, maxU, minV,
+                    matCurr, -halfW, yBot, 0.0f, maxU, maxV,
+                    matCurr,  halfW, yBot, 0.0f, minU, maxV,
+                    true);
         }
     }
 
     private static void drawQuad(
             VertexConsumer consumer,
-            Matrix4f mat,
-            MatrixStack matrices,
             int light,
-            float ax, float ay, float az, float au, float av,
-            float bx, float by, float bz, float bu, float bv,
-            float cx, float cy, float cz, float cu, float cv,
-            float dx, float dy, float dz, float du, float dv,
-            float nx, float ny, float nz
+            Matrix4f matA, float ax, float ay, float az, float au, float av,
+            Matrix4f matB, float bx, float by, float bz, float bu, float bv,
+            Matrix4f matC, float cx, float cy, float cz, float cu, float cv,
+            Matrix4f matD, float dx, float dy, float dz, float du, float dv,
+            boolean invertNormal
     ) {
-        vertex(consumer, mat, matrices, ax, ay, az, au, av, light, nx, ny, nz);
-        vertex(consumer, mat, matrices, bx, by, bz, bu, bv, light, nx, ny, nz);
-        vertex(consumer, mat, matrices, cx, cy, cz, cu, cv, light, nx, ny, nz);
-        vertex(consumer, mat, matrices, dx, dy, dz, du, dv, light, nx, ny, nz);
-    }
+        matA.transform(ax, ay, az, 1.0f, V_A);
+        matB.transform(bx, by, bz, 1.0f, V_B);
+        matC.transform(cx, cy, cz, 1.0f, V_C);
 
-    private static void vertex(
-            VertexConsumer consumer,
-            Matrix4f mat,
-            MatrixStack matrices,
-            float x, float y, float z,
-            float u, float v,
-            int light,
-            float nx, float ny, float nz
-    ) {
-        consumer.vertex(mat, x, y, z)
-                .color(0xFFFFFFFF)
-                .texture(u, v)
-                .overlay(OverlayTexture.DEFAULT_UV)
-                .light(light)
-                .normal(matrices.peek(), nx, ny, nz);
+        float uX = V_B.x - V_A.x;
+        float uY = V_B.y - V_A.y;
+        float uZ = V_B.z - V_A.z;
+
+        float wX = V_C.x - V_A.x;
+        float wY = V_C.y - V_A.y;
+        float wZ = V_C.z - V_A.z;
+
+        float nx = uY * wZ - uZ * wY;
+        float ny = uZ * wX - uX * wZ;
+        float nz = uX * wY - uY * wX;
+        float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (len > 1.0E-4f) {
+            nx /= len;
+            ny /= len;
+            nz /= len;
+        } else {
+            nx = 0.0f;
+            ny = 0.0f;
+            nz = 1.0f;
+        }
+
+        if (invertNormal) {
+            nx = -nx;
+            ny = -ny;
+            nz = -nz;
+        }
+
+        consumer.vertex(matA, ax, ay, az).color(0xFFFFFFFF).texture(au, av).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, ny, nz);
+        consumer.vertex(matB, bx, by, bz).color(0xFFFFFFFF).texture(bu, bv).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, ny, nz);
+        consumer.vertex(matC, cx, cy, cz).color(0xFFFFFFFF).texture(cu, cv).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, ny, nz);
+        consumer.vertex(matD, dx, dy, dz).color(0xFFFFFFFF).texture(du, dv).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, ny, nz);
     }
 }
