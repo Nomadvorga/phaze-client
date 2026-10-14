@@ -97,7 +97,7 @@ public class ChunkBorders extends Module {
             float wb = (wc & 0xFF) / 255.0f;
             float wa = wallOpacity.getValue();
 
-            VertexConsumer wallBuf = vertexConsumers.getBuffer(RenderLayer.getTranslucent());
+            VertexConsumer wallBuf = vertexConsumers.getBuffer(RenderLayer.getDebugQuads());
 
             // North Wall (Z = minZ)
             drawDoubleSidedQuad(posMatrix, wallBuf, (float) minX, (float) minY, (float) minZ, (float) maxX, (float) maxY, (float) minZ, wr, wg, wb, wa, true, false);
@@ -151,27 +151,17 @@ public class ChunkBorders extends Module {
                                             float r, float g, float b, float a,
                                             boolean isZPlane, boolean isXPlane) {
         if (isZPlane) {
-            // Quad in X-Y at constant Z
+            // Quad in X-Y at constant Z (DEBUG_QUADS has culling disabled, visible from both sides)
             buf.vertex(matrix, x1, y1, z1).color(r, g, b, a);
             buf.vertex(matrix, x2, y1, z1).color(r, g, b, a);
             buf.vertex(matrix, x2, y2, z1).color(r, g, b, a);
             buf.vertex(matrix, x1, y2, z1).color(r, g, b, a);
-
-            buf.vertex(matrix, x1, y2, z1).color(r, g, b, a);
-            buf.vertex(matrix, x2, y2, z1).color(r, g, b, a);
-            buf.vertex(matrix, x2, y1, z1).color(r, g, b, a);
-            buf.vertex(matrix, x1, y1, z1).color(r, g, b, a);
         } else if (isXPlane) {
-            // Quad in Z-Y at constant X
+            // Quad in Z-Y at constant X (DEBUG_QUADS has culling disabled, visible from both sides)
             buf.vertex(matrix, x1, y1, z1).color(r, g, b, a);
             buf.vertex(matrix, x1, y1, z2).color(r, g, b, a);
             buf.vertex(matrix, x1, y2, z2).color(r, g, b, a);
             buf.vertex(matrix, x1, y2, z1).color(r, g, b, a);
-
-            buf.vertex(matrix, x1, y2, z1).color(r, g, b, a);
-            buf.vertex(matrix, x1, y2, z2).color(r, g, b, a);
-            buf.vertex(matrix, x1, y1, z2).color(r, g, b, a);
-            buf.vertex(matrix, x1, y1, z1).color(r, g, b, a);
         }
     }
 }
