@@ -112,13 +112,7 @@ public final class WavyCapeRenderer {
                 float z = sim.getLerpZ(0, delta) - sim.getLerpZ(part, delta);
                 float partRotation = sim.getSegmentRotation(part, delta);
 
-                float naturalWind = 0.0f;
-                if (module.windEffect.isValue()) {
-                    long waveTime = (now / (underwater ? 9L : 3L)) % 360L;
-                    float partFraction = (float) (part + 1) / PART_COUNT;
-                    float wavePhase = (float) Math.toRadians(partFraction * 360.0f - waveTime * module.waveSpeed.getValue());
-                    naturalWind = (float) (Math.sin(wavePhase) * 3.0f * module.waveStrength.getValue());
-                }
+                float naturalWind = calculateNaturalWind(part, underwater, module);
 
                 matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(6.0f + naturalWind));
                 matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f));
@@ -146,12 +140,7 @@ public final class WavyCapeRenderer {
                 swing = MathHelper.clamp(swing, 0.0f, 150.0f * ease);
                 float sideways = MathHelper.clamp(state.field_53538 * ease, -20.0f, 20.0f);
 
-                float naturalWind = 0.0f;
-                if (module.windEffect.isValue()) {
-                    long waveTime = (now / (underwater ? 9L : 3L)) % 360L;
-                    float wavePhase = (float) Math.toRadians(partFraction * 360.0f - waveTime * module.waveSpeed.getValue());
-                    naturalWind = (float) (Math.sin(wavePhase) * 3.0f * module.waveStrength.getValue());
-                }
+                float naturalWind = calculateNaturalWind(part, underwater, module);
 
                 matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(6.0f + swing / 2.0f + state.field_53536 + naturalWind));
                 matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(sideways / 2.0f));
@@ -296,5 +285,37 @@ public final class WavyCapeRenderer {
         consumer.vertex(matB, bx, by, bz).color(0xFFFFFFFF).texture(bu, bv).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, ny, nz);
         consumer.vertex(matC, cx, cy, cz).color(0xFFFFFFFF).texture(cu, cv).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, ny, nz);
         consumer.vertex(matD, dx, dy, dz).color(0xFFFFFFFF).texture(du, dv).overlay(OverlayTexture.DEFAULT_UV).light(light).normal(nx, ny, nz);
+    }
+
+    /**
+     * Calculates silky-smooth, infinitely looped natural cloth wave motion.
+     * Guaranteed zero discontinuities, zero phase wraps, and zero quantization jerks.
+     */
+    private static float calculateNaturalWind(int part, boolean underwater, WaveCapes module) {
+        if (!module.windEffect.isValue()) {
+            return 0.0f;
+        }
+
+        // Base wave cycle duration in milliseconds (1.08s surface, 3.24s underwater at 1.0x speed)
+        double speed = Math.max(0.1, (double) module.waveSpeed.getValue());
+        double baseCycleMs = underwater ? 3240.0 : 1080.0;
+        double cycleMs = baseCycleMs / speed;
+
+        long now = System.currentTimeMillis();
+        // Exact normalized loop progress in [0.0, 1.0)
+        double progress = ((double) now % cycleMs) / cycleMs;
+
+        float partFraction = (float) (part + 1) / (float) PART_COUNT;
+
+        // Downward travelling wave phase: spatial position minus time phase
+        double phase = (partFraction * 2.0 * Math.PI) - (progress * 2.0 * Math.PI);
+
+        // Primary travelling wave + subtle secondary harmonic for organic cloth flutter
+        double wave = Math.sin(phase) + 0.15 * Math.sin(2.0 * phase + 0.4);
+
+        // Smooth anchorage envelope: collar stays anchored, flutter increases towards hem
+        float windEase = 0.2f + 0.8f * (float) Math.sin((partFraction * Math.PI) / 2.0);
+
+        return (float) (wave * 3.0 * module.waveStrength.getValue() * windEase);
     }
 }
