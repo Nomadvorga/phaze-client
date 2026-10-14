@@ -103,9 +103,6 @@ public final class WavyCapeRenderer {
             for (int part = 0; part < PART_COUNT; part++) {
                 matrices.push();
                 matrices.translate(0.0D, 0.0D, 0.125D);
-                if (state.sneaking) {
-                    matrices.translate(0.0F, 0.1F, 0.05F);
-                }
 
                 float firstX = sim.getLerpX(0, delta);
                 float currX = sim.getLerpX(part, delta);
@@ -141,9 +138,6 @@ public final class WavyCapeRenderer {
             for (int part = 0; part < PART_COUNT; part++) {
                 matrices.push();
                 matrices.translate(0.0D, 0.0D, 0.125D);
-                if (state.sneaking) {
-                    matrices.translate(0.0F, 0.1F, 0.05F);
-                }
 
                 float partFraction = (float) (part + 1) / (float) PART_COUNT;
                 float ease = (float) Math.sin((partFraction * Math.PI) / 2.0);
@@ -168,7 +162,7 @@ public final class WavyCapeRenderer {
             }
         }
 
-        VertexConsumer consumer = vertexConsumers.getBuffer(RenderLayer.getEntitySolid(texture));
+        VertexConsumer consumer = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(texture));
         drawSmoothMesh(consumer, light);
     }
 

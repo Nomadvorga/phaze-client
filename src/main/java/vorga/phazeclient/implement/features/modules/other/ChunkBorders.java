@@ -70,6 +70,7 @@ public class ChunkBorders extends Module {
     public void renderCustomChunkBorders(MatrixStack matrices, VertexConsumerProvider vertexConsumers, double cameraX, double cameraY, double cameraZ) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null) return;
+        try {
 
         ChunkPos chunkPos = client.player.getChunkPos();
         double minX = (chunkPos.x * 16) - cameraX;
@@ -142,6 +143,9 @@ public class ChunkBorders extends Module {
                 // Draw horizontal perimeter rectangle at sub-chunk boundary
                 VertexRendering.drawBox(matrices, lineConsumer, minX, relY - 0.02, minZ, maxX, relY + 0.02, maxZ, sr, sg, sb, sa);
             }
+        }
+        } catch (Throwable ignored) {
+            // Failsafe: rendering chunk borders must never crash the game client
         }
     }
 
