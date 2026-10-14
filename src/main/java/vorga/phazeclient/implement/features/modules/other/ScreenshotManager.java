@@ -13,7 +13,6 @@ import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import java.util.ArrayDeque;
 import java.util.Iterator;
 import org.joml.Matrix4f;
-import net.minecraft.util.math.RotationAxis;
 
 public class ScreenshotManager extends Module {
     private static final ScreenshotManager INSTANCE = new ScreenshotManager();
@@ -99,10 +98,10 @@ public class ScreenshotManager extends Module {
             MsdfRenderer.renderText(MsdfFonts.medium(), toast.name(), subSize, subCol, matrix,
                     x + 25, y + 24, 0.0f);
             // The timeline grows from left to right during the lifetime.
-            int progressWidth = Math.max(2, Math.round(progress * (cardW - 24)));
+            int progressWidth = Math.max(2, Math.round(progress * (cardW - 12)));
             if (progressWidth > 0) {
-                fillRounded(context, x + 12, y + cardH - 4,
-                        x + 12 + progressWidth, y + cardH - 1, progressCol, 2);
+                fillRounded(context, x + 6, y + cardH - 4,
+                        x + 6 + progressWidth, y + cardH - 1, progressCol, 2);
             }
             index++;
         }
@@ -125,23 +124,14 @@ public class ScreenshotManager extends Module {
     }
 
     private static void drawCheckIcon(DrawContext context, int x, int y, int color) {
-        drawCheckStroke(context, x + 3.0f, y + 7.0f, 5.0f, 1.8f, 45.0f, color);
-        drawCheckStroke(context, x + 7.0f, y + 4.0f, 7.0f, 1.8f, -45.0f, color);
-    }
-
-    private static void drawCheckStroke(DrawContext context, float x, float y, float length,
-                                        float thickness, float angle, int color) {
-        context.getMatrices().push();
-        context.getMatrices().translate(x, y, 0.0f);
-        context.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotationDegrees(angle));
-        BatchedRectangle.beginScope();
-        try {
-            BatchedRectangle.submit(ShapeProperties.create(context.getMatrices(),
-                            -length / 2.0f, -thickness / 2.0f, length, thickness)
-                    .round(thickness / 2.0f).softness(0.6f).color(color).build());
-        } finally {
-            BatchedRectangle.endScope();
-            context.getMatrices().pop();
-        }
+        // A real 24px SVG/MSDF icon cannot be reconstructed from a missing
+        // atlas glyph at runtime. Keep the supplied check geometry crisp and
+        // aligned with the MSDF baseline using a small anti-aliased-looking
+        // stepped vector instead of the broken one-pixel glyph fallback.
+        context.fill(x, y + 6, x + 2, y + 10, color);
+        context.fill(x + 2, y + 9, x + 4, y + 12, color);
+        context.fill(x + 4, y + 7, x + 6, y + 10, color);
+        context.fill(x + 6, y + 4, x + 8, y + 8, color);
+        context.fill(x + 8, y + 1, x + 10, y + 5, color);
     }
 }
