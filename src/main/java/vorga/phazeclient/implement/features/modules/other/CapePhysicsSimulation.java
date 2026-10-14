@@ -74,6 +74,12 @@ public final class CapePhysicsSimulation {
             y[i] -= fall;
         }
 
+        // Keep the same short-rope constraints as the public WaveyCapes
+        // simulation: prevent a segment from folding back through its
+        // neighbour before the distance solver runs.
+        preventHardBends();
+        preventSelfClipping(32);
+
         // Prevent cape clipping into player body
         for (int i = 1; i < PART_COUNT; i++) {
             if (x[i] - x[0] > 0) {
@@ -98,6 +104,8 @@ public final class CapePhysicsSimulation {
             }
         }
 
+        preventSelfClipping(32);
+
         // Limit length: rigidly lock segment lengths to prevent stretching/springiness
         for (int a = 0; a < PART_COUNT - 1; a++) {
             direction(a, a + 1);
@@ -105,6 +113,54 @@ public final class CapePhysicsSimulation {
             y[a + 1] = y[a] - dirY;
             z[a + 1] = z[a] - dirZ;
         }
+    }
+
+    private void preventHardBends() {
+        final double maxBend = 20.0;
+        for (int i = PART_COUNT - 2; i >= 1; i--) {
+            double first = Math.atan2(y[i + 1] - y[i], x[i + 1] - x[i]);
+            double second = Math.atan2(y[i - 1] - y[i], x[i - 1] - x[i]);
+            double angle = Math.toDegrees(first - second);
+            while (angle > 360.0) angle -= 360.0;
+            while (angle < -360.0) angle += 360.0;
+            double abs = Math.abs(angle);
+            if (abs < 180.0 - maxBend) {
+                replaceBend(i, angle, 180.0 - maxBend + 1.0);
+            } else if (abs > 180.0 + maxBend) {
+                replaceBend(i, angle, 180.0 + maxBend - 1.0);
+            }
+        }
+    }
+
+    private void preventSelfClipping(int maxRuns) {
+        int runs = 0;
+        boolean clipped;
+        do {
+            clipped = false;
+            for (int a = 0; a < PART_COUNT; a++) {
+                for (int b = a + 1; b < PART_COUNT; b++) {
+                    float dx = x[a] - x[b];
+                    float dy = y[a] - y[b];
+                    float dz = z[a] - z[b];
+                    if (dx * dx + dy * dy + dz * dz < 0.99f) {
+                        clipped = true;
+                        direction(a, b);
+                        separate(a, b);
+                        if (++runs >= maxRuns) return;
+                    }
+                }
+            }
+        } while (clipped);
+    }
+
+    private void replaceBend(int i, double angle, double target) {
+        double theta = Math.toRadians(target) * (angle < 0.0 ? -1.0 : 1.0);
+        float ox = x[i - 1] - x[i];
+        float oy = y[i - 1] - y[i];
+        float cos = (float) Math.cos(theta);
+        float sin = (float) Math.sin(theta);
+        x[i + 1] = cos * ox - sin * oy + x[i];
+        y[i + 1] = sin * ox + cos * oy + y[i];
     }
 
     private void direction(int a, int b) {

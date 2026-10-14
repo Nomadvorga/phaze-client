@@ -108,7 +108,6 @@
     "BossBarHudMixin",
     "ItemStackMixin",
     "PackScreenMixin",
-    "TntEntityRendererMixin",
     "ChunkBorderDebugRendererMixin",
     "ItemMixin",
     "GlintColorizerMixin",

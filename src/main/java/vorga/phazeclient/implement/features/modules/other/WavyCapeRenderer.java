@@ -69,7 +69,11 @@ public final class WavyCapeRenderer {
         boolean underwater = entity != null && entity.isSubmergedInWater();
         float delta = client.getRenderTickCounter().getTickDelta(false);
 
-        boolean isPhysics3D = module.mode.isSelected("Physics 3D");
+        // The clean-room renderer always uses the smooth continuous mesh with
+        // WaveyCapes' 3D stick simulation. There is intentionally no runtime
+        // mode switch: the original mode selector only changed the physics
+        // backend, not the cape mesh.
+        boolean isPhysics3D = true;
 
         if (isPhysics3D) {
             CapePhysicsSimulation sim = SIMULATIONS.computeIfAbsent(state.id, id -> new CapePhysicsSimulation());
@@ -128,7 +132,7 @@ public final class WavyCapeRenderer {
                 matrices.pop();
             }
         } else {
-            // Smooth Waves Mode (Vanilla curve easing + travelling cloth ripples)
+            // Unreachable fallback kept as a defensive no-op path.
             for (int part = 0; part < PART_COUNT; part++) {
                 matrices.push();
                 matrices.translate(0.0D, 0.0D, 0.125D);
@@ -297,7 +301,7 @@ public final class WavyCapeRenderer {
         }
 
         // Base wave cycle duration in milliseconds (1.08s surface, 3.24s underwater at 1.0x speed)
-        double speed = Math.max(0.1, (double) module.waveSpeed.getValue());
+        double speed = 1.0;
         double baseCycleMs = underwater ? 3240.0 : 1080.0;
         double cycleMs = baseCycleMs / speed;
 
@@ -316,6 +320,6 @@ public final class WavyCapeRenderer {
         // Smooth anchorage envelope: collar stays anchored, flutter increases towards hem
         float windEase = 0.2f + 0.8f * (float) Math.sin((partFraction * Math.PI) / 2.0);
 
-        return (float) (wave * 3.0 * module.waveStrength.getValue() * windEase);
+        return (float) (wave * 3.0 * windEase);
     }
 }

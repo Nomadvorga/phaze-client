@@ -1,13 +1,10 @@
 package vorga.phazeclient.implement.features.modules.other;
 
-import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.util.Identifier;
 import org.joml.Vector3f;
-import vorga.phazeclient.mixins.ModelPartCuboidAccessor;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Clean-room 3D skin layer voxelizer.
@@ -19,15 +16,18 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ThreeDSkinsVoxelizer {
 
+    public record VoxelVertex(float x, float y, float z, float u, float v) {}
+    public record VoxelQuad(VoxelVertex[] vertices, Vector3f normal) {}
+
     public static final class BakedSkinLayers {
-        public final List<ModelPart.Cuboid> hat = new ArrayList<>();
-        public final List<ModelPart.Cuboid> jacket = new ArrayList<>();
-        public final List<ModelPart.Cuboid> leftSleeveWide = new ArrayList<>();
-        public final List<ModelPart.Cuboid> leftSleeveSlim = new ArrayList<>();
-        public final List<ModelPart.Cuboid> rightSleeveWide = new ArrayList<>();
-        public final List<ModelPart.Cuboid> rightSleeveSlim = new ArrayList<>();
-        public final List<ModelPart.Cuboid> leftPants = new ArrayList<>();
-        public final List<ModelPart.Cuboid> rightPants = new ArrayList<>();
+        public final List<VoxelQuad> hat = new ArrayList<>();
+        public final List<VoxelQuad> jacket = new ArrayList<>();
+        public final List<VoxelQuad> leftSleeveWide = new ArrayList<>();
+        public final List<VoxelQuad> leftSleeveSlim = new ArrayList<>();
+        public final List<VoxelQuad> rightSleeveWide = new ArrayList<>();
+        public final List<VoxelQuad> rightSleeveSlim = new ArrayList<>();
+        public final List<VoxelQuad> leftPants = new ArrayList<>();
+        public final List<VoxelQuad> rightPants = new ArrayList<>();
 
         public boolean hasAny() {
             return !hat.isEmpty() || !jacket.isEmpty() || !leftSleeveWide.isEmpty()
@@ -35,7 +35,27 @@ public final class ThreeDSkinsVoxelizer {
         }
     }
 
-    private static final Map<Identifier, BakedSkinLayers> CACHE = new ConcurrentHashMap<>();
+    private static final int CACHE_LIMIT = 128;
+    private static final long RETRY_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+    // Java-owned alpha masks survive geometry invalidation without retaining native memory.
+    // All cache access is synchronized, including capture on the downloader thread.
+    private static final Map<Identifier, SkinSource> SOURCES = new LinkedHashMap<>(16, 0.75f, true);
+    private static final Map<Identifier, Long> RETRIES = new LinkedHashMap<>(16, 0.75f, true);
+
+    private static final class SkinSource {
+        private final boolean[] solid;
+        private BakedSkinLayers baked;
+
+        private SkinSource(boolean[] solid) {
+            this.solid = solid;
+        }
+    }
+
+    private static <T> void trim(Map<Identifier, T> cache) {
+        while (cache.size() > CACHE_LIMIT) {
+            cache.remove(cache.keySet().iterator().next());
+        }
+    }
 
     private static final Vector3f NORMAL_NORTH = new Vector3f(0.0f, 0.0f, -1.0f);
     private static final Vector3f NORMAL_SOUTH = new Vector3f(0.0f, 0.0f, 1.0f);
@@ -46,25 +66,34 @@ public final class ThreeDSkinsVoxelizer {
 
     private ThreeDSkinsVoxelizer() {}
 
-    public static void clearCache() {
-        CACHE.clear();
+    public static synchronized void clearCache() {
+        SOURCES.values().forEach(source -> source.baked = null);
     }
 
-    public static BakedSkinLayers get(Identifier skinId) {
+    public static synchronized BakedSkinLayers get(Identifier skinId) {
         if (skinId == null) return null;
-        BakedSkinLayers existing = CACHE.get(skinId);
-        if (existing != null) return existing;
+        SkinSource source = SOURCES.get(skinId);
+        if (source != null) return bakeSource(source);
 
         try {
             net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+            // Texture ownership belongs to the client thread. Never close its image.
+            if (client == null || !client.isOnThread()) return null;
             if (client != null && client.getTextureManager() != null) {
                 var tex = client.getTextureManager().getTexture(skinId);
                 if (tex instanceof net.minecraft.client.texture.NativeImageBackedTexture nibt && nibt.getImage() != null) {
                     bake(skinId, nibt.getImage());
-                    return CACHE.get(skinId);
+                    source = SOURCES.get(skinId);
+                    if (source != null) return bakeSource(source);
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (RuntimeException ignored) {}
+
+        long now = System.nanoTime();
+        Long retry = RETRIES.get(skinId);
+        if (retry != null && now - retry < RETRY_NANOS) return null;
+        RETRIES.put(skinId, now);
+        trim(RETRIES);
 
         try {
             net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
@@ -74,63 +103,80 @@ public final class ThreeDSkinsVoxelizer {
                     try (var is = res.get().getInputStream();
                          NativeImage img = NativeImage.read(is)) {
                         bake(skinId, img);
-                        return CACHE.get(skinId);
+                        source = SOURCES.get(skinId);
+                        return source == null ? null : bakeSource(source);
                     }
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (java.io.IOException | RuntimeException ignored) {}
 
         return null;
     }
 
-    public static void bake(Identifier id, NativeImage image) {
+    /** Capture while the caller still owns a live image; never retain or close it. */
+    public static synchronized void capture(Identifier id, NativeImage image) {
         if (id == null || image == null) return;
         try {
-            int w = image.getWidth();
-            int h = image.getHeight();
-            if (w < 64 || h < 64) return;
+            // Geometry and UVs below intentionally target the vanilla 64x64 layout.
+            if (image.getWidth() != 64 || image.getHeight() != 64) return;
+            boolean[] solid = new boolean[64 * 64];
+            for (int v = 0; v < 64; v++) {
+                for (int u = 0; u < 64; u++) {
+                    solid[v * 64 + u] = ((image.getColorArgb(u, v) >>> 24) & 0xFF) >= 15;
+                }
+            }
+            SOURCES.put(id, new SkinSource(solid));
+            trim(SOURCES);
+            RETRIES.remove(id);
+        } catch (RuntimeException ignored) {}
+    }
 
+    public static synchronized void bake(Identifier id, NativeImage image) {
+        capture(id, image);
+        SkinSource source = SOURCES.get(id);
+        if (source != null) bakeSource(source);
+    }
+
+    private static BakedSkinLayers bakeSource(SkinSource image) {
+        if (image.baked != null) return image.baked;
             BakedSkinLayers layers = new BakedSkinLayers();
             float th = ThreeDSkins.getInstance() != null ? ThreeDSkins.getInstance().voxelThickness.getValue() : 0.65f;
 
             // 1. Hat: (texU=32, texV=0), size 8x8x8, base (-4, -8, -4), dilation 0.5f
-            buildLayer(image, layers.hat, 8, 8, 8, -4.0f, -8.0f, -4.0f, 0.5f, 32, 0, th);
+            buildLayer(image, layers.hat, 8, 8, 8, -4.0f, -8.0f, -4.0f, 0.0f, 32, 0, th);
 
             // 2. Jacket: (texU=16, texV=32), size 8x12x4, base (-4, 0, -2), dilation 0.25f
-            buildLayer(image, layers.jacket, 8, 12, 4, -4.0f, 0.0f, -2.0f, 0.25f, 16, 32, th);
+            buildLayer(image, layers.jacket, 8, 12, 4, -4.0f, 0.0f, -2.0f, 0.0f, 16, 32, th);
 
             // 3. Right Sleeve (wide): size 4x12x4, base (-3, -2, -2), dilation 0.25f
-            buildLayer(image, layers.rightSleeveWide, 4, 12, 4, -3.0f, -2.0f, -2.0f, 0.25f, 40, 32, th);
+            buildLayer(image, layers.rightSleeveWide, 4, 12, 4, -3.0f, -2.0f, -2.0f, 0.0f, 40, 32, th);
             // Right Sleeve (slim): size 3x12x4, base (-2, -2, -2), dilation 0.25f
-            buildLayer(image, layers.rightSleeveSlim, 3, 12, 4, -2.0f, -2.0f, -2.0f, 0.25f, 40, 32, th);
+            buildLayer(image, layers.rightSleeveSlim, 3, 12, 4, -2.0f, -2.0f, -2.0f, 0.0f, 40, 32, th);
 
             // 4. Left Sleeve (wide): size 4x12x4, base (-1, -2, -2), dilation 0.25f
-            buildLayer(image, layers.leftSleeveWide, 4, 12, 4, -1.0f, -2.0f, -2.0f, 0.25f, 48, 48, th);
+            buildLayer(image, layers.leftSleeveWide, 4, 12, 4, -1.0f, -2.0f, -2.0f, 0.0f, 48, 48, th);
             // Left Sleeve (slim): size 3x12x4, base (-1, -2, -2), dilation 0.25f
-            buildLayer(image, layers.leftSleeveSlim, 3, 12, 4, -1.0f, -2.0f, -2.0f, 0.25f, 48, 48, th);
+            buildLayer(image, layers.leftSleeveSlim, 3, 12, 4, -1.0f, -2.0f, -2.0f, 0.0f, 48, 48, th);
 
             // 5. Right Pants: size 4x12x4, base (-2, 0, -2), dilation 0.25f
-            buildLayer(image, layers.rightPants, 4, 12, 4, -2.0f, 0.0f, -2.0f, 0.25f, 0, 32, th);
+            buildLayer(image, layers.rightPants, 4, 12, 4, -2.0f, 0.0f, -2.0f, 0.0f, 0, 32, th);
 
             // 6. Left Pants: size 4x12x4, base (-2, 0, -2), dilation 0.25f
-            buildLayer(image, layers.leftPants, 4, 12, 4, -2.0f, 0.0f, -2.0f, 0.25f, 0, 48, th);
+            buildLayer(image, layers.leftPants, 4, 12, 4, -2.0f, 0.0f, -2.0f, 0.0f, 0, 48, th);
 
-            if (layers.hasAny()) {
-                CACHE.put(id, layers);
-            }
-        } catch (Throwable ignored) {}
+            // Cache empty geometry too: transparent overlays must not rebake every frame.
+            image.baked = layers;
+            return layers;
     }
 
-    private static void buildLayer(NativeImage image, List<ModelPart.Cuboid> dest,
+    private static void buildLayer(SkinSource image, List<VoxelQuad> dest,
                                    int sizeX, int sizeY, int sizeZ,
                                    float baseX, float baseY, float baseZ,
                                    float dilation,
                                    int texU, int texV,
                                    float thickness) {
-        List<ModelPart.Quad> quads = new ArrayList<>();
-
         // 1. FRONT face (NORTH): width = sizeX, height = sizeY, texOffset = (sizeZ, sizeZ)
-        voxelizePlane(image, quads,
+        voxelizePlane(image, dest,
                 sizeX, sizeY,
                 texU + sizeZ, texV + sizeZ,
                 baseX, baseY, baseZ,
@@ -138,7 +184,7 @@ public final class ThreeDSkinsVoxelizer {
                 dilation, thickness, PlaneType.NORTH);
 
         // 2. BACK face (SOUTH): width = sizeX, height = sizeY, texOffset = (sizeZ + sizeX + sizeZ, sizeZ)
-        voxelizePlane(image, quads,
+        voxelizePlane(image, dest,
                 sizeX, sizeY,
                 texU + sizeZ + sizeX + sizeZ, texV + sizeZ,
                 baseX, baseY, baseZ,
@@ -146,7 +192,7 @@ public final class ThreeDSkinsVoxelizer {
                 dilation, thickness, PlaneType.SOUTH);
 
         // 3. RIGHT face (WEST): width = sizeZ, height = sizeY, texOffset = (0, sizeZ)
-        voxelizePlane(image, quads,
+        voxelizePlane(image, dest,
                 sizeZ, sizeY,
                 texU, texV + sizeZ,
                 baseX, baseY, baseZ,
@@ -154,7 +200,7 @@ public final class ThreeDSkinsVoxelizer {
                 dilation, thickness, PlaneType.WEST);
 
         // 4. LEFT face (EAST): width = sizeZ, height = sizeY, texOffset = (sizeZ + sizeX, sizeZ)
-        voxelizePlane(image, quads,
+        voxelizePlane(image, dest,
                 sizeZ, sizeY,
                 texU + sizeZ + sizeX, texV + sizeZ,
                 baseX, baseY, baseZ,
@@ -162,7 +208,7 @@ public final class ThreeDSkinsVoxelizer {
                 dilation, thickness, PlaneType.EAST);
 
         // 5. TOP face (UP): width = sizeX, height = sizeZ, texOffset = (sizeZ, 0)
-        voxelizePlane(image, quads,
+        voxelizePlane(image, dest,
                 sizeX, sizeZ,
                 texU + sizeZ, texV,
                 baseX, baseY, baseZ,
@@ -170,40 +216,19 @@ public final class ThreeDSkinsVoxelizer {
                 dilation, thickness, PlaneType.UP);
 
         // 6. BOTTOM face (DOWN): width = sizeX, height = sizeZ, texOffset = (sizeZ + sizeX, 0)
-        voxelizePlane(image, quads,
+        voxelizePlane(image, dest,
                 sizeX, sizeZ,
                 texU + sizeZ + sizeX, texV,
                 baseX, baseY, baseZ,
                 sizeX, sizeY, sizeZ,
                 dilation, thickness, PlaneType.DOWN);
-
-        if (!quads.isEmpty()) {
-            float minX = baseX - dilation - thickness;
-            float minY = baseY - dilation - thickness;
-            float minZ = baseZ - dilation - thickness;
-            float dimX = sizeX + 2.0f * (dilation + thickness);
-            float dimY = sizeY + 2.0f * (dilation + thickness);
-            float dimZ = sizeZ + 2.0f * (dilation + thickness);
-
-            ModelPart.Cuboid cuboid = new ModelPart.Cuboid(
-                    0, 0,
-                    minX, minY, minZ,
-                    dimX, dimY, dimZ,
-                    0.0f, 0.0f, 0.0f,
-                    false,
-                    64.0f, 64.0f,
-                    Collections.emptySet()
-            );
-            ((ModelPartCuboidAccessor) cuboid).phaze$setSides(quads.toArray(new ModelPart.Quad[0]));
-            dest.add(cuboid);
-        }
     }
 
     private enum PlaneType {
         NORTH, SOUTH, WEST, EAST, UP, DOWN
     }
 
-    private static void voxelizePlane(NativeImage image, List<ModelPart.Quad> quads,
+    private static void voxelizePlane(SkinSource image, List<VoxelQuad> quads,
                                       int planeW, int planeH,
                                       int startU, int startV,
                                       float baseX, float baseY, float baseZ,
@@ -243,8 +268,6 @@ public final class ThreeDSkinsVoxelizer {
 
                         // Outward face: NORTH (always visible)
                         quads.add(quadNorth(x0, x1, y0, y1, z0, u0, v0, u1, v1));
-                        // Inward face: SOUTH (seals voxel against base skin)
-                        quads.add(quadSouth(x0, x1, y0, y1, z1, u0, v0, u1, v1));
                         // Side faces
                         if (!cullLeft)   quads.add(quadWest(x0, y0, y1, z0, z1, u0, v0, u1, v1));
                         if (!cullRight)  quads.add(quadEast(x1, y0, y1, z0, z1, u0, v0, u1, v1));
@@ -268,8 +291,6 @@ public final class ThreeDSkinsVoxelizer {
 
                         // Outward face: SOUTH
                         quads.add(quadSouth(x0, x1, y0, y1, z1, u0, v0, u1, v1));
-                        // Inward face: NORTH
-                        quads.add(quadNorth(x0, x1, y0, y1, z0, u0, v0, u1, v1));
                         // Side faces
                         if (!cullLeft)   quads.add(quadWest(x0, y0, y1, z0, z1, u0, v0, u1, v1));
                         if (!cullRight)  quads.add(quadEast(x1, y0, y1, z0, z1, u0, v0, u1, v1));
@@ -293,8 +314,6 @@ public final class ThreeDSkinsVoxelizer {
 
                         // Outward face: WEST
                         quads.add(quadWest(x0, y0, y1, z0, z1, u0, v0, u1, v1));
-                        // Inward face: EAST
-                        quads.add(quadEast(x1, y0, y1, z0, z1, u0, v0, u1, v1));
                         // Side faces
                         if (!cullFront)  quads.add(quadNorth(x0, x1, y0, y1, z0, u0, v0, u1, v1));
                         if (!cullBack)   quads.add(quadSouth(x0, x1, y0, y1, z1, u0, v0, u1, v1));
@@ -318,8 +337,6 @@ public final class ThreeDSkinsVoxelizer {
 
                         // Outward face: EAST
                         quads.add(quadEast(x1, y0, y1, z0, z1, u0, v0, u1, v1));
-                        // Inward face: WEST
-                        quads.add(quadWest(x0, y0, y1, z0, z1, u0, v0, u1, v1));
                         // Side faces
                         if (!cullFront)  quads.add(quadNorth(x0, x1, y0, y1, z0, u0, v0, u1, v1));
                         if (!cullBack)   quads.add(quadSouth(x0, x1, y0, y1, z1, u0, v0, u1, v1));
@@ -342,8 +359,6 @@ public final class ThreeDSkinsVoxelizer {
 
                         // Outward face: UP
                         quads.add(quadUp(x0, x1, y0, z0, z1, u0, v0, u1, v1));
-                        // Inward face: DOWN
-                        quads.add(quadDown(x0, x1, y1, z0, z1, u0, v0, u1, v1));
                         // Side faces
                         if (!cullLeft)  quads.add(quadWest(x0, y0, y1, z0, z1, u0, v0, u1, v1));
                         if (!cullRight) quads.add(quadEast(x1, y0, y1, z0, z1, u0, v0, u1, v1));
@@ -366,8 +381,6 @@ public final class ThreeDSkinsVoxelizer {
 
                         // Outward face: DOWN
                         quads.add(quadDown(x0, x1, y1, z0, z1, u0, v0, u1, v1));
-                        // Inward face: UP
-                        quads.add(quadUp(x0, x1, y0, z0, z1, u0, v0, u1, v1));
                         // Side faces
                         if (!cullLeft)  quads.add(quadWest(x0, y0, y1, z0, z1, u0, v0, u1, v1));
                         if (!cullRight) quads.add(quadEast(x1, y0, y1, z0, z1, u0, v0, u1, v1));
@@ -381,63 +394,61 @@ public final class ThreeDSkinsVoxelizer {
 
     // Quad builders with exact Minecraft vertex winding and normals
 
-    private static ModelPart.Quad quadNorth(float x0, float x1, float y0, float y1, float z, float u0, float v0, float u1, float v1) {
-        ModelPart.Vertex[] verts = new ModelPart.Vertex[4];
-        verts[0] = new ModelPart.Vertex(x1, y0, z, u1, v0);
-        verts[1] = new ModelPart.Vertex(x0, y0, z, u0, v0);
-        verts[2] = new ModelPart.Vertex(x0, y1, z, u0, v1);
-        verts[3] = new ModelPart.Vertex(x1, y1, z, u1, v1);
-        return new ModelPart.Quad(verts, NORMAL_NORTH);
+    private static VoxelQuad quadNorth(float x0, float x1, float y0, float y1, float z, float u0, float v0, float u1, float v1) {
+        VoxelVertex[] verts = new VoxelVertex[4];
+        verts[0] = new VoxelVertex(x1, y0, z, u1, v0);
+        verts[1] = new VoxelVertex(x0, y0, z, u0, v0);
+        verts[2] = new VoxelVertex(x0, y1, z, u0, v1);
+        verts[3] = new VoxelVertex(x1, y1, z, u1, v1);
+        return new VoxelQuad(verts, NORMAL_NORTH);
     }
 
-    private static ModelPart.Quad quadSouth(float x0, float x1, float y0, float y1, float z, float u0, float v0, float u1, float v1) {
-        ModelPart.Vertex[] verts = new ModelPart.Vertex[4];
-        verts[0] = new ModelPart.Vertex(x0, y0, z, u1, v0);
-        verts[1] = new ModelPart.Vertex(x1, y0, z, u0, v0);
-        verts[2] = new ModelPart.Vertex(x1, y1, z, u0, v1);
-        verts[3] = new ModelPart.Vertex(x0, y1, z, u1, v1);
-        return new ModelPart.Quad(verts, NORMAL_SOUTH);
+    private static VoxelQuad quadSouth(float x0, float x1, float y0, float y1, float z, float u0, float v0, float u1, float v1) {
+        VoxelVertex[] verts = new VoxelVertex[4];
+        verts[0] = new VoxelVertex(x0, y0, z, u1, v0);
+        verts[1] = new VoxelVertex(x1, y0, z, u0, v0);
+        verts[2] = new VoxelVertex(x1, y1, z, u0, v1);
+        verts[3] = new VoxelVertex(x0, y1, z, u1, v1);
+        return new VoxelQuad(verts, NORMAL_SOUTH);
     }
 
-    private static ModelPart.Quad quadWest(float x, float y0, float y1, float z0, float z1, float u0, float v0, float u1, float v1) {
-        ModelPart.Vertex[] verts = new ModelPart.Vertex[4];
-        verts[0] = new ModelPart.Vertex(x, y0, z0, u1, v0);
-        verts[1] = new ModelPart.Vertex(x, y0, z1, u0, v0);
-        verts[2] = new ModelPart.Vertex(x, y1, z1, u0, v1);
-        verts[3] = new ModelPart.Vertex(x, y1, z0, u1, v1);
-        return new ModelPart.Quad(verts, NORMAL_WEST);
+    private static VoxelQuad quadWest(float x, float y0, float y1, float z0, float z1, float u0, float v0, float u1, float v1) {
+        VoxelVertex[] verts = new VoxelVertex[4];
+        verts[0] = new VoxelVertex(x, y0, z0, u1, v0);
+        verts[1] = new VoxelVertex(x, y0, z1, u0, v0);
+        verts[2] = new VoxelVertex(x, y1, z1, u0, v1);
+        verts[3] = new VoxelVertex(x, y1, z0, u1, v1);
+        return new VoxelQuad(verts, NORMAL_WEST);
     }
 
-    private static ModelPart.Quad quadEast(float x, float y0, float y1, float z0, float z1, float u0, float v0, float u1, float v1) {
-        ModelPart.Vertex[] verts = new ModelPart.Vertex[4];
-        verts[0] = new ModelPart.Vertex(x, y0, z1, u1, v0);
-        verts[1] = new ModelPart.Vertex(x, y0, z0, u0, v0);
-        verts[2] = new ModelPart.Vertex(x, y1, z0, u0, v1);
-        verts[3] = new ModelPart.Vertex(x, y1, z1, u1, v1);
-        return new ModelPart.Quad(verts, NORMAL_EAST);
+    private static VoxelQuad quadEast(float x, float y0, float y1, float z0, float z1, float u0, float v0, float u1, float v1) {
+        VoxelVertex[] verts = new VoxelVertex[4];
+        verts[0] = new VoxelVertex(x, y0, z1, u1, v0);
+        verts[1] = new VoxelVertex(x, y0, z0, u0, v0);
+        verts[2] = new VoxelVertex(x, y1, z0, u0, v1);
+        verts[3] = new VoxelVertex(x, y1, z1, u1, v1);
+        return new VoxelQuad(verts, NORMAL_EAST);
     }
 
-    private static ModelPart.Quad quadUp(float x0, float x1, float y, float z0, float z1, float u0, float v0, float u1, float v1) {
-        ModelPart.Vertex[] verts = new ModelPart.Vertex[4];
-        verts[0] = new ModelPart.Vertex(x1, y, z1, u1, v0);
-        verts[1] = new ModelPart.Vertex(x0, y, z1, u0, v0);
-        verts[2] = new ModelPart.Vertex(x0, y, z0, u0, v1);
-        verts[3] = new ModelPart.Vertex(x1, y, z0, u1, v1);
-        return new ModelPart.Quad(verts, NORMAL_UP);
+    private static VoxelQuad quadUp(float x0, float x1, float y, float z0, float z1, float u0, float v0, float u1, float v1) {
+        VoxelVertex[] verts = new VoxelVertex[4];
+        verts[0] = new VoxelVertex(x1, y, z1, u1, v0);
+        verts[1] = new VoxelVertex(x0, y, z1, u0, v0);
+        verts[2] = new VoxelVertex(x0, y, z0, u0, v1);
+        verts[3] = new VoxelVertex(x1, y, z0, u1, v1);
+        return new VoxelQuad(verts, NORMAL_UP);
     }
 
-    private static ModelPart.Quad quadDown(float x0, float x1, float y, float z0, float z1, float u0, float v0, float u1, float v1) {
-        ModelPart.Vertex[] verts = new ModelPart.Vertex[4];
-        verts[0] = new ModelPart.Vertex(x1, y, z0, u1, v0);
-        verts[1] = new ModelPart.Vertex(x0, y, z0, u0, v0);
-        verts[2] = new ModelPart.Vertex(x0, y, z1, u0, v1);
-        verts[3] = new ModelPart.Vertex(x1, y, z1, u1, v1);
-        return new ModelPart.Quad(verts, NORMAL_DOWN);
+    private static VoxelQuad quadDown(float x0, float x1, float y, float z0, float z1, float u0, float v0, float u1, float v1) {
+        VoxelVertex[] verts = new VoxelVertex[4];
+        verts[0] = new VoxelVertex(x1, y, z0, u1, v0);
+        verts[1] = new VoxelVertex(x0, y, z0, u0, v0);
+        verts[2] = new VoxelVertex(x0, y, z1, u0, v1);
+        verts[3] = new VoxelVertex(x1, y, z1, u1, v1);
+        return new VoxelQuad(verts, NORMAL_DOWN);
     }
 
-    private static boolean isSolid(NativeImage image, int u, int v) {
-        if (u < 0 || u >= image.getWidth() || v < 0 || v >= image.getHeight()) return false;
-        int color = image.getColorArgb(u, v);
-        return ((color >> 24) & 0xFF) >= 15;
+    private static boolean isSolid(SkinSource image, int u, int v) {
+        return u >= 0 && u < 64 && v >= 0 && v < 64 && image.solid[v * 64 + u];
     }
 }
