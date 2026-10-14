@@ -4,53 +4,58 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexRendering;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
 import net.minecraft.util.math.ChunkPos;
 import org.joml.Matrix4f;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
-import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
-import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
-import vorga.phazeclient.util.render.PhazeRenderLayers;
 
 public class ChunkBorders extends Module {
     private static final ChunkBorders INSTANCE = new ChunkBorders();
 
-    public final SelectSetting heightMode = new SelectSetting("Height Mode", "Vertical bounds mode")
-            .value("Full World", "Player Level")
-            .selected("Full World");
+    // 1. Grid Category (matches media_1791988561884_3f54c295.png)
+    public final ValueSetting gridSize = new ValueSetting("Grid Size", "Size of grid cells in blocks (1x1 to 5x5)")
+            .range(1.0f, 5.0f).step(1.0f).setValue(1.0f);
+    public final ValueSetting gridThickness = new ValueSetting("Line Thickness", "Thickness of chunk grid lines")
+            .range(1.0f, 5.0f).step(1.0f).setValue(1.0f);
+    public final ColorSetting gridColor = new ColorSetting("Grid Color", "Color of the chunk grid lines")
+            .value(0xFFFFFF00); // Vanilla default yellow (#ffffff00)
 
-    public final ColorSetting borderColor = new ColorSetting("Border Color", "Outline color of chunk boundaries")
-            .value(0xFFFF2222);
+    public final SectionSetting gridGroup = new SectionSetting("Grid");
+    public final BooleanSetting gridEnabled = new BooleanSetting("Grid", "Enable chunk grid lines").setValue(true);
 
-    public final BooleanSetting fillWalls = new BooleanSetting("Fill Walls", "Draw translucent colored walls along borders")
-            .setValue(true);
+    // 2. Inner Corners Category (matches media_1791988671896_21c52917.png)
+    public final ValueSetting innerThickness = new ValueSetting("Line Thickness", "Thickness of inner chunk corner lines")
+            .range(1.0f, 5.0f).step(1.0f).setValue(1.0f);
+    public final ColorSetting innerColor = new ColorSetting("Inner Chunk Corner Color", "Color of inner chunk corners and sub-chunk frames")
+            .value(0xFF0000FF); // Blue (#ff0000ff)
 
-    public final ColorSetting wallColor = new ColorSetting("Wall Color", "Color of the translucent wall fill")
-            .value(0x33FF2222);
+    public final SectionSetting innerCornersGroup = new SectionSetting("Inner Corners");
+    public final BooleanSetting innerEnabled = new BooleanSetting("Inner Corners", "Enable inner chunk corners").setValue(true);
 
-    public final ValueSetting wallOpacity = new ValueSetting("Wall Opacity", "Transparency of filled walls")
-            .range(0.05f, 0.8f)
-            .step(0.05f)
-            .setValue(0.20f);
+    // 3. Outer Corners Category (matches media_1791988743968_84b415d0.png)
+    public final ValueSetting outerThickness = new ValueSetting("Line Thickness", "Thickness of outer chunk corner lines")
+            .range(1.0f, 5.0f).step(1.0f).setValue(5.0f);
+    public final ColorSetting outerColor = new ColorSetting("Outer Chunk Corner Color", "Color of outer neighboring chunk corners")
+            .value(0xFFFF0000); // Red (#ffff0000)
 
-    public final BooleanSetting showSubChunks = new BooleanSetting("Sub-Chunks", "Draw 16x16 sub-chunk vertical sections")
-            .setValue(true);
-
-    public final ColorSetting subChunkColor = new ColorSetting("Sub-Chunk Color", "Color of sub-chunk section dividers")
-            .value(0x88FFCC00);
-
-    public final ValueSetting lineWidth = new ValueSetting("Line Width", "Thickness of chunk border lines")
-            .range(1.0f, 4.0f)
-            .step(0.5f)
-            .setValue(2.0f);
+    public final SectionSetting outerCornersGroup = new SectionSetting("Outer Corners");
+    public final BooleanSetting outerEnabled = new BooleanSetting("Outer Corners", "Enable outer chunk corners").setValue(true);
 
     private ChunkBorders() {
-        super("chunk_borders", "Chunk Borders", ModuleCategory.OTHER);
-        setup(heightMode, borderColor, fillWalls, wallColor, wallOpacity, showSubChunks, subChunkColor, lineWidth);
+        super("chunk_borders", "Toggle Chunk Borders", ModuleCategory.OTHER);
+        innerColor.setFullWidth(true);
+        outerColor.setFullWidth(true);
+        setup(
+                gridGroup, gridEnabled, gridSize, gridThickness, gridColor,
+                innerCornersGroup, innerEnabled, innerThickness, innerColor,
+                outerCornersGroup, outerEnabled, outerThickness, outerColor
+        );
     }
 
     public static ChunkBorders getInstance() {
@@ -59,7 +64,7 @@ public class ChunkBorders extends Module {
 
     @Override
     public String getDescription() {
-        return "Lunar-style custom chunk boundaries with translucent walls and sub-chunk dividers";
+        return "Customizable Lunar-style chunk boundaries with grid, inner corners, and outer corners";
     }
 
     @Override
@@ -70,102 +75,139 @@ public class ChunkBorders extends Module {
     public void renderCustomChunkBorders(MatrixStack matrices, VertexConsumerProvider vertexConsumers, double cameraX, double cameraY, double cameraZ) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null) return;
+
         try {
+            Entity cameraEntity = client.getCameraEntity();
+            if (cameraEntity == null) cameraEntity = client.player;
 
-        ChunkPos chunkPos = client.player.getChunkPos();
-        double minX = (chunkPos.x * 16) - cameraX;
-        double minZ = (chunkPos.z * 16) - cameraZ;
-        double maxX = minX + 16.0;
-        double maxZ = minZ + 16.0;
+            float minY = (float) (client.world.getBottomY() - cameraY);
+            float maxY = (float) ((client.world.getTopYInclusive() + 1) - cameraY);
 
-        double minY, maxY;
-        if ("Player Level".equals(heightMode.getSelected())) {
-            double pY = client.player.getY() - cameraY;
-            minY = Math.max(client.world.getBottomY() - cameraY, pY - 16.0);
-            maxY = Math.min((client.world.getBottomY() + client.world.getHeight()) - cameraY, pY + 16.0);
-        } else {
-            minY = client.world.getBottomY() - cameraY;
-            maxY = (client.world.getBottomY() + client.world.getHeight()) - cameraY;
-        }
+            ChunkPos chunkPos = cameraEntity.getChunkPos();
+            float minBlockX = (float) (chunkPos.getStartX() - cameraX);
+            float minBlockZ = (float) (chunkPos.getStartZ() - cameraZ);
 
-        Matrix4f posMatrix = matrices.peek().getPositionMatrix();
+            Matrix4f posMatrix = matrices.peek().getPositionMatrix();
 
-        // 1. Translucent Lunar-style Walls
-        if (fillWalls.isValue()) {
-            int wc = wallColor.getColor();
-            float wr = ((wc >> 16) & 0xFF) / 255.0f;
-            float wg = ((wc >> 8) & 0xFF) / 255.0f;
-            float wb = (wc & 0xFF) / 255.0f;
-            float wa = wallOpacity.getValue();
+            // 1. Outer Corners (red vertical lines at 3x3 chunk boundaries around the player)
+            if (outerEnabled.isValue()) {
+                double thick = (double) outerThickness.getValue();
+                VertexConsumer buf = vertexConsumers.getBuffer(RenderLayer.getDebugLineStrip(thick));
 
-            VertexConsumer wallBuf = vertexConsumers.getBuffer(RenderLayer.getDebugQuads());
+                int col = outerColor.getColor();
+                float r = ((col >> 16) & 0xFF) / 255.0f;
+                float g = ((col >> 8) & 0xFF) / 255.0f;
+                float b = (col & 0xFF) / 255.0f;
+                float a = ((col >> 24) & 0xFF) / 255.0f;
+                if (a <= 0.01f) a = 1.0f;
+                float halfA = a * 0.5f;
 
-            // North Wall (Z = minZ)
-            drawDoubleSidedQuad(posMatrix, wallBuf, (float) minX, (float) minY, (float) minZ, (float) maxX, (float) maxY, (float) minZ, wr, wg, wb, wa, true, false);
-            // South Wall (Z = maxZ)
-            drawDoubleSidedQuad(posMatrix, wallBuf, (float) minX, (float) minY, (float) maxZ, (float) maxX, (float) maxY, (float) maxZ, wr, wg, wb, wa, true, false);
-            // West Wall (X = minX)
-            drawDoubleSidedQuad(posMatrix, wallBuf, (float) minX, (float) minY, (float) minZ, (float) minX, (float) maxY, (float) maxZ, wr, wg, wb, wa, false, true);
-            // East Wall (X = maxX)
-            drawDoubleSidedQuad(posMatrix, wallBuf, (float) maxX, (float) minY, (float) minZ, (float) maxX, (float) maxY, (float) maxZ, wr, wg, wb, wa, false, true);
-        }
-
-        // 2. Corner Pillars and Outer Box Lines
-        int bc = borderColor.getColor();
-        float br = ((bc >> 16) & 0xFF) / 255.0f;
-        float bg = ((bc >> 8) & 0xFF) / 255.0f;
-        float bb = (bc & 0xFF) / 255.0f;
-        float ba = ((bc >> 24) & 0xFF) / 255.0f;
-        if (ba <= 0.01f) ba = 1.0f;
-
-        float width = lineWidth.getValue();
-        RenderLayer lineLayer = width > 1.0f ? PhazeRenderLayers.getThickLines(width) : RenderLayer.getLines();
-        VertexConsumer lineConsumer = vertexConsumers.getBuffer(lineLayer);
-
-        VertexRendering.drawBox(matrices, lineConsumer, minX, minY, minZ, maxX, maxY, maxZ, br, bg, bb, ba);
-
-        // 3. Sub-chunk 16x16 horizontal dividers
-        if (showSubChunks.isValue()) {
-            int sc = subChunkColor.getColor();
-            float sr = ((sc >> 16) & 0xFF) / 255.0f;
-            float sg = ((sc >> 8) & 0xFF) / 255.0f;
-            float sb = (sc & 0xFF) / 255.0f;
-            float sa = ((sc >> 24) & 0xFF) / 255.0f;
-            if (sa <= 0.01f) sa = 0.6f;
-
-            int bottomY = client.world.getBottomY();
-            int topY = bottomY + client.world.getHeight();
-
-            for (int y = bottomY + 16; y < topY; y += 16) {
-                double relY = y - cameraY;
-                if (relY < minY || relY > maxY) continue;
-
-                // Draw horizontal perimeter rectangle at sub-chunk boundary
-                VertexRendering.drawBox(matrices, lineConsumer, minX, relY - 0.02, minZ, maxX, relY + 0.02, maxZ, sr, sg, sb, sa);
+                for (int x = -16; x <= 32; x += 16) {
+                    for (int z = -16; z <= 32; z += 16) {
+                        if (innerEnabled.isValue() && (x == 0 || x == 16) && (z == 0 || z == 16)) {
+                            continue;
+                        }
+                        buf.vertex(posMatrix, minBlockX + x, minY, minBlockZ + z).color(r, g, b, 0.0f);
+                        buf.vertex(posMatrix, minBlockX + x, minY, minBlockZ + z).color(r, g, b, halfA);
+                        buf.vertex(posMatrix, minBlockX + x, maxY, minBlockZ + z).color(r, g, b, halfA);
+                        buf.vertex(posMatrix, minBlockX + x, maxY, minBlockZ + z).color(r, g, b, 0.0f);
+                    }
+                }
             }
-        }
+
+            // 2. Grid (yellow vertical lines along X and Z boundaries + horizontal rings at each block level)
+            if (gridEnabled.isValue()) {
+                double thick = (double) gridThickness.getValue();
+                VertexConsumer buf = vertexConsumers.getBuffer(RenderLayer.getDebugLineStrip(thick));
+
+                int col = gridColor.getColor();
+                float r = ((col >> 16) & 0xFF) / 255.0f;
+                float g = ((col >> 8) & 0xFF) / 255.0f;
+                float b = (col & 0xFF) / 255.0f;
+                float a = ((col >> 24) & 0xFF) / 255.0f;
+                if (a <= 0.01f) a = 1.0f;
+
+                int step = Math.max(1, (int) gridSize.getValue());
+
+                // Vertical lines along X (at Z = 0 and Z = 16)
+                for (int x = step; x < 16; x += step) {
+                    buf.vertex(posMatrix, minBlockX + x, minY, minBlockZ).color(r, g, b, 0.0f);
+                    buf.vertex(posMatrix, minBlockX + x, minY, minBlockZ).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + x, maxY, minBlockZ).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + x, maxY, minBlockZ).color(r, g, b, 0.0f);
+
+                    buf.vertex(posMatrix, minBlockX + x, minY, minBlockZ + 16.0f).color(r, g, b, 0.0f);
+                    buf.vertex(posMatrix, minBlockX + x, minY, minBlockZ + 16.0f).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + x, maxY, minBlockZ + 16.0f).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + x, maxY, minBlockZ + 16.0f).color(r, g, b, 0.0f);
+                }
+
+                // Vertical lines along Z (at X = 0 and X = 16)
+                for (int z = step; z < 16; z += step) {
+                    buf.vertex(posMatrix, minBlockX, minY, minBlockZ + z).color(r, g, b, 0.0f);
+                    buf.vertex(posMatrix, minBlockX, minY, minBlockZ + z).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX, maxY, minBlockZ + z).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX, maxY, minBlockZ + z).color(r, g, b, 0.0f);
+
+                    buf.vertex(posMatrix, minBlockX + 16.0f, minY, minBlockZ + z).color(r, g, b, 0.0f);
+                    buf.vertex(posMatrix, minBlockX + 16.0f, minY, minBlockZ + z).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + 16.0f, maxY, minBlockZ + z).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + 16.0f, maxY, minBlockZ + z).color(r, g, b, 0.0f);
+                }
+
+                // Horizontal perimeter rings
+                int bottomY = client.world.getBottomY();
+                int topY = client.world.getTopYInclusive() + 1;
+                for (int y = bottomY; y <= topY; y += step) {
+                    float relY = (float) (y - cameraY);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ).color(r, g, b, 0.0f);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ + 16.0f).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + 16.0f, relY, minBlockZ + 16.0f).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + 16.0f, relY, minBlockZ).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ).color(r, g, b, 0.0f);
+                }
+            }
+
+            // 3. Inner Corners (blue corners of current chunk + 16x16 sub-chunk horizontal frames)
+            if (innerEnabled.isValue()) {
+                double thick = (double) innerThickness.getValue();
+                VertexConsumer buf = vertexConsumers.getBuffer(RenderLayer.getDebugLineStrip(thick));
+
+                int col = innerColor.getColor();
+                float r = ((col >> 16) & 0xFF) / 255.0f;
+                float g = ((col >> 8) & 0xFF) / 255.0f;
+                float b = (col & 0xFF) / 255.0f;
+                float a = ((col >> 24) & 0xFF) / 255.0f;
+                if (a <= 0.01f) a = 1.0f;
+
+                // 4 corners of current chunk
+                for (int x = 0; x <= 16; x += 16) {
+                    for (int z = 0; z <= 16; z += 16) {
+                        buf.vertex(posMatrix, minBlockX + x, minY, minBlockZ + z).color(r, g, b, 0.0f);
+                        buf.vertex(posMatrix, minBlockX + x, minY, minBlockZ + z).color(r, g, b, a);
+                        buf.vertex(posMatrix, minBlockX + x, maxY, minBlockZ + z).color(r, g, b, a);
+                        buf.vertex(posMatrix, minBlockX + x, maxY, minBlockZ + z).color(r, g, b, 0.0f);
+                    }
+                }
+
+                // 16-block sub-chunk horizontal frames
+                int bottomY = client.world.getBottomY();
+                int topY = client.world.getTopYInclusive() + 1;
+                for (int y = bottomY; y <= topY; y += 16) {
+                    float relY = (float) (y - cameraY);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ).color(r, g, b, 0.0f);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ + 16.0f).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + 16.0f, relY, minBlockZ + 16.0f).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX + 16.0f, relY, minBlockZ).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ).color(r, g, b, a);
+                    buf.vertex(posMatrix, minBlockX, relY, minBlockZ).color(r, g, b, 0.0f);
+                }
+            }
         } catch (Throwable ignored) {
             // Failsafe: rendering chunk borders must never crash the game client
-        }
-    }
-
-    private static void drawDoubleSidedQuad(Matrix4f matrix, VertexConsumer buf,
-                                            float x1, float y1, float z1,
-                                            float x2, float y2, float z2,
-                                            float r, float g, float b, float a,
-                                            boolean isZPlane, boolean isXPlane) {
-        if (isZPlane) {
-            // Quad in X-Y at constant Z (DEBUG_QUADS has culling disabled, visible from both sides)
-            buf.vertex(matrix, x1, y1, z1).color(r, g, b, a);
-            buf.vertex(matrix, x2, y1, z1).color(r, g, b, a);
-            buf.vertex(matrix, x2, y2, z1).color(r, g, b, a);
-            buf.vertex(matrix, x1, y2, z1).color(r, g, b, a);
-        } else if (isXPlane) {
-            // Quad in Z-Y at constant X (DEBUG_QUADS has culling disabled, visible from both sides)
-            buf.vertex(matrix, x1, y1, z1).color(r, g, b, a);
-            buf.vertex(matrix, x1, y1, z2).color(r, g, b, a);
-            buf.vertex(matrix, x1, y2, z2).color(r, g, b, a);
-            buf.vertex(matrix, x1, y2, z1).color(r, g, b, a);
         }
     }
 }
