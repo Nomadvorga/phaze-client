@@ -7,6 +7,7 @@ import net.minecraft.client.render.entity.TntEntityRenderer;
 import net.minecraft.client.render.entity.state.TntEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.TntEntity;
+import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -26,9 +27,14 @@ public abstract class TntEntityRendererMixin extends EntityRenderer<TntEntity, T
     )
     private void phaze$renderTntCountdown(TntEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
         TntCountdown module = TntCountdown.getInstance();
-        if (module == null || !module.isEnabled()) {
+        if (module == null || !module.showText.isValue()) {
             return;
         }
-        TntCountdown.renderTimer(state, matrices, vertexConsumers, this.dispatcher.getRotation(), this.getTextRenderer());
+        // TNT does not normally have a name label, so its render state leaves
+        // nameLabelPos null. Populate the label anchor before using the
+        // vanilla label renderer; without this guard it returns immediately.
+        state.nameLabelPos = new Vec3d(0.0, 1.0, 0.0);
+        TntCountdown.renderTimer(state, matrices, vertexConsumers,
+                this.dispatcher.getRotation(), this.getTextRenderer());
     }
 }

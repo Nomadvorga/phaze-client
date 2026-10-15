@@ -69,90 +69,62 @@ public final class WavyCapeRenderer {
         boolean underwater = entity != null && entity.isSubmergedInWater();
         float delta = client.getRenderTickCounter().getTickDelta(false);
 
-        // The clean-room renderer always uses the smooth continuous mesh with
-        // WaveyCapes' 3D stick simulation. There is intentionally no runtime
-        // mode switch: the original mode selector only changed the physics
-        // backend, not the cape mesh.
-        boolean isPhysics3D = true;
+        // Physics 3D is the only cape simulation path. There is no Smooth
+        // fallback or mode selector in the clean-room implementation.
+        CapePhysicsSimulation sim = SIMULATIONS.computeIfAbsent(state.id, id -> new CapePhysicsSimulation());
 
-        if (isPhysics3D) {
-            CapePhysicsSimulation sim = SIMULATIONS.computeIfAbsent(state.id, id -> new CapePhysicsSimulation());
+        float forwardDelta = 0.0f;
+        float verticalDelta = 0.0f;
+        float strafeDelta = 0.0f;
 
-            float forwardDelta = 0.0f;
-            float verticalDelta = 0.0f;
-            float strafeDelta = 0.0f;
+        if (entity != null) {
+            float yawRad = (float) Math.toRadians(-entity.getYaw());
+            float dx = (float) (entity.getX() - entity.lastRenderX);
+            float dy = (float) (entity.getY() - entity.lastRenderY);
+            float dz = (float) (entity.getZ() - entity.lastRenderZ);
+            strafeDelta = MathHelper.cos(yawRad) * dx - MathHelper.sin(yawRad) * dz;
+            verticalDelta = dy;
+            forwardDelta = (float) Math.sqrt(dx * dx + dz * dz) * 10.0f;
+        }
 
-            if (entity != null) {
-                float yawRad = (float) Math.toRadians(-entity.getYaw());
-                float dx = (float) (entity.getX() - entity.lastRenderX);
-                float dy = (float) (entity.getY() - entity.lastRenderY);
-                float dz = (float) (entity.getZ() - entity.lastRenderZ);
-                strafeDelta = MathHelper.cos(yawRad) * dx - MathHelper.sin(yawRad) * dz;
-                verticalDelta = dy;
-                forwardDelta = (float) Math.sqrt(dx * dx + dz * dz) * 10.0f;
-            }
+        sim.update(
+                forwardDelta,
+                verticalDelta,
+                strafeDelta,
+                module.gravity.getValue(),
+                module.heightMultiplier.getValue(),
+                module.strafeMultiplier.getValue(),
+                state.sneaking,
+                underwater
+        );
 
-            sim.update(
-                    forwardDelta,
-                    verticalDelta,
-                    strafeDelta,
-                    module.gravity.getValue(),
-                    module.heightMultiplier.getValue(),
-                    module.strafeMultiplier.getValue(),
-                    state.sneaking,
-                    underwater
-            );
+        // Compute independent pose matrix for each segment.
+        for (int part = 0; part < PART_COUNT; part++) {
+            matrices.push();
+            matrices.translate(0.0D, 0.0D, 0.125D);
 
-            // Compute independent pose matrix for each segment
-            for (int part = 0; part < PART_COUNT; part++) {
-                matrices.push();
-                matrices.translate(0.0D, 0.0D, 0.125D);
+            float firstX = sim.getLerpX(0, delta);
+            float currX = sim.getLerpX(part, delta);
+            float x = currX - firstX;
+            if (x > 0) x = 0;
+            float y = sim.getLerpY(0, delta) - part - sim.getLerpY(part, delta);
+            float z = sim.getLerpZ(0, delta) - sim.getLerpZ(part, delta);
+            float partRotation = sim.getSegmentRotation(part, delta);
 
-                float firstX = sim.getLerpX(0, delta);
-                float currX = sim.getLerpX(part, delta);
-                float x = currX - firstX;
-                if (x > 0) x = 0;
-                float y = sim.getLerpY(0, delta) - part - sim.getLerpY(part, delta);
-                float z = sim.getLerpZ(0, delta) - sim.getLerpZ(part, delta);
-                float partRotation = sim.getSegmentRotation(part, delta);
+            float naturalWind = calculateNaturalWind(part, underwater, module);
 
-                float naturalWind = calculateNaturalWind(part, underwater, module);
+            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(6.0f + naturalWind));
+            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f));
 
-                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(6.0f + naturalWind));
-                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f));
+            matrices.translate(-z / PART_COUNT, y / PART_COUNT, x / PART_COUNT);
+            matrices.translate(0.0f, 0.48f / 16.0f, -0.48f / 16.0f);
+            matrices.translate(0.0f, part * 1.0f / PART_COUNT, 0.0f);
+            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-partRotation));
+            matrices.translate(0.0f, -part * 1.0f / PART_COUNT, 0.0f);
+            matrices.translate(0.0f, -0.48f / 16.0f, 0.48f / 16.0f);
 
-                matrices.translate(-z / PART_COUNT, y / PART_COUNT, x / PART_COUNT);
-                matrices.translate(0.0f, 0.48f / 16.0f, -0.48f / 16.0f);
-                matrices.translate(0.0f, part * 1.0f / PART_COUNT, 0.0f);
-                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-partRotation));
-                matrices.translate(0.0f, -part * 1.0f / PART_COUNT, 0.0f);
-                matrices.translate(0.0f, -0.48f / 16.0f, 0.48f / 16.0f);
-
-                POSITION_MATRICES[part].set(matrices.peek().getPositionMatrix());
-                matrices.pop();
-            }
-        } else {
-            // Unreachable fallback kept as a defensive no-op path.
-            for (int part = 0; part < PART_COUNT; part++) {
-                matrices.push();
-                matrices.translate(0.0D, 0.0D, 0.125D);
-
-                float partFraction = (float) (part + 1) / (float) PART_COUNT;
-                float ease = (float) Math.sin((partFraction * Math.PI) / 2.0);
-
-                float swing = state.field_53537 * ease;
-                swing = MathHelper.clamp(swing, 0.0f, 150.0f * ease);
-                float sideways = MathHelper.clamp(state.field_53538 * ease, -20.0f, 20.0f);
-
-                float naturalWind = calculateNaturalWind(part, underwater, module);
-
-                matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(6.0f + swing / 2.0f + state.field_53536 + naturalWind));
-                matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(sideways / 2.0f));
-                matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f - sideways / 2.0f));
-
-                POSITION_MATRICES[part].set(matrices.peek().getPositionMatrix());
-                matrices.pop();
-            }
+            POSITION_MATRICES[part].set(matrices.peek().getPositionMatrix());
+            matrices.pop();
         }
 
         VertexConsumer consumer = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(texture));

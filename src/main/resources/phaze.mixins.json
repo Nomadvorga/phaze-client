@@ -111,6 +111,7 @@
     "ChunkBorderDebugRendererMixin",
     "ItemMixin",
     "GlintColorizerMixin",
+    "TntEntityRendererMixin",
     "ModelPartAccessor",
     "ModelPartCuboidAccessor",
     "PlayerSkinTextureDownloaderMixin"

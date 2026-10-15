@@ -3,13 +3,10 @@ package vorga.phazeclient.implement.features.modules.other;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.state.TntEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.TntEntity;
 import net.minecraft.text.Text;
-import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -21,11 +18,15 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 
 public class TntCountdown extends Module {
     private static final TntCountdown INSTANCE = new TntCountdown();
+    private static final List<PendingTimer> PENDING_TIMERS = new ArrayList<>();
 
     public final BooleanSetting showText = new BooleanSetting("Show Text", "Show the countdown above primed TNT").setValue(true);
+    public final BooleanSetting showBackground = new BooleanSetting("Text Background", "Show a dark background behind the countdown").setValue(true);
     public final SelectSetting timeFormat = new SelectSetting("Time Format", "Countdown format")
             .value("0.0s", "0.00s", "Ticks").selected("0.00s");
     public final BooleanSetting dynamicColor = new BooleanSetting("Dynamic Color", "Shift green -> yellow -> red as fuse runs down").setValue(true);
@@ -34,12 +35,31 @@ public class TntCountdown extends Module {
 
     private TntCountdown() {
         super("tnt_countdown", "TNT Countdown", ModuleCategory.OTHER);
-        setup(showText, timeFormat, dynamicColor, staticColor, scale);
-        WorldRenderEvents.AFTER_ENTITIES.register(TntCountdown::renderWorldTimers);
+        setup(showText, showBackground, timeFormat, dynamicColor, staticColor, scale);
+        // Entity renderers run before translucent terrain. Queue the label here
+        // and submit it after water/translucent terrain so the see-through
+        // background cannot be painted over by those passes.
+        WorldRenderEvents.AFTER_TRANSLUCENT.register(TntCountdown::renderPendingTimers);
     }
 
     public static TntCountdown getInstance() {
         return INSTANCE;
+    }
+
+    public String getDisplayText(float fuse) {
+        float seconds = Math.max(0.0f, fuse / 20.0f);
+        return switch (timeFormat.getSelected()) {
+            case "0.0s" -> String.format(Locale.ROOT, "%.1fs", seconds);
+            case "Ticks" -> String.format(Locale.ROOT, "%.0f", fuse);
+            default -> String.format(Locale.ROOT, "%.2fs", seconds);
+        };
+    }
+
+    public int getDisplayColor(float fuse) {
+        if (!dynamicColor.isValue()) return staticColor.getColor();
+        if (fuse > 40.0f) return 0xFF00FF88;
+        if (fuse > 20.0f) return 0xFFFFAA00;
+        return 0xFFFF2222;
     }
 
     @Override
@@ -63,99 +83,80 @@ public class TntCountdown extends Module {
         if (module == null || !module.showText.isValue()) return;
 
         float seconds = Math.max(0.0f, fuse / 20.0f);
-        int color;
-        if (module.dynamicColor.isValue()) {
-            if (fuse > 40.0f) {
-                color = 0xFF00FF88;
-            } else if (fuse > 20.0f) {
-                color = 0xFFFFAA00;
-            } else {
-                color = 0xFFFF2222;
-            }
-        } else {
-            color = module.staticColor.getColor();
-        }
-
-        String formatted = switch (module.timeFormat.getSelected()) {
-            case "0.0s" -> String.format(Locale.ROOT, "%.1fs", seconds);
-            case "Ticks" -> String.format(Locale.ROOT, "%.0f", fuse);
-            default -> String.format(Locale.ROOT, "%.2fs", seconds);
-        };
+        int color = module.getDisplayColor(fuse);
+        String formatted = module.getDisplayText(fuse);
         Text text = Text.literal(formatted);
         int textWidth = textRenderer.getWidth(text);
 
         matrices.push();
-        // Position directly above the top of the TNT block (TNT is 1x1x1)
-        matrices.translate(0.0, 1.25, 0.0);
+        // Match EntityRenderer's label transform. TNT normally has no name
+        // label, so the mixin supplies this anchor explicitly.
+        Vec3d labelPos = state.nameLabelPos != null
+                ? state.nameLabelPos
+                : new Vec3d(0.0, 1.0, 0.0);
+        matrices.translate(labelPos.x, labelPos.y + 0.5, labelPos.z);
         matrices.multiply(cameraRotation);
-        // Correct billboard scale (positive X, negative Y to keep normal winding)
         float s = 0.025f * module.scale.getValue();
-        // Match vanilla name-tag winding. Positive X made the text face away
-        // from the camera with the renderer's quaternion on some views.
-        matrices.scale(-s, -s, s);
+        matrices.scale(s, -s, s);
 
         Matrix4f posMatrix = matrices.peek().getPositionMatrix();
         float x = -textWidth / 2.0f;
 
-        // Draw background see-through so it's always readable through walls
-        textRenderer.draw(
-                text,
-                x,
-                0.0f,
-                color,
-                false,
-                posMatrix,
-                vertexConsumers,
-                TextRenderer.TextLayerType.SEE_THROUGH,
-                0x90000000,
-                0xF000F0
-        );
-
-        // Draw foreground crisp text
-        textRenderer.draw(
-                text,
-                x,
-                0.0f,
-                color,
-                false,
-                posMatrix,
-                vertexConsumers,
-                TextRenderer.TextLayerType.NORMAL,
-                0,
-                0xF000F0
-        );
+        // Copy the fully transformed matrix before the renderer pops its
+        // entity matrix. The actual draw is deferred until after translucent
+        // terrain/water has finished rendering.
+        int background = module.showBackground.isValue() ? 0x90000000 : 0;
+        PENDING_TIMERS.add(new PendingTimer(
+                new Matrix4f(posMatrix), textRenderer, text, x, color, background
+        ));
 
         matrices.pop();
     }
 
-    private static void renderWorldTimers(WorldRenderContext context) {
-        TntCountdown module = getInstance();
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (module == null || !module.showText.isValue()
-                || client.world == null || client.player == null || context.consumers() == null) return;
+    private static void renderPendingTimers(WorldRenderContext context) {
+        if (PENDING_TIMERS.isEmpty()) return;
 
-        float tickDelta = context.tickCounter().getTickDelta(false);
-        Vec3d camera = client.gameRenderer.getCamera().getPos();
-        Box search = client.player.getBoundingBox().expand(48.0);
-        for (TntEntity tnt : client.world.getEntitiesByClass(TntEntity.class, search, entity -> true)) {
-            float fuse = tnt.getFuse() - tickDelta;
-            if (fuse <= 0.0f) continue;
-            MatrixStack matrices = context.matrixStack();
-            matrices.push();
-            matrices.translate(tnt.getX() - camera.x, tnt.getY() - camera.y, tnt.getZ() - camera.z);
-            renderTimer(new TntEntityRenderStateProxy(fuse).state(), matrices, context.consumers(),
-                    client.gameRenderer.getCamera().getRotation(), client.textRenderer);
-            matrices.pop();
+        VertexConsumerProvider consumers = context.consumers();
+        if (consumers == null) {
+            PENDING_TIMERS.clear();
+            return;
         }
+
+        for (PendingTimer timer : PENDING_TIMERS) {
+            // Render after translucent water. SEE_THROUGH keeps the label
+            // readable through solid entities, while the late submission
+            // prevents water from covering its background.
+            timer.textRenderer.draw(
+                    timer.text,
+                    timer.x,
+                    0.0f,
+                    timer.color,
+                    false,
+                    timer.matrix,
+                    consumers,
+                    TextRenderer.TextLayerType.SEE_THROUGH,
+                    timer.backgroundColor,
+                    0xF000F0
+            );
+            timer.textRenderer.draw(
+                    timer.text,
+                    timer.x,
+                    0.0f,
+                    timer.color,
+                    false,
+                    timer.matrix,
+                    consumers,
+                    TextRenderer.TextLayerType.NORMAL,
+                    0,
+                    0xF000F0
+            );
+        }
+
+        PENDING_TIMERS.clear();
     }
 
-    // The renderer mixin uses the native state; the world fallback only needs
-    // the same fuse value and avoids relying on a renderer injection target.
-    private record TntEntityRenderStateProxy(float fuseValue) {
-        TntEntityRenderState state() {
-            TntEntityRenderState state = new TntEntityRenderState();
-            state.fuse = fuseValue;
-            return state;
-        }
+    private record PendingTimer(Matrix4f matrix, TextRenderer textRenderer, Text text,
+                                float x, int color, int backgroundColor) {
     }
+
 }
