@@ -83,11 +83,17 @@ public final class WavyCapeRenderer {
             float dy = (float) (entity.getY() - entity.lastRenderY);
             float dz = (float) (entity.getZ() - entity.lastRenderZ);
             strafeDelta = MathHelper.cos(yawRad) * dx - MathHelper.sin(yawRad) * dz;
-            verticalDelta = dy;
+            // Falling produces a much larger apparent cape kick than jumping
+            // because the anchor moves down while the cloth still has upward
+            // inertia. Keep only a small part of that vertical impulse so the
+            // cape settles instead of shooting high above the player.
+            verticalDelta = dy < 0.0f ? dy * 0.2f : dy;
             forwardDelta = (float) Math.sqrt(dx * dx + dz * dz) * 10.0f;
         }
 
-        sim.update(
+        long simulationTick = entity != null ? entity.age : client.world.getTime();
+        sim.updateForTick(
+                simulationTick,
                 forwardDelta,
                 verticalDelta,
                 strafeDelta,

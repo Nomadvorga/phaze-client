@@ -18,6 +18,7 @@ public final class CapePhysicsSimulation {
     private final float[] prevZ = new float[PART_COUNT];
 
     private boolean initialized = false;
+    private long lastUpdateTick = Long.MIN_VALUE;
     private boolean sneaking = false;
     private float dirX, dirY, dirZ;
 
@@ -27,7 +28,10 @@ public final class CapePhysicsSimulation {
 
     public void reset() {
         for (int i = 0; i < PART_COUNT; i++) {
-            x[i] = -i;
+            // The rest pose is a straight cloth strip hanging from the
+            // collar. A diagonal x/y seed makes the first segment rotate 45°
+            // and lifts the whole cape even while the player is standing.
+            x[i] = 0;
             y[i] = -i;
             z[i] = 0;
             prevX[i] = x[i];
@@ -35,6 +39,38 @@ public final class CapePhysicsSimulation {
             prevZ[i] = z[i];
         }
         initialized = false;
+        lastUpdateTick = Long.MIN_VALUE;
+    }
+
+    /**
+     * Advances the simulation at Minecraft's fixed 20 TPS, while render
+     * frames continue to interpolate between the previous and current pose.
+     * This keeps physics independent of FPS and avoids applying one tick's
+     * movement several times on high-refresh displays.
+     */
+    public void updateForTick(
+            long tick,
+            float forwardDelta,
+            float verticalDelta,
+            float strafeDelta,
+            float gravityStrength,
+            float heightMultiplier,
+            float strafeMultiplier,
+            boolean isSneaking,
+            boolean isUnderwater
+    ) {
+        if (tick == lastUpdateTick) return;
+        update(
+                forwardDelta,
+                verticalDelta,
+                strafeDelta,
+                gravityStrength,
+                heightMultiplier,
+                strafeMultiplier,
+                isSneaking,
+                isUnderwater
+        );
+        lastUpdateTick = tick;
     }
 
     public void update(
