@@ -42,6 +42,7 @@
     "RenderLayerBlendWorldColorMixin",
     "InventoryScreenAutoSwapMixin",
     "ScreenOpenMixin",
+    "SplashOverlayMixin",
     "ScreenPanoramaPresetMixin",
     "MinecraftClientMixin",
     "MinecraftClientMouseInvoker",
