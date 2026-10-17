@@ -83,6 +83,7 @@ public class ClientMain implements ClientModInitializer {
     }
 
     private void onClientStopping(MinecraftClient client) {
+        vorga.phazeclient.implement.menu.loading.BootstrapLoadingRenderer.close();
         vorga.phazeclient.core.Main.getInstance().getConfigManager().saveCurrentConfig();
         System.out.println("[Phaze Client] Client stopping, config saved!");
     }

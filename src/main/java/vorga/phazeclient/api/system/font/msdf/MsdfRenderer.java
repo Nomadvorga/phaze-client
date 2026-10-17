@@ -113,17 +113,6 @@ public final class MsdfRenderer {
             RenderSystem.enableCull();
             RenderSystem.disableBlend();
         } catch (Exception ignored) {
-            // Resource reload overlays render while the client is still
-            // applying resources. A missing shader at that point is
-            // transient; remembering it would permanently downgrade all
-            // later menu text to the vanilla fallback.
-            if (MC != null && MC.getOverlay() != null) {
-                // SplashOverlay can run before client shader resources exist.
-                // Do not call vanilla TextRenderer there: its own shader may
-                // be unavailable too, and the custom overlay must stay
-                // independent of the vanilla loading renderer.
-                return;
-            }
             msdfFailed = true;
             fallback(text, color, matrix, x, y);
         }
