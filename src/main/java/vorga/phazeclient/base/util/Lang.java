@@ -1327,11 +1327,6 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Play immersive heartbeat sound while in critical state", "Проигрывать сердцебиение в критическом состоянии");
         SETTING_TRANSLATIONS.put("Heartbeat sound volume", "Громкость сердцебиения");
         SETTING_TRANSLATIONS.put("Smooth cinematic screen vignette and pulsing heartbeat when health is low", "Плавная виньетка и пульсирующее сердцебиение при низком здоровье");
-        SETTING_TRANSLATIONS.put("Screenshot Toast", "Уведомление о скриншоте");
-        SETTING_TRANSLATIONS.put("Show Preview Toast", "Показывать уведомление");
-        SETTING_TRANSLATIONS.put("Duration (s)", "Длительность (с)");
-        SETTING_TRANSLATIONS.put("Display floating toast when screenshot is captured", "Показывать уведомление после создания скриншота");
-        SETTING_TRANSLATIONS.put("Toast display duration in seconds", "Сколько секунд показывать уведомление");
         SETTING_TRANSLATIONS.put("Search", "Поиск");
         SETTING_TRANSLATIONS.put("Search packs...", "Поиск ресурспаков...");
 

@@ -259,7 +259,7 @@ public final class SettingsLabelClientTest implements FabricClientGameTest {
         private final SelectSetting select = new SelectSetting("Background Preset", "") {
             @Override public String getLocalizedName() { return longTranslatedLabel(); }
         }.value("First", "Second").selected("First");
-        private final BooleanSetting bool = new BooleanSetting("Screenshot Toast", "") {
+        private final BooleanSetting bool = new BooleanSetting("Boolean Label Fixture", "") {
             @Override public String getLocalizedName() { return longTranslatedLabel(); }
         }.setValue(false);
         private final Module module = new Module("SettingsLabelFixture", ModuleCategory.OTHER, false);

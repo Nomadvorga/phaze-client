@@ -39,14 +39,12 @@ public final class UiMsdfIconAtlas {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
     private static final Identifier ATLAS_TEXTURE_ID = Identifier.of("phaze", "msdf/ui_icons.png");
     private static final Identifier ATLAS_DATA_ID = Identifier.of("phaze", "msdf/ui_icons.json");
-    private static final Identifier SEARCH_ICON_ID = Identifier.ofVanilla("textures/search_lunar.png");
     private static final Identifier BACK_ARROW_ICON_ID = Identifier.ofVanilla("textures/back_arrow.png");
     private static final float DEFAULT_DISTANCE_RANGE = 12.0F;
     private static final float SMOOTHNESS = 0.42F;
     private static final float THICKNESS = 0.0F;
     private static final float UV_INSET = 1.0F;
     private static final Set<Identifier> RASTER_FALLBACK_ICONS = Set.of(
-            SEARCH_ICON_ID,
             BACK_ARROW_ICON_ID
     );
 

@@ -364,9 +364,6 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.Waypoints.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.Waypoints.getInstance());
         }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ScreenshotManager.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ScreenshotManager.getInstance());
-        }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.PackOrganizer.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.PackOrganizer.getInstance());
         }

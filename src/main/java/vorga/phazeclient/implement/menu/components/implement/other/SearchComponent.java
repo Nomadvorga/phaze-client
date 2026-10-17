@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
@@ -21,6 +22,7 @@ import vorga.phazeclient.core.Main;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.MenuScreen;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import net.minecraft.util.math.MathHelper;
 import vorga.phazeclient.api.feature.module.setting.implement.GroupSetting;
@@ -45,6 +47,8 @@ public class SearchComponent extends AbstractComponent {
     private static final float ICON_SIZE = 7;
     private static final float SEARCH_HEIGHT = 14;
     private static final float SEARCH_TEXT_SIZE = 6.0F;
+    private static final float MSDF_GLYPH_TRACKING = 0.05F * 0.5F * SEARCH_TEXT_SIZE;
+    private static final Identifier SEARCH_ICON = Identifier.ofVanilla("textures/search_lunar.png");
     // Text is deliberately closer to the search icon. Keep the clip inset
     // slightly wider than the text inset so the first glyph is never cut.
     private static final float INPUT_TEXT_X_OFFSET = 12.0F;
@@ -154,7 +158,8 @@ public class SearchComponent extends AbstractComponent {
             iconX = x + 4;
         }
 
-        image.setTexture("textures/search_lunar.png").render(ShapeProperties.create(matrix, iconX, iconY, ICON_SIZE, ICON_SIZE).color(applyGlobalAlpha(iconColor)).build());
+        UiMsdfIconAtlas.renderIcon(context, SEARCH_ICON, iconX, iconY, ICON_SIZE, ICON_SIZE,
+                applyGlobalAlpha(iconColor), true);
 
         float animationProgress = getAnimationProgress();
         float textAlpha = Math.max(0, Math.min(1.0F, (animationProgress - 0.2F) / 0.6F));
@@ -205,12 +210,12 @@ public class SearchComponent extends AbstractComponent {
                             .ifPresentOrElse(module -> {
                                 String completion = module.getLocalizedName();
                                 String remainingText = completion.substring(text.length());
-                                float textWidth = font.getWidth(text, SEARCH_TEXT_SIZE);
+                                float textWidth = getRenderedTextWidth(font, text);
                                 drawMsdfText(context, remainingText, textX + textWidth, inputTextY, autocompleteColor);
                             }, () -> findFirstMatchingSetting(searchText).ifPresent(setting -> {
                                 String completion = setting.getLocalizedName();
                                 String remainingText = completion.substring(text.length());
-                                float textWidth = font.getWidth(text, SEARCH_TEXT_SIZE);
+                                float textWidth = getRenderedTextWidth(font, text);
                                 drawMsdfText(context, remainingText, textX + textWidth, inputTextY, autocompleteColor);
                             }));
                 }
@@ -236,6 +241,14 @@ public class SearchComponent extends AbstractComponent {
                             .color(cursorColor).build());
                 }
             }
+    }
+
+    private static float getRenderedTextWidth(MsdfFont font, String value) {
+        // MsdfRenderer adds the configured half-thickness to the pen after
+        // every glyph. getWidth() intentionally reports only glyph advances,
+        // so using it for the split autocomplete text placed the hint a few
+        // pixels to the left of the already rendered input.
+        return font.getWidth(value, SEARCH_TEXT_SIZE) + value.length() * MSDF_GLYPH_TRACKING;
     }
 
     

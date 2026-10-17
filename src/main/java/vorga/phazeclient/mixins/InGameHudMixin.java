@@ -411,7 +411,6 @@ public class InGameHudMixin {
         vorga.phazeclient.implement.menu.AnnouncementOverlay.render(context);
         vorga.phazeclient.implement.features.modules.hud.KillStreakHud.getInstance().render(context);
         vorga.phazeclient.implement.features.modules.hud.PackDisplayHud.getInstance().render(context);
-        vorga.phazeclient.implement.features.modules.other.ScreenshotManager.getInstance().render(context);
 
         if (!renderedThisFrame) {
             // Capture the clean world/vanilla-HUD framebuffer at the one safe
