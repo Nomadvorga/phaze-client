@@ -93,7 +93,7 @@ public final class LoadingOverlayClientTest implements FabricClientGameTest {
             check(whiteLogo > 200 && upper > 100 && lower > 30, "PHAZE and CLIENT visible at progress " + progress);
             check(Math.abs((minX + maxX) / 2.0F - w / 2.0F) < 5, "MSDF logo horizontally centered");
             float barWidth = Math.min(w, Math.max(32, Math.min(w - 48, Math.max(220, w * 0.52F))));
-            float barHeight = Math.min(h, Math.max(6, Math.min(12, h * 0.009F)));
+            float barHeight = Math.min(h, Math.max(6, Math.min(12, h * 0.009F)) + 4.0F);
             float left = (w - barWidth) / 2;
             float top = Math.min(h - barHeight, h * 0.82F);
             int cy = (int) (top + barHeight / 2);

@@ -112,7 +112,7 @@ public final class BootstrapLoadingRenderer {
         word(medium, subtitleSize, width, logoTop + titleSize + gap, subtitleSize);
 
         float barWidth = Math.min(width, Math.max(32, Math.min(width - 48, Math.max(220, width * 0.52F))));
-        float barHeight = Math.min(height, clamp(height * 0.009F, 6, 12));
+        float barHeight = Math.min(height, clamp(height * 0.009F, 6, 12) + 4.0F);
         float barX = (width - barWidth) / 2;
         float barY = Math.min(height - barHeight, height * 0.82F);
         shapes.use(width, height);
