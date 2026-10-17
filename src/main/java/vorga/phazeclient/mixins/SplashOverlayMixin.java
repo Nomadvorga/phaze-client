@@ -95,9 +95,12 @@ public abstract class SplashOverlayMixin {
         float logoTop = screenHeight * 0.46F - logoHeight / 2.0F;
 
         // The initial overlay can render before the MSDF shader and atlas have
-        // been applied. Do not probe them early: the custom background/bar
-        // remains visible, then the logo appears during the completion fade.
-        if (reload.isComplete()) {
+        // been applied. Manual resource-pack reloads, however, already have
+        // the client fonts available; show the logo as soon as that reload
+        // has reached its apply phase.
+        boolean advancedResourcesReady = reload.isComplete()
+                || (reloading && progressValue >= 0.50F);
+        if (advancedResourcesReady) {
             context.draw();
             renderCenteredText(context, "PHAZE", MsdfFonts.bold(), titleSize, logoTop, titleSize, alpha);
             renderCenteredText(context, "CLIENT", MsdfFonts.medium(), subtitleSize,
@@ -126,7 +129,7 @@ public abstract class SplashOverlayMixin {
         // Minecraft only exposes custom core shader programs after the
         // resource apply phase. Before that point use the same custom bar
         // geometry without probing a shader that cannot exist yet.
-        if (!reload.isComplete()) {
+        if (!reload.isComplete() && !(reloading && reload.getProgress() >= 0.50F)) {
             renderFallbackBar(context, x, y, width, height, progress, alpha);
             return;
         }
