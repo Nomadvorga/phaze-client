@@ -53,7 +53,6 @@ public class BackgroundComponent extends AbstractComponent {
     private static final float CONFIG_DELETE_WIDTH = 19.5F;
     private static final float CONFIG_DELETE_ICON_SIZE = 5.4F;
     private static final float CONFIG_TEXT_PADDING = 6.0F;
-    private static final float CONFIG_LIST_PADDING = 1.5F;
     private static final float CONFIG_SCROLL_STEP = 22.0F;
     private static final float FOOTER_BUTTON_HEIGHT = 15.0F;
     private static final float FOOTER_BUTTON_GAP = 14.0F;
@@ -291,16 +290,6 @@ public class BackgroundComponent extends AbstractComponent {
             if (Math.abs(smoothedConfigScroll - configScroll) < 0.01D) {
                 smoothedConfigScroll = configScroll;
             }
-        }
-
-        if (configs.length > 0) {
-            float listHeight = Math.min(viewportHeight, contentHeight) + CONFIG_LIST_PADDING * 2.0F;
-            rectangle.render(ShapeProperties.create(matrix, rowX - CONFIG_LIST_PADDING, viewportY - CONFIG_LIST_PADDING, rowWidth + CONFIG_LIST_PADDING * 2.0F, listHeight)
-                    .round(1.8F)
-                    .thickness(1.15F)
-                    .outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER_LIGHT, applyGlobalAlpha(0.62F)))
-                    .color(MenuStyle.withAlpha(MenuStyle.PANEL_BG, applyGlobalAlpha(0.08F)))
-                    .build());
         }
 
         String currentConfig = configManager.getCurrentConfigName();
@@ -619,12 +608,12 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private float configRowX() {
-        return x + 4.0F;
+        return x + 5.0F;
     }
 
     private float configRowStartY() {
-        // Shift whole rows and their shared viewport down 3 logical GUI pixels.
-        return y + HEADER_HEIGHT + 10.0F;
+        // Shared origin keeps the rows, labels, delete icons and hitboxes aligned.
+        return y + HEADER_HEIGHT + 8.5F;
     }
 
     private float configViewportY() {

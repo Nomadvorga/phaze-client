@@ -519,6 +519,14 @@ public class MenuScreen extends Screen implements QuickImports {
             windowManager.closeAll();
         }
 
+        // Top tabs are menu-global navigation. Route them before the open
+        // module detail or full-page views: those views intentionally claim
+        // most of the menu rectangle and could otherwise swallow a click on
+        // SETTINGS while MODS is open.
+        if (backgroundComponent.mouseClicked(overlayMouseX, overlayMouseY, button)) {
+            return true;
+        }
+
         if (shouldStartMenuDrag(overlayMouseX, overlayMouseY, button, insideMenu)) {
             startMenuDrag(mouseX, mouseY);
             return true;

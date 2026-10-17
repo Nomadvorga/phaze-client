@@ -41,7 +41,9 @@ public class ModuleComponent extends AbstractComponent {
     private static final float ROW_TEXT_SIZE = 6.45F;
     private static final float BIND_TEXT_SIZE = 5.8F;
     private static final float CARD_INSET = 1.3F;
+    private static final float ROW_INSET = CARD_INSET - 1.0F;
     private static final float STANDALONE_OPTIONS_RADIUS = 5.2F;
+    private static final float STATE_ROW_RADIUS = 7.0F;
     private static final float OPTIONS_ROW_HEIGHT = 18.0F;
     private static final float ENABLED_ROW_HEIGHT = 18.0F;
     private static final float BASE_HEIGHT_ENABLED = 86.0F;
@@ -147,21 +149,15 @@ public class ModuleComponent extends AbstractComponent {
         // and the renderStateRow caller block do, so canUseCache
         // sees the right direction when the cursor crosses a row
         // boundary even on a cache-hit frame.
-        float baseHeight = getBaseHeightFloat();
         boolean showStateRow = module.isShowEnable();
-        float optionsY = y + baseHeight - (showStateRow ? (OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT) : OPTIONS_ROW_HEIGHT);
 
         if (hasSettings()) {
-            boolean standaloneRow = !showStateRow;
-            float rowX = standaloneRow ? x : x + CARD_INSET;
-            float rowWidth = standaloneRow ? width : width - CARD_INSET * 2.0F;
-            boolean rowHovered = MathUtil.isHovered(mouseX, mouseY, rowX, optionsY, rowWidth, OPTIONS_ROW_HEIGHT);
+            boolean rowHovered = isOptionsRowHovered(mouseX, mouseY);
             optionsHoverAnimation.setDirection(rowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
         }
 
         if (showStateRow) {
-            float enabledY = optionsY + OPTIONS_ROW_HEIGHT;
-            boolean stateRowHovered = MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT);
+            boolean stateRowHovered = isStateRowHovered(mouseX, mouseY);
             stateRowHoverAnimation.setDirection(stateRowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
             if (stateRowHovered && module.isServerLocked()) {
                 vorga.phazeclient.api.system.cursor.CursorManager.requestNotAllowed();
@@ -339,7 +335,7 @@ public class ModuleComponent extends AbstractComponent {
         float baseHeight = getBaseHeightFloat();
         boolean showOptionsRow = hasSettings();
         boolean showStateRow = module.isShowEnable();
-        float optionsY = y + baseHeight - (showStateRow ? (OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT) : OPTIONS_ROW_HEIGHT);
+        float optionsY = getOptionsRowY();
 
         context.getMatrices().push();
         context.getMatrices().translate(offsetX, offsetY, 0);
@@ -348,7 +344,7 @@ public class ModuleComponent extends AbstractComponent {
         outlineColor = MenuStyle.withAlpha(outlineColor, applyGlobalAlpha(0.96F));
         int hoverFillColor = MenuStyle.withAlpha(0xFFFFFFFF, applyGlobalAlpha(hoverProgress * 0.06F));
         rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
-                .round(8).softness(1).thickness(3.6F).outlineColor(outlineColor).color(hoverFillColor).build());
+                .round(8).softness(1).thickness(0.0F).outlineColor(0x00000000).color(hoverFillColor).build());
 
         float iconSize = module.getIconSize();
         float iconX = x + (width - iconSize) / 2.0F;
@@ -378,8 +374,8 @@ public class ModuleComponent extends AbstractComponent {
         }
 
         if (showStateRow) {
-            float enabledY = optionsY + OPTIONS_ROW_HEIGHT;
-            boolean stateRowHovered = MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT);
+            float enabledY = getStateRowY();
+            boolean stateRowHovered = isStateRowHovered(mouseX, mouseY);
             stateRowHoverAnimation.setDirection(stateRowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
             renderStateRow(context, enabledY, stateRowHoverAnimation.getOutputFloat());
         }
@@ -387,6 +383,12 @@ public class ModuleComponent extends AbstractComponent {
         if (showStateRow && module.isCanBind()) {
             drawBind(context, x, y);
         }
+
+        // Paint the card outline last. Inner option/state strips no longer
+        // cover or blend through the border while the menu is scaled or moved.
+        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
+                .round(8).softness(1).thickness(3.6F).outlineColor(outlineColor)
+                .color(0x00000000).build());
 
         context.getMatrices().pop();
     }
@@ -397,10 +399,10 @@ public class ModuleComponent extends AbstractComponent {
                 ? MenuStyle.CARD_OPTIONS
                 : MenuStyle.mix(MenuStyle.CARD_OPTIONS, MenuStyle.PANEL_CHIP, 0.45F);
         float iconSectionWidth = 26.0F;
-        float rowX = standaloneRow ? x : x + CARD_INSET;
-        float rowWidth = standaloneRow ? width : width - CARD_INSET * 2.0F;
+        float rowX = getRowX(standaloneRow);
+        float rowWidth = getRowWidth(standaloneRow);
         float dividerX = rowX + rowWidth - iconSectionWidth;
-        boolean rowHovered = MathUtil.isHovered(mouseX, mouseY, rowX, optionsY, rowWidth, OPTIONS_ROW_HEIGHT);
+        boolean rowHovered = isOptionsRowHovered(mouseX, mouseY);
         optionsHoverAnimation.setDirection(rowHovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float rowHoverProgress = optionsHoverAnimation.getOutputFloat();
         int rowColor = MenuStyle.mix(baseRowColor, MenuStyle.TEXT_PRIMARY, rowHoverProgress * 0.055F);
@@ -456,8 +458,9 @@ public class ModuleComponent extends AbstractComponent {
             stateText = module.isState() ? "ENABLED" : "DISABLED";
         }
 
-        rectangle.render(ShapeProperties.create(context.getMatrices(), x + CARD_INSET, enabledY, width - CARD_INSET * 2.0F, ENABLED_ROW_HEIGHT - 1)
-                .round(0, 7, 0, 7).color(stateColor).build());
+        // The old fill stopped one pixel short of the reserved state row.
+        rectangle.render(ShapeProperties.create(context.getMatrices(), getRowX(false), enabledY, getRowWidth(false), ENABLED_ROW_HEIGHT)
+                .round(0, STATE_ROW_RADIUS, 0, STATE_ROW_RADIUS).color(stateColor).build());
 
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
@@ -466,19 +469,16 @@ public class ModuleComponent extends AbstractComponent {
                 applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
                 context.getMatrices().peek().getPositionMatrix(),
                 MenuStyle.centerMsdfTextX(MsdfFonts.bold(), stateText, ROW_TEXT_SIZE, x, width),
-                MenuStyle.centerMsdfTextY(ROW_TEXT_SIZE, enabledY, ENABLED_ROW_HEIGHT - 1),
+                MenuStyle.centerMsdfTextY(ROW_TEXT_SIZE, enabledY, ENABLED_ROW_HEIGHT),
                 0.0F
         );
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        float baseHeight = getBaseHeightFloat();
         boolean showOptionsRow = hasSettings();
         boolean showStateRow = module.isShowEnable();
-        float optionsY = y + baseHeight - (showStateRow ? (OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT) : OPTIONS_ROW_HEIGHT);
-        float enabledY = optionsY + OPTIONS_ROW_HEIGHT;
-        boolean optionsHovered = MathUtil.isHovered(mouseX, mouseY, x, optionsY, width, OPTIONS_ROW_HEIGHT);
+        boolean optionsHovered = isOptionsRowHovered(mouseX, mouseY);
         boolean settingsClick = button == 0 || button == 1;
 
         if (showOptionsRow && settingsClick && optionsHovered) {
@@ -490,7 +490,7 @@ public class ModuleComponent extends AbstractComponent {
             return true;
         }
 
-        if (showStateRow && button == 0 && MathUtil.isHovered(mouseX, mouseY, x, enabledY, width, ENABLED_ROW_HEIGHT)) {
+        if (showStateRow && button == 0 && isStateRowHovered(mouseX, mouseY)) {
             if (module.isServerLocked()) {
                 return true;
             }
@@ -542,6 +542,54 @@ public class ModuleComponent extends AbstractComponent {
         return !components.isEmpty();
     }
 
+    private float getRowX(boolean standaloneRow) {
+        return x + (standaloneRow ? 0.0F : ROW_INSET);
+    }
+
+    private float getRowWidth(boolean standaloneRow) {
+        return width - (standaloneRow ? 0.0F : ROW_INSET * 2.0F);
+    }
+
+    private float getOptionsRowY() {
+        return y + getOptionsRowOffsetY();
+    }
+
+    private float getOptionsRowOffsetY() {
+        return getBaseHeightFloat() - OPTIONS_ROW_HEIGHT
+                - (module.isShowEnable() ? ENABLED_ROW_HEIGHT : 0.0F);
+    }
+
+    private float getStateRowY() {
+        return getOptionsRowY() + OPTIONS_ROW_HEIGHT;
+    }
+
+    private boolean isOptionsRowHovered(double mouseX, double mouseY) {
+        boolean standaloneRow = !module.isShowEnable();
+        return hasSettings() && isRowHovered(mouseX, mouseY, standaloneRow, getOptionsRowY(), OPTIONS_ROW_HEIGHT,
+                standaloneRow ? STANDALONE_OPTIONS_RADIUS : 0.0F);
+    }
+
+    private boolean isStateRowHovered(double mouseX, double mouseY) {
+        return module.isShowEnable() && isRowHovered(mouseX, mouseY, false, getStateRowY(), ENABLED_ROW_HEIGHT, STATE_ROW_RADIUS);
+    }
+
+    private boolean isRowHovered(double mouseX, double mouseY, boolean standaloneRow, float rowY, float rowHeight, float bottomRadius) {
+        float rowX = getRowX(standaloneRow);
+        float rowWidth = getRowWidth(standaloneRow);
+        float bottom = rowY + rowHeight;
+        // A shared seam belongs only to the lower row, never both controls.
+        if (!MathUtil.isHovered(mouseX, mouseY, rowX, rowY, rowWidth, rowHeight) || mouseY >= bottom) {
+            return false;
+        }
+        if (bottomRadius > 0.0F && mouseY > bottom - bottomRadius) {
+            double cornerX = Math.max(rowX + bottomRadius, Math.min(mouseX, rowX + rowWidth - bottomRadius));
+            double dx = mouseX - cornerX;
+            double dy = mouseY - (bottom - bottomRadius);
+            return dx * dx + dy * dy <= bottomRadius * bottomRadius;
+        }
+        return true;
+    }
+
     private float getBaseHeightFloat() {
         if (module.isShowEnable()) {
             return BASE_HEIGHT_ENABLED;
@@ -550,7 +598,11 @@ public class ModuleComponent extends AbstractComponent {
     }
 
     public int getComponentHeight() {
-        return Math.round(getBaseHeightFloat());
+        float bottom = getBaseHeightFloat();
+        if (module.isShowEnable()) {
+            bottom = Math.max(bottom, getOptionsRowOffsetY() + OPTIONS_ROW_HEIGHT + ENABLED_ROW_HEIGHT);
+        }
+        return (int) Math.ceil(bottom);
     }
 
     private boolean isInSearchMode() {

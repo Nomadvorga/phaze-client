@@ -12,7 +12,9 @@
       "vorga.phazeclient.implement.menu.components.implement.settings.SettingsRowHeightClientTest",
       "vorga.phazeclient.implement.features.modules.other.LowHealthOverlayClientTest",
       "vorga.phazeclient.api.system.shape.RoundedOutlineClientTest",
-      "vorga.phazeclient.implement.menu.components.implement.settings.SettingsFadeClientTest"
+      "vorga.phazeclient.implement.menu.components.implement.settings.SettingsFadeClientTest",
+      "vorga.phazeclient.implement.menu.MenuTopTabClientTest",
+      "vorga.phazeclient.implement.menu.components.implement.module.ModuleCardGeometryClientTest"
     ]
   },
   "mixins": ["phaze-overlay-test.mixins.json"]
