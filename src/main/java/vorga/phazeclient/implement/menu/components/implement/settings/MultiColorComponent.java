@@ -4,16 +4,15 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import vorga.phazeclient.api.feature.module.setting.implement.MultiColorSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.implement.menu.font.GuiFonts;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
-import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.window.AbstractWindow;
 import vorga.phazeclient.implement.menu.components.implement.window.implement.settings.color.SettingColorPickerWindow;
 
-import static vorga.phazeclient.api.system.font.Fonts.Type.*;
+import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
 
 public class MultiColorComponent extends AbstractSettingComponent {
     private final MultiColorSetting setting;
@@ -26,7 +25,7 @@ public class MultiColorComponent extends AbstractSettingComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
-        var labelFont = Fonts.getSize(14, INTER_BOLD);
+        var labelFont = GuiFonts.getSize(14, INTER_BOLD);
 
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
@@ -38,16 +37,18 @@ public class MultiColorComponent extends AbstractSettingComponent {
         MatrixStack matrix = context.getMatrices();
 
         int colorCount = setting.getColorCount();
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - colorCount * 9 - 18 - textOffset), 14);
-        float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
-        height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
+        height = ROW_HEIGHT;
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
         renderSettingCard(context, 0.0f, hoverProgress);
 
         float textX = x + 10 + textOffset;
-        labelFont.drawString(matrix, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        String text = label.singleLine(setting.getLocalizedName());
+        float firstColorX = x + width - 15.5F - Math.max(0, colorCount - 1) * 9.0F;
+        label.render(matrix, labelFont, text, textX, centeredTextY(labelFont, text),
+                firstColorX - 8.0F, y, height, primaryText());
+        updateLabelHover(mouseX, mouseY);
 
         for (int i = 0; i < colorCount; i++) {
             ColorSetting colorSetting = setting.getColor(i);

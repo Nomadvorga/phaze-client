@@ -1,7 +1,6 @@
 package vorga.phazeclient.implement.menu.components.implement.settings;
 
 import lombok.Getter;
-import org.joml.Matrix4f;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -11,7 +10,6 @@ import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
-import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.MenuUiSettings;
@@ -30,7 +28,7 @@ public class ValueComponent extends AbstractSettingComponent {
     private static final float THUMB_OUTER = 8.0F;
     private static final float THUMB_INNER = 6.0F;
     private static final double SMOOTH_SPEED = 4.0;
-    private static final int ANIMATION_MS = 120;
+    private static final int ANIMATION_MS = SettingLabelState.WIDTH_TRANSITION_MS;
 
     private final ValueSetting setting;
 
@@ -89,16 +87,12 @@ public class ValueComponent extends AbstractSettingComponent {
 
         float textOffsetProgress = textOffsetAnimation.getOutputFloat();
         float animatedTextOffset = ResetIconComponent.getTextOffset() * textOffsetProgress;
+        label.setAnimatedTextInset(animatedTextOffset);
         float resetIconAlpha = resetIconAnimation.getOutputFloat();
 
         MatrixStack matrices = context.getMatrices();
 
-        float selectedBoxX = x + width - 108.0F;
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) Math.max(28.0F, selectedBoxX - x - 20 - animatedTextOffset), 14);
-        String[] wrappedLines = wrapped.split("\n");
-        float lineHeight = LABEL_TEXT_SIZE + 1.5F;
-        float wrappedHeight = wrappedLines.length == 0 ? LABEL_TEXT_SIZE : wrappedLines.length * lineHeight - 1.5F;
-        height = Math.round(Math.max(26.0F, 20.0F + Math.max(0.0F, wrappedHeight - LABEL_TEXT_SIZE)));
+        height = ROW_HEIGHT;
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
         computeSliderGeometry();
@@ -111,8 +105,6 @@ public class ValueComponent extends AbstractSettingComponent {
         }
 
         renderSettingCard(context, 0.0f, hoverProgress);
-
-        renderLabelText(matrices, wrapped, x + 10 + animatedTextOffset, primaryText());
 
         // Format the value cleanly: when the step is a whole
         // number AND the value itself is a whole number, hide the
@@ -131,6 +123,10 @@ public class ValueComponent extends AbstractSettingComponent {
         }
         float valueWidth = MsdfFonts.bold().getWidth(value, VALUE_TEXT_SIZE);
         float valueX = cachedSliderStartX - valueWidth - 6;
+        label.renderMsdf(matrices, setting.getLocalizedName(), LABEL_TEXT_SIZE,
+                x + 10 + animatedTextOffset, centerY - LABEL_TEXT_SIZE / 2.0F + 1.1F,
+                valueX - 8.0F, y, height, primaryText());
+        updateLabelHover(mouseX, mouseY);
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
                 value,
@@ -145,27 +141,6 @@ public class ValueComponent extends AbstractSettingComponent {
         changeValue(renderSlider(mouseX, matrices, cachedSliderStartX, centerY, cachedSliderWidth));
 
         resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(matrices);
-    }
-
-    private void renderLabelText(MatrixStack matrices, String wrapped, float textX, int color) {
-        String[] lines = wrapped.split("\n");
-        float lineHeight = LABEL_TEXT_SIZE + 1.5F;
-        float totalHeight = lines.length == 0 ? LABEL_TEXT_SIZE : lines.length * lineHeight - 1.5F;
-        float startY = y + (height - totalHeight) / 2.0F + 0.6F + 0.5F;
-
-        for (String line : lines) {
-            MsdfRenderer.renderText(
-                    MsdfFonts.bold(),
-                    line,
-                    LABEL_TEXT_SIZE,
-                    color,
-                    matrices.peek().getPositionMatrix(),
-                    textX,
-                    startY,
-                    0.0F
-            );
-            startY += lineHeight;
-        }
     }
 
     @Override

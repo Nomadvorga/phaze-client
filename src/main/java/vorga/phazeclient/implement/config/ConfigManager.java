@@ -988,6 +988,9 @@ public final class ConfigManager {
 
         if (hasModuleData && moduleData.has("settings") && moduleData.get("settings").isJsonObject()) {
             JsonObject settings = moduleData.getAsJsonObject("settings");
+            if (module instanceof vorga.phazeclient.implement.features.modules.other.LowHealthWarning) {
+                settings = vorga.phazeclient.implement.features.modules.other.LowHealthWarning.migrateLegacySettings(settings);
+            }
             for (Setting setting : module.settings()) {
                 try {
                     deserializeSetting(setting, settings);

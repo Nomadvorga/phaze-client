@@ -229,7 +229,14 @@ public class Module extends SettingRepository implements QuickImports {
 
     @Deprecated
     public String getLocalizedName() {
+        // Module titles stay canonical in both the grid and settings header.
+        // Only descriptions and the settings inside a module are localized.
         return getVisibleName();
+    }
+
+    /** Display-only description; raw English text remains the config key. */
+    public String getDisplayDescription() {
+        return vorga.phazeclient.base.util.Lang.translate(getDescription());
     }
 
     public String getDescription() {

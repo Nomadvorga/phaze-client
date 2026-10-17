@@ -108,6 +108,8 @@
     "BossBarHudMixin",
     "ItemStackMixin",
     "PackScreenMixin",
+    "ResourcePackEntryAccessor",
+    "ResourcePackEntryPreviewMixin",
     "ChunkBorderDebugRendererMixin",
     "ItemMixin",
     "GlintColorizerMixin",

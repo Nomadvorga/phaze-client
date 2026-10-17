@@ -2,9 +2,8 @@ package vorga.phazeclient.implement.menu.components.implement.settings;
 
 import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.api.feature.module.setting.implement.GroupSetting;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.implement.menu.font.GuiFonts;
 import vorga.phazeclient.base.util.math.MathUtil;
-import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.components.implement.other.ButtonComponent;
@@ -32,7 +31,7 @@ public class GroupComponent extends AbstractSettingComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
-        var labelFont = Fonts.getSize(14, INTER_BOLD);
+        var labelFont = GuiFonts.getSize(14, INTER_BOLD);
 
         boolean isModified = setting.isModified();
         boolean worldColorStyle = setting.isColorPickerStyleWindow();
@@ -48,12 +47,7 @@ public class GroupComponent extends AbstractSettingComponent {
             openButtonWidth = openButton.measureWidth();
         }
 
-        float labelMaxWidth = worldColorStyle
-                ? Math.max(52.0F, width - openButtonWidth - 30.0F)
-                : width - 42 - textOffset;
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) labelMaxWidth, 14);
-        float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
-        height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
+        height = ROW_HEIGHT;
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
         float activeProgress = (isGroupWindowOpen() || (setting.isCheckbox() && setting.isValue())) ? 1.0f : 0.0f;
 
@@ -63,7 +57,12 @@ public class GroupComponent extends AbstractSettingComponent {
         renderSettingCard(context, activeProgress, hoverProgress);
 
         float textX = x + 10 + textOffset;
-        labelFont.drawString(context.getMatrices(), wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        String text = label.singleLine(setting.getLocalizedName());
+        float labelRight = worldColorStyle ? x + width - openButtonWidth - 17.0F
+                : x + width - (setting.isCheckbox() ? 46.0F : 25.0F);
+        label.render(context.getMatrices(), labelFont, text, textX, centeredTextY(labelFont, text),
+                labelRight, y, height, primaryText());
+        updateLabelHover(mouseX, mouseY);
 
         boolean isWindowOpen = isGroupWindowOpen();
 
@@ -74,7 +73,7 @@ public class GroupComponent extends AbstractSettingComponent {
         }
 
         if (setting.isCheckbox()) {
-            ((CheckComponent) checkComponent.position(x + width - 38, y + height / 2 - 5.0F))
+            ((CheckComponent) checkComponent.position(x + width - 38, y + (height - CheckComponent.getToggleHeight()) / 2.0F))
                     .setRunnable(() -> setting.setValue(!setting.isValue()))
                     .setState(setting.isValue())
                     .render(context, mouseX, mouseY, delta);

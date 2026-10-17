@@ -353,6 +353,7 @@ public final class UiMsdfIconAtlas {
             shader.getUniform("OutlineThickness").set(0.0F);
             shader.getUniform("OutlineColor").set(0.0F, 0.0F, 0.0F, 0.0F);
             shader.getUniform("EnableFadeout").set(0);
+            shader.getUniform("LabelFadeEnabled").set(0);
             shader.getUniform("FadeoutStart").set(0.0F);
             shader.getUniform("FadeoutEnd").set(1.0F);
             shader.getUniform("MaxWidth").set(0.0F);

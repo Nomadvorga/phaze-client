@@ -34,6 +34,25 @@ public final class MsdfRenderer {
     }
 
     public static void renderText(MsdfFont font, String text, float size, int color, Matrix4f matrix, float x, float y, float z, float thickness, float smoothness) {
+        render(font, text, size, color, matrix, x, y, z, thickness, smoothness, 0, 0, 0, 0, 0);
+    }
+
+    /** One glyph submission with a continuous per-fragment fade, not repeated scissor bands. */
+    public static void renderTextFaded(MsdfFont font, String text, float size, int color, Matrix4f matrix,
+                                       float x, float y, float z, float left, float right,
+                                       float fadeWidth, float leftStrength, float rightStrength) {
+        render(font, text, size, color, matrix, x, y, z, 0.05F, 0.5F,
+                left, right, fadeWidth, leftStrength, rightStrength);
+    }
+
+    public static boolean isUsingFallback() {
+        return msdfFailed;
+    }
+
+    private static void render(MsdfFont font, String text, float size, int color, Matrix4f matrix,
+                               float x, float y, float z, float thickness, float smoothness,
+                               float left, float right, float fadeWidth, float leftStrength, float rightStrength) {
+        if (text == null || text.isEmpty() || (color >>> 24) == 0) return;
         if (msdfFailed || font == null) {
             // Fallback uses vanilla TextRenderer which immediately
             // submits its own draw call against the same render thread
@@ -75,6 +94,9 @@ public final class MsdfRenderer {
                 shader.getUniform("FadeoutEnd").set(1.0F);
                 shader.getUniform("MaxWidth").set(0.0F);
                 shader.getUniform("TextPosX").set(x);
+                shader.getUniform("LabelFadeEnabled").set(fadeWidth > 0 ? 1 : 0);
+                shader.getUniform("LabelFadeBounds").set(left, right, fadeWidth, 0.0F);
+                shader.getUniform("LabelFadeStrength").set(leftStrength, rightStrength);
                 shader.getUniform("ColorModulator").set(1.0F, 1.0F, 1.0F, 1.0F);
             }
 

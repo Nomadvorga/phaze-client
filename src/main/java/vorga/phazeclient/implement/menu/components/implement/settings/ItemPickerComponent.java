@@ -10,7 +10,7 @@ import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.system.font.FontRenderer;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.implement.menu.font.GuiFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
@@ -25,7 +25,6 @@ import vorga.phazeclient.implement.menu.components.implement.window.implement.se
 import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
 
 public final class ItemPickerComponent extends AbstractSettingComponent {
-    private static final float ROW_HEIGHT = 24.0F;
     private static final float ICON_SIZE = 16.0F;
     private static final float EMPTY_PLUS_SIZE = 12.4F;
     private static final float LEFT_PADDING = 10.0F;
@@ -47,7 +46,7 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
 
-        FontRenderer titleFont = Fonts.getSize(13, INTER_BOLD);
+        FontRenderer titleFont = GuiFonts.getSize(13, INTER_BOLD);
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, ROW_HEIGHT);
@@ -56,7 +55,7 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         float enabledProgress = enabledAnimation.getOutputFloat();
         float activeProgress = 0.08F + enabledProgress * 0.76F;
 
-        height = (int) ROW_HEIGHT;
+        height = ROW_HEIGHT;
         renderSettingCard(context, activeProgress, hoverProgress);
 
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
@@ -69,7 +68,6 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
         float iconX = x + LEFT_PADDING + textOffset;
         float iconY = y + ROW_HEIGHT / 2.0F - ICON_SIZE / 2.0F;
         float textX = iconX + ICON_SIZE + TEXT_GAP;
-        float textWidth = Math.max(12.0F, toggleX - textX - 8.0F);
 
         ItemStack previewStack = setting.createPreviewStack();
         if (!previewStack.isEmpty()) {
@@ -88,14 +86,16 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
             );
         }
 
-        String title = trimToWidth(titleFont, setting.getRowTitle(), textWidth);
+        String title = label.singleLine(setting.getRowTitle());
         int baseTitleColor = MenuStyle.mix(mutedText(), primaryText(), 0.24F + enabledProgress * 0.52F);
         int titleColor = MenuStyle.mix(
                 baseTitleColor,
                 MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha),
                 enabledProgress * 0.44F + hoverProgress * 0.08F
         );
-        titleFont.drawString(context.getMatrices(), title, textX, centeredTextY(titleFont, title, y, ROW_HEIGHT), titleColor);
+        label.render(context.getMatrices(), titleFont, title, textX, centeredTextY(titleFont, title, y, ROW_HEIGHT),
+                toggleX - 8.0F, y, ROW_HEIGHT, titleColor);
+        updateLabelHover(mouseX, mouseY);
 
         ((CheckComponent) checkComponent.position(toggleX, toggleY))
                 .setRunnable(() -> setting.setEnabled(!setting.isEnabled()))
@@ -155,27 +155,6 @@ public final class ItemPickerComponent extends AbstractSettingComponent {
             return false;
         }
         return MathUtil.isHovered(mouseX, mouseY, x, y, width, ROW_HEIGHT);
-    }
-
-    private static String trimToWidth(FontRenderer font, String text, float maxWidth) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-        if (font.getStringWidth(text) <= maxWidth) {
-            return text;
-        }
-
-        String ellipsis = "...";
-        float ellipsisWidth = font.getStringWidth(ellipsis);
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if (font.getStringWidth(builder.toString() + ch) + ellipsisWidth > maxWidth) {
-                break;
-            }
-            builder.append(ch);
-        }
-        return builder.isEmpty() ? ellipsis : builder + ellipsis;
     }
 
     private void toggleColorWindow(float colorX, float colorY) {

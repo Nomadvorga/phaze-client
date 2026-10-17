@@ -8,13 +8,14 @@ import net.minecraft.client.util.math.MatrixStack;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
 import vorga.phazeclient.api.system.font.FontRenderer;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.implement.menu.font.GuiFonts;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
-import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.base.util.render.ScissorManager;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.menu.MenuStyle;
+
+import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
 
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class TextComponent extends AbstractSettingComponent {
@@ -59,17 +60,15 @@ public class TextComponent extends AbstractSettingComponent {
             clearSelection();
         }
 
-        var labelFont = Fonts.getSize(14, Fonts.Type.INTER_BOLD);
+        var labelFont = GuiFonts.getSize(14, INTER_BOLD);
 
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
 
         MatrixStack matrix = context.getMatrices();
-        FontRenderer font = Fonts.getSize(12);
+        FontRenderer font = GuiFonts.getSize(12);
 
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 75 - textOffset), 14);
-        float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
-        height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
+        height = ROW_HEIGHT;
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
         // Dynamic cursor: the input rect inside this component is a
@@ -98,7 +97,10 @@ public class TextComponent extends AbstractSettingComponent {
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
 
         float textX = x + 10 + textOffset;
-        labelFont.drawString(context.getMatrices(), wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        String labelText = label.singleLine(setting.getLocalizedName());
+        label.render(context.getMatrices(), labelFont, labelText, textX, centeredTextY(labelFont, labelText),
+                rectX - 8.0F, y, height, primaryText());
+        updateLabelHover(mouseX, mouseY);
 
         // Drag-to-move-cursor: ONLY the component that was clicked
         // first holds the {@link #dragging} flag (set inside
@@ -378,7 +380,7 @@ public class TextComponent extends AbstractSettingComponent {
 
     
     private int getCursorIndexAt(double mouseX) {
-        FontRenderer font = Fonts.getSize(12, Fonts.Type.INTER_BOLD);
+        FontRenderer font = GuiFonts.getSize(12, INTER_BOLD);
         float relativeX = (float) mouseX - rectX - 3 + xOffset;
         int position = 0;
         while (position < text.length()) {

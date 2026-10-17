@@ -3,10 +3,14 @@ package vorga.phazeclient.implement.features.modules.other;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
 public class ThreeDSkins extends Module {
     private static final ThreeDSkins INSTANCE = new ThreeDSkins();
+
+    public final SectionSetting voxelsSection = new SectionSetting("Voxels settings");
+    public final SectionSetting visibleSection = new SectionSetting("Visible");
 
     public final ValueSetting voxelThickness = new ValueSetting("Voxel Depth", "Depth of extruded outer skin voxels")
             .range(0.2f, 1.2f).step(0.05f).setValue(0.65f)
@@ -22,7 +26,11 @@ public class ThreeDSkins extends Module {
 
     private ThreeDSkins() {
         super("three_d_skins", "3D Skins", ModuleCategory.OTHER);
-        setup(voxelThickness, maxDistance, showOthers, hat3D, jacket3D, sleeves3D, pants3D);
+        voxelThickness.setFullWidth(true);
+        maxDistance.setFullWidth(true);
+        showOthers.setFullWidth(true);
+        setup(voxelsSection, voxelThickness, maxDistance,
+                visibleSection, showOthers, hat3D, jacket3D, sleeves3D, pants3D);
     }
 
     public static ThreeDSkins getInstance() {

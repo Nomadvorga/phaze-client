@@ -73,13 +73,7 @@ public class CategoryComponent extends AbstractComponent {
     }
 
     public String getTabLabel() {
-        return switch (category) {
-            case ALL -> "ALL";
-            case UTILITIES -> "UTILITIES";
-            case HUD -> "HUD";
-            case OTHER -> "OTHER";
-            default -> category.name();
-        };
+        return category.getReadableName();
     }
 
     private void initialize() {

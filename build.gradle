@@ -104,6 +104,62 @@ tasks.named('processResources') {
     dependsOn tasks.named('verifySignedModuleManifest')
 }
 
+sourceSets.test.java.srcDir('scripts')
+
+tasks.register('verifyPackPreviewAssets', JavaExec) {
+    group = 'verification'
+    description = 'Offline pack scanner, search, cycling and heart-composition regression checks'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'vorga.phazeclient.implement.features.modules.other.PackPreviewChecks'
+}
+
+tasks.register('verifyMenuLocalization', JavaExec) {
+    group = 'verification'
+    description = 'Verifies English module titles/tabs and localized settings without changing user configs'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'vorga.phazeclient.implement.features.modules.other.MenuLocalizationChecks'
+}
+
+[
+    verifyGlintSettings: 'vorga.phazeclient.implement.features.modules.other.GlintSettingsChecks',
+    verifyGlintTextureClock: 'vorga.phazeclient.base.util.render.GlintTextureClockChecks',
+    verifyLowHealthSettings: 'vorga.phazeclient.implement.features.modules.other.LowHealthSettingsChecks',
+    verifySettingLabels: 'vorga.phazeclient.implement.menu.components.implement.settings.SettingLabelChecks',
+    verifyGuiFonts: 'vorga.phazeclient.implement.menu.font.GuiFontChecks'
+].each { taskName, testMain ->
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        dependsOn tasks.named('testClasses')
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = testMain
+    }
+    tasks.named('check') { dependsOn taskName }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('verifyPackPreviewAssets')
+    dependsOn tasks.named('verifyMenuLocalization')
+}
+
+// Optional graphical smoke run. Its packs, options and configs stay under build/.
+loom {
+    mods {
+        phazePreviewTests {
+            sourceSet sourceSets.test
+        }
+    }
+    runs {
+        packPreviewSmoke {
+            client()
+            source sourceSets.test
+            runDir 'build/pack-preview-client-test'
+            vmArg '-Dfabric.client.gametest'
+        }
+    }
+}
+
 def targetJavaVersion = 21
 tasks.withType(JavaCompile).configureEach {
     it.options.encoding = "UTF-8"

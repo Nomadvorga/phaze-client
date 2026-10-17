@@ -4,16 +4,15 @@ import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
-import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
-import vorga.phazeclient.base.util.other.StringUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.ResetIconComponent;
+import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabelState;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
@@ -23,7 +22,7 @@ import java.util.List;
 public class SelectComponent extends AbstractSettingComponent {
     private static final float LABEL_TEXT_SIZE = 7.0F;
     private static final float VALUE_TEXT_SIZE = 6.1F;
-    private static final float CARD_MIN_HEIGHT = 26.0F;
+    private static final float CARD_MIN_HEIGHT = ROW_HEIGHT;
     private static final float SELECT_BOX_HEIGHT = 16.0F;
     private static final float SELECT_BOX_MIN_WIDTH = 92.0F;
     private static final float SELECT_BOX_MAX_WIDTH = 118.0F;
@@ -33,7 +32,7 @@ public class SelectComponent extends AbstractSettingComponent {
     private static final float SLIDE_OFFSET = 6.0F;
     private static final int TRANSITION_MS = 150;
     private static final int HOVER_MS = 120;
-    private static final int ICON_ANIMATION_MS = 120;
+    private static final int ICON_ANIMATION_MS = SettingLabelState.WIDTH_TRANSITION_MS;
 
     private final SelectSetting setting;
 
@@ -75,15 +74,13 @@ public class SelectComponent extends AbstractSettingComponent {
 
         float textOffsetProgress = textOffsetAnimation.getOutputFloat();
         float animatedTextOffset = ResetIconComponent.getTextOffset() * textOffsetProgress;
+        label.setAnimatedTextInset(animatedTextOffset);
         float resetIconAlpha = resetIconAnimation.getOutputFloat();
 
         MatrixStack matrices = context.getMatrices();
 
         float selectedBoxX = selectedBoxX();
-        float selectedBoxWidth = selectedBoxWidth();
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) Math.max(28.0F, selectedBoxX - x - 14.0F - animatedTextOffset), 14);
-        float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
-        height = Math.round(Math.max(CARD_MIN_HEIGHT, 22 + Math.max(0, (wrappedHeight - 14) / 2.0F)));
+        height = CARD_MIN_HEIGHT;
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
         renderSettingCard(context, 0.0f, hoverProgress);
@@ -92,7 +89,10 @@ public class SelectComponent extends AbstractSettingComponent {
         resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(matrices);
 
         float textX = x + 10 + animatedTextOffset;
-        renderLabelText(matrices, wrapped, textX, primaryText());
+        label.renderMsdf(matrices, setting.getLocalizedName(), LABEL_TEXT_SIZE, textX,
+                y + (height - LABEL_TEXT_SIZE) / 2.0F + 1.1F,
+                selectedBoxX - 8.0F, y, height, primaryText());
+        updateLabelHover(mouseX, mouseY);
     }
 
     @Override
@@ -264,27 +264,6 @@ public class SelectComponent extends AbstractSettingComponent {
         int currentIndex = list.indexOf(setting.getSelected());
         int newIndex = (currentIndex + 1) % list.size();
         setting.setSelected(list.get(newIndex));
-    }
-
-    private void renderLabelText(MatrixStack matrices, String wrapped, float textX, int color) {
-        String[] lines = wrapped.split("\n");
-        float lineHeight = LABEL_TEXT_SIZE + 1.5F;
-        float totalHeight = lines.length == 0 ? LABEL_TEXT_SIZE : lines.length * lineHeight - 1.5F;
-        float startY = y + (height - totalHeight) / 2.0F + 0.6F + 0.5F;
-
-        for (String line : lines) {
-            MsdfRenderer.renderText(
-                    MsdfFonts.bold(),
-                    line,
-                    LABEL_TEXT_SIZE,
-                    color,
-                    matrices.peek().getPositionMatrix(),
-                    textX,
-                    startY,
-                    0.0F
-            );
-            startY += lineHeight;
-        }
     }
 
     public void renderTooltips(DrawContext context) {

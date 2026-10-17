@@ -20,7 +20,7 @@ public class ResetIconComponent implements QuickImports {
     private float x, y;
     private float alpha = 1.0f;
     private boolean isModified = false;
-    private final Animation visibilityAnimation = new DecelerateAnimation().setMs(140).setValue(1);
+    private final Animation visibilityAnimation = new DecelerateAnimation().setMs(SettingLabelState.WIDTH_TRANSITION_MS).setValue(1);
     /** Tracks whether the visibility animation has been seeded for
      *  this component yet. The first render after a tab switch
      *  should NOT play a fade-in: the user explicitly asked to drop

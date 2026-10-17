@@ -50,6 +50,12 @@ void main() {
                 ? vec4(vOutlineColor.rgb, vOutlineColor.a * borderAlpha)
                 : basicColor;
 
-        fragColor = mix(vec4(vColor.rgb, 0.0), mix(basicColor, strokeColor, borderAlpha), smoothedAlpha);
+        // Weight RGB by alpha before mixing: transparent fill RGB must not
+        // tint the outline or its AA fringe. Keep the existing coverage,
+        // then return straight alpha for the renderer's SRC_ALPHA blend.
+        basicColor.rgb *= basicColor.a;
+        strokeColor.rgb *= strokeColor.a;
+        vec4 blended = mix(basicColor, strokeColor, borderAlpha) * smoothedAlpha;
+        fragColor = vec4(blended.a > 0.0 ? blended.rgb / blended.a : vec3(0.0), blended.a);
     }
 }

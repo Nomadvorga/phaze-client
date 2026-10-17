@@ -132,6 +132,13 @@ public final class Lang {
         en("status.rename_failed", "Rename failed");
         en("status.rename_error", "Rename error");
 
+        // Module categories
+        en("category.all", "ALL");
+        en("category.hud", "HUD");
+        en("category.utilities", "UTILITIES");
+        en("category.other", "OTHER");
+        en("category.search", "SEARCH");
+
         // Configs view kebab popup
         en("kebab.share", "Share");
         en("kebab.rename", "Rename");
@@ -217,6 +224,12 @@ public final class Lang {
         ru("status.name_taken", "Имя уже занято");
         ru("status.rename_failed", "Не удалось переименовать");
         ru("status.rename_error", "Ошибка переименования");
+
+        ru("category.all", "ВСЕ");
+        ru("category.hud", "HUD");
+        ru("category.utilities", "УТИЛИТЫ");
+        ru("category.other", "ПРОЧЕЕ");
+        ru("category.search", "ПОИСК");
 
         ru("kebab.share", "Поделиться");
         ru("kebab.rename", "Переименовать");
@@ -1137,7 +1150,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Vanilla", "Ванилла");
         SETTING_TRANSLATIONS.put("Vertical Layout", "Вертикальный макет");
         SETTING_TRANSLATIONS.put("Vibrance", "Сочность");
-        SETTING_TRANSLATIONS.put("Visible", "Видимый");
+        SETTING_TRANSLATIONS.put("Visible", "Видимость");
         SETTING_TRANSLATIONS.put("Visual", "Визуальное");
         SETTING_TRANSLATIONS.put("Volume", "Громкость");
         SETTING_TRANSLATIONS.put("Warns when the held pickaxe is low on durability and can auto-swap to a safe hotbar slot", "Предупреждает при низкой прочности кирки в руке и может авто-сменить на безопасный слот");
@@ -1295,6 +1308,103 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Alpha multiplier", "Множитель прозрачности");
         SETTING_TRANSLATIONS.put("Brightness offset", "Смещение яркости");
         SETTING_TRANSLATIONS.put("Saturation multiplier", "Множитель насыщенности");
+
+        // Settings and descriptions only: module titles bypass this dictionary.
+        // Identifiers, selected values and config keys stay canonical English.
+        SETTING_TRANSLATIONS.put("Pack Organizer", "Органайзер ресурспаков");
+        SETTING_TRANSLATIONS.put("Pack Previews", "Превью ресурспаков");
+        SETTING_TRANSLATIONS.put("Show real pack textures and resource details when hovering a pack", "Показывать реальные текстуры и данные пака при наведении");
+        SETTING_TRANSLATIONS.put("Search Bar", "Поиск по пакам");
+        SETTING_TRANSLATIONS.put("Show quick search bar on resource pack screen", "Показывать быстрый поиск на экране ресурспаков");
+        SETTING_TRANSLATIONS.put("Adds a quick search bar and a real texture preview to the resource pack screen", "Добавляет быстрый поиск и настоящее превью текстур на экран ресурспаков");
+        SETTING_TRANSLATIONS.put("Low HP Warning", "Предупреждение о низком HP");
+        SETTING_TRANSLATIONS.put("Threshold (HP)", "Порог (HP)");
+        SETTING_TRANSLATIONS.put("HP threshold to activate warning (6.0 = 3 hearts)", "Порог HP для предупреждения (6.0 = 3 сердца)");
+        SETTING_TRANSLATIONS.put("Warning vignette tint color", "Цвет виньетки предупреждения");
+        SETTING_TRANSLATIONS.put("Warning vignette tint and intensity (alpha)", "Цвет и интенсивность виньетки предупреждения (альфа-канал)");
+        SETTING_TRANSLATIONS.put("Pulsing animation speed", "Скорость пульсации");
+        SETTING_TRANSLATIONS.put("Maximum opacity of the vignette", "Максимальная прозрачность виньетки");
+        SETTING_TRANSLATIONS.put("Play immersive heartbeat sound while in critical state", "Проигрывать сердцебиение в критическом состоянии");
+        SETTING_TRANSLATIONS.put("Heartbeat sound volume", "Громкость сердцебиения");
+        SETTING_TRANSLATIONS.put("Smooth cinematic screen vignette and pulsing heartbeat when health is low", "Плавная виньетка и пульсирующее сердцебиение при низком здоровье");
+        SETTING_TRANSLATIONS.put("Screenshot Toast", "Уведомление о скриншоте");
+        SETTING_TRANSLATIONS.put("Show Preview Toast", "Показывать уведомление");
+        SETTING_TRANSLATIONS.put("Duration (s)", "Длительность (с)");
+        SETTING_TRANSLATIONS.put("Display floating toast when screenshot is captured", "Показывать уведомление после создания скриншота");
+        SETTING_TRANSLATIONS.put("Toast display duration in seconds", "Сколько секунд показывать уведомление");
+        SETTING_TRANSLATIONS.put("Search", "Поиск");
+        SETTING_TRANSLATIONS.put("Search packs...", "Поиск ресурспаков...");
+
+        SETTING_TRANSLATIONS.put("Turquoise", "Бирюзовый");
+        SETTING_TRANSLATIONS.put("Golden", "Золотой");
+        SETTING_TRANSLATIONS.put("Ruby", "Рубиновый");
+        SETTING_TRANSLATIONS.put("Glint color mode", "Режим цвета зачарования");
+        SETTING_TRANSLATIONS.put("Custom glint color", "Свой цвет зачарования");
+        SETTING_TRANSLATIONS.put("Glint movement and color animation speed", "Скорость перелива и движения блеска зачарования");
+        SETTING_TRANSLATIONS.put("Custom color and animation speed for enchanted item and armor glint", "Настройка цвета и скорости блеска зачарованных предметов и брони");
+        SETTING_TRANSLATIONS.put("Pulse Speed", "Скорость пульсации");
+        SETTING_TRANSLATIONS.put("Heartbeat Sound", "Звук сердцебиения");
+
+        SETTING_TRANSLATIONS.put("Voxels settings", "Настройки вокселей");
+        SETTING_TRANSLATIONS.put("Voxel Depth", "Глубина вокселей");
+        SETTING_TRANSLATIONS.put("Depth of extruded outer skin voxels", "Глубина объёмных вокселей внешнего слоя скина");
+        SETTING_TRANSLATIONS.put("Max Distance", "Максимальная дальность");
+        SETTING_TRANSLATIONS.put("Maximum distance to render 3D voxels (blocks)", "Максимальная дальность отображения 3D-вокселей (в блоках)");
+        SETTING_TRANSLATIONS.put("Show Others", "Показывать других");
+        SETTING_TRANSLATIONS.put("Apply 3D skin layer to other players", "Показывать объёмный слой скина у других игроков");
+        SETTING_TRANSLATIONS.put("3D Hat", "3D-шапка");
+        SETTING_TRANSLATIONS.put("Extrude hat and hair layer", "Делать слой шапки и волос объёмным");
+        SETTING_TRANSLATIONS.put("3D Jacket", "3D-куртка");
+        SETTING_TRANSLATIONS.put("Extrude jacket and torso layer", "Делать слой куртки и туловища объёмным");
+        SETTING_TRANSLATIONS.put("3D Sleeves", "3D-рукава");
+        SETTING_TRANSLATIONS.put("Extrude sleeve layers", "Делать слои рукавов объёмными");
+        SETTING_TRANSLATIONS.put("3D Pants", "3D-штаны");
+        SETTING_TRANSLATIONS.put("Extrude pants layers", "Делать слои штанов объёмными");
+        SETTING_TRANSLATIONS.put("Clean-room 3D skin layer voxelization with optimized neighbor face culling", "Независимая 3D-вокселизация слоя скина с оптимизированным отсечением соседних граней");
+
+        SETTING_TRANSLATIONS.put("Kill sound effect", "Звуковой эффект при убийстве");
+        SETTING_TRANSLATIONS.put("Sound volume", "Громкость звука");
+        SETTING_TRANSLATIONS.put("Sound pitch", "Высота звука");
+        SETTING_TRANSLATIONS.put("Players Only", "Только игроки");
+        SETTING_TRANSLATIONS.put("Only play when eliminating players", "Воспроизводить звук только при убийстве игроков");
+        SETTING_TRANSLATIONS.put("Plays crisp open-source and retro sound effects on eliminating opponents", "Проигрывает чёткие звуковые эффекты с открытым исходным кодом и ретро-звуки при убийстве противников");
+        SETTING_TRANSLATIONS.put("Laser", "Лазер");
+        SETTING_TRANSLATIONS.put("Ding", "Динь");
+        SETTING_TRANSLATIONS.put("Destroy", "Разрушение");
+        SETTING_TRANSLATIONS.put("Hit", "Удар");
+        SETTING_TRANSLATIONS.put("Pop", "Хлопок");
+        SETTING_TRANSLATIONS.put("Crunch", "Хруст");
+        SETTING_TRANSLATIONS.put("Pling", "Звон");
+        SETTING_TRANSLATIONS.put("Bell", "Колокол");
+        SETTING_TRANSLATIONS.put("Orb XP", "Сфера опыта");
+        SETTING_TRANSLATIONS.put("Level Up", "Повышение уровня");
+        SETTING_TRANSLATIONS.put("Anvil", "Наковальня");
+
+        SETTING_TRANSLATIONS.put("Auto Sprint", "Авто-спринт");
+        SETTING_TRANSLATIONS.put("Auto Eat", "Авто-еда");
+        SETTING_TRANSLATIONS.put("Auto Respawn", "Авто-возрождение");
+        SETTING_TRANSLATIONS.put("Auto Swap", "Авто-смена");
+        SETTING_TRANSLATIONS.put("Better F3", "Улучшенный F3");
+        SETTING_TRANSLATIONS.put("Block Overlay", "Обводка блока");
+        SETTING_TRANSLATIONS.put("Full Bright", "Полная яркость");
+        SETTING_TRANSLATIONS.put("World Animator", "Анимация мира");
+        SETTING_TRANSLATIONS.put("Chat Helper", "Помощник чата");
+        SETTING_TRANSLATIONS.put("Color Correction", "Цветокоррекция");
+        SETTING_TRANSLATIONS.put("Custom Fog", "Своя дальность прорисовки");
+        SETTING_TRANSLATIONS.put("Death Coords", "Координаты смерти");
+        SETTING_TRANSLATIONS.put("Health Indicator", "Индикатор здоровья");
+        SETTING_TRANSLATIONS.put("Item Physics", "Физика предметов");
+        SETTING_TRANSLATIONS.put("Motion Blur", "Размытие движения");
+        SETTING_TRANSLATIONS.put("Old Animations", "Старые анимации");
+        SETTING_TRANSLATIONS.put("Render Tweaks", "Твики рендера");
+        SETTING_TRANSLATIONS.put("Shulker Preview", "Превью шалкера");
+        SETTING_TRANSLATIONS.put("Sky Customizer", "Настройка неба");
+        SETTING_TRANSLATIONS.put("Smooth Camera", "Плавная камера");
+        SETTING_TRANSLATIONS.put("Streamer Mode", "Режим стримера");
+        SETTING_TRANSLATIONS.put("Time Changer", "Смена времени");
+        SETTING_TRANSLATIONS.put("Waypoints", "Точки маршрута");
+        SETTING_TRANSLATIONS.put("Weather Changer", "Смена погоды");
+        SETTING_TRANSLATIONS.put("Zoom", "Зум");
     }
 
     private static void en(String key, String value) { EN_TABLE.put(key, value); }

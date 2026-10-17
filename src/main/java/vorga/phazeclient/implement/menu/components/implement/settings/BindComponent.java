@@ -4,7 +4,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.implement.menu.font.GuiFonts;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.other.StringUtil;
@@ -25,13 +25,14 @@ public class BindComponent extends AbstractSettingComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
-        var bindFont = Fonts.getSize(13, INTER_BOLD);
-        var labelFont = Fonts.getSize(14, INTER_BOLD);
+        var bindFont = GuiFonts.getSize(13, INTER_BOLD);
+        var labelFont = GuiFonts.getSize(14, INTER_BOLD);
 
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
 
         MatrixStack matrix = context.getMatrices();
+        height = ROW_HEIGHT;
 
         String bindName = StringUtil.getBindName(setting.getKey());
         String name = binding ? "(" + bindName + ") ..." : bindName;
@@ -40,9 +41,6 @@ public class BindComponent extends AbstractSettingComponent {
         float badgeX = x + width - stringWidth - 17.0F;
         float badgeY = y + height / 2 - 5.75f;
 
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 74 - textOffset), 14);
-        float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
-        height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
         float hoverProgress = animatedCardHover(MathUtil.isHovered(mouseX, mouseY, x, y, width, height));
 
         if (MathUtil.isHovered(mouseX, mouseY, badgeX, badgeY, badgeWidth, 11.5F)) {
@@ -62,7 +60,10 @@ public class BindComponent extends AbstractSettingComponent {
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(matrix);
 
         float textX = x + 10 + textOffset;
-        labelFont.drawString(matrix, wrapped, textX, centeredTextY(labelFont, wrapped), primaryText());
+        String text = label.singleLine(setting.getLocalizedName());
+        label.render(matrix, labelFont, text, textX, centeredTextY(labelFont, text),
+                badgeX - 8.0F, y, height, primaryText());
+        updateLabelHover(mouseX, mouseY);
     }
 
 

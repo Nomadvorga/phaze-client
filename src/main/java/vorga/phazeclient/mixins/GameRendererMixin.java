@@ -1,5 +1,8 @@
 package vorga.phazeclient.mixins;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
 import org.joml.Matrix4f;
@@ -12,6 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.implement.features.modules.other.AspectRatio;
 import vorga.phazeclient.implement.features.modules.other.ColorCorrection;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
+import vorga.phazeclient.implement.features.modules.other.LowHealthWarning;
 
 /**
  * Consolidated {@link GameRenderer} mixin: AspectRatio matrix
@@ -27,6 +31,15 @@ public abstract class GameRendererMixin {
     @Shadow private float zoomX;
     @Shadow private float zoomY;
     @Shadow private float viewDistance;
+
+    /** Final GUI flush, after F3, scoreboard, screens and tooltips. Reuses the
+     * vanilla context; the active warning adds one cached textured quad, no FBO. */
+    @WrapOperation(method = "render", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/gui/DrawContext;draw()V", ordinal = 1), require = 1)
+    private void phaze$renderLowHealthAboveGui(DrawContext context, Operation<Void> original) {
+        original.call(context);
+        if (LowHealthWarning.getInstance().render(context)) context.draw();
+    }
 
     /** AspectRatio override - replaces vanilla's projection matrix. */
     @Inject(method = "getBasicProjectionMatrix", at = @At("TAIL"), cancellable = true)

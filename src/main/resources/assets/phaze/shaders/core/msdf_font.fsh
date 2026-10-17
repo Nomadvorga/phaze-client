@@ -17,6 +17,9 @@ uniform float FadeoutStart;
 uniform float FadeoutEnd;
 uniform float MaxWidth;
 uniform float TextPosX;
+uniform bool LabelFadeEnabled;
+uniform vec4 LabelFadeBounds;
+uniform vec2 LabelFadeStrength;
 
 out vec4 OutColor;
 
@@ -48,6 +51,12 @@ void main() {
             fadeAlpha = 1.0 - smoothstep(FadeoutStart, FadeoutEnd, normalizedX);
         }
         color.a *= fadeAlpha;
+    }
+
+    if (LabelFadeEnabled) {
+        float leftRamp = smoothstep(0.0, LabelFadeBounds.z, GlobalPos.x - LabelFadeBounds.x);
+        float rightRamp = smoothstep(0.0, LabelFadeBounds.z, LabelFadeBounds.y - GlobalPos.x);
+        color.a *= mix(1.0, leftRamp, LabelFadeStrength.x) * mix(1.0, rightRamp, LabelFadeStrength.y);
     }
 
     OutColor = color * ColorModulator;

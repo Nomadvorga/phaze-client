@@ -18,6 +18,7 @@ import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.render.ScissorManager;
 import vorga.phazeclient.core.Main;
+import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
@@ -161,7 +162,6 @@ public class SearchComponent extends AbstractComponent {
 
         if (textAlpha > 0.01F) {
             String displayText = text;
-            String centeredText = displayText.isEmpty() ? "Search" : displayText;
             float inputTextY = MenuStyle.centerMsdfTextY(SEARCH_TEXT_SIZE, y, height);
 
             ScissorManager scissor = Main.getInstance().getScissorManager();
@@ -216,7 +216,7 @@ public class SearchComponent extends AbstractComponent {
                 }
 
                 if (displayText.isEmpty() && !typing) {
-                    drawMsdfText(context, "Search", x + INPUT_TEXT_X_OFFSET, inputTextY,
+                    drawMsdfText(context, Lang.translate("Search"), x + INPUT_TEXT_X_OFFSET, inputTextY,
                             MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, applyGlobalAlpha(textAlpha)));
                 } else {
                     drawMsdfText(context, displayText, textX, inputTextY,

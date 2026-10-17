@@ -48,6 +48,7 @@ public class ClientMain implements ClientModInitializer {
                 ColorCorrection.getInstance().shader.reload();
                 MenuPanoramaRenderer.onResourcesReloaded();
                 MenuPanoramaRegistry.onResourcesReloaded();
+                vorga.phazeclient.implement.features.modules.other.PackPreviewRenderer.clear(MinecraftClient.getInstance());
             }
 
             @Override

@@ -36,7 +36,7 @@ public final class WorldColorGroupWindow extends AbstractWindow {
 
     private final List<AbstractSettingComponent> components = new ArrayList<>();
     private final GroupSetting setting;
-    private int cachedComponentHeight = 0;
+    private float cachedComponentHeight = 0.0F;
 
     public WorldColorGroupWindow(GroupSetting setting) {
         this.setting = setting;
@@ -93,7 +93,7 @@ public final class WorldColorGroupWindow extends AbstractWindow {
         }
 
         float offset = 0.0F;
-        int totalHeight = 0;
+        float totalHeight = 0.0F;
         for (int i = components.size() - 1; i >= 0; i--) {
             AbstractSettingComponent component = components.get(i);
             Supplier<Boolean> visible = component.getSetting().getVisible();
@@ -110,14 +110,14 @@ public final class WorldColorGroupWindow extends AbstractWindow {
             component.setExternalAlpha(1.0F);
 
             offset += component.height;
-            totalHeight += (int) component.height;
+            totalHeight += component.height;
         }
 
         if (clip) {
             scissorManager.pop();
         }
 
-        int maxScroll = (int) Math.max(0, totalHeight - viewportHeight);
+        float maxScroll = Math.max(0.0F, totalHeight - viewportHeight);
         scroll = MathHelper.clamp(scroll, -maxScroll, 0);
         smoothedScroll = MathHelper.lerp(0.1F, smoothedScroll, scroll);
     }
@@ -190,7 +190,7 @@ public final class WorldColorGroupWindow extends AbstractWindow {
         return super.charTyped(chr, modifiers);
     }
 
-    private int calculateComponentHeight() {
+    private float calculateComponentHeight() {
         float total = 0.0F;
         for (AbstractSettingComponent component : components) {
             Supplier<Boolean> visible = component.getSetting().getVisible();
@@ -199,7 +199,7 @@ public final class WorldColorGroupWindow extends AbstractWindow {
             }
             total += component.height;
         }
-        return (int) total;
+        return total;
     }
 
     private void renderWindowBlur(MatrixStack matrices) {

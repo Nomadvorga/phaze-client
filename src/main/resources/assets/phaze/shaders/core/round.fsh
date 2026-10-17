@@ -24,7 +24,7 @@ float roundedBoxSDF(vec2 center, vec2 size, vec4 radius) {
 
 vec4 createGradient(vec2 coords, vec4 color1, vec4 color2, vec4 color3, vec4 color4){
     vec4 color = mix(mix(color1, color2, coords.y), mix(color3, color4, coords.y), coords.x);
-    color += mix(0.0019607843, -0.0019607843, fract(sin(dot(coords.xy, vec2(12.9898, 78.233))) * 43758.5453));
+    color.rgb += mix(0.0019607843, -0.0019607843, fract(sin(dot(coords.xy, vec2(12.9898, 78.233))) * 43758.5453));
     return color;
 }
 
@@ -43,7 +43,13 @@ void main() {
                 ? vec4(outlineColor.rgb, outlineColor.a * borderAlpha)
                 : basicColor;
 
-        fragColor = mix(vec4(gradient.rgb, 0.0), mix(basicColor, strokeColor, borderAlpha), smoothedAlpha);
+        // Weight RGB by alpha before mixing: transparent fill RGB must not
+        // tint the outline or its AA fringe. Keep the existing coverage,
+        // then return straight alpha for the renderer's SRC_ALPHA blend.
+        basicColor.rgb *= basicColor.a;
+        strokeColor.rgb *= strokeColor.a;
+        vec4 blended = mix(basicColor, strokeColor, borderAlpha) * smoothedAlpha;
+        fragColor = vec4(blended.a > 0.0 ? blended.rgb / blended.a : vec3(0.0), blended.a);
     }
 }
 

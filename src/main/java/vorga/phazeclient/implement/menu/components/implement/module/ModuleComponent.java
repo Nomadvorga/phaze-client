@@ -15,7 +15,6 @@ import vorga.phazeclient.api.feature.module.setting.implement.*;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
-import vorga.phazeclient.api.system.font.Fonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
@@ -33,7 +32,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-import static vorga.phazeclient.api.system.font.Fonts.Type.INTER_BOLD;
 
 @Getter
 public class ModuleComponent extends AbstractComponent {

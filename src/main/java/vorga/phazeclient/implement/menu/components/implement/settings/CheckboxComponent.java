@@ -5,8 +5,7 @@ import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
-import vorga.phazeclient.api.system.font.Fonts;
-import vorga.phazeclient.base.util.other.StringUtil;
+import vorga.phazeclient.implement.menu.font.GuiFonts;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.other.CheckComponent;
 import vorga.phazeclient.base.util.math.MathUtil;
@@ -27,10 +26,12 @@ public class CheckboxComponent extends AbstractSettingComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateVisibilityAnimation();
-        var labelFont = Fonts.getSize(14, INTER_BOLD);
+        var labelFont = GuiFonts.getSize(14, INTER_BOLD);
 
         boolean isModified = setting.isModified();
         float textOffset = animatedTextOffset(isModified);
+
+        height = ROW_HEIGHT;
 
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, x, y, width, height);
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -38,20 +39,19 @@ public class CheckboxComponent extends AbstractSettingComponent {
         activeAnimation.setDirection(setting.isValue() ? Direction.FORWARDS : Direction.BACKWARDS);
         float activeProgress = activeAnimation.getOutputFloat();
 
-        String wrapped = StringUtil.wrap(setting.getLocalizedName(), (int) (width - 30 - textOffset), 14);
-        float wrappedHeight = Fonts.getSize(14).getStringHeight(wrapped);
-        height = (int) (20 + Math.max(0, (wrappedHeight - 14) / 2));
-
         renderSettingCard(context, activeProgress, hoverProgress);
 
         resetIcon.position(x, y, height).alpha(currentAlpha).modified(isModified).render(context.getMatrices());
 
         float textX = x + 10 + textOffset;
-        float textY = centeredTextY(labelFont, wrapped);
+        String text = label.singleLine(setting.getLocalizedName());
+        float textY = centeredTextY(labelFont, text);
         int textColor = MenuStyle.mix(primaryText(), MenuStyle.withAlpha(0xFFFFFFFF, currentAlpha), hoverProgress * 0.16f);
-        labelFont.drawString(context.getMatrices(), wrapped, textX, textY, textColor);
+        label.render(context.getMatrices(), labelFont, text, textX, textY,
+                x + width - 37.0F, y, height, textColor);
+        updateLabelHover(mouseX, mouseY);
 
-        ((CheckComponent) checkComponent.position(x + width - 29, y + height / 2 - 5.0F))
+        ((CheckComponent) checkComponent.position(x + width - 29, y + (height - CheckComponent.getToggleHeight()) / 2.0F))
                 .setRunnable(() -> setting.setValue(!setting.isValue()))
                 .setState(setting.isValue())
                 .setAlpha(currentAlpha)

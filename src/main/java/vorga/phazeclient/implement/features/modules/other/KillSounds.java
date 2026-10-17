@@ -12,12 +12,15 @@ import net.minecraft.util.ActionResult;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 
 public class KillSounds extends Module {
     private static final KillSounds INSTANCE = new KillSounds();
     private static boolean registered = false;
+
+    public final SectionSetting generalSection = new SectionSetting("General");
 
     public final SelectSetting soundType = new SelectSetting("Sound", "Kill sound effect")
             .value("Laser", "Ding", "Destroy", "Hit", "Pop", "Crunch", "Pling", "Bell", "Orb XP", "Level Up", "Anvil")
@@ -31,7 +34,7 @@ public class KillSounds extends Module {
 
     private KillSounds() {
         super("kill_sounds", "Kill Sounds", ModuleCategory.OTHER);
-        setup(soundType, volume, pitch, playersOnly);
+        setup(generalSection, soundType, volume, pitch, playersOnly);
         registerEvents();
     }
 

@@ -73,7 +73,6 @@ public class ScreenshotManager extends Module {
                 iterator.remove();
                 continue;
             }
-            float progress = (float) elapsed / (float) durationMs;
             long fadeStart = Math.max(0L, durationMs - (long) FADE_ANIMATION_MS);
             float alpha = elapsed >= fadeStart
                     ? Math.max(0.0f, (durationMs - elapsed) / FADE_ANIMATION_MS)
@@ -87,8 +86,9 @@ public class ScreenshotManager extends Module {
             int bg = (a << 24) | 0x0B1120;
             int textCol = (a << 24) | 0xFFFFFF;
             int subCol = (a << 24) | 0x8899A6;
-            int progressCol = (a << 24) | 0x35D07F;
-            fillRounded(context, x, y, x + cardW, y + cardH, bg, 10);
+            // Keep the card corners as subtle as the timeline corners so the
+            // lower edge reads as one continuous surface.
+            fillRounded(context, x, y, x + cardW, y + cardH, bg, 6);
             Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
             float titleSize = 8.1f;
             float subSize = 7.3f;
@@ -97,12 +97,6 @@ public class ScreenshotManager extends Module {
                     x + 25, y + 9, 0.0f);
             MsdfRenderer.renderText(MsdfFonts.medium(), toast.name(), subSize, subCol, matrix,
                     x + 25, y + 24, 0.0f);
-            // The timeline grows from left to right during the lifetime.
-            int progressWidth = Math.max(2, Math.round(progress * (cardW - 12)));
-            if (progressWidth > 0) {
-                fillRounded(context, x + 6, y + cardH - 4,
-                        x + 6 + progressWidth, y + cardH - 1, progressCol, 2);
-            }
             index++;
         }
     }

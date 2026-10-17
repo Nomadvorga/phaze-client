@@ -17,7 +17,8 @@ public enum ModuleCategory {
     }
 
     public String getLocalizedName() {
-        return localizationKey;
+        // Top-level GUI tabs are not the section/group labels inside modules.
+        return name();
     }
 
     public String getReadableName() {

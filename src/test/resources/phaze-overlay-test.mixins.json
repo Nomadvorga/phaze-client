@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "package": "vorga.phazeclient.mixins.test",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "LowHealthOverlayTestMixins$Frames",
+    "LowHealthOverlayTestMixins$Draws",
+    "LowHealthOverlayTestMixins$Warning",
+    "LowHealthOverlayTestMixins$Hud",
+    "LowHealthOverlayTestMixins$Debug",
+    "LowHealthOverlayTestMixins$Screens",
+    "LowHealthOverlayTestMixins$Images",
+    "LowHealthOverlayTestMixins$Framebuffers",
+    "LowHealthOverlayTestMixins$Textures"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

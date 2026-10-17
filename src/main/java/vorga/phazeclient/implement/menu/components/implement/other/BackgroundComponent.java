@@ -623,7 +623,8 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private float configRowStartY() {
-        return y + HEADER_HEIGHT + 7.0F;
+        // Shift whole rows and their shared viewport down 3 logical GUI pixels.
+        return y + HEADER_HEIGHT + 10.0F;
     }
 
     private float configViewportY() {

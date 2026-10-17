@@ -179,7 +179,7 @@ public class ModuleDetailComponent extends AbstractComponent {
 
     private void renderDescription(DrawContext context, float anim) {
         MatrixStack matrices = context.getMatrices();
-        String description = module.getDescription();
+        String description = module.getDisplayDescription();
         if (description == null || description.isEmpty()) {
             description = "Custom themes for GUI";
         }

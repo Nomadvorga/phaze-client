@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import org.lwjgl.glfw.GLFW;
-import vorga.phazeclient.api.system.font.Fonts;
+import vorga.phazeclient.implement.menu.font.GuiFonts;
 import vorga.phazeclient.api.system.localization.LocalizationManager;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.color.ColorUtil;
@@ -35,7 +35,7 @@ public abstract class AbstractBindWindow extends AbstractWindow {
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(4).thickness(2).outlineColor(ColorUtil.getOutline(0.8F,1)).color(ColorUtil.getRect(1)).build());
 
-        Fonts.getSize(14).drawString(matrix, LocalizationManager.getInstance().get("ui.binding_module"), x + 5, y + 8, -1);
+        GuiFonts.getSize(14).drawString(matrix, LocalizationManager.getInstance().get("ui.binding_module"), x + 5, y + 8, -1);
 
         image.setTexture("textures/trash.png").render(ShapeProperties.create(matrix, x + width - 13, y + 5.3f, 8, 8).build());
 
@@ -50,7 +50,7 @@ public abstract class AbstractBindWindow extends AbstractWindow {
                 setType(getType() != 1 ? 1 : 0);
             }
 
-            float stringWidth = Fonts.getSize(14).getStringWidth(StringUtil.getBindName(getKey()));
+            float stringWidth = GuiFonts.getSize(14).getStringWidth(StringUtil.getBindName(getKey()));
 
             if (MathUtil.isHovered(mouseX, mouseY, x + width - stringWidth - 15, y + 18.8F, stringWidth + 10, 13)) {
                 binding = !binding;
@@ -86,15 +86,15 @@ public abstract class AbstractBindWindow extends AbstractWindow {
 
 
     private void drawKeyButton(MatrixStack matrix) {
-        float stringWidth = Fonts.getSize(14).getStringWidth(StringUtil.getBindName(getKey()));
+        float stringWidth = GuiFonts.getSize(14).getStringWidth(StringUtil.getBindName(getKey()));
 
         rectangle.render(ShapeProperties.create(matrix, x + width - stringWidth - 15, y + 18.8F, stringWidth + 10, 13)
                 .round(2).thickness(2).softness(1).outlineColor(ColorUtil.getOutline(0.8F,1)).color(ColorUtil.getOutline(0.1F,1)).build());
 
         int bindingColor = binding ? 0xFF8187FF : ColorUtil.getText();
 
-        Fonts.getSize(14).drawString(matrix, StringUtil.getBindName(getKey()), x + width - 10 - stringWidth, y + 23.6F, bindingColor);
-        Fonts.getSize(14).drawString(matrix, LocalizationManager.getInstance().get("ui.key"), (int) (x + 5), (int) (y + 24.3), ColorUtil.getText());
+        GuiFonts.getSize(14).drawString(matrix, StringUtil.getBindName(getKey()), x + width - 10 - stringWidth, y + 23.6F, bindingColor);
+        GuiFonts.getSize(14).drawString(matrix, LocalizationManager.getInstance().get("ui.key"), (int) (x + 5), (int) (y + 24.3), ColorUtil.getText());
     }
 
     private void drawTypeButton(MatrixStack matrix) {
@@ -109,9 +109,9 @@ public abstract class AbstractBindWindow extends AbstractWindow {
                     .round(0, 0, 2, 2).color(0xFF8187FF).build());
         }
 
-        Fonts.getSize(12).drawString(matrix, LocalizationManager.getInstance().get("ui.hold"), x + 52, y + 42.3, ColorUtil.getText());
-        Fonts.getSize(12).drawString(matrix, LocalizationManager.getInstance().get("ui.toggle"), x + 73, y + 42.3, ColorUtil.getText());
+        GuiFonts.getSize(12).drawString(matrix, LocalizationManager.getInstance().get("ui.hold"), x + 52, y + 42.3, ColorUtil.getText());
+        GuiFonts.getSize(12).drawString(matrix, LocalizationManager.getInstance().get("ui.toggle"), x + 73, y + 42.3, ColorUtil.getText());
 
-        Fonts.getSize(14).drawString(matrix, LocalizationManager.getInstance().get("ui.bind_mode"), (int) (x + 5), (int) (y + 42.3F), ColorUtil.getText());
+        GuiFonts.getSize(14).drawString(matrix, LocalizationManager.getInstance().get("ui.bind_mode"), (int) (x + 5), (int) (y + 42.3F), ColorUtil.getText());
     }
 }
