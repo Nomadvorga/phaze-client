@@ -182,6 +182,8 @@ public final class ConfigManager {
             moduleData.addProperty("key", module.getKey());
 
             if (module instanceof RectHudModule rectHudModule) {
+                moduleData.addProperty("hud_x_ratio", rectHudModule.getHudXRatio());
+                moduleData.addProperty("hud_y_ratio", rectHudModule.getHudYRatio());
                 moduleData.addProperty("hud_x", rectHudModule.getHudX());
                 moduleData.addProperty("hud_y", rectHudModule.getHudY());
                 // Screen the pixel coordinates were measured on, so a
@@ -191,6 +193,8 @@ public final class ConfigManager {
                 moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
             } else if (module instanceof ArmorHud armorHud) {
+                moduleData.addProperty("hud_x_ratio", armorHud.getHudXRatio());
+                moduleData.addProperty("hud_y_ratio", armorHud.getHudYRatio());
                 moduleData.addProperty("hud_x", armorHud.getHudX());
                 moduleData.addProperty("hud_y", armorHud.getHudY());
                 // Screen the pixel coordinates were measured on, so a
@@ -495,12 +499,16 @@ public final class ConfigManager {
             moduleData.addProperty("key", module.getKey());
 
             if (module instanceof RectHudModule rectHudModule) {
+                moduleData.addProperty("hud_x_ratio", rectHudModule.getHudXRatio());
+                moduleData.addProperty("hud_y_ratio", rectHudModule.getHudYRatio());
                 moduleData.addProperty("hud_x", rectHudModule.getHudX());
                 moduleData.addProperty("hud_y", rectHudModule.getHudY());
                 moduleData.addProperty("hud_ref_w", rectHudModule.getHudRefWidth());
                 moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
             } else if (module instanceof ArmorHud armorHud) {
+                moduleData.addProperty("hud_x_ratio", armorHud.getHudXRatio());
+                moduleData.addProperty("hud_y_ratio", armorHud.getHudYRatio());
                 moduleData.addProperty("hud_x", armorHud.getHudX());
                 moduleData.addProperty("hud_y", armorHud.getHudY());
                 moduleData.addProperty("hud_ref_w", armorHud.getHudRefWidth());
@@ -1019,7 +1027,11 @@ public final class ConfigManager {
                 // window happened to be open saturated at exactly 1.0 and lost
                 // its real position. Reusing that would scatter the layout,
                 // which is precisely what it did.
-                if (moduleData.has("hud_x") && moduleData.has("hud_y")
+                if (moduleData.has("hud_x_ratio") && moduleData.has("hud_y_ratio")) {
+                    rectHudModule.setHudPositionRatio(
+                            moduleData.get("hud_x_ratio").getAsFloat(),
+                            moduleData.get("hud_y_ratio").getAsFloat());
+                } else if (moduleData.has("hud_x") && moduleData.has("hud_y")
                         && moduleData.has("hud_ref_w") && moduleData.has("hud_ref_h")) {
                     rectHudModule.setHudPosition(
                             moduleData.get("hud_x").getAsFloat(),
@@ -1059,7 +1071,11 @@ public final class ConfigManager {
                 // window happened to be open saturated at exactly 1.0 and lost
                 // its real position. Reusing that would scatter the layout,
                 // which is precisely what it did.
-                if (moduleData.has("hud_x") && moduleData.has("hud_y")
+                if (moduleData.has("hud_x_ratio") && moduleData.has("hud_y_ratio")) {
+                    armorHud.setHudPositionRatio(
+                            moduleData.get("hud_x_ratio").getAsFloat(),
+                            moduleData.get("hud_y_ratio").getAsFloat());
+                } else if (moduleData.has("hud_x") && moduleData.has("hud_y")
                         && moduleData.has("hud_ref_w") && moduleData.has("hud_ref_h")) {
                     armorHud.setHudPosition(
                             moduleData.get("hud_x").getAsFloat(),

@@ -432,6 +432,19 @@ public final class ArmorHud extends Module {
         markResolvedForCurrentScreen();
     }
 
+    /** Restores a position expressed as a fraction of the current GUI size. */
+    public void setHudPositionRatio(float xRatio, float yRatio) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return;
+        }
+        this.hudX = MathHelper.clamp(xRatio, 0.0f, 1.0f)
+                * Math.max(1, client.getWindow().getScaledWidth());
+        this.hudY = MathHelper.clamp(yRatio, 0.0f, 1.0f)
+                * Math.max(1, client.getWindow().getScaledHeight());
+        markResolvedForCurrentScreen();
+    }
+
 
     /**
      * Re-scales the position when the window has changed size since

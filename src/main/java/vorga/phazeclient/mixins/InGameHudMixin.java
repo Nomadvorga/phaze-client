@@ -18,6 +18,9 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.item.Item;
 import net.minecraft.text.Text;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -84,6 +87,7 @@ import vorga.phazeclient.implement.features.modules.hud.ServerAddressHud;
 import vorga.phazeclient.implement.features.modules.hud.WailaHud;
 import vorga.phazeclient.implement.features.modules.other.HealthIndicator;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
+import vorga.phazeclient.implement.features.modules.hud.PackDisplayHud;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
 import vorga.phazeclient.implement.features.modules.hud.TpsHud;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
@@ -176,7 +180,8 @@ public class InGameHudMixin {
     private static final int HUD_PLAYER_MODEL = 24;
     private static final int HUD_TRAP_TIMER = 25;
     private static final int HUD_INVENTORY = 26;
-    private static final int RECT_HUD_COUNT = 27;
+    private static final int HUD_PACK_DISPLAY = 27;
+    private static final int RECT_HUD_COUNT = 28;
     private static final int HUD_ARMOR_BLUR_SLOT = 27;
     private static final int HUD_SNAP_ARMOR = RECT_HUD_COUNT;
     private static final int HUD_SNAP_COUNT = RECT_HUD_COUNT + 1;
@@ -410,7 +415,6 @@ public class InGameHudMixin {
         // the operator talking, not decoration.
         vorga.phazeclient.implement.menu.AnnouncementOverlay.render(context);
         vorga.phazeclient.implement.features.modules.hud.KillStreakHud.getInstance().render(context);
-        vorga.phazeclient.implement.features.modules.hud.PackDisplayHud.getInstance().render(context);
 
         if (!renderedThisFrame) {
             // Capture the clean world/vanilla-HUD framebuffer at the one safe
@@ -544,6 +548,13 @@ public class InGameHudMixin {
         if (client != null && client.currentScreen instanceof ChatScreen) {
             ScaleSnapOverlay.render(context);
         }
+
+        // HUD blur uses temporary shader/framebuffer state. The vanilla
+        // screen is rendered after InGameHud, so leaving the blur shader or
+        // blend state active here makes pause/options buttons and text look
+        // blurred after leaving the HUD editor or opening a GUI.
+        context.draw();
+        phaze$resetGuiRenderState();
     }
 
     private void renderHudInternal(DrawContext context) {
@@ -826,6 +837,30 @@ public class InGameHudMixin {
                     chatEditing, mouseX, mouseY, mouseDown, getHudDelta(healthIndicator, chatEditing, deltaSeconds),
                     inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
                     getTextHudBaseWidth(client, wrappedHpText), BASE_HEIGHT);
+        });
+
+        // Pack Display uses the same cached/blurred/draggable rectangle path
+        // as every other HUD. Its text is refreshed only by the module's
+        // throttled pack scan, not rebuilt every frame.
+        final PackDisplayHud packDisplay = PackDisplayHud.getInstance();
+        renderBufferedHud(context, packDisplay, chatEditing, () -> {
+            net.minecraft.util.Identifier packIcon = packDisplay.getPackIcon(client);
+            String packText = packDisplay.getDisplayText(client);
+            if (packText.isEmpty()) return;
+            renderRectHud(context, client, packDisplay, packText, HUD_PACK_DISPLAY,
+                    chatEditing, mouseX, mouseY, mouseDown, getHudDelta(packDisplay, chatEditing, deltaSeconds),
+                    inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                    Math.max(BASE_WIDTH, packDisplay.getPanelBaseWidth(client)),
+                    28.0f);
+            if (packIcon != null) {
+                context.getMatrices().push();
+                context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
+                context.getMatrices().translate(packDisplay.getHudX(), packDisplay.getHudY(), HUD_TEXT_RENDER_Z + 1.0f);
+                context.getMatrices().scale(packDisplay.getRenderHudScale(), packDisplay.getRenderHudScale(), 1.0f);
+                context.drawTexture(RenderLayer::getGuiTextured, packIcon, 0, 0, 0.0f, 0.0f,
+                        28, 28, packDisplay.getPackIconWidth(), packDisplay.getPackIconHeight());
+                context.getMatrices().pop();
+            }
         });
 
         // Battle Info: same single-line text-rect path as the health
@@ -1235,6 +1270,10 @@ public class InGameHudMixin {
 
         float textWidth = getHudTextWidth(client, text, HUD_TEXT_SIZE);
         float textX = (baseWidth - textWidth) / 2.0f;
+        if (module instanceof PackDisplayHud packDisplay && packDisplay.getPackIcon(client) != null) {
+            // Centre the label in the area to the right of the 28px icon.
+            textX += 14.0f;
+        }
         float textY = (baseHeight - 8.0f) / 2.0f;
         int hoverOutlineThickness = Math.max(1, Math.round(BASE_HOVER_OUTLINE_THICKNESS / Math.max(1.0f, scale)));
 
@@ -1331,7 +1370,11 @@ public class InGameHudMixin {
             }
         }
 
-        renderScaledHudTextColored(context, client, text, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
+        if (module instanceof PackDisplayHud packDisplay) {
+            renderPackDisplayText(context, client, packDisplay, x, y, baseWidth, baseHeight, scale, textColor);
+        } else {
+            renderScaledHudTextColored(context, client, text, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
+        }
 
         if (chatEditing && RECT_HOVER_PROGRESS[hudIndex] > 0.05f) {
             int borderColor = withAlpha(0xFFFFFF, (int) (175.0f * RECT_HOVER_PROGRESS[hudIndex]));
@@ -1355,6 +1398,78 @@ public class InGameHudMixin {
         }
 
         context.getMatrices().pop();
+    }
+
+    private void renderPackDisplayText(
+            DrawContext context,
+            MinecraftClient client,
+            PackDisplayHud module,
+            float x,
+            float y,
+            float baseWidth,
+            float baseHeight,
+            float scale,
+            int textColor
+    ) {
+        net.minecraft.text.Text title = module.getNameText(client);
+        net.minecraft.text.Text description = module.getDescriptionText(client);
+        boolean hasIcon = module.getPackIcon(client) != null;
+        float contentLeft = hasIcon ? 28.0f : 0.0f;
+        float contentWidth = Math.max(1.0f, baseWidth - contentLeft);
+        float titleWidth = client.textRenderer.getWidth(title);
+        float titleX = contentLeft + Math.max(0.0f, (contentWidth - titleWidth) * 0.5f);
+        float titleY = module.hasDescription(client) ? 3.0f : (baseHeight - 8.0f) * 0.5f;
+
+        context.getMatrices().push();
+        context.getMatrices().translate(x, y, HUD_TEXT_RENDER_Z);
+        context.getMatrices().scale(scale, scale, 1.0f);
+        context.drawText(client.textRenderer, title, Math.round(titleX), Math.round(titleY), textColor, module.textShadow.isValue());
+
+        if (module.hasDescription(client)) {
+            // Text keeps Minecraft's Style objects intact, including all
+            // legacy § colour/format codes and explicit LF line breaks.
+            java.util.List<MutableText> lines = splitPackDescription(description);
+            float lineY = 14.0f;
+            for (MutableText line : lines) {
+                float lineWidth = client.textRenderer.getWidth(line);
+                float lineX = contentLeft + Math.max(0.0f, (contentWidth - lineWidth) * 0.5f);
+                context.drawText(client.textRenderer, line, Math.round(lineX), Math.round(lineY), textColor, module.textShadow.isValue());
+                lineY += 8.0f;
+            }
+        }
+        context.getMatrices().pop();
+    }
+
+    private static java.util.List<MutableText> splitPackDescription(net.minecraft.text.Text description) {
+        java.util.List<MutableText> lines = new java.util.ArrayList<>();
+        MutableText line = Text.empty();
+        final MutableText[] current = {line};
+        description.visit((style, fragment) -> {
+            Style activeStyle = style;
+            for (int i = 0; i < fragment.length(); i++) {
+                char character = fragment.charAt(i);
+                if (character == '\u00A7' && i + 1 < fragment.length()) {
+                    Formatting formatting = Formatting.byCode(fragment.charAt(++i));
+                    if (formatting == Formatting.RESET) {
+                        activeStyle = Style.EMPTY;
+                    } else if (formatting != null) {
+                        activeStyle = formatting.isColor()
+                                ? Style.EMPTY.withColor(formatting)
+                                : activeStyle.withFormatting(formatting);
+                    }
+                } else if (character == '\n' || character == '\r') {
+                    if (character == '\r' && i + 1 < fragment.length() && fragment.charAt(i + 1) == '\n') i++;
+                    lines.add(current[0]);
+                    current[0] = Text.empty();
+                } else {
+                    current[0].append(Text.literal(String.valueOf(character)).setStyle(activeStyle));
+                }
+            }
+            return java.util.Optional.empty();
+        }, description.getStyle());
+        line = current[0];
+        lines.add(line);
+        return lines;
     }
 
     private void renderArmorHud(

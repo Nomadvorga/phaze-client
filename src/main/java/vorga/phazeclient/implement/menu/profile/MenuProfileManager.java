@@ -307,7 +307,9 @@ public final class MenuProfileManager implements QuickImports {
                 // single-axis setters each rescale to the live screen
                 // first, so calling them in turn would rescale the value
                 // the previous call just wrote.
-                if (moduleData.has("hud_x") && moduleData.has("hud_y")) {
+                if (moduleData.has("hud_x_ratio") && moduleData.has("hud_y_ratio")) {
+                    rectHudModule.setHudPositionRatio(moduleData.get("hud_x_ratio").getAsFloat(), moduleData.get("hud_y_ratio").getAsFloat());
+                } else if (moduleData.has("hud_x") && moduleData.has("hud_y")) {
                     rectHudModule.setHudPosition(
                             moduleData.get("hud_x").getAsFloat(),
                             moduleData.get("hud_y").getAsFloat(),
@@ -325,7 +327,9 @@ public final class MenuProfileManager implements QuickImports {
                 // single-axis setters each rescale to the live screen
                 // first, so calling them in turn would rescale the value
                 // the previous call just wrote.
-                if (moduleData.has("hud_x") && moduleData.has("hud_y")) {
+                if (moduleData.has("hud_x_ratio") && moduleData.has("hud_y_ratio")) {
+                    armorHud.setHudPositionRatio(moduleData.get("hud_x_ratio").getAsFloat(), moduleData.get("hud_y_ratio").getAsFloat());
+                } else if (moduleData.has("hud_x") && moduleData.has("hud_y")) {
                     armorHud.setHudPosition(
                             moduleData.get("hud_x").getAsFloat(),
                             moduleData.get("hud_y").getAsFloat(),
@@ -360,6 +364,8 @@ public final class MenuProfileManager implements QuickImports {
             }
 
             if (module instanceof RectHudModule rectHudModule) {
+                moduleData.addProperty("hud_x_ratio", rectHudModule.getHudXRatio());
+                moduleData.addProperty("hud_y_ratio", rectHudModule.getHudYRatio());
                 moduleData.addProperty("hud_x", rectHudModule.getHudX());
                 moduleData.addProperty("hud_y", rectHudModule.getHudY());
                 // Screen these pixels were measured on - without it a
@@ -369,6 +375,8 @@ public final class MenuProfileManager implements QuickImports {
                 moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
             } else if (module instanceof ArmorHud armorHud) {
+                moduleData.addProperty("hud_x_ratio", armorHud.getHudXRatio());
+                moduleData.addProperty("hud_y_ratio", armorHud.getHudYRatio());
                 moduleData.addProperty("hud_x", armorHud.getHudX());
                 moduleData.addProperty("hud_y", armorHud.getHudY());
                 // Screen these pixels were measured on - without it a

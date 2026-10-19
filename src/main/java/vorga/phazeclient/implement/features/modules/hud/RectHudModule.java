@@ -260,7 +260,7 @@ public abstract class RectHudModule extends Module {
             return 0.0f;
         }
         resolveForCurrentScreen();
-        return MathHelper.clamp(hudX / Math.max(1.0f, client.getWindow().getScaledWidth()), 0.0f, 1.0f);
+        return MathHelper.clamp(hudX / Math.max(1.0f, client.getWindow().getWidth()), 0.0f, 1.0f);
     }
 
     public float getHudYRatio() {
@@ -269,7 +269,7 @@ public abstract class RectHudModule extends Module {
             return 0.0f;
         }
         resolveForCurrentScreen();
-        return MathHelper.clamp(hudY / Math.max(1.0f, client.getWindow().getScaledHeight()), 0.0f, 1.0f);
+        return MathHelper.clamp(hudY / Math.max(1.0f, client.getWindow().getHeight()), 0.0f, 1.0f);
     }
 
     public void setHudXRatio(float ratio) {
@@ -278,7 +278,7 @@ public abstract class RectHudModule extends Module {
             return;
         }
         this.hudX = MathHelper.clamp(ratio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getScaledWidth());
+                * Math.max(1, client.getWindow().getWidth());
         markResolvedForCurrentScreen();
     }
 
@@ -288,7 +288,20 @@ public abstract class RectHudModule extends Module {
             return;
         }
         this.hudY = MathHelper.clamp(ratio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getScaledHeight());
+                * Math.max(1, client.getWindow().getHeight());
+        markResolvedForCurrentScreen();
+    }
+
+    /** Restores a position expressed as a fraction of the current GUI size. */
+    public void setHudPositionRatio(float xRatio, float yRatio) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return;
+        }
+        this.hudX = MathHelper.clamp(xRatio, 0.0f, 1.0f)
+                * Math.max(1, client.getWindow().getWidth());
+        this.hudY = MathHelper.clamp(yRatio, 0.0f, 1.0f)
+                * Math.max(1, client.getWindow().getHeight());
         markResolvedForCurrentScreen();
     }
 
@@ -426,8 +439,8 @@ public abstract class RectHudModule extends Module {
         if (client == null || client.getWindow() == null) {
             return;
         }
-        int screenWidth = client.getWindow().getScaledWidth();
-        int screenHeight = client.getWindow().getScaledHeight();
+        int screenWidth = client.getWindow().getWidth();
+        int screenHeight = client.getWindow().getHeight();
         if (screenWidth <= 0 || screenHeight <= 0) {
             return;
         }
@@ -475,8 +488,8 @@ public abstract class RectHudModule extends Module {
         if (client == null || client.getWindow() == null) {
             return;
         }
-        this.hudRefWidth = client.getWindow().getScaledWidth();
-        this.hudRefHeight = client.getWindow().getScaledHeight();
+        this.hudRefWidth = client.getWindow().getWidth();
+        this.hudRefHeight = client.getWindow().getHeight();
     }
 
     /** Screen size these coordinates were measured on; -1 = unknown. */
