@@ -463,5 +463,10 @@ public class Main implements ModInitializer {
         // Override the API base with -Dphaze.rules.api=https://... ;
         // setting it to "" disables the service entirely (offline dev).
         vorga.phazeclient.base.util.RemoteRulesService.getInstance().start();
+
+        // Warm the messenger while Minecraft continues loading. All network
+        // work uses daemon executors inside MessengerService, so startup and
+        // the first world join are never blocked by a slow API connection.
+        vorga.phazeclient.base.util.MessengerService.getInstance().start();
     }
 }

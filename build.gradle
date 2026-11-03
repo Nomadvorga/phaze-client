@@ -125,6 +125,12 @@ tasks.register('verifyMenuLocalization', JavaExec) {
 [
     verifyGlintSettings: 'vorga.phazeclient.implement.features.modules.other.GlintSettingsChecks',
     verifyHandAnimationTransforms: 'vorga.phazeclient.implement.features.modules.other.HandAnimationTransformChecks',
+    verifyProjectileLaunch: 'vorga.phazeclient.implement.features.modules.other.ProjectileLaunchChecks',
+    verifyProjectileFlight: 'vorga.phazeclient.implement.features.modules.other.ProjectileFlightChecks',
+    verifyPredictionRendering: 'vorga.phazeclient.implement.features.modules.other.PredictionRenderingChecks',
+    verifyPredictionBatch: 'vorga.phazeclient.implement.features.modules.other.PredictionBatchChecks',
+    verifyProjectileQueries: 'vorga.phazeclient.implement.features.modules.other.ProjectileQueryChecks',
+    verifyWorldOverlays: 'vorga.phazeclient.api.system.render.WorldOverlayChecks',
     verifyHudCompatibility: 'vorga.phazeclient.implement.features.modules.hud.HudCompatibilityChecks',
     verifyBossBar: 'vorga.phazeclient.implement.features.modules.hud.BossBarChecks',
     verifyGuiInteractions: 'vorga.phazeclient.implement.menu.components.implement.settings.GuiInteractionChecks',
@@ -140,6 +146,24 @@ tasks.register('verifyMenuLocalization', JavaExec) {
         mainClass = testMain
     }
     tasks.named('check') { dependsOn taskName }
+}
+
+tasks.named('verifyProjectileQueries', JavaExec) {
+    // Vanilla registries need the same package-access repair Fabric performs after Yarn remapping.
+    mainClass = 'vorga.phazeclient.test.HeadlessMinecraftChecks'
+    args 'vorga.phazeclient.implement.features.modules.other.ProjectileQueryChecks'
+}
+
+tasks.register('benchmarkPredictionCpu', JavaExec) {
+    group = 'verification'
+    description = 'Optional CPU-only prediction comparison; not an in-game FPS/GPU benchmark'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'vorga.phazeclient.test.HeadlessMinecraftChecks'
+    args 'vorga.phazeclient.implement.features.modules.other.PredictionPerformanceBench'
+    if (project.hasProperty('predictionBaseline')) {
+        systemProperty 'phaze.prediction.baseline', project.property('predictionBaseline')
+    }
 }
 
 tasks.named('check') {

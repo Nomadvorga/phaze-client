@@ -33,9 +33,6 @@ package vorga.phazeclient.implement.hitrange;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderPhase;
-import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
@@ -45,10 +42,11 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import vorga.phazeclient.implement.features.modules.other.HitRange;
+import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
+import net.minecraft.client.render.BufferBuilder;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Draws the configurable hit-range circle around an entity, in three
@@ -63,9 +61,6 @@ import java.util.Locale;
  */
 public final class HitRangeCircleRenderer {
     private static final float FILLED_OUTLINE_Y_EPSILON = 0.0015F;
-    private static final RenderLayer.MultiPhase DEBUG_LINES = makeLayer(VertexFormat.DrawMode.DEBUG_LINES);
-    private static final RenderLayer.MultiPhase DEBUG_QUADS = makeLayer(VertexFormat.DrawMode.QUADS);
-    private static final RenderLayer.MultiPhase TRIANGLES = makeLayer(VertexFormat.DrawMode.TRIANGLES);
 
     private static final List<Angle> angles = new ArrayList<>();
 
@@ -114,14 +109,14 @@ public final class HitRangeCircleRenderer {
 
         matrices.push();
         switch (mode) {
-            case LINE -> drawCircleLines(matrices, vertexConsumers.getBuffer(DEBUG_LINES), dy, resolvedColors.outlineArgb());
-            case THICK -> drawCircleQuad(matrices, vertexConsumers.getBuffer(DEBUG_QUADS), dy, resolvedColors.outlineArgb());
+            case LINE -> drawCircleLines(matrices, buffer(VertexFormat.DrawMode.DEBUG_LINES), dy, resolvedColors.outlineArgb());
+            case THICK -> drawCircleQuad(matrices, buffer(VertexFormat.DrawMode.QUADS), dy, resolvedColors.outlineArgb());
             case FILLED -> {
                 if (((resolvedColors.fillArgb() >>> 24) & 0xFF) > 0) {
-                    drawCircleTriangles(matrices, vertexConsumers.getBuffer(TRIANGLES), dy, resolvedColors.fillArgb());
+                    drawCircleTriangles(matrices, buffer(VertexFormat.DrawMode.TRIANGLES), dy, resolvedColors.fillArgb());
                 }
                 if (((resolvedColors.outlineArgb() >>> 24) & 0xFF) > 0) {
-                    drawCircleLines(matrices, vertexConsumers.getBuffer(DEBUG_LINES), dy + FILLED_OUTLINE_Y_EPSILON, resolvedColors.outlineArgb());
+                    drawCircleLines(matrices, buffer(VertexFormat.DrawMode.DEBUG_LINES), dy + FILLED_OUTLINE_Y_EPSILON, resolvedColors.outlineArgb());
                 }
             }
         }
@@ -139,7 +134,11 @@ public final class HitRangeCircleRenderer {
         return new ResolvedCircleColors((fillAlpha << 24) | rgb, (outlineAlpha << 24) | rgb);
     }
 
-    private static void drawCircleLines(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
+    private static BufferBuilder buffer(VertexFormat.DrawMode mode) {
+        return WorldOverlayRenderer.buffer(mode, VertexFormats.POSITION_COLOR, 1, true);
+    }
+
+    private static void drawCircleLines(MatrixStack matrices, BufferBuilder vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
         // DEBUG_LINES (not DEBUG_LINE_STRIP) so the vertex stream is
@@ -157,7 +156,7 @@ public final class HitRangeCircleRenderer {
         }
     }
 
-    private static void drawCircleQuad(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
+    private static void drawCircleQuad(MatrixStack matrices, BufferBuilder vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
         for (int i = 1; i < angles.size() + 1; i++) {
@@ -171,7 +170,7 @@ public final class HitRangeCircleRenderer {
         }
     }
 
-    private static void drawCircleTriangles(MatrixStack matrices, VertexConsumer vertices, float dy, int argb) {
+    private static void drawCircleTriangles(MatrixStack matrices, BufferBuilder vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
         // TRIANGLES (not TRIANGLE_FAN) so each disc is independent.
@@ -229,34 +228,6 @@ public final class HitRangeCircleRenderer {
                 angles.add(new Angle(dx, dz));
             }
         }
-    }
-
-    private static RenderLayer.MultiPhase makeLayer(VertexFormat.DrawMode mode) {
-        String name = "phaze_hitrange_" + mode.name().toLowerCase(Locale.ROOT);
-
-        // Same MultiPhase config as the upstream mod: POSITION_COLOR
-        // verts, translucent blending, depth-tested LEQUAL so the ring
-        // is clipped by world geometry, and VIEW_OFFSET_Z_LAYERING to
-        // nudge it forward fractionally and avoid z-fighting flicker
-        // against the ground plane.
-        return RenderLayer.of(
-                name,
-                VertexFormats.POSITION_COLOR,
-                mode,
-                1536,
-                false,
-                true,
-                RenderLayer.MultiPhaseParameters.builder()
-                        .program(RenderPhase.POSITION_COLOR_PROGRAM)
-                        .transparency(RenderPhase.TRANSLUCENT_TRANSPARENCY)
-                        .cull(RenderPhase.DISABLE_CULLING)
-                        .lightmap(RenderPhase.ENABLE_LIGHTMAP)
-                        .overlay(RenderPhase.ENABLE_OVERLAY_COLOR)
-                        .writeMaskState(RenderPhase.COLOR_MASK)
-                        .depthTest(RenderPhase.LEQUAL_DEPTH_TEST)
-                        .layering(RenderPhase.VIEW_OFFSET_Z_LAYERING)
-                        .build(false)
-        );
     }
 
     /**

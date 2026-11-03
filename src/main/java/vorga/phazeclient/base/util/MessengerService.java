@@ -46,6 +46,14 @@ public final class MessengerService {
     public record Conversation(String id, String participantId, String username,
                                String lastText, long lastCreatedAt) {}
 
+    public record Friend(String id, String username, long createdAt) {}
+
+    public record FriendRequest(long id, String requesterId, String requesterUsername,
+                                String targetId, String targetUsername, String status,
+                                long createdAt) {}
+
+    public record ChatUser(String id, String username) {}
+
     public record Message(long id, String senderId, String senderUsername,
                           String text, long createdAt) {}
 
@@ -64,12 +72,20 @@ public final class MessengerService {
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean sessionRequestInFlight = new AtomicBoolean(false);
     private final AtomicBoolean streamStarted = new AtomicBoolean(false);
+    private final AtomicBoolean requestsRefreshInFlight = new AtomicBoolean(false);
     private final CopyOnWriteArrayList<Conversation> conversations = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Friend> friends = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<FriendRequest> requests = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Friend> blocked = new CopyOnWriteArrayList<>();
     private final Map<String, CopyOnWriteArrayList<Message>> messages = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> presence = new ConcurrentHashMap<>();
+    private final Map<String, Long> presenceFetchedAt = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> presenceInFlight = new ConcurrentHashMap<>();
 
     private volatile String token;
     private volatile String status = "Offline";
     private volatile String selectedConversation;
+    private volatile ChatUser currentUser;
     private final CopyOnWriteArrayList<Message> globalMessages = new CopyOnWriteArrayList<>();
 
     public static final String GLOBAL_CONVERSATION_ID = "00000000000000000000000000000001";
@@ -88,6 +104,62 @@ public final class MessengerService {
 
     public List<Conversation> getConversations() {
         return Collections.unmodifiableList(new ArrayList<>(conversations));
+    }
+
+    public List<Friend> getFriends() {
+        return Collections.unmodifiableList(new ArrayList<>(friends));
+    }
+
+    public List<FriendRequest> getRequests() {
+        return Collections.unmodifiableList(new ArrayList<>(requests));
+    }
+
+    /** Refresh incoming friend requests without blocking the render thread. */
+    public void refreshRequestsAsync() {
+        if (!requestsRefreshInFlight.compareAndSet(false, true)) return;
+        io.execute(() -> {
+            try {
+                if (ensureSessionSync()) refreshRequests();
+            } finally {
+                requestsRefreshInFlight.set(false);
+            }
+        });
+    }
+
+    public List<Friend> getBlocked() {
+        return Collections.unmodifiableList(new ArrayList<>(blocked));
+    }
+
+    public ChatUser getCurrentUser() {
+        return currentUser;
+    }
+
+    public int getOnlineCount() {
+        return RemoteRulesService.getInstance().getOnlineCount();
+    }
+
+    public boolean isUserOnline(String userId) {
+        if (userId == null || userId.isBlank()) return false;
+        if (currentUser != null && userId.equals(currentUser.id())) return "Online".equals(status);
+        long now = System.currentTimeMillis();
+        if (now - presenceFetchedAt.getOrDefault(userId, 0L) > 30_000L
+                && presenceInFlight.putIfAbsent(userId, Boolean.TRUE) == null) {
+            io.execute(() -> {
+                try {
+                    HttpResult result = request("GET", "/api/chat/users/" + userId + "/presence", null, true);
+                    if (result.status == 200) {
+                        JsonObject root = JsonParser.parseString(result.body).getAsJsonObject();
+                        presence.put(userId, root.has("online") && root.get("online").getAsBoolean());
+                        presenceFetchedAt.put(userId, System.currentTimeMillis());
+                    }
+                } catch (Throwable throwable) {
+                    LOG.debug("Presence request failed for {}", userId, throwable);
+                } finally {
+                    presenceInFlight.remove(userId);
+                }
+            });
+        }
+        return presence.getOrDefault(userId, false);
     }
 
     public List<Message> getMessages(String conversationId) {
@@ -145,17 +217,25 @@ public final class MessengerService {
     }
 
     public void send(String conversationId, String text) {
+        send(conversationId, text, null);
+    }
+
+    public void send(String conversationId, String text, Consumer<Boolean> completion) {
         if (conversationId == null || text == null || text.isBlank()) return;
         MessengerTextFilter.Result filter = MessengerTextFilter.check(text);
         if (filter != MessengerTextFilter.Result.ALLOW) {
             status = filter == MessengerTextFilter.Result.REPEATED_FLOOD
                     ? "Message blocked: flood"
                     : "Message blocked: abusive content";
+            if (completion != null) completion.accept(false);
             return;
         }
         String trimmed = text.trim();
         io.execute(() -> {
-            if (!ensureSessionSync()) return;
+            if (!ensureSessionSync()) {
+                if (completion != null) completion.accept(false);
+                return;
+            }
             JsonObject body = new JsonObject();
             body.addProperty("clientMessageId", UUID.randomUUID().toString());
             body.addProperty("text", trimmed);
@@ -164,31 +244,152 @@ public final class MessengerService {
             if (result.status == 201 || result.status == 200) {
                 acceptMessage(conversationId, JsonParser.parseString(result.body).getAsJsonObject().getAsJsonObject("message"));
                 status = "Online";
+                if (completion != null) completion.accept(true);
             } else if (result.status == 401) {
                 token = null;
                 status = "Session expired";
+                if (completion != null) completion.accept(false);
             } else {
                 status = parseError(result.body, "Send failed");
+                if (completion != null) completion.accept(false);
             }
         });
     }
 
     public void addFriendByUsername(String username) {
+        addFriendByUsername(username, null);
+    }
+
+    public void addFriendByUsername(String username, Consumer<Boolean> completion) {
         if (username == null || username.isBlank()) return;
         io.execute(() -> {
-            if (!ensureSessionSync()) return;
+            if (!ensureSessionSync()) {
+                if (completion != null) completion.accept(false);
+                return;
+            }
             HttpResult lookup = request("GET", "/api/chat/users/lookup?username="
                     + java.net.URLEncoder.encode(username.trim(), StandardCharsets.UTF_8), null, true);
             if (lookup.status != 200) {
-                status = "Player not found";
+                status = parseError(lookup.body, "Player not found");
+                if (completion != null) completion.accept(false);
                 return;
             }
             JsonObject user = JsonParser.parseString(lookup.body).getAsJsonObject().getAsJsonObject("user");
             JsonObject body = new JsonObject();
             body.addProperty("targetUserId", user.get("id").getAsString());
             HttpResult result = request("POST", "/api/chat/friends/requests", body.toString(), true);
-            status = result.status == 201 || result.status == 200
-                    ? "Friend request sent" : parseError(result.body, "Friend request failed");
+            boolean success = result.status == 201 || result.status == 200;
+            status = success ? "Friend request sent" : parseError(result.body, "Friend request failed");
+            if (completion != null) completion.accept(success);
+        });
+    }
+
+    public void openConversation(String participantId, Consumer<String> completion) {
+        if (participantId == null || participantId.isBlank()) return;
+        io.execute(() -> {
+            if (!ensureSessionSync()) {
+                if (completion != null) completion.accept(null);
+                return;
+            }
+            JsonObject body = new JsonObject();
+            body.addProperty("participantId", participantId);
+            HttpResult result = request("POST", "/api/chat/conversations", body.toString(), true);
+            if (result.status == 201 || result.status == 200) {
+                String conversationId = JsonParser.parseString(result.body).getAsJsonObject()
+                        .get("conversationId").getAsString();
+                refreshConversations();
+                selectConversation(conversationId);
+                if (completion != null) completion.accept(conversationId);
+            } else {
+                status = parseError(result.body, "Conversation unavailable");
+                if (completion != null) completion.accept(null);
+            }
+        });
+    }
+
+    public void blockUser(String userId) {
+        if (userId == null || userId.isBlank()) return;
+        io.execute(() -> {
+            if (!ensureSessionSync()) return;
+            JsonObject body = new JsonObject();
+            body.addProperty("targetUserId", userId);
+            HttpResult result = request("POST", "/api/chat/friends/block", body.toString(), true);
+            if (result.status == 200) {
+                status = "User blocked";
+                refreshFriends();
+                refreshBlocked();
+            } else {
+                status = parseError(result.body, "Block failed");
+            }
+        });
+    }
+
+    public void unblockUser(String userId, Consumer<Boolean> completion) {
+        if (userId == null || userId.isBlank()) return;
+        io.execute(() -> {
+            if (!ensureSessionSync()) {
+                if (completion != null) completion.accept(false);
+                return;
+            }
+            JsonObject body = new JsonObject();
+            body.addProperty("targetUserId", userId);
+            HttpResult result = request("POST", "/api/chat/friends/unblock", body.toString(), true);
+            boolean success = result.status == 200;
+            status = success ? "User unblocked" : parseError(result.body, "Unblock failed");
+            if (success) refreshBlocked();
+            if (completion != null) completion.accept(success);
+        });
+    }
+
+    public void acceptFriendRequest(long requestId) {
+        io.execute(() -> {
+            if (!ensureSessionSync()) return;
+            JsonObject body = new JsonObject();
+            body.addProperty("requestId", requestId);
+            HttpResult result = request("POST", "/api/chat/friends/accept", body.toString(), true);
+            if (result.status == 200) {
+                status = "Friend added";
+                refreshFriends();
+                refreshRequests();
+            } else {
+                status = parseError(result.body, "Request failed");
+            }
+        });
+    }
+
+    public void declineFriendRequest(long requestId, Consumer<Boolean> completion) {
+        io.execute(() -> {
+            if (!ensureSessionSync()) {
+                if (completion != null) completion.accept(false);
+                return;
+            }
+            JsonObject body = new JsonObject();
+            body.addProperty("requestId", requestId);
+            HttpResult result = request("POST", "/api/chat/friends/decline", body.toString(), true);
+            boolean success = result.status == 200;
+            status = success ? "Friend request declined" : parseError(result.body, "Request failed");
+            if (success) refreshRequests();
+            if (completion != null) completion.accept(success);
+        });
+    }
+
+    public void removeFriend(String userId, Consumer<Boolean> completion) {
+        if (userId == null || userId.isBlank()) return;
+        io.execute(() -> {
+            if (!ensureSessionSync()) {
+                if (completion != null) completion.accept(false);
+                return;
+            }
+            JsonObject body = new JsonObject();
+            body.addProperty("targetUserId", userId);
+            HttpResult result = request("POST", "/api/chat/friends/remove", body.toString(), true);
+            boolean success = result.status == 200;
+            status = success ? "Friend removed" : parseError(result.body, "Remove friend failed");
+            if (success) {
+                refreshFriends();
+                refreshConversations();
+            }
+            if (completion != null) completion.accept(success);
         });
     }
 
@@ -199,9 +400,64 @@ public final class MessengerService {
 
     private void ensureSessionAndRefresh() {
         if (!ensureSessionSync()) return;
+        refreshFriends();
+        refreshRequests();
+        refreshBlocked();
         refreshConversations();
         loadGlobalMessages();
+        preloadAvatars();
         startStream();
+    }
+
+    private void preloadAvatars() {
+        java.util.Set<String> usernames = new java.util.HashSet<>();
+        if (currentUser != null) usernames.add(currentUser.username());
+        friends.forEach(friend -> usernames.add(friend.username()));
+        blocked.forEach(friend -> usernames.add(friend.username()));
+        conversations.forEach(conversation -> usernames.add(conversation.username()));
+        globalMessages.forEach(message -> usernames.add(message.senderUsername()));
+        SkinAvatarService.getInstance().preload(usernames);
+    }
+
+    private void refreshFriends() {
+        HttpResult result = request("GET", "/api/chat/friends", null, true);
+        if (result.status != 200) return;
+        JsonArray array = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("friends");
+        friends.clear();
+        for (JsonElement element : array) {
+            JsonObject row = element.getAsJsonObject();
+            friends.add(new Friend(row.get("id").getAsString(), usernameOf(row), row.get("createdAt").getAsLong()));
+        }
+    }
+
+    private void refreshRequests() {
+        HttpResult result = request("GET", "/api/chat/friends/requests", null, true);
+        if (result.status != 200) return;
+        JsonArray array = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("requests");
+        requests.clear();
+        for (JsonElement element : array) {
+            JsonObject row = element.getAsJsonObject();
+            if (!"pending".equals(row.get("status").getAsString())) continue;
+            JsonObject requester = row.getAsJsonObject("requester");
+            JsonObject target = row.getAsJsonObject("target");
+            requests.add(new FriendRequest(
+                    row.get("id").getAsLong(),
+                    requester.get("id").getAsString(), usernameOf(requester),
+                    target.get("id").getAsString(), usernameOf(target),
+                    row.get("status").getAsString(), row.get("createdAt").getAsLong()
+            ));
+        }
+    }
+
+    private void refreshBlocked() {
+        HttpResult result = request("GET", "/api/chat/friends/blocked", null, true);
+        if (result.status != 200) return;
+        JsonArray array = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("blocked");
+        blocked.clear();
+        for (JsonElement element : array) {
+            JsonObject row = element.getAsJsonObject();
+            blocked.add(new Friend(row.get("id").getAsString(), usernameOf(row), row.get("createdAt").getAsLong()));
+        }
     }
 
     private void loadGlobalMessages() {
@@ -241,6 +497,8 @@ public final class MessengerService {
             }
             JsonObject root = JsonParser.parseString(result.body).getAsJsonObject();
             token = root.get("token").getAsString();
+            JsonObject user = root.getAsJsonObject("user");
+            currentUser = new ChatUser(user.get("id").getAsString(), usernameOf(user));
             status = "Online";
             return true;
         } catch (Throwable throwable) {
@@ -270,7 +528,7 @@ public final class MessengerService {
                     conversation.get("id").getAsString(),
                     participant.get("id").getAsString(),
                     participant.get("username").isJsonNull() ? "Unknown" : participant.get("username").getAsString(),
-                    last == null ? "No messages yet" : last.get("text").getAsString(),
+                    last == null ? "" : last.get("text").getAsString(),
                     last == null ? 0L : last.get("createdAt").getAsLong()
             ));
         }
@@ -361,15 +619,29 @@ public final class MessengerService {
         if (message == null || !message.has("id")) return;
         CopyOnWriteArrayList<Message> target = messages.computeIfAbsent(conversationId, ignored -> new CopyOnWriteArrayList<>());
         long id = message.get("id").getAsLong();
+        String text = message.get("text").getAsString();
+        long createdAt = message.get("createdAt").getAsLong();
         target.removeIf(existing -> existing.id() == id);
         target.add(new Message(
                 id,
                 message.get("senderId").getAsString(),
                 message.get("senderUsername").isJsonNull() ? "Unknown" : message.get("senderUsername").getAsString(),
-                message.get("text").getAsString(),
-                message.get("createdAt").getAsLong()
+                text,
+                createdAt
         ));
         while (target.size() > MAX_LOCAL_MESSAGES) target.remove(0);
+
+        boolean conversationKnown = false;
+        for (int index = 0; index < conversations.size(); index++) {
+            Conversation conversation = conversations.get(index);
+            if (conversation.id().equals(conversationId)) {
+                conversationKnown = true;
+                conversations.set(index, new Conversation(
+                        conversation.id(), conversation.participantId(), conversation.username(), text, createdAt));
+                break;
+            }
+        }
+        if (!conversationKnown) refreshConversations();
     }
 
     private void acceptGlobalMessage(JsonObject message) {
@@ -425,6 +697,11 @@ public final class MessengerService {
         } catch (Throwable ignored) {
             return "Player";
         }
+    }
+
+    private static String usernameOf(JsonObject object) {
+        return object != null && object.has("username") && !object.get("username").isJsonNull()
+                ? object.get("username").getAsString() : "Unknown";
     }
 
     private static String parseError(String body, String fallback) {

@@ -16,6 +16,8 @@ import vorga.phazeclient.implement.features.modules.other.AspectRatio;
 import vorga.phazeclient.implement.features.modules.other.ColorCorrection;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 import vorga.phazeclient.implement.features.modules.other.LowHealthWarning;
+import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
+import org.objectweb.asm.Opcodes;
 
 /**
  * Consolidated {@link GameRenderer} mixin: AspectRatio matrix
@@ -31,6 +33,13 @@ public abstract class GameRendererMixin {
     @Shadow private float zoomX;
     @Shadow private float zoomY;
     @Shadow private float viewDistance;
+
+    @Inject(method = "renderWorld", at = @At(value = "FIELD",
+            target = "Lnet/minecraft/client/render/GameRenderer;renderHand:Z",
+            opcode = Opcodes.GETFIELD, ordinal = 0), require = 1)
+    private void phaze$drawWorldOverlays(RenderTickCounter tickCounter, CallbackInfo ci) {
+        WorldOverlayRenderer.draw();
+    }
 
     /** Final GUI flush, after F3, scoreboard, screens and tooltips. Reuses the
      * vanilla context; the active warning adds one cached textured quad, no FBO. */

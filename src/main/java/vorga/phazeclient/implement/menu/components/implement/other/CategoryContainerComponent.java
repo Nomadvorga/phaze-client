@@ -5,6 +5,7 @@ import lombok.experimental.Accessors;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.implement.menu.MenuScreen;
+import vorga.phazeclient.implement.menu.MenuLayout;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.category.CategoryComponent;
 import net.minecraft.client.gui.DrawContext;
@@ -18,7 +19,7 @@ public class CategoryContainerComponent extends AbstractComponent {
     private static final float CHIP_TEXT_SIZE = 6.25F;
     private static final float CHIP_HEIGHT = 14.0F;
     private static final float CHIP_HORIZONTAL_PADDING = 16.0F;
-    private static final float CHIP_GAP = 4.0F;
+    private static final float CHIP_GAP = MenuLayout.PANEL_GAP - 2.0F;
     private static final List<ModuleCategory> CHIP_CATEGORIES = List.of(
             ModuleCategory.ALL,
             ModuleCategory.HUD,
@@ -86,7 +87,7 @@ public class CategoryContainerComponent extends AbstractComponent {
             String label = component.getTabLabel();
             float chipWidth = MsdfFonts.bold().getWidth(label, CHIP_TEXT_SIZE) + CHIP_HORIZONTAL_PADDING;
 
-            component.x = x + offset - 5.0F;
+            component.x = x + offset;
             component.y = y;
             component.width = chipWidth;
             component.height = CHIP_HEIGHT;

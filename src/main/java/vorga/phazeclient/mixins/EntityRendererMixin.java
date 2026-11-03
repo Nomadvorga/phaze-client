@@ -59,6 +59,8 @@ public abstract class EntityRendererMixin {
     private static boolean phaze$depthPreparedThisLabel = false;
     private static boolean phaze$fallbackQueuedThisLabel = false;
     private static float phaze$currentLabelDistance = 0.0f;
+    private static long phaze$labelSequence;
+    private static long phaze$drawnSequence = Long.MIN_VALUE;
     private static final int NAMETAG_CACHE_MAX = 256;
     private static final Map<String, Integer> TEXT_WIDTH_CACHE = new LinkedHashMap<>(NAMETAG_CACHE_MAX, 0.75f, true) {
         @Override
@@ -121,6 +123,7 @@ public abstract class EntityRendererMixin {
         // selected for one player can never leak into a later armor stand or
         // hologram line.
         phaze$backgroundDrawnThisLabel = false;
+        phaze$labelSequence++;
         phaze$drawBadgeThisLabel = false;
         phaze$drawCodeBadgeThisLabel = false;
         phaze$depthPreparedThisLabel = false;
@@ -149,6 +152,14 @@ public abstract class EntityRendererMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/Text;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
     )
     private int phaze$drawNametagWithSettings(TextRenderer textRenderer, Text text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
+        if (vorga.phazeclient.api.system.render.WorldOverlayRenderer.isRecording()
+                && !vorga.phazeclient.api.system.render.WorldOverlayRenderer.isDrawing()) {
+            Matrix4f snapshot = new Matrix4f(matrix);
+            phaze$deferLabel(() -> phaze$drawNametagWithSettings(textRenderer, text, x, y, color, shadow,
+                    snapshot, vorga.phazeclient.api.system.render.WorldOverlayRenderer.CONSUMERS,
+                    layerType, backgroundColor, light));
+            return (int) x + textRenderer.getWidth(text);
+        }
         NametagHud module = NametagHud.getInstance();
         int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(
                 phaze$getCachedTextWidth(textRenderer, text),
@@ -188,6 +199,14 @@ public abstract class EntityRendererMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/TextRenderer;draw(Lnet/minecraft/text/OrderedText;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/font/TextRenderer$TextLayerType;II)I")
     )
     private int phaze$drawOrderedNametagWithSettings(TextRenderer textRenderer, OrderedText text, float x, float y, int color, boolean shadow, Matrix4f matrix, VertexConsumerProvider vertexConsumers, TextRenderer.TextLayerType layerType, int backgroundColor, int light) {
+        if (vorga.phazeclient.api.system.render.WorldOverlayRenderer.isRecording()
+                && !vorga.phazeclient.api.system.render.WorldOverlayRenderer.isDrawing()) {
+            Matrix4f snapshot = new Matrix4f(matrix);
+            phaze$deferLabel(() -> phaze$drawOrderedNametagWithSettings(textRenderer, text, x, y, color, shadow,
+                    snapshot, vorga.phazeclient.api.system.render.WorldOverlayRenderer.CONSUMERS,
+                    layerType, backgroundColor, light));
+            return (int) x + textRenderer.getWidth(text);
+        }
         NametagHud module = NametagHud.getInstance();
         int resolvedBackground = phaze$drawBlurBackgroundIfNeeded(
                 phaze$getCachedTextWidth(textRenderer, text),
@@ -494,6 +513,10 @@ public abstract class EntityRendererMixin {
     }
 
     private static void phaze$flushCurrentNametagLayer(VertexConsumerProvider vertexConsumers) {
+        if (vertexConsumers == vorga.phazeclient.api.system.render.WorldOverlayRenderer.CONSUMERS) {
+            vorga.phazeclient.api.system.render.WorldOverlayRenderer.flush();
+            return;
+        }
         VertexConsumerProvider.Immediate immediate = null;
         if (vertexConsumers instanceof VertexConsumerProvider.Immediate direct) {
             immediate = direct;
@@ -568,5 +591,23 @@ public abstract class EntityRendererMixin {
 
     private static float phaze$snapHalfPixel(float value) {
         return Math.round(value * 2.0f) * 0.5f;
+    }
+
+    private static void phaze$deferLabel(Runnable draw) {
+        long sequence = phaze$labelSequence;
+        boolean badge = phaze$drawBadgeThisLabel, codeBadge = phaze$drawCodeBadgeThisLabel;
+        float distance = phaze$currentLabelDistance;
+        vorga.phazeclient.api.system.render.WorldOverlayRenderer.deferLabel(() -> {
+            if (phaze$drawnSequence != sequence) {
+                phaze$backgroundDrawnThisLabel = false;
+                phaze$depthPreparedThisLabel = false;
+                phaze$fallbackQueuedThisLabel = false;
+                phaze$drawnSequence = sequence;
+            }
+            phaze$drawBadgeThisLabel = badge;
+            phaze$drawCodeBadgeThisLabel = codeBadge;
+            phaze$currentLabelDistance = distance;
+            draw.run();
+        });
     }
 }

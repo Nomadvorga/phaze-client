@@ -76,51 +76,24 @@ public class Render2DUtil implements QuickImports {
     }
 
     public void drawHead(@NonNull DrawContext context, Identifier id, float x, float y, float size, float round, int backgroundColor, int color) {
+        drawHead(context, id, x, y, size, round, backgroundColor, color, true);
+    }
+
+    public void drawHead(@NonNull DrawContext context, Identifier id, float x, float y, float size,
+                         float round, int backgroundColor, int color, boolean overlay) {
         MatrixStack matrix = context.getMatrices();
         rectangle.render(ShapeProperties.create(matrix, x, y, size, size).round(round).color(backgroundColor).build());
 
         if (id != null) {
-            matrix.push();
-            matrix.translate(x, y, 0);
-            matrix.scale(size, size, 1);
-
-            RenderSystem.setShaderTexture(0, id);
-            RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-            RenderSystem.enableBlend();
-            RenderSystem.blendFunc(GL40C.GL_DST_ALPHA, GL40C.GL_ONE_MINUS_DST_ALPHA);
-
-            GL40C.glTexParameteri(GL40C.GL_TEXTURE_2D, GL40C.GL_TEXTURE_MIN_FILTER, GL40C.GL_NEAREST);
-            GL40C.glTexParameteri(GL40C.GL_TEXTURE_2D, GL40C.GL_TEXTURE_MAG_FILTER, GL40C.GL_NEAREST);
-
-            BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-            Matrix4f matrix4f = matrix.peek().getPositionMatrix();
-
-            float u1_base = 8.0F / 64.0F;
-            float u2_base = 16.0F / 64.0F;
-            float v1_base = 8.0F / 64.0F;
-            float v2_base = 16.0F / 64.0F;
-
-            float u1_overlay = 40.0F / 64.0F;
-            float u2_overlay = 48.0F / 64.0F;
-            float v1_overlay = 8.0F / 64.0F;
-            float v2_overlay = 16.0F / 64.0F;
-
-            buffer.vertex(matrix4f, 0, 0, 0).texture(u1_base, v1_base).color(color);
-            buffer.vertex(matrix4f, 0, 1, 0).texture(u1_base, v2_base).color(color);
-            buffer.vertex(matrix4f, 1, 1, 0).texture(u2_base, v2_base).color(color);
-            buffer.vertex(matrix4f, 1, 0, 0).texture(u2_base, v1_base).color(color);
-
-            buffer.vertex(matrix4f, 0, 0, 0).texture(u1_overlay, v1_overlay).color(color);
-            buffer.vertex(matrix4f, 0, 1, 0).texture(u1_overlay, v2_overlay).color(color);
-            buffer.vertex(matrix4f, 1, 1, 0).texture(u2_overlay, v2_overlay).color(color);
-            buffer.vertex(matrix4f, 1, 0, 0).texture(u2_overlay, v1_overlay).color(color);
-
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
-
-            RenderSystem.disableBlend();
-
-            matrix.translate(-x, -y, 0);
-            matrix.pop();
+            int drawX = Math.round(x);
+            int drawY = Math.round(y);
+            int drawSize = Math.max(1, Math.round(size));
+            context.drawTexture(RenderLayer::getGuiTextured, id, drawX, drawY,
+                    8.0F, 8.0F, drawSize, drawSize, 8, 8, 64, 64, color);
+            if (overlay) {
+                context.drawTexture(RenderLayer::getGuiTextured, id, drawX, drawY,
+                        40.0F, 8.0F, drawSize, drawSize, 8, 8, 64, 64, color);
+            }
         }
     }
 

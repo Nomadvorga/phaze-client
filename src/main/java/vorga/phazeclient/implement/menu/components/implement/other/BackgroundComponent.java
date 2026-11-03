@@ -30,6 +30,7 @@ import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.MenuLayout;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.core.Main;
@@ -48,7 +49,7 @@ public class BackgroundComponent extends AbstractComponent {
     private static final float TOP_TAB_HEIGHT = 17.0F;
     private static final float TOP_TAB_GAP = 8.0F;
     private static final float TOP_TAB_HORIZONTAL_PADDING = 19.0F;
-    private static final float SIDEBAR_WIDTH = 100f;
+    private static final float SIDEBAR_WIDTH = MenuLayout.SIDEBAR_WIDTH;
     private static final float CONFIG_ROW_HEIGHT = 17.5F;
     private static final float CONFIG_ROW_GAP = 1.0F;
     private static final float CONFIG_DELETE_WIDTH = 19.5F;
@@ -451,7 +452,8 @@ public class BackgroundComponent extends AbstractComponent {
         // its click handlers (config rows, NEW CONFIG, EDIT HUD)
         // would react to clicks in the now full-width content pane
         // where they have no visible widgets. Skip them entirely.
-        if (MenuScreen.INSTANCE.isConfigsViewOpen() || MenuScreen.INSTANCE.isCosmeticsViewOpen()) {
+        if (MenuScreen.INSTANCE.isConfigsViewOpen() || MenuScreen.INSTANCE.isCosmeticsViewOpen()
+                || MenuScreen.INSTANCE.isMessengerViewOpen()) {
             return false;
         }
 

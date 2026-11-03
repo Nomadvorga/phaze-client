@@ -23,6 +23,10 @@ import vorga.phazeclient.api.system.nametag.NametagBlurStorage;
 import vorga.phazeclient.api.system.render.Render3DUtil;
 import vorga.phazeclient.implement.features.modules.other.HitboxCustomizer;
 import vorga.phazeclient.util.render.PhazeRenderLayers;
+import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
 
 @Mixin(EntityRenderDispatcher.class)
 public class EntityRenderDispatcherMixin {
@@ -65,8 +69,6 @@ public class EntityRenderDispatcherMixin {
             return;
         }
 
-        VertexConsumerProvider.Immediate immediate = phaze$getImmediate(vertexConsumers);
-
         int colorInt = module.getHitboxColor();
         if (module.redInReach.isValue() && phaze$isCrosshairTarget(entity)) {
             colorInt = module.reachColor.getColor();
@@ -79,24 +81,15 @@ public class EntityRenderDispatcherMixin {
 
         Box box = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
 
-        if (immediate != null) {
-            immediate.draw();
-        }
-
         float thickness = Math.max(1.0f, module.outlineThickness.getValue());
         if (module.isFillEnabled()) {
-            RenderLayer fillLayer = PhazeRenderLayers.getHitboxFill();
-            VertexConsumer fillConsumer = vertexConsumers.getBuffer(fillLayer);
+            BufferBuilder fillConsumer = WorldOverlayRenderer.buffer(VertexFormat.DrawMode.QUADS,
+                    VertexFormats.POSITION_COLOR, 1, true);
             Render3DUtil.vertexBoxFill(matrices, fillConsumer, box, colorInt, module.getFillOpacity());
-            if (immediate != null) {
-                immediate.draw(fillLayer);
-            }
         }
 
-        RenderLayer lineLayer = thickness > 1.0f
-                ? PhazeRenderLayers.getThickLines(thickness)
-                : RenderLayer.getLines();
-        VertexConsumer lineConsumer = vertexConsumers.getBuffer(lineLayer);
+        BufferBuilder lineConsumer = WorldOverlayRenderer.buffer(VertexFormat.DrawMode.LINES,
+                VertexFormats.LINES, thickness, true);
         VertexRendering.drawBox(matrices, lineConsumer, box, r, g, b, a);
 
         if (module.showLookLine.isValue()) {
@@ -107,9 +100,6 @@ public class EntityRenderDispatcherMixin {
                     entity.getRotationVec(tickDelta).multiply(2.0),
                     -16776961
             );
-        }
-        if (immediate != null) {
-            immediate.draw(lineLayer);
         }
     }
 

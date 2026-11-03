@@ -1,0 +1,1125 @@
+Classfile jar:file:///C:/Users/PC/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged/1.21.4-loom.mappings.1_21_4.layered+hash.2198-v2/minecraft-merged-1.21.4-loom.mappings.1_21_4.layered+hash.2198-v2.jar!/net/minecraft/client/renderer/debug/ChunkBorderRenderer.class
+  Last modified 20 ёхэЄ. 2026?у.; size 5274 bytes
+  SHA-256 checksum b71a6eac155f18cbfc82a6d1d5c5e5e56c3d85da8324cf77b22c22328724d4cb
+  Compiled from "ChunkBorderRenderer.java"
+public class net.minecraft.client.renderer.debug.ChunkBorderRenderer implements net.minecraft.client.renderer.debug.DebugRenderer$SimpleDebugRenderer
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #2                          // net/minecraft/client/renderer/debug/ChunkBorderRenderer
+  super_class: #4                         // java/lang/Object
+  interfaces: 1, fields: 3, methods: 3, attributes: 3
+Constant pool:
+    #1 = Utf8               net/minecraft/client/renderer/debug/ChunkBorderRenderer
+    #2 = Class              #1            // net/minecraft/client/renderer/debug/ChunkBorderRenderer
+    #3 = Utf8               java/lang/Object
+    #4 = Class              #3            // java/lang/Object
+    #5 = Utf8               net/minecraft/client/renderer/debug/DebugRenderer$SimpleDebugRenderer
+    #6 = Class              #5            // net/minecraft/client/renderer/debug/DebugRenderer$SimpleDebugRenderer
+    #7 = Utf8               ChunkBorderRenderer.java
+    #8 = Utf8               Lnet/fabricmc/api/Environment;
+    #9 = Utf8               value
+   #10 = Utf8               Lnet/fabricmc/api/EnvType;
+   #11 = Utf8               CLIENT
+   #12 = Utf8               com/mojang/blaze3d/vertex/PoseStack$Pose
+   #13 = Class              #12           // com/mojang/blaze3d/vertex/PoseStack$Pose
+   #14 = Utf8               com/mojang/blaze3d/vertex/PoseStack
+   #15 = Class              #14           // com/mojang/blaze3d/vertex/PoseStack
+   #16 = Utf8               Pose
+   #17 = Utf8               net/minecraft/client/renderer/debug/DebugRenderer
+   #18 = Class              #17           // net/minecraft/client/renderer/debug/DebugRenderer
+   #19 = Utf8               SimpleDebugRenderer
+   #20 = Utf8               minecraft
+   #21 = Utf8               Lnet/minecraft/client/Minecraft;
+   #22 = Utf8               CELL_BORDER
+   #23 = Utf8               I
+   #24 = Utf8               YELLOW
+   #25 = Utf8               <init>
+   #26 = Utf8               (Lnet/minecraft/client/Minecraft;)V
+   #27 = Utf8               ()V
+   #28 = NameAndType        #25:#27       // "<init>":()V
+   #29 = Methodref          #4.#28        // java/lang/Object."<init>":()V
+   #30 = NameAndType        #20:#21       // minecraft:Lnet/minecraft/client/Minecraft;
+   #31 = Fieldref           #2.#30        // net/minecraft/client/renderer/debug/ChunkBorderRenderer.minecraft:Lnet/minecraft/client/Minecraft;
+   #32 = Utf8               this
+   #33 = Utf8               Lnet/minecraft/client/renderer/debug/ChunkBorderRenderer;
+   #34 = Utf8               render
+   #35 = Utf8               (Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;DDD)V
+   #36 = Utf8               poseStack
+   #37 = Utf8               multiBufferSource
+   #38 = Utf8               d
+   #39 = Utf8               e
+   #40 = Utf8               f
+   #41 = Utf8               net/minecraft/client/Minecraft
+   #42 = Class              #41           // net/minecraft/client/Minecraft
+   #43 = Utf8               gameRenderer
+   #44 = Utf8               Lnet/minecraft/client/renderer/GameRenderer;
+   #45 = NameAndType        #43:#44       // gameRenderer:Lnet/minecraft/client/renderer/GameRenderer;
+   #46 = Fieldref           #42.#45       // net/minecraft/client/Minecraft.gameRenderer:Lnet/minecraft/client/renderer/GameRenderer;
+   #47 = Utf8               net/minecraft/client/renderer/GameRenderer
+   #48 = Class              #47           // net/minecraft/client/renderer/GameRenderer
+   #49 = Utf8               getMainCamera
+   #50 = Utf8               ()Lnet/minecraft/client/Camera;
+   #51 = NameAndType        #49:#50       // getMainCamera:()Lnet/minecraft/client/Camera;
+   #52 = Methodref          #48.#51       // net/minecraft/client/renderer/GameRenderer.getMainCamera:()Lnet/minecraft/client/Camera;
+   #53 = Utf8               net/minecraft/client/Camera
+   #54 = Class              #53           // net/minecraft/client/Camera
+   #55 = Utf8               getEntity
+   #56 = Utf8               ()Lnet/minecraft/world/entity/Entity;
+   #57 = NameAndType        #55:#56       // getEntity:()Lnet/minecraft/world/entity/Entity;
+   #58 = Methodref          #54.#57       // net/minecraft/client/Camera.getEntity:()Lnet/minecraft/world/entity/Entity;
+   #59 = Utf8               level
+   #60 = Utf8               Lnet/minecraft/client/multiplayer/ClientLevel;
+   #61 = NameAndType        #59:#60       // level:Lnet/minecraft/client/multiplayer/ClientLevel;
+   #62 = Fieldref           #42.#61       // net/minecraft/client/Minecraft.level:Lnet/minecraft/client/multiplayer/ClientLevel;
+   #63 = Utf8               net/minecraft/client/multiplayer/ClientLevel
+   #64 = Class              #63           // net/minecraft/client/multiplayer/ClientLevel
+   #65 = Utf8               getMinY
+   #66 = Utf8               ()I
+   #67 = NameAndType        #65:#66       // getMinY:()I
+   #68 = Methodref          #64.#67       // net/minecraft/client/multiplayer/ClientLevel.getMinY:()I
+   #69 = Utf8               getMaxY
+   #70 = NameAndType        #69:#66       // getMaxY:()I
+   #71 = Methodref          #64.#70       // net/minecraft/client/multiplayer/ClientLevel.getMaxY:()I
+   #72 = Utf8               net/minecraft/world/entity/Entity
+   #73 = Class              #72           // net/minecraft/world/entity/Entity
+   #74 = Utf8               chunkPosition
+   #75 = Utf8               ()Lnet/minecraft/world/level/ChunkPos;
+   #76 = NameAndType        #74:#75       // chunkPosition:()Lnet/minecraft/world/level/ChunkPos;
+   #77 = Methodref          #73.#76       // net/minecraft/world/entity/Entity.chunkPosition:()Lnet/minecraft/world/level/ChunkPos;
+   #78 = Utf8               net/minecraft/world/level/ChunkPos
+   #79 = Class              #78           // net/minecraft/world/level/ChunkPos
+   #80 = Utf8               getMinBlockX
+   #81 = NameAndType        #80:#66       // getMinBlockX:()I
+   #82 = Methodref          #79.#81       // net/minecraft/world/level/ChunkPos.getMinBlockX:()I
+   #83 = Utf8               getMinBlockZ
+   #84 = NameAndType        #83:#66       // getMinBlockZ:()I
+   #85 = Methodref          #79.#84       // net/minecraft/world/level/ChunkPos.getMinBlockZ:()I
+   #86 = Utf8               net/minecraft/client/renderer/RenderType
+   #87 = Class              #86           // net/minecraft/client/renderer/RenderType
+   #88 = Utf8               debugLineStrip
+   #89 = Utf8               (D)Lnet/minecraft/client/renderer/RenderType;
+   #90 = NameAndType        #88:#89       // debugLineStrip:(D)Lnet/minecraft/client/renderer/RenderType;
+   #91 = Methodref          #87.#90       // net/minecraft/client/renderer/RenderType.debugLineStrip:(D)Lnet/minecraft/client/renderer/RenderType;
+   #92 = Utf8               net/minecraft/client/renderer/MultiBufferSource
+   #93 = Class              #92           // net/minecraft/client/renderer/MultiBufferSource
+   #94 = Utf8               getBuffer
+   #95 = Utf8               (Lnet/minecraft/client/renderer/RenderType;)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+   #96 = NameAndType        #94:#95       // getBuffer:(Lnet/minecraft/client/renderer/RenderType;)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+   #97 = InterfaceMethodref #93.#96       // net/minecraft/client/renderer/MultiBufferSource.getBuffer:(Lnet/minecraft/client/renderer/RenderType;)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+   #98 = Utf8               last
+   #99 = Utf8               ()Lcom/mojang/blaze3d/vertex/PoseStack$Pose;
+  #100 = NameAndType        #98:#99       // last:()Lcom/mojang/blaze3d/vertex/PoseStack$Pose;
+  #101 = Methodref          #15.#100      // com/mojang/blaze3d/vertex/PoseStack.last:()Lcom/mojang/blaze3d/vertex/PoseStack$Pose;
+  #102 = Utf8               pose
+  #103 = Utf8               ()Lorg/joml/Matrix4f;
+  #104 = NameAndType        #102:#103     // pose:()Lorg/joml/Matrix4f;
+  #105 = Methodref          #13.#104      // com/mojang/blaze3d/vertex/PoseStack$Pose.pose:()Lorg/joml/Matrix4f;
+  #106 = Utf8               com/mojang/blaze3d/vertex/VertexConsumer
+  #107 = Class              #106          // com/mojang/blaze3d/vertex/VertexConsumer
+  #108 = Utf8               org/joml/Matrix4f
+  #109 = Class              #108          // org/joml/Matrix4f
+  #110 = Utf8               addVertex
+  #111 = Utf8               (Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #112 = NameAndType        #110:#111     // addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #113 = InterfaceMethodref #107.#112     // com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #114 = Utf8               setColor
+  #115 = Utf8               (FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #116 = NameAndType        #114:#115     // setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #117 = InterfaceMethodref #107.#116     // com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #118 = Float              0.5f
+  #119 = NameAndType        #22:#23       // CELL_BORDER:I
+  #120 = Fieldref           #2.#119       // net/minecraft/client/renderer/debug/ChunkBorderRenderer.CELL_BORDER:I
+  #121 = NameAndType        #24:#23       // YELLOW:I
+  #122 = Fieldref           #2.#121       // net/minecraft/client/renderer/debug/ChunkBorderRenderer.YELLOW:I
+  #123 = Utf8               (I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #124 = NameAndType        #114:#123     // setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #125 = InterfaceMethodref #107.#124     // com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #126 = Float              16.0f
+  #127 = Double             2.0d
+  #129 = Float              0.25f
+  #130 = Utf8               Lcom/mojang/blaze3d/vertex/PoseStack;
+  #131 = Utf8               Lnet/minecraft/client/renderer/MultiBufferSource;
+  #132 = Utf8               D
+  #133 = Utf8               entity
+  #134 = Utf8               Lnet/minecraft/world/entity/Entity;
+  #135 = Utf8               g
+  #136 = Utf8               F
+  #137 = Utf8               h
+  #138 = Utf8               chunkPos
+  #139 = Utf8               Lnet/minecraft/world/level/ChunkPos;
+  #140 = Utf8               i
+  #141 = Utf8               j
+  #142 = Utf8               vertexConsumer
+  #143 = Utf8               Lcom/mojang/blaze3d/vertex/VertexConsumer;
+  #144 = Utf8               matrix4f
+  #145 = Utf8               Lorg/joml/Matrix4f;
+  #146 = Utf8               k
+  #147 = Utf8               l
+  #148 = Utf8               m
+  #149 = Utf8               n
+  #150 = Utf8               <clinit>
+  #151 = Utf8               net/minecraft/util/ARGB
+  #152 = Class              #151          // net/minecraft/util/ARGB
+  #153 = Utf8               color
+  #154 = Utf8               (IIII)I
+  #155 = NameAndType        #153:#154     // color:(IIII)I
+  #156 = Methodref          #152.#155     // net/minecraft/util/ARGB.color:(IIII)I
+  #157 = Utf8               Code
+  #158 = Utf8               LineNumberTable
+  #159 = Utf8               LocalVariableTable
+  #160 = Utf8               MethodParameters
+  #161 = Utf8               StackMapTable
+  #162 = Utf8               InnerClasses
+  #163 = Utf8               SourceFile
+  #164 = Utf8               RuntimeVisibleAnnotations
+{
+  private final net.minecraft.client.Minecraft minecraft;
+    descriptor: Lnet/minecraft/client/Minecraft;
+    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
+
+  private static final int CELL_BORDER;
+    descriptor: I
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+
+  private static final int YELLOW;
+    descriptor: I
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+
+  public net.minecraft.client.renderer.debug.ChunkBorderRenderer(net.minecraft.client.Minecraft);
+    descriptor: (Lnet/minecraft/client/Minecraft;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: invokespecial #29                 // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: aload_1
+         6: putfield      #31                 // Field minecraft:Lnet/minecraft/client/Minecraft;
+         9: return
+      LineNumberTable:
+        line 19: 0
+        line 20: 4
+        line 21: 9
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Lnet/minecraft/client/renderer/debug/ChunkBorderRenderer;
+            0      10     1 minecraft   Lnet/minecraft/client/Minecraft;
+    MethodParameters:
+      Name                           Flags
+      minecraft
+
+  public void render(com.mojang.blaze3d.vertex.PoseStack, net.minecraft.client.renderer.MultiBufferSource, double, double, double);
+    descriptor: (Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;DDD)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=6, locals=20, args_size=6
+         0: aload_0
+         1: getfield      #31                 // Field minecraft:Lnet/minecraft/client/Minecraft;
+         4: getfield      #46                 // Field net/minecraft/client/Minecraft.gameRenderer:Lnet/minecraft/client/renderer/GameRenderer;
+         7: invokevirtual #52                 // Method net/minecraft/client/renderer/GameRenderer.getMainCamera:()Lnet/minecraft/client/Camera;
+        10: invokevirtual #58                 // Method net/minecraft/client/Camera.getEntity:()Lnet/minecraft/world/entity/Entity;
+        13: astore        9
+        15: aload_0
+        16: getfield      #31                 // Field minecraft:Lnet/minecraft/client/Minecraft;
+        19: getfield      #62                 // Field net/minecraft/client/Minecraft.level:Lnet/minecraft/client/multiplayer/ClientLevel;
+        22: invokevirtual #68                 // Method net/minecraft/client/multiplayer/ClientLevel.getMinY:()I
+        25: i2d
+        26: dload         5
+        28: dsub
+        29: d2f
+        30: fstore        10
+        32: aload_0
+        33: getfield      #31                 // Field minecraft:Lnet/minecraft/client/Minecraft;
+        36: getfield      #62                 // Field net/minecraft/client/Minecraft.level:Lnet/minecraft/client/multiplayer/ClientLevel;
+        39: invokevirtual #71                 // Method net/minecraft/client/multiplayer/ClientLevel.getMaxY:()I
+        42: iconst_1
+        43: iadd
+        44: i2d
+        45: dload         5
+        47: dsub
+        48: d2f
+        49: fstore        11
+        51: aload         9
+        53: invokevirtual #77                 // Method net/minecraft/world/entity/Entity.chunkPosition:()Lnet/minecraft/world/level/ChunkPos;
+        56: astore        12
+        58: aload         12
+        60: invokevirtual #82                 // Method net/minecraft/world/level/ChunkPos.getMinBlockX:()I
+        63: i2d
+        64: dload_3
+        65: dsub
+        66: d2f
+        67: fstore        13
+        69: aload         12
+        71: invokevirtual #85                 // Method net/minecraft/world/level/ChunkPos.getMinBlockZ:()I
+        74: i2d
+        75: dload         7
+        77: dsub
+        78: d2f
+        79: fstore        14
+        81: aload_2
+        82: dconst_1
+        83: invokestatic  #91                 // Method net/minecraft/client/renderer/RenderType.debugLineStrip:(D)Lnet/minecraft/client/renderer/RenderType;
+        86: invokeinterface #97,  2           // InterfaceMethod net/minecraft/client/renderer/MultiBufferSource.getBuffer:(Lnet/minecraft/client/renderer/RenderType;)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+        91: astore        15
+        93: aload_1
+        94: invokevirtual #101                // Method com/mojang/blaze3d/vertex/PoseStack.last:()Lcom/mojang/blaze3d/vertex/PoseStack$Pose;
+        97: invokevirtual #105                // Method com/mojang/blaze3d/vertex/PoseStack$Pose.pose:()Lorg/joml/Matrix4f;
+       100: astore        16
+       102: bipush        -16
+       104: istore        17
+       106: iload         17
+       108: bipush        32
+       110: if_icmpgt     270
+       113: bipush        -16
+       115: istore        18
+       117: iload         18
+       119: bipush        32
+       121: if_icmpgt     264
+       124: aload         15
+       126: aload         16
+       128: fload         13
+       130: iload         17
+       132: i2f
+       133: fadd
+       134: fload         10
+       136: fload         14
+       138: iload         18
+       140: i2f
+       141: fadd
+       142: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       147: fconst_1
+       148: fconst_0
+       149: fconst_0
+       150: fconst_0
+       151: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       156: pop
+       157: aload         15
+       159: aload         16
+       161: fload         13
+       163: iload         17
+       165: i2f
+       166: fadd
+       167: fload         10
+       169: fload         14
+       171: iload         18
+       173: i2f
+       174: fadd
+       175: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       180: fconst_1
+       181: fconst_0
+       182: fconst_0
+       183: ldc           #118                // float 0.5f
+       185: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       190: pop
+       191: aload         15
+       193: aload         16
+       195: fload         13
+       197: iload         17
+       199: i2f
+       200: fadd
+       201: fload         11
+       203: fload         14
+       205: iload         18
+       207: i2f
+       208: fadd
+       209: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       214: fconst_1
+       215: fconst_0
+       216: fconst_0
+       217: ldc           #118                // float 0.5f
+       219: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       224: pop
+       225: aload         15
+       227: aload         16
+       229: fload         13
+       231: iload         17
+       233: i2f
+       234: fadd
+       235: fload         11
+       237: fload         14
+       239: iload         18
+       241: i2f
+       242: fadd
+       243: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       248: fconst_1
+       249: fconst_0
+       250: fconst_0
+       251: fconst_0
+       252: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       257: pop
+       258: iinc          18, 16
+       261: goto          117
+       264: iinc          17, 16
+       267: goto          106
+       270: iconst_2
+       271: istore        17
+       273: iload         17
+       275: bipush        16
+       277: if_icmpge     540
+       280: iload         17
+       282: iconst_4
+       283: irem
+       284: ifne          293
+       287: getstatic     #120                // Field CELL_BORDER:I
+       290: goto          296
+       293: getstatic     #122                // Field YELLOW:I
+       296: istore        18
+       298: aload         15
+       300: aload         16
+       302: fload         13
+       304: iload         17
+       306: i2f
+       307: fadd
+       308: fload         10
+       310: fload         14
+       312: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       317: fconst_1
+       318: fconst_1
+       319: fconst_0
+       320: fconst_0
+       321: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       326: pop
+       327: aload         15
+       329: aload         16
+       331: fload         13
+       333: iload         17
+       335: i2f
+       336: fadd
+       337: fload         10
+       339: fload         14
+       341: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       346: iload         18
+       348: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       353: pop
+       354: aload         15
+       356: aload         16
+       358: fload         13
+       360: iload         17
+       362: i2f
+       363: fadd
+       364: fload         11
+       366: fload         14
+       368: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       373: iload         18
+       375: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       380: pop
+       381: aload         15
+       383: aload         16
+       385: fload         13
+       387: iload         17
+       389: i2f
+       390: fadd
+       391: fload         11
+       393: fload         14
+       395: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       400: fconst_1
+       401: fconst_1
+       402: fconst_0
+       403: fconst_0
+       404: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       409: pop
+       410: aload         15
+       412: aload         16
+       414: fload         13
+       416: iload         17
+       418: i2f
+       419: fadd
+       420: fload         10
+       422: fload         14
+       424: ldc           #126                // float 16.0f
+       426: fadd
+       427: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       432: fconst_1
+       433: fconst_1
+       434: fconst_0
+       435: fconst_0
+       436: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       441: pop
+       442: aload         15
+       444: aload         16
+       446: fload         13
+       448: iload         17
+       450: i2f
+       451: fadd
+       452: fload         10
+       454: fload         14
+       456: ldc           #126                // float 16.0f
+       458: fadd
+       459: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       464: iload         18
+       466: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       471: pop
+       472: aload         15
+       474: aload         16
+       476: fload         13
+       478: iload         17
+       480: i2f
+       481: fadd
+       482: fload         11
+       484: fload         14
+       486: ldc           #126                // float 16.0f
+       488: fadd
+       489: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       494: iload         18
+       496: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       501: pop
+       502: aload         15
+       504: aload         16
+       506: fload         13
+       508: iload         17
+       510: i2f
+       511: fadd
+       512: fload         11
+       514: fload         14
+       516: ldc           #126                // float 16.0f
+       518: fadd
+       519: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       524: fconst_1
+       525: fconst_1
+       526: fconst_0
+       527: fconst_0
+       528: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       533: pop
+       534: iinc          17, 2
+       537: goto          273
+       540: iconst_2
+       541: istore        17
+       543: iload         17
+       545: bipush        16
+       547: if_icmpge     810
+       550: iload         17
+       552: iconst_4
+       553: irem
+       554: ifne          563
+       557: getstatic     #120                // Field CELL_BORDER:I
+       560: goto          566
+       563: getstatic     #122                // Field YELLOW:I
+       566: istore        18
+       568: aload         15
+       570: aload         16
+       572: fload         13
+       574: fload         10
+       576: fload         14
+       578: iload         17
+       580: i2f
+       581: fadd
+       582: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       587: fconst_1
+       588: fconst_1
+       589: fconst_0
+       590: fconst_0
+       591: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       596: pop
+       597: aload         15
+       599: aload         16
+       601: fload         13
+       603: fload         10
+       605: fload         14
+       607: iload         17
+       609: i2f
+       610: fadd
+       611: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       616: iload         18
+       618: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       623: pop
+       624: aload         15
+       626: aload         16
+       628: fload         13
+       630: fload         11
+       632: fload         14
+       634: iload         17
+       636: i2f
+       637: fadd
+       638: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       643: iload         18
+       645: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       650: pop
+       651: aload         15
+       653: aload         16
+       655: fload         13
+       657: fload         11
+       659: fload         14
+       661: iload         17
+       663: i2f
+       664: fadd
+       665: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       670: fconst_1
+       671: fconst_1
+       672: fconst_0
+       673: fconst_0
+       674: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       679: pop
+       680: aload         15
+       682: aload         16
+       684: fload         13
+       686: ldc           #126                // float 16.0f
+       688: fadd
+       689: fload         10
+       691: fload         14
+       693: iload         17
+       695: i2f
+       696: fadd
+       697: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       702: fconst_1
+       703: fconst_1
+       704: fconst_0
+       705: fconst_0
+       706: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       711: pop
+       712: aload         15
+       714: aload         16
+       716: fload         13
+       718: ldc           #126                // float 16.0f
+       720: fadd
+       721: fload         10
+       723: fload         14
+       725: iload         17
+       727: i2f
+       728: fadd
+       729: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       734: iload         18
+       736: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       741: pop
+       742: aload         15
+       744: aload         16
+       746: fload         13
+       748: ldc           #126                // float 16.0f
+       750: fadd
+       751: fload         11
+       753: fload         14
+       755: iload         17
+       757: i2f
+       758: fadd
+       759: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       764: iload         18
+       766: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       771: pop
+       772: aload         15
+       774: aload         16
+       776: fload         13
+       778: ldc           #126                // float 16.0f
+       780: fadd
+       781: fload         11
+       783: fload         14
+       785: iload         17
+       787: i2f
+       788: fadd
+       789: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       794: fconst_1
+       795: fconst_1
+       796: fconst_0
+       797: fconst_0
+       798: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       803: pop
+       804: iinc          17, 2
+       807: goto          543
+       810: aload_0
+       811: getfield      #31                 // Field minecraft:Lnet/minecraft/client/Minecraft;
+       814: getfield      #62                 // Field net/minecraft/client/Minecraft.level:Lnet/minecraft/client/multiplayer/ClientLevel;
+       817: invokevirtual #68                 // Method net/minecraft/client/multiplayer/ClientLevel.getMinY:()I
+       820: istore        17
+       822: iload         17
+       824: aload_0
+       825: getfield      #31                 // Field minecraft:Lnet/minecraft/client/Minecraft;
+       828: getfield      #62                 // Field net/minecraft/client/Minecraft.level:Lnet/minecraft/client/multiplayer/ClientLevel;
+       831: invokevirtual #71                 // Method net/minecraft/client/multiplayer/ClientLevel.getMaxY:()I
+       834: iconst_1
+       835: iadd
+       836: if_icmpgt     1050
+       839: iload         17
+       841: i2d
+       842: dload         5
+       844: dsub
+       845: d2f
+       846: fstore        18
+       848: iload         17
+       850: bipush        8
+       852: irem
+       853: ifne          862
+       856: getstatic     #120                // Field CELL_BORDER:I
+       859: goto          865
+       862: getstatic     #122                // Field YELLOW:I
+       865: istore        19
+       867: aload         15
+       869: aload         16
+       871: fload         13
+       873: fload         18
+       875: fload         14
+       877: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       882: fconst_1
+       883: fconst_1
+       884: fconst_0
+       885: fconst_0
+       886: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       891: pop
+       892: aload         15
+       894: aload         16
+       896: fload         13
+       898: fload         18
+       900: fload         14
+       902: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       907: iload         19
+       909: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       914: pop
+       915: aload         15
+       917: aload         16
+       919: fload         13
+       921: fload         18
+       923: fload         14
+       925: ldc           #126                // float 16.0f
+       927: fadd
+       928: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       933: iload         19
+       935: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       940: pop
+       941: aload         15
+       943: aload         16
+       945: fload         13
+       947: ldc           #126                // float 16.0f
+       949: fadd
+       950: fload         18
+       952: fload         14
+       954: ldc           #126                // float 16.0f
+       956: fadd
+       957: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       962: iload         19
+       964: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       969: pop
+       970: aload         15
+       972: aload         16
+       974: fload         13
+       976: ldc           #126                // float 16.0f
+       978: fadd
+       979: fload         18
+       981: fload         14
+       983: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       988: iload         19
+       990: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+       995: pop
+       996: aload         15
+       998: aload         16
+      1000: fload         13
+      1002: fload         18
+      1004: fload         14
+      1006: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1011: iload         19
+      1013: invokeinterface #125,  2          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(I)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1018: pop
+      1019: aload         15
+      1021: aload         16
+      1023: fload         13
+      1025: fload         18
+      1027: fload         14
+      1029: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1034: fconst_1
+      1035: fconst_1
+      1036: fconst_0
+      1037: fconst_0
+      1038: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1043: pop
+      1044: iinc          17, 2
+      1047: goto          822
+      1050: aload_2
+      1051: ldc2_w        #127                // double 2.0d
+      1054: invokestatic  #91                 // Method net/minecraft/client/renderer/RenderType.debugLineStrip:(D)Lnet/minecraft/client/renderer/RenderType;
+      1057: invokeinterface #97,  2           // InterfaceMethod net/minecraft/client/renderer/MultiBufferSource.getBuffer:(Lnet/minecraft/client/renderer/RenderType;)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1062: astore        15
+      1064: iconst_0
+      1065: istore        17
+      1067: iload         17
+      1069: bipush        16
+      1071: if_icmpgt     1236
+      1074: iconst_0
+      1075: istore        18
+      1077: iload         18
+      1079: bipush        16
+      1081: if_icmpgt     1230
+      1084: aload         15
+      1086: aload         16
+      1088: fload         13
+      1090: iload         17
+      1092: i2f
+      1093: fadd
+      1094: fload         10
+      1096: fload         14
+      1098: iload         18
+      1100: i2f
+      1101: fadd
+      1102: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1107: ldc           #129                // float 0.25f
+      1109: ldc           #129                // float 0.25f
+      1111: fconst_1
+      1112: fconst_0
+      1113: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1118: pop
+      1119: aload         15
+      1121: aload         16
+      1123: fload         13
+      1125: iload         17
+      1127: i2f
+      1128: fadd
+      1129: fload         10
+      1131: fload         14
+      1133: iload         18
+      1135: i2f
+      1136: fadd
+      1137: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1142: ldc           #129                // float 0.25f
+      1144: ldc           #129                // float 0.25f
+      1146: fconst_1
+      1147: fconst_1
+      1148: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1153: pop
+      1154: aload         15
+      1156: aload         16
+      1158: fload         13
+      1160: iload         17
+      1162: i2f
+      1163: fadd
+      1164: fload         11
+      1166: fload         14
+      1168: iload         18
+      1170: i2f
+      1171: fadd
+      1172: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1177: ldc           #129                // float 0.25f
+      1179: ldc           #129                // float 0.25f
+      1181: fconst_1
+      1182: fconst_1
+      1183: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1188: pop
+      1189: aload         15
+      1191: aload         16
+      1193: fload         13
+      1195: iload         17
+      1197: i2f
+      1198: fadd
+      1199: fload         11
+      1201: fload         14
+      1203: iload         18
+      1205: i2f
+      1206: fadd
+      1207: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1212: ldc           #129                // float 0.25f
+      1214: ldc           #129                // float 0.25f
+      1216: fconst_1
+      1217: fconst_0
+      1218: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1223: pop
+      1224: iinc          18, 16
+      1227: goto          1077
+      1230: iinc          17, 16
+      1233: goto          1067
+      1236: aload_0
+      1237: getfield      #31                 // Field minecraft:Lnet/minecraft/client/Minecraft;
+      1240: getfield      #62                 // Field net/minecraft/client/Minecraft.level:Lnet/minecraft/client/multiplayer/ClientLevel;
+      1243: invokevirtual #68                 // Method net/minecraft/client/multiplayer/ClientLevel.getMinY:()I
+      1246: istore        17
+      1248: iload         17
+      1250: aload_0
+      1251: getfield      #31                 // Field minecraft:Lnet/minecraft/client/Minecraft;
+      1254: getfield      #62                 // Field net/minecraft/client/Minecraft.level:Lnet/minecraft/client/multiplayer/ClientLevel;
+      1257: invokevirtual #71                 // Method net/minecraft/client/multiplayer/ClientLevel.getMaxY:()I
+      1260: iconst_1
+      1261: iadd
+      1262: if_icmpgt     1481
+      1265: iload         17
+      1267: i2d
+      1268: dload         5
+      1270: dsub
+      1271: d2f
+      1272: fstore        18
+      1274: aload         15
+      1276: aload         16
+      1278: fload         13
+      1280: fload         18
+      1282: fload         14
+      1284: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1289: ldc           #129                // float 0.25f
+      1291: ldc           #129                // float 0.25f
+      1293: fconst_1
+      1294: fconst_0
+      1295: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1300: pop
+      1301: aload         15
+      1303: aload         16
+      1305: fload         13
+      1307: fload         18
+      1309: fload         14
+      1311: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1316: ldc           #129                // float 0.25f
+      1318: ldc           #129                // float 0.25f
+      1320: fconst_1
+      1321: fconst_1
+      1322: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1327: pop
+      1328: aload         15
+      1330: aload         16
+      1332: fload         13
+      1334: fload         18
+      1336: fload         14
+      1338: ldc           #126                // float 16.0f
+      1340: fadd
+      1341: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1346: ldc           #129                // float 0.25f
+      1348: ldc           #129                // float 0.25f
+      1350: fconst_1
+      1351: fconst_1
+      1352: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1357: pop
+      1358: aload         15
+      1360: aload         16
+      1362: fload         13
+      1364: ldc           #126                // float 16.0f
+      1366: fadd
+      1367: fload         18
+      1369: fload         14
+      1371: ldc           #126                // float 16.0f
+      1373: fadd
+      1374: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1379: ldc           #129                // float 0.25f
+      1381: ldc           #129                // float 0.25f
+      1383: fconst_1
+      1384: fconst_1
+      1385: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1390: pop
+      1391: aload         15
+      1393: aload         16
+      1395: fload         13
+      1397: ldc           #126                // float 16.0f
+      1399: fadd
+      1400: fload         18
+      1402: fload         14
+      1404: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1409: ldc           #129                // float 0.25f
+      1411: ldc           #129                // float 0.25f
+      1413: fconst_1
+      1414: fconst_1
+      1415: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1420: pop
+      1421: aload         15
+      1423: aload         16
+      1425: fload         13
+      1427: fload         18
+      1429: fload         14
+      1431: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1436: ldc           #129                // float 0.25f
+      1438: ldc           #129                // float 0.25f
+      1440: fconst_1
+      1441: fconst_1
+      1442: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1447: pop
+      1448: aload         15
+      1450: aload         16
+      1452: fload         13
+      1454: fload         18
+      1456: fload         14
+      1458: invokeinterface #113,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.addVertex:(Lorg/joml/Matrix4f;FFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1463: ldc           #129                // float 0.25f
+      1465: ldc           #129                // float 0.25f
+      1467: fconst_1
+      1468: fconst_0
+      1469: invokeinterface #117,  5          // InterfaceMethod com/mojang/blaze3d/vertex/VertexConsumer.setColor:(FFFF)Lcom/mojang/blaze3d/vertex/VertexConsumer;
+      1474: pop
+      1475: iinc          17, 16
+      1478: goto          1248
+      1481: return
+      StackMapTable: number_of_entries = 22
+        frame_type = 255 /* full_frame */
+          offset_delta = 106
+          locals = [ class net/minecraft/client/renderer/debug/ChunkBorderRenderer, top, class net/minecraft/client/renderer/MultiBufferSource, top, top, double, top, top, top, float, float, top, float, float, class com/mojang/blaze3d/vertex/VertexConsumer, class org/joml/Matrix4f, int ]
+          stack = []
+        frame_type = 252 /* append */
+          offset_delta = 10
+          locals = [ int ]
+        frame_type = 250 /* chop */
+          offset_delta = 146
+        frame_type = 250 /* chop */
+          offset_delta = 5
+        frame_type = 252 /* append */
+          offset_delta = 2
+          locals = [ int ]
+        frame_type = 19 /* same */
+        frame_type = 66 /* same_locals_1_stack_item */
+          stack = [ int ]
+        frame_type = 250 /* chop */
+          offset_delta = 243
+        frame_type = 252 /* append */
+          offset_delta = 2
+          locals = [ int ]
+        frame_type = 19 /* same */
+        frame_type = 66 /* same_locals_1_stack_item */
+          stack = [ int ]
+        frame_type = 250 /* chop */
+          offset_delta = 243
+        frame_type = 252 /* append */
+          offset_delta = 11
+          locals = [ int ]
+        frame_type = 252 /* append */
+          offset_delta = 39
+          locals = [ float ]
+        frame_type = 66 /* same_locals_1_stack_item */
+          stack = [ int ]
+        frame_type = 255 /* full_frame */
+          offset_delta = 184
+          locals = [ class net/minecraft/client/renderer/debug/ChunkBorderRenderer, top, class net/minecraft/client/renderer/MultiBufferSource, top, top, double, top, top, top, float, float, top, float, float, top, class org/joml/Matrix4f ]
+          stack = []
+        frame_type = 255 /* full_frame */
+          offset_delta = 16
+          locals = [ class net/minecraft/client/renderer/debug/ChunkBorderRenderer, top, top, top, top, double, top, top, top, float, float, top, float, float, class com/mojang/blaze3d/vertex/VertexConsumer, class org/joml/Matrix4f, int ]
+          stack = []
+        frame_type = 252 /* append */
+          offset_delta = 9
+          locals = [ int ]
+        frame_type = 250 /* chop */
+          offset_delta = 152
+        frame_type = 255 /* full_frame */
+          offset_delta = 5
+          locals = [ class net/minecraft/client/renderer/debug/ChunkBorderRenderer, top, top, top, top, double, top, top, top, top, top, top, float, float, class com/mojang/blaze3d/vertex/VertexConsumer, class org/joml/Matrix4f ]
+          stack = []
+        frame_type = 252 /* append */
+          offset_delta = 11
+          locals = [ int ]
+        frame_type = 255 /* full_frame */
+          offset_delta = 232
+          locals = []
+          stack = []
+      LineNumberTable:
+        line 25: 0
+        line 27: 15
+        line 28: 32
+        line 30: 51
+        line 31: 58
+        line 32: 69
+        line 34: 81
+        line 36: 93
+        line 39: 102
+        line 40: 113
+        line 41: 124
+        line 42: 157
+        line 43: 191
+        line 44: 225
+        line 40: 258
+        line 39: 264
+        line 49: 270
+        line 50: 280
+        line 51: 298
+        line 52: 327
+        line 53: 354
+        line 54: 381
+        line 56: 410
+        line 57: 442
+        line 58: 472
+        line 59: 502
+        line 49: 534
+        line 63: 540
+        line 64: 550
+        line 65: 568
+        line 66: 597
+        line 67: 624
+        line 68: 651
+        line 70: 680
+        line 71: 712
+        line 72: 742
+        line 73: 772
+        line 63: 804
+        line 77: 810
+        line 78: 839
+        line 79: 848
+        line 80: 867
+        line 81: 892
+        line 82: 915
+        line 83: 941
+        line 84: 970
+        line 85: 996
+        line 86: 1019
+        line 77: 1044
+        line 89: 1050
+        line 92: 1064
+        line 93: 1074
+        line 94: 1084
+        line 95: 1119
+        line 96: 1154
+        line 97: 1189
+        line 93: 1224
+        line 92: 1230
+        line 102: 1236
+        line 103: 1265
+        line 104: 1274
+        line 105: 1301
+        line 106: 1328
+        line 107: 1358
+        line 108: 1391
+        line 109: 1421
+        line 110: 1448
+        line 102: 1475
+        line 112: 1481
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0    1482     0  this   Lnet/minecraft/client/renderer/debug/ChunkBorderRenderer;
+            0    1482     1 poseStack   Lcom/mojang/blaze3d/vertex/PoseStack;
+            0    1482     2 multiBufferSource   Lnet/minecraft/client/renderer/MultiBufferSource;
+            0    1482     3     d   D
+            0    1482     5     e   D
+            0    1482     7     f   D
+           15    1467     9 entity   Lnet/minecraft/world/entity/Entity;
+           32    1450    10     g   F
+           51    1431    11     h   F
+           58    1424    12 chunkPos   Lnet/minecraft/world/level/ChunkPos;
+           69    1413    13     i   F
+           81    1401    14     j   F
+           93    1389    15 vertexConsumer   Lcom/mojang/blaze3d/vertex/VertexConsumer;
+          102    1380    16 matrix4f   Lorg/joml/Matrix4f;
+          106     164    17     k   I
+          117     147    18     l   I
+          273     267    17     k   I
+          298     236    18     l   I
+          543     267    17     k   I
+          568     236    18     l   I
+          822     228    17     k   I
+          848     196    18     m   F
+          867     177    19     n   I
+         1067     169    17     k   I
+         1077     153    18     l   I
+         1248     233    17     k   I
+         1274     201    18     m   F
+    MethodParameters:
+      Name                           Flags
+      poseStack
+      multiBufferSource
+      d
+      e
+      f
+
+  static {};
+    descriptor: ()V
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=4, locals=0, args_size=0
+         0: sipush        255
+         3: iconst_0
+         4: sipush        155
+         7: sipush        155
+        10: invokestatic  #156                // Method net/minecraft/util/ARGB.color:(IIII)I
+        13: putstatic     #120                // Field CELL_BORDER:I
+        16: sipush        255
+        19: sipush        255
+        22: sipush        255
+        25: iconst_0
+        26: invokestatic  #156                // Method net/minecraft/util/ARGB.color:(IIII)I
+        29: putstatic     #122                // Field YELLOW:I
+        32: return
+      LineNumberTable:
+        line 16: 0
+        line 17: 16
+}
+InnerClasses:
+  public static final #16= #13 of #15;    // Pose=class com/mojang/blaze3d/vertex/PoseStack$Pose of class com/mojang/blaze3d/vertex/PoseStack
+  public static #19= #6 of #18;           // SimpleDebugRenderer=class net/minecraft/client/renderer/debug/DebugRenderer$SimpleDebugRenderer of class net/minecraft/client/renderer/debug/DebugRenderer
+SourceFile: "ChunkBorderRenderer.java"
+RuntimeVisibleAnnotations:
+  0: #8(#9=e#10.#11)
+    net.fabricmc.api.Environment(
+      value=Lnet/fabricmc/api/EnvType;.CLIENT
+    )

@@ -51,10 +51,10 @@ public class MenuScreen extends Screen implements QuickImports {
     private static final int MIN_WIDTH = 382;
     private static final int MIN_HEIGHT = 248;
     private static final int SCREEN_MARGIN = 24;
-    private static final float CATEGORY_START_X = 112.0F;
+    private static final float CATEGORY_START_X = MenuLayout.SIDEBAR_WIDTH + MenuLayout.CONTENT_INSET;
     private static final float SEARCH_WIDTH = 82.0F;
     private static final float SEARCH_RIGHT_MARGIN = 10.0F;
-    private static final float CATEGORY_SEARCH_GAP = 10.0F;
+    private static final float CATEGORY_SEARCH_GAP = MenuLayout.PANEL_GAP + 4.0F;
     private static final float CATEGORY_ROW_Y = 39.0F;
     private static final int HEADER_DRAG_HEIGHT = 34;
     private static final int TOP_TAB_TRANSITION_MS = 145;
@@ -971,6 +971,14 @@ public class MenuScreen extends Screen implements QuickImports {
         if (cosmeticsView.isOpen() && overlayMouseY >= y + HEADER_DRAG_HEIGHT) {
             return false;
         }
+        // Full-page Messenger controls own every point below the header.
+        // An unhandled click on an empty chat area must never fall through
+        // to the window drag handler, otherwise the second client moves the
+        // whole GUI instead of activating its chat controls.
+        if ((messengerView.isOpen() || configsView.isActive())
+                && overlayMouseY >= y + HEADER_DRAG_HEIGHT) {
+            return false;
+        }
 
         boolean inHeaderDragZone = MathUtil.isHovered(
                 overlayMouseX,
@@ -999,6 +1007,12 @@ public class MenuScreen extends Screen implements QuickImports {
 
         if (moduleDetailComponent.isOpen()) {
             return moduleDetailComponent.isInteractiveHover(overlayMouseX, overlayMouseY);
+        }
+
+        if ((messengerView.isOpen() || configsView.isActive())
+                && MathUtil.isHovered(overlayMouseX, overlayMouseY, x, y + HEADER_DRAG_HEIGHT,
+                width, height - HEADER_DRAG_HEIGHT)) {
+            return true;
         }
 
         if (searchComponent.isHover(overlayMouseX, overlayMouseY)) {

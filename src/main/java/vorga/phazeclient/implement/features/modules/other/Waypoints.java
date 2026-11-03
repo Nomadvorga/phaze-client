@@ -18,6 +18,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.util.render.PhazeRenderLayers;
+import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
 
 public class Waypoints extends Module {
     private static final Waypoints INSTANCE = new Waypoints();
@@ -69,16 +72,14 @@ public class Waypoints extends Module {
             wasDead = dead;
         });
 
-        WorldRenderEvents.AFTER_ENTITIES.register(context -> {
+    }
+
+    public void renderOverlay(MatrixStack matrices, Vec3d cameraPos) {
             if (!isEnabled() || !hasDeathPos) return;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.world == null || client.player == null) return;
 
-            VertexConsumerProvider consumers = context.consumers();
-            if (consumers == null) return;
-
-            MatrixStack matrices = context.matrixStack();
-            Vec3d cameraPos = client.gameRenderer.getCamera().getPos();
+            VertexConsumerProvider consumers = WorldOverlayRenderer.CONSUMERS;
 
             double dx = deathX - client.player.getX();
             double dy = deathY - client.player.getY();
@@ -98,7 +99,7 @@ public class Waypoints extends Module {
 
             // Vertical light beam
             if (showBeam.isValue()) {
-                VertexConsumer consumer = consumers.getBuffer(PhazeRenderLayers.getThickLines(2.0f));
+                var consumer = WorldOverlayRenderer.buffer(VertexFormat.DrawMode.LINES, VertexFormats.LINES, 2, true);
                 Box beamBox = new Box(rx - 0.2, ry, rz - 0.2, rx + 0.2, ry + 128.0, rz + 0.2);
                 VertexRendering.drawBox(matrices, consumer, beamBox, r, g, b, a * 0.7f);
             }
@@ -128,6 +129,5 @@ public class Waypoints extends Module {
                     0xF000F0
             );
             matrices.pop();
-        });
     }
 }

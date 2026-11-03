@@ -1,25 +1,35 @@
 package vorga.phazeclient.implement.features.modules.other;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.block.ShapeContext;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.ChargedProjectilesComponent;
+import net.minecraft.enchantment.EnchantmentHelper;
+import net.minecraft.entity.projectile.PersistentProjectileEntity;
 import net.minecraft.entity.projectile.ProjectileEntity;
-import net.minecraft.entity.projectile.ProjectileUtil;
+import net.minecraft.entity.projectile.TridentEntity;
+import net.minecraft.entity.projectile.thrown.ExperienceBottleEntity;
+import net.minecraft.entity.projectile.thrown.PotionEntity;
+import net.minecraft.entity.projectile.thrown.ThrownEntity;
 import net.minecraft.item.BowItem;
 import net.minecraft.item.CrossbowItem;
 import net.minecraft.item.EggItem;
 import net.minecraft.item.EnderPearlItem;
 import net.minecraft.item.ExperienceBottleItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.item.SnowballItem;
-import net.minecraft.item.SplashPotionItem;
+import net.minecraft.item.ThrowablePotionItem;
 import net.minecraft.item.TridentItem;
-import net.minecraft.registry.tag.FluidTags;
+import net.minecraft.predicate.entity.EntityPredicates;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.world.World;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
@@ -49,13 +59,10 @@ import java.util.Map;
  *
  * <h3>Simulation contract</h3>
  * Each "predict" call simulates up to {@link #MAX_TICKS} ticks of
- * forward Euler integration mirroring the vanilla
- * {@code ProjectileEntity.tick}: position += velocity, velocity *=
- * drag, velocity.y -= gravity. Drag is 0.99 in air / 0.8 in water
- * for thrown items, 0.6 in water for arrows. Gravity is read from
- * vanilla's {@code Entity.getFinalGravity} which already accounts
- * for slow-falling and item-specific overrides. We bail out early
- * on block hit, entity hit, or y &lt; -128.
+ * projectile-specific vanilla integration: thrown items apply gravity
+ * and drag before moving; arrows/tridents move before gravity. Live
+ * projectiles use their actual gravity and fluid state. We stop at
+ * the nearest block/entity contact or below the world's build limit.
  *
  * <h3>Adapted from</h3>
  * {@code winvi.moscow.soupbetter.modules.PredictionsModule}. The
@@ -383,24 +390,43 @@ public final class Predictions extends Module {
         return 0xFF000000 | (palette.chipActive() & 0x00FFFFFF);
     }
 
-    /**
-     * Estimate the forward velocity for a held throwable. Bow / crossbow
-     * scale with the use-time-charge progress, others have a fixed
-     * launch speed mirroring vanilla. Returns 0 for non-throwables.
-     */
+    /** Vanilla release speed; no ballistic preview for rockets or Riptide. */
     public double initialVelocityFor(HeldType type, ItemStack stack, MinecraftClient mc) {
         return switch (type) {
             case SNOWBALL, EGG, ENDER_PEARL -> 1.5;
-            case EXPERIENCE_BOTTLE -> 0.7;
+            case EXPERIENCE_BOTTLE -> (double) 0.7F;
             case SPLASH_POTION -> 0.5;
-            case TRIDENT -> 2.5;
-            case BOW -> {
-                int useTicks = mc.player.getItemUseTime();
-                yield 3.0 * MathHelper.clamp((useTicks + mc.getRenderTickCounter().getTickDelta(false)) / 20.0F, 0.0F, 1.0F);
-            }
-            case CROSSBOW -> CrossbowItem.isCharged(stack) ? 3.15 : 0.0;
+            case TRIDENT -> mc.player.getItemUseTime() >= 10
+                    && EnchantmentHelper.getTridentSpinAttackStrength(stack, mc.player) <= 0.0F ? 2.5 : 0.0;
+            case BOW -> ProjectilePhysics.bowSpeed(BowItem.getPullProgress(mc.player.getItemUseTime()));
+            case CROSSBOW -> CrossbowItem.isCharged(stack) && !hasLoadedFirework(stack)
+                    ? (double) 3.15F : 0.0;
             case NONE -> 0.0;
         };
+    }
+
+    private static boolean hasLoadedFirework(ItemStack stack) {
+        return stack.getOrDefault(DataComponentTypes.CHARGED_PROJECTILES, ChargedProjectilesComponent.DEFAULT)
+                .getProjectiles().stream().anyMatch(projectile -> projectile.isOf(Items.FIREWORK_ROCKET));
+    }
+
+    /** Vanilla launch velocity without random spread, including the shooter's movement. */
+    static Vec3d initialMotionFor(HeldType type, float yaw, float pitch, double speed,
+                                  Vec3d playerMovement, boolean onGround) {
+        float yawRad = yaw * ((float) Math.PI / 180.0F);
+        float pitchRad = pitch * ((float) Math.PI / 180.0F);
+        float roll = switch (type) {
+            case EXPERIENCE_BOTTLE, SPLASH_POTION -> -20.0F;
+            default -> 0.0F;
+        };
+        float cosPitch = MathHelper.cos(pitchRad);
+        float dx = -MathHelper.sin(yawRad) * cosPitch;
+        float dy = -MathHelper.sin((pitch + roll) * ((float) Math.PI / 180.0F));
+        float dz = MathHelper.cos(yawRad) * cosPitch;
+        Vec3d motion = new Vec3d(dx, dy, dz).normalize().multiply(speed);
+        // CrossbowItem.shoot uses the direction-only overload and does not inherit movement.
+        return type == HeldType.CROSSBOW ? motion
+                : motion.add(playerMovement.x, onGround ? 0.0 : playerMovement.y, playerMovement.z);
     }
 
     /** Classifier for held throwable types, mirrors vanilla item-class hierarchy. */
@@ -417,7 +443,7 @@ public final class Predictions extends Module {
         if (item instanceof EggItem) return HeldType.EGG;
         if (item instanceof EnderPearlItem) return HeldType.ENDER_PEARL;
         if (item instanceof ExperienceBottleItem) return HeldType.EXPERIENCE_BOTTLE;
-        if (item instanceof SplashPotionItem) return HeldType.SPLASH_POTION;
+        if (item instanceof ThrowablePotionItem) return HeldType.SPLASH_POTION;
         if (item instanceof TridentItem) return HeldType.TRIDENT;
         if (item instanceof BowItem) return HeldType.BOW;
         if (item instanceof CrossbowItem) return HeldType.CROSSBOW;
@@ -427,7 +453,7 @@ public final class Predictions extends Module {
     /**
      * True if the held crossbow has the Multishot enchantment.
      * Used by the renderer to fan three trajectories at the
-     * vanilla {@code -10° / 0° / +10°} yaw spread that vanilla's
+     * vanilla {@code -10° / 0° / +10°} local-up spread that vanilla's
      * {@code RangedWeaponItem.shootAll} produces when the enchant
      * is present (one shot fires straight, the other two fan out
      * 10 degrees on each side of the look direction).
@@ -454,14 +480,13 @@ public final class Predictions extends Module {
         return false;
     }
 
-    /**
-     * Forward-integrate a projectile state and return the impact point.
-     * Mirrors {@code ProjectileEntity.tick} exactly: position += velocity,
-     * velocity *= drag, velocity.y -= gravity. Returns {@code null} if
-     * the projectile flies past {@link #MAX_TICKS} without hitting
-     * anything.
-     */
-    public TrajectoryResult predictCached(Vec3d startPos, Vec3d startMotion, double gravity, boolean trident, Entity owner) {
+    int loadedCrossbowProjectileCount(ItemStack stack) {
+        return stack.getOrDefault(DataComponentTypes.CHARGED_PROJECTILES, ChargedProjectilesComponent.DEFAULT)
+                .getProjectiles().size();
+    }
+
+    /** Cache held trajectories within one world tick; launch changes invalidate the entry. */
+    TrajectoryResult predictCached(Vec3d startPos, Vec3d startMotion, ProjectilePhysics.Profile profile, Entity owner) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.world == null) return null;
         long worldTick = mc.world.getTime();
@@ -473,102 +498,101 @@ public final class Predictions extends Module {
         }
         for (int i = 0; i < heldPredictionCacheCount; i++) {
             CachedPrediction cached = heldPredictionCache[i];
-            if (cached != null && cached.matches(startPos, startMotion, gravity, trident, owner)) {
+            if (cached != null && cached.matches(startPos, startMotion, profile, owner)) {
                 return cached.result;
             }
         }
 
-        TrajectoryResult result = predict(startPos, startMotion, gravity, trident, owner);
+        TrajectoryResult result = predictInto(startPos, startMotion, profile, owner, null, new ArrayList<>(64));
         heldPredictionCache[heldPredictionCacheWriteIndex] = new CachedPrediction(
-                startPos, startMotion, gravity, trident, owner, result
+                startPos, startMotion, profile, owner, result
         );
         heldPredictionCacheWriteIndex = (heldPredictionCacheWriteIndex + 1) % HELD_PREDICTION_CACHE_SIZE;
         heldPredictionCacheCount = Math.min(HELD_PREDICTION_CACHE_SIZE, heldPredictionCacheCount + 1);
         return result;
     }
 
-    public TrajectoryResult predict(Vec3d startPos, Vec3d startMotion, double gravity, boolean trident, Entity owner) {
-        return predictInto(startPos, startMotion, gravity, trident, owner, new ArrayList<>(64));
-    }
-
     private TrajectoryResult predictInto(
             Vec3d startPos,
             Vec3d startMotion,
-            double gravity,
-            boolean trident,
+            ProjectilePhysics.Profile profile,
             Entity owner,
+            ProjectileEntity projectile,
             List<Vec3d> path
     ) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.world == null) return null;
-        Vec3d pos = startPos;
-        Vec3d motion = startMotion;
-        path.clear();
-        path.add(pos);
-        BlockPos.Mutable fluidPos = new BlockPos.Mutable();
-        for (int i = 0; i < MAX_TICKS; i++) {
-            Vec3d prev = pos;
-            pos = pos.add(motion);
-            // Drag selection: trident always 0.99, persistent in water
-            // 0.6, throwables in water 0.8, otherwise 0.99.
-            fluidPos.set(MathHelper.floor(prev.x), MathHelper.floor(prev.y), MathHelper.floor(prev.z));
-            boolean inWater = mc.world.getBlockState(fluidPos).getFluidState().isIn(FluidTags.WATER);
-            float drag = trident ? 0.99F : (inWater ? 0.8F : 0.99F);
-            motion = motion.multiply(drag).add(0.0, -gravity, 0.0);
+        double gravity = projectile == null ? profile.gravity
+                : projectile.hasNoGravity() ? 0.0 : projectile.getFinalGravity();
+        float width = projectile == null ? profile.size : projectile.getWidth();
+        float height = projectile == null ? profile.size : projectile.getHeight();
+        HitResult hit = ProjectilePhysics.simulate(startPos, startMotion, profile, gravity, width, height,
+                projectile != null && projectile.isTouchingWater(),
+                new PredictionEnvironment(mc.world, owner, projectile), path, MAX_TICKS,
+                mc.world.getBottomY() - 64.0);
+        net.minecraft.util.math.Direction face = hit instanceof BlockHitResult block
+                ? block.getSide() : net.minecraft.util.math.Direction.UP;
+        Entity target = hit instanceof EntityHitResult entityHit ? entityHit.getEntity() : null;
+        return new TrajectoryResult(path, hit.getPos(), hit.getType(), face, target);
+    }
 
-            HitResult result = mc.world.raycast(new RaycastContext(prev, pos,
-                    RaycastContext.ShapeType.COLLIDER,
-                    RaycastContext.FluidHandling.NONE,
-                    owner));
-            if (result.getType() != HitResult.Type.MISS) {
-                // Capture the block face we hit so the renderer can
-                // orient the floor/wall ring against that surface
-                // normal. For non-block hits the renderer falls back
-                // to UP (horizontal floor ring).
-                net.minecraft.util.math.Direction face =
-                        (result instanceof net.minecraft.util.hit.BlockHitResult bhr)
-                                ? bhr.getSide()
-                                : net.minecraft.util.math.Direction.UP;
-                path.add(result.getPos());
-                return new TrajectoryResult(path, result.getPos(), HitResult.Type.BLOCK, face, null);
-            }
+    /** Read-only world queries; never tick or reposition a real entity while predicting. */
+    private static final class PredictionEnvironment implements ProjectilePhysics.Environment {
+        private final Entity owner;
+        private final Entity[] ownerVehicle;
+        private final PredictionBlockAccess blocks;
+        private final ProjectileFluidSampler fluids;
+        private final ProjectileEntityQuery<Entity> entities;
+        private final net.minecraft.world.border.WorldBorder border;
+        private final boolean pushedByFluids;
+        private boolean leftOwner;
 
-            // Exact entity raycast on this segment. Using
-            // ProjectileUtil.raycast (instead of a coarse
-            // box.intersects segment test) stabilizes impact points:
-            // we get the nearest real intersection point on the
-            // entity hitbox, so the marker no longer jumps
-            // "inside/outside" when the path runs close to edges.
-            // Skip fully invisible entities, but keep glowing ones
-            // so outlined targets still get a valid prediction.
-            Vec3d a = prev, b = pos;
-            net.minecraft.util.math.Box searchBox = new net.minecraft.util.math.Box(a, b).expand(1.0);
-            Entity source = owner != null ? owner : mc.player;
-            net.minecraft.util.hit.EntityHitResult entityHit = ProjectileUtil.raycast(
-                    source, a, b, searchBox,
-                    ent -> ent instanceof LivingEntity
-                            && ent != mc.player
-                            && (owner == null || ent != owner)
-                            && ent.isAlive()
-                            && !ent.isSpectator()
-                            && (!ent.isInvisible() || ent.isGlowing()),
-                    a.squaredDistanceTo(b) + 1.0E-7
-            );
-            if (entityHit != null && entityHit.getEntity() != null) {
-                Vec3d hitPos = entityHit.getPos();
-                path.add(hitPos);
-                return new TrajectoryResult(path, hitPos, HitResult.Type.ENTITY,
-                        net.minecraft.util.math.Direction.UP, entityHit.getEntity());
-            }
-
-            path.add(pos);
-            if (pos.y < -128) {
-                return new TrajectoryResult(path, pos, HitResult.Type.MISS,
-                        net.minecraft.util.math.Direction.UP, null);
-            }
+        PredictionEnvironment(World world, Entity owner, ProjectileEntity projectile) {
+            this.owner = owner;
+            ownerVehicle = owner == null ? new Entity[0] : owner.getRootVehicle().streamSelfAndPassengers()
+                    .filter(EntityPredicates.CAN_HIT).toArray(Entity[]::new);
+            blocks = new PredictionBlockAccess(world, ShapeContext.of(projectile != null ? projectile : owner));
+            fluids = new ProjectileFluidSampler(world, blocks, world.getDimension().ultrawarm());
+            border = world.getWorldBorder();
+            pushedByFluids = projectile == null || projectile.isPushedByFluids();
+            leftOwner = owner == null || (projectile != null && hasLeftOwner(
+                    projectile.getBoundingBox(), projectile.getVelocity()));
+            entities = new ProjectileEntityQuery<>(new ProjectileEntityQuery.Source<>() {
+                @Override public List<Entity> collect(Box bounds) {
+                    return world.getOtherEntities(projectile, bounds, Entity::canBeHitByProjectile);
+                }
+                @Override public Box bounds(Entity entity) { return entity.getBoundingBox(); }
+                @Override public boolean canHit(Entity entity) {
+                    return entity.canBeHitByProjectile()
+                            && (leftOwner || owner == null || !owner.isConnectedThroughVehicle(entity));
+                }
+            });
         }
-        return new TrajectoryResult(path, pos, HitResult.Type.MISS,
-                net.minecraft.util.math.Direction.UP, null);
+
+        @Override
+        public BlockHitResult blockCollision(Vec3d start, Vec3d end) {
+            return blocks.collision(start, end, border);
+        }
+
+        @Override
+        public HitResult entityCollision(Vec3d start, Vec3d clippedEnd, Box searchBox) {
+            var contact = entities.collision(start, clippedEnd, searchBox);
+            return contact == null ? null : new EntityHitResult(contact.entity(), contact.position());
+        }
+
+        private boolean hasLeftOwner(Box bounds, Vec3d motion) {
+            Box search = bounds.stretch(motion).expand(1.0);
+            for (Entity entity : ownerVehicle) {
+                if (search.intersects(entity.getBoundingBox())) return false;
+            }
+            return true;
+        }
+
+        @Override
+        public ProjectilePhysics.FluidMotion fluids(Box bounds, Vec3d motion) {
+            if (!leftOwner) leftOwner = hasLeftOwner(bounds, motion);
+            return fluids.sample(bounds, motion, pushedByFluids);
+        }
     }
 
     /** Held-stack throwable classification used by the renderer to pick the launch math. */
@@ -614,49 +638,42 @@ public final class Predictions extends Module {
         Entity owner = projectile.getOwner();
         if (owner == null || owner.getId() != mc.player.getId()) return;
 
-        // Precompute the entire forward trajectory at spawn time,
-        // mirroring the held-hand prediction. We use the projectile's
-        // starting velocity and gravity bucket, then run the same
-        // forward-Euler simulation that {@link #predict} does for
-        // the held visual. Storing the path once means the renderer
-        // only has to slice it on each frame, not re-simulate.
+        ProjectilePhysics.Profile profile = flightProfile(projectile);
+        if (profile == null || isReturning(projectile)) return;
+        // Use the actual server-provided launch state, including its random spread.
         Vec3d startPos = projectile.getPos();
         Vec3d startMotion = projectile.getVelocity();
-        // Gravity bucket: same classification used for held items.
-        // We default to the thrown-item bucket (0.03) for everything
-        // but bow-arrow types (which use 0.05). Tridents land in
-        // their own branch via instanceof check below.
-        double gravity = 0.03;
-        boolean trident = false;
-        // Net.minecraft.entity.projectile types we care about:
-        // PersistentProjectileEntity covers arrow / trident / spectral arrow.
-        if (projectile instanceof net.minecraft.entity.projectile.PersistentProjectileEntity) {
-            gravity = 0.05;
-            if (projectile instanceof net.minecraft.entity.projectile.TridentEntity) {
-                trident = true;
-            }
-        }
-        TrajectoryResult result = predict(startPos, startMotion, gravity, trident, owner);
+        TrajectoryResult result = predictInto(startPos, startMotion, profile, owner, projectile, new ArrayList<>(64));
         if (result == null || result.path() == null || result.path().size() < 2) return;
         trails.put(projectile.getId(), new ProjectileTrail(projectile, result));
+    }
+
+    private static ProjectilePhysics.Profile flightProfile(ProjectileEntity projectile) {
+        if (projectile instanceof TridentEntity) return ProjectilePhysics.Profile.TRIDENT;
+        if (projectile instanceof PersistentProjectileEntity) return ProjectilePhysics.Profile.ARROW;
+        if (projectile instanceof ExperienceBottleEntity) return ProjectilePhysics.Profile.EXPERIENCE_BOTTLE;
+        if (projectile instanceof PotionEntity) return ProjectilePhysics.Profile.POTION;
+        return projectile instanceof ThrownEntity ? ProjectilePhysics.Profile.THROWN : null;
+    }
+
+    private static boolean isReturning(ProjectileEntity projectile) {
+        return projectile instanceof PersistentProjectileEntity persistent && persistent.isNoClip();
     }
 
     /** Per-tick: re-predict trajectory from current pos+velocity
      *  and prune dead. Re-predicting each tick lets the impact
      *  marker follow the projectile's ACTUAL flight (vanilla adds
-     *  a small random spread at spawn, plus drag / wind / collisions
+     *  a small random spread at spawn, plus fluids / collisions
      *  can shift the path mid-flight) instead of being pinned to
-     *  the initial spawn-time prediction. The renderer then
-     *  exponentially smooths the marker position toward the new
-     *  prediction so the user sees a plump glide rather than a
-     *  per-tick teleport. */
+     *  the initial spawn-time prediction. The marker uses that impact
+     *  directly rather than lagging behind an animated position. */
     public void tickTrails() {
         if (trails.isEmpty()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         Iterator<Map.Entry<Integer, ProjectileTrail>> it = trails.entrySet().iterator();
         while (it.hasNext()) {
             ProjectileTrail t = it.next().getValue();
-            if (t.entity == null || t.entity.isRemoved() || !t.entity.isAlive()) {
+            if (t.entity == null || t.entity.isRemoved() || !t.entity.isAlive() || isReturning(t.entity)) {
                 it.remove();
                 continue;
             }
@@ -673,23 +690,17 @@ public final class Predictions extends Module {
                 it.remove();
                 continue;
             }
-            // Re-simulate from current state. Player owner is the
-            // entity-collision blacklist for the predict() helper -
-            // it skips intersecting our own player so the line
-            // doesn't think we're our own target.
+            // Re-simulate once per tick from the live entity, not from its held preview.
             Entity owner = t.entity.getOwner();
             if (owner == null && mc != null) owner = mc.player;
             Vec3d startPos = t.entity.getPos();
             Vec3d startMotion = v;
-            double gravity = 0.03;
-            boolean trident = false;
-            if (t.entity instanceof net.minecraft.entity.projectile.PersistentProjectileEntity) {
-                gravity = 0.05;
-                if (t.entity instanceof net.minecraft.entity.projectile.TridentEntity) {
-                    trident = true;
-                }
+            ProjectilePhysics.Profile profile = flightProfile(t.entity);
+            if (profile == null) {
+                it.remove();
+                continue;
             }
-            TrajectoryResult fresh = predictInto(startPos, startMotion, gravity, trident, owner, t.simulationPath);
+            TrajectoryResult fresh = predictInto(startPos, startMotion, profile, owner, t.entity, t.simulationPath);
             if (fresh != null && fresh.path() != null && fresh.path().size() >= 2) {
                 t.result = fresh;
             }
@@ -717,16 +728,6 @@ public final class Predictions extends Module {
          *  the simulation each tick. */
         public TrajectoryResult result;
 
-        /** Smoothed impact-marker position. Exponentially decays
-         *  toward {@code result.impact()} every frame so the user
-         *  sees a plump glide rather than a per-tick teleport when
-         *  the prediction shifts due to vanilla randomness. */
-        public Vec3d smoothedImpact;
-        /** Last frame timestamp (nanoseconds) used to compute the
-         *  delta-time for the exponential smoother. {@code 0} means
-         *  "no previous frame" so the first paint snaps directly to
-         *  the live impact. */
-        public long lastSmoothNanos = 0L;
         private final List<Vec3d> simulationPath = new ArrayList<>(64);
         private final List<Vec3d> remainingPath = new ArrayList<>(64);
 
@@ -744,7 +745,6 @@ public final class Predictions extends Module {
             } else {
                 this.result = result;
             }
-            this.smoothedImpact = result != null ? result.impact() : null;
         }
 
         /** Live position of the projectile (camera-frame irrelevant - raw world coords). */
@@ -828,7 +828,7 @@ public final class Predictions extends Module {
         }
     }
 
-    /** Path + impact info returned by {@link #predict}. */
+    /** Path + first projectile contact (or simulation limit). */
     public record TrajectoryResult(java.util.List<Vec3d> path, Vec3d impact, HitResult.Type type,
                                     net.minecraft.util.math.Direction face, Entity entity) {
     }
@@ -836,16 +836,14 @@ public final class Predictions extends Module {
     private record CachedPrediction(
             Vec3d startPos,
             Vec3d startMotion,
-            double gravity,
-            boolean trident,
+            ProjectilePhysics.Profile profile,
             Entity owner,
             TrajectoryResult result
     ) {
-        private boolean matches(Vec3d start, Vec3d motion, double gravity, boolean trident, Entity owner) {
+        private boolean matches(Vec3d start, Vec3d motion, ProjectilePhysics.Profile profile, Entity owner) {
             return same(startPos, start)
                     && same(startMotion, motion)
-                    && Double.doubleToLongBits(this.gravity) == Double.doubleToLongBits(gravity)
-                    && this.trident == trident
+                    && this.profile == profile
                     && this.owner == owner;
         }
 

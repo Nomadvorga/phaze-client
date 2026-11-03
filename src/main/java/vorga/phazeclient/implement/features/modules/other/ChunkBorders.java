@@ -92,7 +92,9 @@ public class ChunkBorders extends Module {
             // 1. Outer Corners (red vertical lines at 3x3 chunk boundaries around the player)
             if (outerEnabled.isValue()) {
                 double thick = (double) outerThickness.getValue();
-                VertexConsumer buf = vertexConsumers.getBuffer(RenderLayer.getDebugLineStrip(thick));
+                var buf = vorga.phazeclient.api.system.render.WorldOverlayRenderer.buffer(
+                        net.minecraft.client.render.VertexFormat.DrawMode.DEBUG_LINE_STRIP,
+                        net.minecraft.client.render.VertexFormats.POSITION_COLOR, (float) thick, true);
 
                 int col = outerColor.getColor();
                 float r = ((col >> 16) & 0xFF) / 255.0f;
@@ -118,7 +120,9 @@ public class ChunkBorders extends Module {
             // 2. Grid (yellow vertical lines along X and Z boundaries + horizontal rings at each block level)
             if (gridEnabled.isValue()) {
                 double thick = (double) gridThickness.getValue();
-                VertexConsumer buf = vertexConsumers.getBuffer(RenderLayer.getDebugLineStrip(thick));
+                var buf = vorga.phazeclient.api.system.render.WorldOverlayRenderer.buffer(
+                        net.minecraft.client.render.VertexFormat.DrawMode.DEBUG_LINE_STRIP,
+                        net.minecraft.client.render.VertexFormats.POSITION_COLOR, (float) thick, true);
 
                 int col = gridColor.getColor();
                 float r = ((col >> 16) & 0xFF) / 255.0f;
@@ -173,7 +177,9 @@ public class ChunkBorders extends Module {
             // 3. Inner Corners (blue corners of current chunk + 16x16 sub-chunk horizontal frames)
             if (innerEnabled.isValue()) {
                 double thick = (double) innerThickness.getValue();
-                VertexConsumer buf = vertexConsumers.getBuffer(RenderLayer.getDebugLineStrip(thick));
+                var buf = vorga.phazeclient.api.system.render.WorldOverlayRenderer.buffer(
+                        net.minecraft.client.render.VertexFormat.DrawMode.DEBUG_LINE_STRIP,
+                        net.minecraft.client.render.VertexFormats.POSITION_COLOR, (float) thick, true);
 
                 int col = innerColor.getColor();
                 float r = ((col >> 16) & 0xFF) / 255.0f;

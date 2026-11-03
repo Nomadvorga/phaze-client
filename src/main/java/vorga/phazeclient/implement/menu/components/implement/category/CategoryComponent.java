@@ -21,6 +21,7 @@ import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.render.ScissorManager;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.menu.MenuScreen;
+import vorga.phazeclient.implement.menu.MenuLayout;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.module.ModuleComponent;
@@ -32,9 +33,9 @@ import java.util.*;
 public class CategoryComponent extends AbstractComponent {
     private static final float CHIP_TEXT_SIZE = 6.25F;
     private static final int COLUMN_COUNT = 3;
-    private static final int COLUMN_GAP = 6;
-    private static final int ROW_GAP = 8;
-    private static final float SIDEBAR_WIDTH = 100f;
+    private static final int COLUMN_GAP = (int) MenuLayout.GRID_COLUMN_GAP;
+    private static final int ROW_GAP = (int) MenuLayout.GRID_ROW_GAP;
+    private static final float SIDEBAR_WIDTH = MenuLayout.SIDEBAR_WIDTH;
     private static final float GRID_TOP = 55f;
     private static final float GRID_BOTTOM_PADDING = 6f;
 
@@ -117,9 +118,9 @@ public class CategoryComponent extends AbstractComponent {
         }
         visibleCacheDirty = false;
 
-        float gridX = menuScreen.x + SIDEBAR_WIDTH + 6f;
+        float gridX = menuScreen.x + SIDEBAR_WIDTH + MenuLayout.CONTENT_INSET;
         float gridY = menuScreen.y + GRID_TOP;
-        float gridWidth = menuScreen.width - SIDEBAR_WIDTH - 12f;
+        float gridWidth = menuScreen.width - SIDEBAR_WIDTH - MenuLayout.CONTENT_INSET * 2.0F;
         float gridHeight = menuScreen.height - GRID_TOP - GRID_BOTTOM_PADDING;
         float columnWidth = (gridWidth - COLUMN_GAP * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
 
@@ -180,9 +181,9 @@ public class CategoryComponent extends AbstractComponent {
             return false;
         }
 
-        float gridX = menuScreen.x + SIDEBAR_WIDTH + 6f;
+        float gridX = menuScreen.x + SIDEBAR_WIDTH + MenuLayout.CONTENT_INSET;
         float gridY = menuScreen.y + GRID_TOP;
-        float gridWidth = menuScreen.width - SIDEBAR_WIDTH - 12f;
+        float gridWidth = menuScreen.width - SIDEBAR_WIDTH - MenuLayout.CONTENT_INSET * 2.0F;
         float gridHeight = menuScreen.height - GRID_TOP - GRID_BOTTOM_PADDING;
         if (MathUtil.isHovered(mouseX, mouseY, gridX, gridY, gridWidth, gridHeight)) {
             // Single-pass: was previously iterating visibleComponents twice

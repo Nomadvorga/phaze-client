@@ -42,6 +42,7 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.render.Render3DUtil;
+import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.other.BlockOverlay;
@@ -59,6 +60,12 @@ import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.util.math.Box;
 
 /**
  * Consolidated mixin for {@link WorldRenderer}, merging:
@@ -97,7 +104,6 @@ public abstract class WorldRendererMixin {
     @Unique private final Vector3f phaze$currentCameraPos = new Vector3f();
     @Unique private boolean phaze$motionHistoryValid;
     @Unique private Object phaze$lastScreen;
-    @Unique private static final ArrayList<RenderLayer> PHAZE_PENDING_LAYER_SCRATCH = new ArrayList<>(64);
 
     // ---------------------------------------------------------------
     // WeatherChanger: cancel weather render when Clear is forced
@@ -122,6 +128,7 @@ public abstract class WorldRendererMixin {
 
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$motionBlurSetMatrices(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, Matrix4f positionMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
+        WorldOverlayRenderer.beginFrame(positionMatrix, camera, tickCounter);
         MinecraftClient client = MinecraftClient.getInstance();
         Object currentScreen = client == null ? null : client.currentScreen;
         if (currentScreen != phaze$lastScreen) {
@@ -236,64 +243,6 @@ public abstract class WorldRendererMixin {
     // FT helper / Snowball / Predictions overlay layers
     // ---------------------------------------------------------------
 
-    @Inject(method = "renderEntities", at = @At(value = "TAIL"))
-    private void phaze$drawFTLayers(
-            MatrixStack matrices,
-            VertexConsumerProvider.Immediate immediate,
-            Camera camera,
-            RenderTickCounter tickCounter,
-            List<Entity> entities,
-            CallbackInfo ci
-    ) {
-        FTHelper ftHelper = FTHelper.getInstance();
-        HolyWorldHelper holyWorldHelper = HolyWorldHelper.getInstance();
-        Predictions predictions = Predictions.getInstance();
-        if (!ftHelper.isEnabled() && !holyWorldHelper.isEnabled() && !predictions.isEnabled()) {
-            return;
-        }
-        phaze$flushEntityLayersBeforeOverlays(immediate);
-
-        Vec3d cameraPos = camera.getPos();
-        FTHelperRenderer.renderHighlight(matrices, cameraPos, tickCounter);
-        FTHelperRenderer.renderSnowballs(matrices, cameraPos, tickCounter);
-        HolyWorldHelperRenderer.render(matrices, cameraPos, tickCounter);
-        PredictionsRenderer.render(matrices, cameraPos, tickCounter);
-    }
-
-    @Unique
-    private static void phaze$flushEntityLayersBeforeOverlays(VertexConsumerProvider.Immediate immediate) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.options.getGraphicsMode().getValue() != net.minecraft.client.option.GraphicsMode.FABULOUS) {
-            immediate.draw();
-            return;
-        }
-
-        VertexConsumerProviderImmediateAccessor accessor = (VertexConsumerProviderImmediateAccessor) immediate;
-        PHAZE_PENDING_LAYER_SCRATCH.clear();
-        PHAZE_PENDING_LAYER_SCRATCH.addAll(accessor.phaze$getPendingLayers().keySet());
-        for (RenderLayer layer : PHAZE_PENDING_LAYER_SCRATCH) {
-            String name = layer.toString();
-            if (phaze$containsIgnoreCase(name, "particle")
-                    || phaze$containsIgnoreCase(name, "weather")
-                    || phaze$containsIgnoreCase(name, "cloud")) {
-                continue;
-            }
-            immediate.draw(layer);
-        }
-        PHAZE_PENDING_LAYER_SCRATCH.clear();
-    }
-
-    @Unique
-    private static boolean phaze$containsIgnoreCase(String value, String needle) {
-        int limit = value.length() - needle.length();
-        for (int i = 0; i <= limit; i++) {
-            if (value.regionMatches(true, i, needle, 0, needle.length())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     @Redirect(
             method = {
                     "getEntityOutlinesFramebuffer",
@@ -336,6 +285,17 @@ public abstract class WorldRendererMixin {
         return module.outlineColor.getColor();
     }
 
+    @WrapOperation(method = "renderTargetBlockOutline", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/render/WorldRenderer;drawBlockOutline(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;Lnet/minecraft/entity/Entity;DDDLnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;I)V"), require = 1)
+    private void phaze$bufferBlockOutline(WorldRenderer renderer, MatrixStack matrices, VertexConsumer vanilla,
+                                         Entity entity, double x, double y, double z, BlockPos pos, BlockState state,
+                                         int color, Operation<Void> original) {
+        BlockOverlay module = BlockOverlay.getInstance();
+        VertexConsumer output = module != null && module.isEnabled()
+                ? WorldOverlayRenderer.buffer(VertexFormat.DrawMode.LINES, VertexFormats.LINES, 1, true) : vanilla;
+        original.call(renderer, matrices, output, entity, x, y, z, pos, state, color);
+    }
+
     @Inject(method = "renderTargetBlockOutline", at = @At("HEAD"))
     private void phaze$drawFill(Camera camera,
                                 VertexConsumerProvider.Immediate vertexConsumers,
@@ -372,13 +332,14 @@ public abstract class WorldRendererMixin {
         // Casting absolute world coordinates first breaks the fill far
         // from spawn.
         shape.forEachBox((minX, minY, minZ, maxX, maxY, maxZ) ->
-                Render3DUtil.drawBoxFill(matrices,
-                        (float) (pos.getX() + minX - cameraPos.x),
-                        (float) (pos.getY() + minY - cameraPos.y),
-                        (float) (pos.getZ() + minZ - cameraPos.z),
-                        (float) (pos.getX() + maxX - cameraPos.x),
-                        (float) (pos.getY() + maxY - cameraPos.y),
-                        (float) (pos.getZ() + maxZ - cameraPos.z),
+                Render3DUtil.vertexBoxFill(matrices,
+                        WorldOverlayRenderer.buffer(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR, 1, true),
+                        new Box(pos.getX() + minX - cameraPos.x,
+                                pos.getY() + minY - cameraPos.y,
+                                pos.getZ() + minZ - cameraPos.z,
+                                pos.getX() + maxX - cameraPos.x,
+                                pos.getY() + maxY - cameraPos.y,
+                                pos.getZ() + maxZ - cameraPos.z),
                         opaqueRgb, fillAlphaScale)
         );
     }

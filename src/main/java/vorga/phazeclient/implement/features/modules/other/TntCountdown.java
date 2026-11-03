@@ -10,6 +10,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
+import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
@@ -39,7 +40,6 @@ public class TntCountdown extends Module {
         // Entity renderers run before translucent terrain. Queue the label here
         // and submit it after water/translucent terrain so the see-through
         // background cannot be painted over by those passes.
-        WorldRenderEvents.AFTER_TRANSLUCENT.register(TntCountdown::renderPendingTimers);
     }
 
     public static TntCountdown getInstance() {
@@ -113,14 +113,10 @@ public class TntCountdown extends Module {
         matrices.pop();
     }
 
-    private static void renderPendingTimers(WorldRenderContext context) {
+    public static void renderPendingTimers() {
         if (PENDING_TIMERS.isEmpty()) return;
 
-        VertexConsumerProvider consumers = context.consumers();
-        if (consumers == null) {
-            PENDING_TIMERS.clear();
-            return;
-        }
+        VertexConsumerProvider consumers = WorldOverlayRenderer.CONSUMERS;
 
         for (PendingTimer timer : PENDING_TIMERS) {
             // Render after translucent water. SEE_THROUGH keeps the label
@@ -154,6 +150,8 @@ public class TntCountdown extends Module {
 
         PENDING_TIMERS.clear();
     }
+
+    public static void clearPendingTimers() { PENDING_TIMERS.clear(); }
 
     private record PendingTimer(Matrix4f matrix, TextRenderer textRenderer, Text text,
                                 float x, int color, int backgroundColor) {

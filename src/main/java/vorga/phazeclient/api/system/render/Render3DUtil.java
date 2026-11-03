@@ -53,6 +53,7 @@ public final class Render3DUtil {
     private static final SphereLatitudeLut[] SPHERE_LATITUDE_CACHE = new SphereLatitudeLut[MAX_CACHED_SPHERE_STACKS + 1];
     private static final Vector3f BILLBOARD_RIGHT = new Vector3f();
     private static final Vector3f BILLBOARD_UP = new Vector3f();
+    private static final Vector3f LINE_TANGENT = new Vector3f();
 
     private Render3DUtil() {
     }
@@ -540,8 +541,11 @@ public final class Render3DUtil {
     private static void line(Matrix4f matrix, BufferBuilder buffer,
                              float x1, float y1, float z1, float x2, float y2, float z2,
                              float r, float g, float b, float a) {
-        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0);
-        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0);
+        matrix.transformDirection(LINE_TANGENT.set(x2 - x1, y2 - y1, z2 - z1));
+        if (LINE_TANGENT.lengthSquared() < 1.0E-14F) return;
+        LINE_TANGENT.normalize();
+        buffer.vertex(matrix, x1, y1, z1).color(r, g, b, a).normal(LINE_TANGENT.x, LINE_TANGENT.y, LINE_TANGENT.z);
+        buffer.vertex(matrix, x2, y2, z2).color(r, g, b, a).normal(LINE_TANGENT.x, LINE_TANGENT.y, LINE_TANGENT.z);
     }
 
     /**
@@ -726,10 +730,8 @@ public final class Render3DUtil {
             float z1 = centerZ + circle.sin[i] * radius;
             float x2 = centerX + circle.cos[i + 1] * radius;
             float z2 = centerZ + circle.sin[i + 1] * radius;
-            buffer.vertex(matrix, x1, centerY, z1).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, x2, centerY, z2).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, x1, topY, z1).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, x2, topY, z2).color(r, g, b, a).normal(0, 1, 0);
+            line(matrix, buffer, x1, centerY, z1, x2, centerY, z2, r, g, b, a);
+            line(matrix, buffer, x1, topY, z1, x2, topY, z2, r, g, b, a);
         }
         BufferRenderer.drawWithGlobalProgram(buffer.end());
 
@@ -810,8 +812,7 @@ public final class Render3DUtil {
             float p2x = centerX + (ux * c2 + vx * s2) * radius;
             float p2y = centerY + (uy * c2 + vy * s2) * radius;
             float p2z = centerZ + (uz * c2 + vz * s2) * radius;
-            buffer.vertex(matrix, p1x, p1y, p1z).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix, p2x, p2y, p2z).color(r, g, b, a).normal(0, 1, 0);
+            line(matrix, buffer, p1x, p1y, p1z, p2x, p2y, p2z, r, g, b, a);
         }
         BufferRenderer.drawWithGlobalProgram(buffer.end());
 
@@ -937,10 +938,14 @@ public final class Render3DUtil {
         float r2 = ((endColor >>> 16) & 0xFF) / 255.0F;
         float g2 = ((endColor >>> 8) & 0xFF) / 255.0F;
         float b2 = (endColor & 0xFF) / 255.0F;
+        double dx = endX - startX, dy = endY - startY, dz = endZ - startZ;
+        double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (!Double.isFinite(length) || length < 1.0E-7) return;
+        float nx = (float) (dx / length), ny = (float) (dy / length), nz = (float) (dz / length);
         buffer.vertex(matrix, (float) startX, (float) startY, (float) startZ)
-                .color(r1, g1, b1, a1).normal(0, 1, 0);
+                .color(r1, g1, b1, a1).normal(matrices.peek(), nx, ny, nz);
         buffer.vertex(matrix, (float) endX, (float) endY, (float) endZ)
-                .color(r2, g2, b2, a2).normal(0, 1, 0);
+                .color(r2, g2, b2, a2).normal(matrices.peek(), nx, ny, nz);
     }
 
     /** Convenience: same colour at both ends. */
@@ -975,14 +980,8 @@ public final class Render3DUtil {
         RenderSystem.lineWidth(Math.max(1.0F, lineWidth));
 
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
-        buffer.vertex(matrix,
-                (float) (start.x - camera.x),
-                (float) (start.y - camera.y),
-                (float) (start.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0);
-        buffer.vertex(matrix,
-                (float) (end.x - camera.x),
-                (float) (end.y - camera.y),
-                (float) (end.z - camera.z)).color(r, gC, b, a).normal(0, 1, 0);
+        vertexLine(matrices, buffer, start.x - camera.x, start.y - camera.y, start.z - camera.z,
+                end.x - camera.x, end.y - camera.y, end.z - camera.z, color, color);
         BufferRenderer.drawWithGlobalProgram(buffer.end());
 
         RenderSystem.depthMask(true);
@@ -1044,14 +1043,8 @@ public final class Render3DUtil {
             Vec3d start = points.get(i);
             Vec3d end = points.get(i + 1);
             if (!isRenderablePolylineSegment(start, end)) continue;
-            buffer.vertex(matrix,
-                    (float) (start.x - origin.x),
-                    (float) (start.y - origin.y),
-                    (float) (start.z - origin.z)).color(r, g, b, a).normal(0, 1, 0);
-            buffer.vertex(matrix,
-                    (float) (end.x - origin.x),
-                    (float) (end.y - origin.y),
-                    (float) (end.z - origin.z)).color(r, g, b, a).normal(0, 1, 0);
+            vertexLine(matrices, buffer, start.x - origin.x, start.y - origin.y, start.z - origin.z,
+                    end.x - origin.x, end.y - origin.y, end.z - origin.z, color, color);
         }
         BufferRenderer.drawWithGlobalProgram(buffer.end());
 
@@ -1151,6 +1144,7 @@ public final class Render3DUtil {
             double dz = ez - sz;
             double segLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (segLen < 1e-7) continue;
+            float nx = (float) (dx / segLen), ny = (float) (dy / segLen), nz = (float) (dz / segLen);
 
             double startLen = accLen;
             double endLen = accLen + segLen;
@@ -1167,14 +1161,14 @@ public final class Render3DUtil {
                 double my = sy + dy * t;
                 double mz = sz + dz * t;
                 // First half: ramp up to full alpha at the boundary.
-                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(matrices.peek(), nx, ny, nz);
+                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(matrices.peek(), nx, ny, nz);
                 // Second half: full alpha across the rest.
-                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, maxA).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) mx, (float) my, (float) mz).color(r, g, b, maxA).normal(matrices.peek(), nx, ny, nz);
+                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, maxA).normal(matrices.peek(), nx, ny, nz);
             } else {
-                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(0, 1, 0);
-                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, endAlpha).normal(0, 1, 0);
+                buffer.vertex(matrix, (float) sx, (float) sy, (float) sz).color(r, g, b, startAlpha).normal(matrices.peek(), nx, ny, nz);
+                buffer.vertex(matrix, (float) ex, (float) ey, (float) ez).color(r, g, b, endAlpha).normal(matrices.peek(), nx, ny, nz);
             }
 
             accLen = endLen;

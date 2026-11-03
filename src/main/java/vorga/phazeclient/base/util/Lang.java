@@ -175,6 +175,41 @@ public final class Lang {
         en("cosmetics.enter_world", "ENTER A WORLD TO PREVIEW");
         en("cosmetics.model_missing", "MODEL FILE NOT FOUND");
 
+        // Messenger
+        en("messenger.title", "GLOBAL CHAT");
+        en("messenger.global", "Global Chat");
+        en("messenger.friends", "Friends");
+        en("messenger.direct", "Direct Messages");
+        en("messenger.requests", "Requests");
+        en("messenger.blocked", "Blocked");
+        en("messenger.no_friends", "No friends yet");
+        en("messenger.no_selected", "No friend selected");
+        en("messenger.empty_global", "No messages yet. Say hello to the community.");
+        en("messenger.empty_direct", "Select a conversation to start messaging.");
+        en("messenger.input", "Write a message...");
+        en("messenger.message_placeholder", "Message...");
+        en("messenger.send", "SEND");
+        en("messenger.back", "BACK");
+        en("messenger.unblock", "Unblock");
+        en("messenger.online", "Online");
+        en("messenger.offline", "Offline");
+        en("messenger.message", "Message");
+        en("messenger.add_friend", "Add Friend");
+        en("messenger.remove_friend", "Remove friend");
+        en("messenger.block", "Block");
+        en("messenger.accept", "Accept");
+        en("messenger.decline", "Decline");
+        en("messenger.no_conversations", "No conversations yet");
+        en("messenger.error_send", "Send error! Please try again.");
+        en("messenger.error_blocked", "Send error! This message is not allowed.");
+        en("messenger.error_slowmode", "Slowmode: wait before sending again.");
+        en("messenger.error_server", "Send error! Chat server is unavailable.");
+        en("messenger.error_blocked_user", "This user is blocked.");
+        en("messenger.error_user_not_found", "User not found.");
+        en("messenger.error_already_friend", "Friend request already exists.");
+        en("messenger.error_action", "Action failed. Please try again.");
+        en("messenger.error_friend_required", "Add this player as a friend first.");
+
         // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
         ru("modal.cloud.subtitle", "Поделись конфигом или загрузи по коду");
@@ -263,6 +298,40 @@ public final class Lang {
         ru("cosmetics.remove", "СНЯТЬ");
         ru("cosmetics.enter_world", "ВОЙДИТЕ В МИР ДЛЯ ПРОСМОТРА");
         ru("cosmetics.model_missing", "ФАЙЛ МОДЕЛИ НЕ НАЙДЕН");
+
+        ru("messenger.title", "ГЛОБАЛЬНЫЙ ЧАТ");
+        ru("messenger.global", "Глобальный чат");
+        ru("messenger.friends", "Друзья");
+        ru("messenger.direct", "Личные сообщения");
+        ru("messenger.requests", "Заявки");
+        ru("messenger.blocked", "Заблокированные");
+        ru("messenger.no_friends", "Друзей пока нет");
+        ru("messenger.no_selected", "Друг не выбран");
+        ru("messenger.empty_global", "Сообщений пока нет. Поздоровайся с сообществом.");
+        ru("messenger.empty_direct", "Выбери диалог, чтобы начать общение.");
+        ru("messenger.input", "Напиши сообщение...");
+        ru("messenger.message_placeholder", "Сообщение...");
+        ru("messenger.send", "ОТПРАВИТЬ");
+        ru("messenger.back", "НАЗАД");
+        ru("messenger.unblock", "Разблокировать");
+        ru("messenger.online", "В сети");
+        ru("messenger.offline", "Не в сети");
+        ru("messenger.message", "Написать");
+        ru("messenger.add_friend", "Добавить в друзья");
+        ru("messenger.remove_friend", "Удалить друга");
+        ru("messenger.block", "Заблокировать");
+        ru("messenger.accept", "Принять");
+        ru("messenger.decline", "Отклонить");
+        ru("messenger.no_conversations", "Диалогов пока нет");
+        ru("messenger.error_send", "Ошибка отправки! Попробуй ещё раз.");
+        ru("messenger.error_blocked", "Ошибка отправки! Такое сообщение запрещено.");
+        ru("messenger.error_slowmode", "Подожди перед следующей отправкой.");
+        ru("messenger.error_server", "Ошибка отправки! Сервер чата недоступен.");
+        ru("messenger.error_blocked_user", "Этот пользователь заблокирован.");
+        ru("messenger.error_user_not_found", "Пользователь не найден.");
+        ru("messenger.error_already_friend", "Заявка уже существует.");
+        ru("messenger.error_action", "Не удалось выполнить действие. Попробуй ещё раз.");
+        ru("messenger.error_friend_required", "Сначала добавь этого игрока в друзья.");
     }
 
     private static final Map<String, String> SETTING_TRANSLATIONS = new HashMap<>();
