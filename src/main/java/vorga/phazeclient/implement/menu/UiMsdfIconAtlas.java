@@ -67,6 +67,13 @@ public final class UiMsdfIconAtlas {
         }
     }
 
+    /** Resource reloads reset the atlas sampler parameters in-place. */
+    public static synchronized void onResourcesReloaded() {
+        filterApplied = false;
+        atlasTexture = null;
+        atlasLoaded = false;
+    }
+
     public static void registerTexture(String texture) {
         try {
             registerTexture(Identifier.of(texture));

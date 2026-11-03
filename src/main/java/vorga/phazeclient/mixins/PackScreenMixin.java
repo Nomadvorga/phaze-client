@@ -1,6 +1,7 @@
 package vorga.phazeclient.mixins;
 
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.pack.PackScreen;
 import net.minecraft.client.gui.screen.pack.PackListWidget;
 import net.minecraft.client.gui.screen.pack.ResourcePackOrganizer;
@@ -89,6 +90,17 @@ public abstract class PackScreenMixin extends Screen {
         if (this.client != null) {
             PackPreviewRenderer.clear(this.client);
         }
+    }
+
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        PackOrganizer module = PackOrganizer.getInstance();
+        if (module != null && module.isEnabled() && module.packPreviews.isValue()) {
+            PackPreviewRenderer.beginFrame();
+        } else {
+            PackPreviewRenderer.clear(this.client);
+        }
+        super.render(context, mouseX, mouseY, delta);
     }
 
     @Override

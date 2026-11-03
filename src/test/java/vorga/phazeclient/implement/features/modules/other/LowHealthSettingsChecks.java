@@ -34,10 +34,11 @@ public final class LowHealthSettingsChecks {
             check(warning.color.getRawName().equals("Color"), "color config key unchanged");
             check(Integer.valueOf(0xD9FF1111).equals(warning.color.getDefaultColor()), "default tint includes previous .85 intensity");
             check(!warning.color.isNoAlpha(), "color picker exposes opacity as intensity");
+            int tintRgb = warning.color.getColor() & 0xFFFFFF;
             for (float alpha : new float[]{0, 0.25F, 0.5F, 0.85F, 1}) {
                 warning.color.setAlpha(alpha);
                 check((warning.color.getColor() >>> 24) == Math.round(alpha * 255), "picker alpha controls intensity");
-                check((warning.color.getColor() & 0xFFFFFF) == 0xFF1111, "opacity does not alter tint");
+                check((warning.color.getColor() & 0xFFFFFF) == tintRgb, "opacity does not alter tint");
             }
             migrationChecks();
 

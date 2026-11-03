@@ -1,32 +1,49 @@
 package vorga.phazeclient.implement.features.modules.hud;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.resource.InputSupplier;
-import net.minecraft.resource.ResourcePackProfile;
 import net.minecraft.resource.ResourcePack;
-import net.minecraft.util.Identifier;
+import net.minecraft.resource.ResourcePackProfile;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 
-import java.util.Collection;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
 
 public class PackDisplayHud extends RectHudModule {
     private static final PackDisplayHud INSTANCE = new PackDisplayHud();
+    public static final int ICON_SIZE = 28;
+    private static final float TEXT_PADDING = 4.0F;
 
     private String cachedPackName = "Default";
+    private String cachedProfileId;
     private String cachedText = "Default";
     private int cachedTextWidth;
     private String cachedDescription = "";
+    private String cachedTextWithDescription = "Default";
+    private int cachedDescriptionWidth;
     private Text cachedNameText = Text.literal("Default");
     private Text cachedDescriptionText = Text.empty();
+    private List<Text> cachedDescriptionLines = List.of();
     private Identifier cachedIcon;
+    private Identifier ownedIcon;
     private int cachedIconWidth = 16;
     private int cachedIconHeight = 16;
+    private int cachedDrawIconWidth = ICON_SIZE;
+    private int cachedDrawIconHeight = ICON_SIZE;
     private long lastCheckTime = 0;
     public final BooleanSetting displayPackIcon = new BooleanSetting("Показывать иконку пака", "Показывать иконку resource pack слева").setValue(true);
     public final BooleanSetting displayDescription = new BooleanSetting("Показывать описание", "Показывать описание resource pack").setValue(true);
@@ -83,13 +100,22 @@ public class PackDisplayHud extends RectHudModule {
             }
         }
         if (selectedProfile == null) selectedProfile = defaultProfile;
-        if (!cachedPackName.equals(topCustomPack) || (cachedIcon == null && selectedProfile != null)) {
+        String profileId = selectedProfile == null ? null : selectedProfile.getId();
+        if (!cachedPackName.equals(topCustomPack) || !Objects.equals(cachedProfileId, profileId) || cachedIcon == null) {
             cachedPackName = topCustomPack;
+            cachedProfileId = profileId;
             cachedText = cachedPackName;
-            cachedTextWidth = client.textRenderer.getWidth(cachedText);
             cachedDescription = topDescription;
+            cachedTextWithDescription = cachedText + "\n" + cachedDescription;
             cachedNameText = topNameText;
             cachedDescriptionText = topDescriptionText;
+            cachedDescriptionLines = splitDescription(topDescriptionText);
+            cachedTextWidth = client.textRenderer.getWidth(cachedNameText);
+            cachedDescriptionWidth = 0;
+            for (Text line : cachedDescriptionLines) {
+                cachedDescriptionWidth = Math.max(cachedDescriptionWidth, client.textRenderer.getWidth(line));
+            }
+            releaseOwnedIcon(client);
             cachedIcon = loadIcon(client, selectedProfile);
         }
     }
@@ -97,7 +123,7 @@ public class PackDisplayHud extends RectHudModule {
     public String getDisplayText(MinecraftClient client) {
         updatePackName(client);
         if (displayDescription.isValue() && !cachedDescription.isBlank()) {
-            return cachedText + "\n" + cachedDescription;
+            return cachedTextWithDescription;
         }
         return cachedText;
     }
@@ -117,19 +143,24 @@ public class PackDisplayHud extends RectHudModule {
     }
 
     public boolean hasDescription(MinecraftClient client) {
-        return displayDescription.isValue() && !getDescriptionText(client).getString().isBlank();
+        updatePackName(client);
+        return displayDescription.isValue() && !cachedDescription.isBlank();
     }
 
-    /** Exact base-space width: widest visible line plus equal 4px padding. */
+    public List<Text> getDescriptionLines(MinecraftClient client) {
+        updatePackName(client);
+        return cachedDescriptionLines;
+    }
+
+    public float getTextStartX() {
+        return (cachedIcon != null && displayPackIcon.isValue() ? ICON_SIZE : 0) + TEXT_PADDING;
+    }
+
+    /** Name and description share the same left edge, with padding beside the icon. */
     public float getPanelBaseWidth(MinecraftClient client) {
         updatePackName(client);
-        float width = client.textRenderer.getWidth(cachedNameText);
-        if (hasDescription(client)) {
-            for (String line : cachedDescriptionText.getString().split("\\R", -1)) {
-                width = Math.max(width, client.textRenderer.getWidth(line));
-            }
-        }
-        return width + (cachedIcon != null && displayPackIcon.isValue() ? 28.0f : 0.0f) + 8.0f;
+        int width = hasDescription(client) ? Math.max(cachedTextWidth, cachedDescriptionWidth) : cachedTextWidth;
+        return getTextStartX() + width + TEXT_PADDING;
     }
 
     public Identifier getPackIcon(MinecraftClient client) {
@@ -143,6 +174,38 @@ public class PackDisplayHud extends RectHudModule {
 
     public int getPackIconHeight() {
         return cachedIconHeight;
+    }
+
+    /** One draw of the full cached image; fitting is calculated only when the icon changes. */
+    public void drawPackIcon(DrawContext context) {
+        if (cachedIcon == null || !displayPackIcon.isValue()) return;
+        context.drawTexture(RenderLayer::getGuiTextured, cachedIcon,
+                (ICON_SIZE - cachedDrawIconWidth) / 2, (ICON_SIZE - cachedDrawIconHeight) / 2, 0.0F, 0.0F,
+                cachedDrawIconWidth, cachedDrawIconHeight,
+                cachedIconWidth, cachedIconHeight, cachedIconWidth, cachedIconHeight);
+    }
+
+    private void setIconSize(int width, int height) {
+        cachedIconWidth = Math.max(1, width);
+        cachedIconHeight = Math.max(1, height);
+        int longestSide = Math.max(cachedIconWidth, cachedIconHeight);
+        cachedDrawIconWidth = Math.max(1, Math.round((float) ICON_SIZE * cachedIconWidth / longestSide));
+        cachedDrawIconHeight = Math.max(1, Math.round((float) ICON_SIZE * cachedIconHeight / longestSide));
+    }
+
+    public void onResourcesReloaded(MinecraftClient client) {
+        releaseOwnedIcon(client);
+        cachedIcon = null;
+        cachedProfileId = null;
+        lastCheckTime = 0;
+        getHudBuffer().invalidate();
+    }
+
+    private void releaseOwnedIcon(MinecraftClient client) {
+        if (ownedIcon != null) {
+            client.getTextureManager().destroyTexture(ownedIcon);
+            ownedIcon = null;
+        }
     }
 
     private Identifier loadIcon(MinecraftClient client, ResourcePackProfile profile) {
@@ -161,12 +224,12 @@ public class PackDisplayHud extends RectHudModule {
                     image.close();
                     return fallbackIcon();
                 }
-                cachedIconWidth = Math.max(1, image.getWidth());
-                cachedIconHeight = Math.max(1, image.getHeight());
+                setIconSize(image.getWidth(), image.getHeight());
                 NativeImageBackedTexture texture = new NativeImageBackedTexture(image);
                 Identifier id = Identifier.of("phaze", "dynamic/pack_display_" + Math.abs(profile.getId().hashCode())
                         + "_" + Math.abs(cachedPackName.hashCode()));
                 client.getTextureManager().registerTexture(id, texture);
+                ownedIcon = id;
                 return id;
             }
         } catch (IOException | RuntimeException ignored) {
@@ -177,8 +240,7 @@ public class PackDisplayHud extends RectHudModule {
     }
 
     private Identifier fallbackIcon() {
-        cachedIconWidth = 16;
-        cachedIconHeight = 16;
+        setIconSize(16, 16);
         return Identifier.of("minecraft", "textures/item/grass_block.png");
     }
 
@@ -192,5 +254,45 @@ public class PackDisplayHud extends RectHudModule {
             }
         }
         return true;
+    }
+
+    private static List<Text> splitDescription(Text description) {
+        List<Text> lines = new ArrayList<>();
+        MutableText[] current = {Text.empty()};
+        description.visit((style, fragment) -> {
+            Style activeStyle = style;
+            StringBuilder run = new StringBuilder();
+            for (int i = 0; i < fragment.length(); i++) {
+                char character = fragment.charAt(i);
+                if (character == '\u00A7' && i + 1 < fragment.length()) {
+                    appendRun(current[0], run, activeStyle);
+                    Formatting formatting = Formatting.byCode(fragment.charAt(++i));
+                    if (formatting == Formatting.RESET) {
+                        activeStyle = Style.EMPTY;
+                    } else if (formatting != null) {
+                        activeStyle = formatting.isColor()
+                                ? Style.EMPTY.withColor(formatting) : activeStyle.withFormatting(formatting);
+                    }
+                } else if (character == '\n' || character == '\r') {
+                    appendRun(current[0], run, activeStyle);
+                    if (character == '\r' && i + 1 < fragment.length() && fragment.charAt(i + 1) == '\n') i++;
+                    lines.add(current[0]);
+                    current[0] = Text.empty();
+                } else {
+                    run.append(character);
+                }
+            }
+            appendRun(current[0], run, activeStyle);
+            return java.util.Optional.empty();
+        }, description.getStyle());
+        lines.add(current[0]);
+        return List.copyOf(lines);
+    }
+
+    private static void appendRun(MutableText line, StringBuilder run, Style style) {
+        if (!run.isEmpty()) {
+            line.append(Text.literal(run.toString()).setStyle(style));
+            run.setLength(0);
+        }
     }
 }

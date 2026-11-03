@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 9,
-  "clientVersion": "1.1",
+  "manifestVersion": 13,
+  "clientVersion": "1.2",
   "modules": [
     {
       "id": "animations",
@@ -85,7 +85,7 @@
     },
     {
       "id": "bossbar_tweaker",
-      "name": "Bossbar Tweaker",
+      "name": "Boss Bar",
       "category": "HUD"
     },
     {
@@ -105,7 +105,7 @@
     },
     {
       "id": "chunk_borders",
-      "name": "Chunk Borders",
+      "name": "Toggle Chunk Borders",
       "category": "OTHER"
     },
     {
@@ -146,11 +146,6 @@
     {
       "id": "custom_fog",
       "name": "Custom Fog",
-      "category": "OTHER"
-    },
-    {
-      "id": "damage_indicator",
-      "name": "Damage Indicator",
       "category": "OTHER"
     },
     {

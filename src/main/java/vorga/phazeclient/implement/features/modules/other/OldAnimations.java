@@ -21,8 +21,8 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
  *   <li><b>1.7 Sword Blocking & Block-Hit:</b> Classic sword block pose and
  *       the iconic block-hit animation with multiple selectable styles (1.7 Classic,
  *       Push, Slide, Lunar).</li>
- *   <li><b>1.7 / 1.8 Item Swing:</b> Restores the classic swing curve without
- *       the modern 1.9+ -45° Y rotation counteract.</li>
+ *   <li><b>1.7 / 1.8 Item Swing:</b> Restores the classic swing curve,
+ *       adapted to modern first-person item model transforms.</li>
  *   <li><b>No Re-Equip:</b> Stops items from dropping down when taking durability damage
  *       (attacking, mining) or during attack cooldown.</li>
  *   <li><b>1.7 Eating / Drinking:</b> Classic vertical rhythmic bobbing animation.</li>
@@ -135,19 +135,24 @@ public final class OldAnimations extends Module {
         ItemStack main = player.getMainHandStack();
         if (!(main.getItem() instanceof net.minecraft.item.SwordItem)) return false;
 
+        // If player is actively using item (e.g. blocking with shield or 1.8 sword blocking item use)
         if (player.isUsingItem()) {
             ItemStack active = player.getActiveItem();
             if (active.getItem() instanceof net.minecraft.item.ShieldItem || active.getItem() instanceof net.minecraft.item.SwordItem) {
                 return true;
+            }
+            if (active.getUseAction() == net.minecraft.item.consume.UseAction.EAT || active.getUseAction() == net.minecraft.item.consume.UseAction.DRINK) {
+                return false;
             }
         }
 
         net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
         if (player == mc.player && mc.currentScreen == null && mc.options != null && mc.options.useKey != null && mc.options.useKey.isPressed()) {
             ItemStack off = player.getOffHandStack();
-            if (off.isEmpty() || off.getItem() instanceof net.minecraft.item.ShieldItem) {
-                return true;
+            if (player.isUsingItem() && (off.getUseAction() == net.minecraft.item.consume.UseAction.EAT || off.getUseAction() == net.minecraft.item.consume.UseAction.DRINK)) {
+                return false;
             }
+            return true;
         }
 
         return false;
@@ -169,18 +174,35 @@ public final class OldAnimations extends Module {
      * Angle and tilt 1:1 match vanilla 1.8.9 ItemRenderer.
      */
     public static void renderSwordBlock(MatrixStack matrices, Arm arm, int armSign, float equipProgress) {
+        renderSwordBlock(matrices, arm, armSign, equipProgress, 0.0F);
+    }
+
+    public static void renderSwordBlock(MatrixStack matrices, Arm arm, int armSign, float equipProgress, float swingProgress) {
         // Base first-person item positioning (mirrors vanilla applyEquipOffset)
         matrices.translate(armSign * 0.56F, -0.52F + equipProgress * -0.6F, -0.72F);
+
+        // 1.7 / 1.8 Block-Hit swing translation and rotation
+        if (swingProgress > 0.0F) {
+            float g = MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
+            matrices.translate(armSign * -g * 0.2F, MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) (Math.PI * 2)) * 0.1F, -g * 0.1F);
+        }
 
         // 1.7 sword block translation and rotation
         matrices.translate(armSign * -0.14142136F, 0.08F, 0.14142136F);
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-102.25F));
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * 13.365F));
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * 78.05F));
+
+        // Additional block-hit recoil rotation if swinging while blocking
+        if (swingProgress > 0.0F) {
+            float g = MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
+            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(g * -25.0F));
+            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * g * 15.0F));
+        }
     }
 
     /**
-     * Renders classic 1.7 / 1.8 sword and item swing without 1.9+ counteract.
+     * Renders the classic 1.7 / 1.8 swing in the modern first-person model basis.
      */
     public static void renderOldSwing(
             MatrixStack matrices,
@@ -189,7 +211,7 @@ public final class OldAnimations extends Module {
             float swingProgress,
             float equipProgress
     ) {
-        float f = -0.42F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
+        float f = -0.4F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
         float g = 0.2F * MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) (Math.PI * 2));
         float h = -0.2F * MathHelper.sin(swingProgress * (float) Math.PI);
         matrices.translate(armSign * f, g, h);
@@ -197,11 +219,15 @@ public final class OldAnimations extends Module {
         // Base item position
         matrices.translate(armSign * 0.56F, -0.52F + equipProgress * -0.6F, -0.72F);
 
-        // Turn sword inward edge-on during strike so less broad texture is visible
+        // Vanilla 1.8 swing angles; do not add an extra edge-on turn during the strike.
         float sin1 = MathHelper.sin(swingProgress * swingProgress * (float) Math.PI);
         float sinSqrt = MathHelper.sin(MathHelper.sqrt(swingProgress) * (float) Math.PI);
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -25.0F - sinSqrt * 20.0F)));
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * 45.0F));
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * (45.0F + sin1 * -20.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(armSign * sinSqrt * -20.0F));
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(sinSqrt * -80.0F));
+
+        // Modern handheld models use -90° Y instead of 1.8's -135°.
+        // Compensate for that model basis and keep the swing continuous with the idle pose.
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(armSign * -45.0F));
     }
 }

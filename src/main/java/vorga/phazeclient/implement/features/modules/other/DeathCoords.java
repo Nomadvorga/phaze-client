@@ -94,12 +94,7 @@ public final class DeathCoords extends Module {
 
     @Override
     public String getIcon() {
-        return "death_coords.png";
-    }
-
-    @Override
-    public float getIconSize() {
-        return 21.0F;
+        return "skull-outline.png";
     }
 
     private void tick(MinecraftClient client) {

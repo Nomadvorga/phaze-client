@@ -22,6 +22,7 @@ import vorga.phazeclient.implement.menu.components.implement.other.CategoryConta
 import vorga.phazeclient.implement.menu.components.implement.other.CosmeticsViewComponent;
 import vorga.phazeclient.implement.menu.components.implement.other.ModuleDetailComponent;
 import vorga.phazeclient.implement.menu.components.implement.other.ModuleDescriptionComponent;
+import vorga.phazeclient.implement.menu.components.implement.other.MessengerViewComponent;
 import vorga.phazeclient.implement.menu.components.implement.other.SearchComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.TextComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.multiselect.MultiSelectComponent;
@@ -70,6 +71,7 @@ public class MenuScreen extends Screen implements QuickImports {
     private final vorga.phazeclient.implement.menu.components.implement.other.ConfigShareModalComponent configShareModal =
             new vorga.phazeclient.implement.menu.components.implement.other.ConfigShareModalComponent();
     private final CosmeticsViewComponent cosmeticsView = new CosmeticsViewComponent();
+    private final MessengerViewComponent messengerView = new MessengerViewComponent();
     public final Animation animation = new LinearAnimation().setMs(200).setValue(1);
     private final Animation topTabTransitionAnimation =
             new DecelerateAnimation().setMs(TOP_TAB_TRANSITION_MS).setValue(1);
@@ -191,11 +193,12 @@ public class MenuScreen extends Screen implements QuickImports {
                 boolean moduleDetailOpen = moduleDetailComponent.isOpen();
                 boolean configsViewOpen = configsView.isActive();
                 boolean cosmeticsViewOpen = cosmeticsView.isOpen();
+                boolean messengerViewOpen = messengerView.isOpen();
                 boolean mouseOverWindow = windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
                 int routedMouseX = mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseX;
                 int routedMouseY = mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseY;
                 for (AbstractComponent component : components) {
-                    if ((moduleDetailOpen || configsViewOpen || cosmeticsViewOpen)
+                    if ((moduleDetailOpen || configsViewOpen || cosmeticsViewOpen || messengerViewOpen)
                             && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
                         continue;
                     }
@@ -212,6 +215,11 @@ public class MenuScreen extends Screen implements QuickImports {
                     cosmeticsView.globalAlpha = alphaAnimation;
                     cosmeticsView.render(context, routedMouseX, routedMouseY, delta);
                 }
+                if (messengerView.shouldRender()) {
+                    messengerView.position(x, y).size(width, height);
+                    messengerView.globalAlpha = alphaAnimation;
+                    messengerView.render(context, routedMouseX, routedMouseY, delta);
+                }
                 windowManager.render(context, overlayMouseX, overlayMouseY, delta);
                 // ConfigShare modal renders LAST so it floats above
                 // the windowManager output (window dialogs, etc.) and
@@ -227,11 +235,6 @@ public class MenuScreen extends Screen implements QuickImports {
             vorga.phazeclient.api.system.shape.batched.BatchedRectangle.endScope();
         }
         context.getMatrices().pop();
-
-        // Outside the menu transform on purpose: the scale readout is
-        // positioned against the window, not the menu panel, and it
-        // must not inherit the menu's scaling or clipping.
-        vorga.phazeclient.implement.menu.components.implement.settings.ScaleSnapOverlay.render(context);
     }
 
     private void renderGuiRegionBlur(DrawContext context) {
@@ -307,6 +310,7 @@ public class MenuScreen extends Screen implements QuickImports {
         // remember the home tab".
         closeConfigsView();
         closeCosmeticsView();
+        closeMessengerView();
         activeTopTab = TopTab.MODS;
         pendingTopTab = null;
         topTabTransitionAnimation.setDirectionAndFinish(FORWARDS);
@@ -403,6 +407,7 @@ public class MenuScreen extends Screen implements QuickImports {
     public void openConfigsView() {
         closeModuleDetail();
         closeCosmeticsView();
+        closeMessengerView();
         configsView.position(x, y).size(width, height);
         configsView.open();
     }
@@ -418,6 +423,7 @@ public class MenuScreen extends Screen implements QuickImports {
     public void openCosmeticsView() {
         closeModuleDetail();
         closeConfigsView();
+        closeMessengerView();
         cosmeticsView.position(x, y).size(width, height);
         cosmeticsView.open();
     }
@@ -428,6 +434,22 @@ public class MenuScreen extends Screen implements QuickImports {
 
     public boolean isCosmeticsViewOpen() {
         return cosmeticsView.isOpen();
+    }
+
+    public void openMessengerView() {
+        closeModuleDetail();
+        closeConfigsView();
+        closeCosmeticsView();
+        messengerView.position(x, y).size(width, height);
+        messengerView.open();
+    }
+
+    public void closeMessengerView() {
+        messengerView.close();
+    }
+
+    public boolean isMessengerViewOpen() {
+        return messengerView.isOpen();
     }
 
     public void requestTopTab(String label) {
@@ -466,14 +488,17 @@ public class MenuScreen extends Screen implements QuickImports {
             case SETTINGS -> {
                 closeConfigsView();
                 closeCosmeticsView();
+                closeMessengerView();
                 openModuleDetail(Theme.getInstance());
             }
             case COSMETICS -> openCosmeticsView();
             case CONFIGS -> openConfigsView();
+            case CHAT -> openMessengerView();
             case MODS -> {
                 closeModuleDetail();
                 closeConfigsView();
                 closeCosmeticsView();
+                closeMessengerView();
                 setCategory(ModuleCategory.ALL);
             }
         }
@@ -483,7 +508,8 @@ public class MenuScreen extends Screen implements QuickImports {
         MODS,
         SETTINGS,
         COSMETICS,
-        CONFIGS;
+        CONFIGS,
+        CHAT;
 
         private static TopTab fromLabel(String label) {
             if (label == null) {
@@ -571,6 +597,17 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
+        if (messengerView.isOpen()) {
+            messengerView.position(x, y).size(width, height);
+            if (messengerView.mouseClicked(overlayMouseX, overlayMouseY, button)) {
+                return true;
+            }
+            if (backgroundComponent.mouseClicked(overlayMouseX, overlayMouseY, button)) {
+                return true;
+            }
+            return true;
+        }
+
         if (moduleDetailComponent.isOpen()) {
             boolean windowHandled = clickInsideWindow && windowManager.mouseClicked(overlayMouseX, overlayMouseY, button);
             boolean detailHandled = false;
@@ -621,6 +658,11 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
+        if (messengerView.isOpen()) {
+            messengerView.mouseReleased(overlayMouseX, overlayMouseY, button);
+            return true;
+        }
+
         if (moduleDetailComponent.isOpen()) {
             windowManager.mouseReleased(overlayMouseX, overlayMouseY, button);
             moduleDetailComponent.mouseReleased(overlayMouseX, overlayMouseY, button);
@@ -663,6 +705,11 @@ public class MenuScreen extends Screen implements QuickImports {
 
         if (cosmeticsView.isOpen()) {
             cosmeticsView.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY);
+            return true;
+        }
+
+        if (messengerView.isOpen()) {
+            messengerView.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY);
             return true;
         }
 
@@ -719,6 +766,11 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
+        if (messengerView.isOpen()) {
+            messengerView.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
+            return true;
+        }
+
         if (!windowManager.mouseScrolled(overlayMouseX, overlayMouseY, vertical)) {
             components.forEach(component -> component.mouseScrolled(overlayMouseX, overlayMouseY, vertical));
         }
@@ -730,6 +782,9 @@ public class MenuScreen extends Screen implements QuickImports {
         // Modal owns key input while open so Esc closes it and the
         // text field gets every keystroke before menu hotkeys.
         if (configShareModal.isOpen() && configShareModal.keyPressed(keyCode, scanCode, modifiers)) {
+            return true;
+        }
+        if (messengerView.isOpen() && messengerView.keyPressed(keyCode, scanCode, modifiers)) {
             return true;
         }
         if (backgroundComponent.keyPressed(keyCode, scanCode, modifiers)) {
@@ -789,6 +844,9 @@ public class MenuScreen extends Screen implements QuickImports {
     @Override
     public boolean charTyped(char chr, int modifiers) {
         if (configShareModal.isOpen() && configShareModal.charTyped(chr, modifiers)) {
+            return true;
+        }
+        if (messengerView.isOpen() && messengerView.charTyped(chr, modifiers)) {
             return true;
         }
         if (backgroundComponent.charTyped(chr, modifiers)) {

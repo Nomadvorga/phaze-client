@@ -241,10 +241,8 @@ public abstract class LivingEntityRendererMixin<
         }
     }
 
-    @Inject(
-            method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At("HEAD")
-    )
+    @Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/entity/model/EntityModel;setAngles(Lnet/minecraft/client/render/entity/state/EntityRenderState;)V", shift = At.Shift.AFTER), require = 1)
     private void phaze$applyThreeDSkins(
             S state,
             MatrixStack matrices,
@@ -253,14 +251,12 @@ public abstract class LivingEntityRendererMixin<
             CallbackInfo ci
     ) {
         if (state instanceof PlayerEntityRenderState playerState && this.model instanceof PlayerEntityModel playerModel) {
-            vorga.phazeclient.implement.features.modules.other.ThreeDSkinsHelper.apply(playerModel, playerState);
+            vorga.phazeclient.implement.features.modules.other.ThreeDSkinsHelper.preRender(playerModel, playerState);
         }
     }
 
-    @Inject(
-            method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
-            at = @At("TAIL")
-    )
+    @Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/util/math/MatrixStack;pop()V", shift = At.Shift.BEFORE), require = 1)
     private void phaze$restoreThreeDSkins(
             S state,
             MatrixStack matrices,
@@ -269,7 +265,11 @@ public abstract class LivingEntityRendererMixin<
             CallbackInfo ci
     ) {
         if (this.model instanceof PlayerEntityModel playerModel) {
-            vorga.phazeclient.implement.features.modules.other.ThreeDSkinsHelper.restore(playerModel);
+            if (state instanceof PlayerEntityRenderState playerState) {
+                vorga.phazeclient.implement.features.modules.other.ThreeDSkinsHelper.postRender(
+                        playerModel, playerState, matrices, vertexConsumers, light,
+                        LivingEntityRenderer.getOverlay(playerState, this.getAnimationCounter((S) playerState)));
+            }
         }
     }
 }

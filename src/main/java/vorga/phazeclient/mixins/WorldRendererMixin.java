@@ -96,6 +96,7 @@ public abstract class WorldRendererMixin {
     @Unique private final Vector3f phaze$prevCameraPos = new Vector3f();
     @Unique private final Vector3f phaze$currentCameraPos = new Vector3f();
     @Unique private boolean phaze$motionHistoryValid;
+    @Unique private Object phaze$lastScreen;
     @Unique private static final ArrayList<RenderLayer> PHAZE_PENDING_LAYER_SCRATCH = new ArrayList<>(64);
 
     // ---------------------------------------------------------------
@@ -121,6 +122,18 @@ public abstract class WorldRendererMixin {
 
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$motionBlurSetMatrices(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, Matrix4f positionMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        Object currentScreen = client == null ? null : client.currentScreen;
+        if (currentScreen != phaze$lastScreen) {
+            // Opening/closing a Screen can change the camera/FOV and the
+            // framebuffer path without rendering a comparable world frame.
+            // Do not use the pre-GUI matrix pair for the first frame after the
+            // transition: that produces a full-screen motion streak over
+            // world-space text and HUD-adjacent overlays until F3+T rebuilds
+            // the post-effect state.
+            phaze$lastScreen = currentScreen;
+            phaze$motionHistoryValid = false;
+        }
         if (!MotionBlur.getInstance().isEnabled()) {
             phaze$motionHistoryValid = false;
             return;

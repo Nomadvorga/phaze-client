@@ -10,11 +10,11 @@ import vorga.phazeclient.implement.menu.MenuStyle;
 
 /**
  * The large "x1.00" readout that appears in the middle of the screen
- * while a scale slider is being dragged.
+ * only while a HUD is being resized in chat. GUI sliders do not use it.
  *
  * <h3>Why it is centred and not next to the slider</h3>
- * The thing being resized is somewhere else on screen, so the eye is
- * already off the slider. A centred readout is where you are looking
+ * The HUD being resized is elsewhere on screen. A centred readout
+ * is where you are looking
  * anyway, and it is far enough from the pointer not to sit under it.
  *
  * <h3>Why it ignores GUI Scale</h3>
@@ -25,10 +25,8 @@ import vorga.phazeclient.implement.menu.MenuStyle;
  * Dividing the transform by the window's scale factor cancels
  * Minecraft's multiplication, leaving a constant on-screen size.
  *
- * <p>State is static and set by whichever {@link ValueComponent} is
- * being dragged: only one slider can be dragged at a time, and the
- * overlay has to outlive the component's own render pass so the menu
- * can draw it last, above every panel and dialog.
+ * <p>Chat HUD resizing supplies the state. InGameHudMixin draws the
+ * readout on the final framebuffer, outside cached HUD render passes.
  */
 public final class ScaleSnapOverlay {
 
@@ -49,7 +47,7 @@ public final class ScaleSnapOverlay {
     }
 
     /**
-     * Called every frame a scale slider is being dragged.
+     * Called every frame a HUD is being resized in chat.
      *
      * @param value   current value, already snapped
      * @param snapped true when the magnet is holding it, which is

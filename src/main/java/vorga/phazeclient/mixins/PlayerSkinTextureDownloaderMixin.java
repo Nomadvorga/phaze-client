@@ -19,6 +19,8 @@ public abstract class PlayerSkinTextureDownloaderMixin {
             at = @At("HEAD")
     )
     private static void phaze$onRegisterSkinTexture(Identifier id, NativeImage image, CallbackInfoReturnable<CompletableFuture<Identifier>> cir) {
-        ThreeDSkinsVoxelizer.bake(id, image);
+        // registerTexture transfers ownership to the texture upload path. Snapshot only
+        // alpha here, while the image is live; geometry is built lazily on the client.
+        ThreeDSkinsVoxelizer.capture(id, image);
     }
 }

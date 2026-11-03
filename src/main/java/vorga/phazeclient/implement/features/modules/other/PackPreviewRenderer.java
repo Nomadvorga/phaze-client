@@ -4,21 +4,17 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderLayer;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /** Compact, row-local preview; assets never come from the enabled pack stack. */
 public final class PackPreviewRenderer {
     private static final int HEIGHT = 44;
     private static final int ICON_SIZE = 16;
     private static final int SLOT = 18;
-    private static final int MAX_CACHED_PACKS = 3;
-    private static final long MAX_CACHED_TEXTURE_BYTES = 32L * 1024 * 1024;
     private static final String[] BUCKETS = {"bucket", "lava_bucket", "water_bucket"};
     private static final String[] BOWS = {"bow", "bow_pulling_0", "bow_pulling_1", "bow_pulling_2"};
     private static final String[] TOOLS = {"iron_sword", "iron_pickaxe", "diamond_sword", "diamond_pickaxe", "totem_of_undying"};
-    private static final Map<String, PackPreviewAssets.Data> CACHE = new LinkedHashMap<>(4, 0.75f, true);
+    private static final PackPreviewCache CACHE = new PackPreviewCache();
     private static String hoveredPack;
     private static long hoveredAtNanos;
     private static long lastRenderedNanos;
@@ -27,34 +23,23 @@ public final class PackPreviewRenderer {
     }
 
     public static void clear(MinecraftClient client) {
-        CACHE.values().forEach(PackPreviewAssets.Data::close);
         CACHE.clear();
         hoveredPack = null;
+        hoveredAtNanos = 0;
+        lastRenderedNanos = 0;
     }
 
-    private static PackPreviewAssets.Data assets(MinecraftClient client, String packId) {
-        PackPreviewAssets.Data data = CACHE.get(packId);
-        if (data == null) {
-            data = PackPreviewAssets.load(client, packId);
-            CACHE.put(packId, data);
-            long bytes = CACHE.values().stream().mapToLong(PackPreviewAssets.Data::textureBytes).sum();
-            var iterator = CACHE.entrySet().iterator();
-            while (CACHE.size() > 1 && (CACHE.size() > MAX_CACHED_PACKS || bytes > MAX_CACHED_TEXTURE_BYTES)) {
-                PackPreviewAssets.Data oldest = iterator.next().getValue();
-                bytes -= oldest.textureBytes();
-                oldest.close();
-                iterator.remove();
-            }
-        }
-        return data;
+    public static void beginFrame() {
+        CACHE.beginFrame();
     }
 
-    public static void render(DrawContext context, String packId, int x, int y, int width, int height) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    public static boolean render(DrawContext context, String packId, int x, int y, int width, int height) {
         if (packId == null || packId.isEmpty() || width <= 0 || height <= 0) {
-            return;
+            return false;
         }
-        PackPreviewAssets.Data data = assets(client, packId);
+        PackPreviewAssets.Data data = CACHE.get(packId);
+        if (data == null) return false;
+        MinecraftClient client = MinecraftClient.getInstance();
         long now = System.nanoTime();
         if (!packId.equals(hoveredPack) || now - lastRenderedNanos > 500_000_000L) {
             hoveredPack = packId;
@@ -102,6 +87,7 @@ public final class PackPreviewRenderer {
         } finally {
             context.getMatrices().pop();
         }
+        return true;
     }
 
     private static void drawStatus(DrawContext context, String label, String value, int x, int y, int color) {

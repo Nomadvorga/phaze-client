@@ -40,16 +40,23 @@ public abstract class DebugHudMixin {
      *  rewrites. Compiled once at class init. */
     private static final Pattern PHAZE_FPS_PREFIX = Pattern.compile("^\\d+\\s*fps");
 
-    /** BetterF3 replaces the entire vanilla render with a compact
-     *  layout. HEAD-cancellable so vanilla never draws. */
-    @Inject(method = "render", at = @At("HEAD"), cancellable = true)
-    private void phaze$replaceDebugHud(DrawContext context, CallbackInfo ci) {
+    /** Replace only the text columns; vanilla keeps rendering the F3+1/2/3 charts. */
+    @Inject(method = "drawLeftText", at = @At("HEAD"), cancellable = true, require = 1)
+    private void phaze$replaceDebugText(DrawContext context, CallbackInfo ci) {
         BetterF3 module = BetterF3.getInstance();
         if (module == null || !module.isEnabled()) {
             return;
         }
         BetterF3Renderer.render(context);
         ci.cancel();
+    }
+
+    @Inject(method = "drawRightText", at = @At("HEAD"), cancellable = true, require = 1)
+    private void phaze$hideVanillaRightText(DrawContext context, CallbackInfo ci) {
+        BetterF3 module = BetterF3.getInstance();
+        if (module != null && module.isEnabled()) {
+            ci.cancel();
+        }
     }
 
     /**

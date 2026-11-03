@@ -17,7 +17,7 @@ public abstract class RectHudModule extends Module {
     private static final float DEFAULT_HUD_Y = 22.0f;
     private static final float DEFAULT_HUD_SCALE = 1.0f;
     private static final float MIN_HUD_SCALE = 0.5f;
-    private static final float MAX_HUD_SCALE = 8.0f;
+    public static final float MAX_HUD_SCALE = 3.0f;
     private final float defaultHudX;
     private final float defaultHudY;
     private final float defaultHudScale;
@@ -213,7 +213,7 @@ public abstract class RectHudModule extends Module {
         return MIN_HUD_SCALE;
     }
 
-    public float getMaxHudScale() {
+    public final float getMaxHudScale() {
         return MAX_HUD_SCALE;
     }
 

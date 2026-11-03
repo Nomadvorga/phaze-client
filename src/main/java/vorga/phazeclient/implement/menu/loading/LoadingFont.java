@@ -3,6 +3,7 @@ package vorga.phazeclient.implement.menu.loading;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.texture.NativeImage;
 import org.lwjgl.system.MemoryUtil;
 
@@ -115,7 +116,11 @@ final class LoadingFont {
                 pixels.flip();
                 font.texture = glGenTextures();
                 if (font.texture == 0) throw new IOException("Cannot allocate bootstrap atlas " + base);
-                glBindTexture(GL_TEXTURE_2D, font.texture);
+                // Keep Minecraft's texture-unit cache in sync. The bootstrap
+                // atlas lives on a reserved unit, away from Minecraft's
+                // primary block/item sampler on unit 0.
+                RenderSystem.activeTexture(LoadingGlState.ATLAS_TEXTURE_UNIT);
+                RenderSystem.bindTexture(font.texture);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);

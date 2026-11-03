@@ -26,9 +26,8 @@ public abstract class ResourcePackEntryPreviewMixin {
         }
 
         ResourcePackOrganizer.Pack pack = ((ResourcePackEntryAccessor) (Object) this).phaze$getPack();
-        if (pack != null) {
-            PackPreviewRenderer.render(context, pack.getName(), x + 34, y,
-                    entryWidth - 44, Math.min(32, entryHeight));
+        if (pack != null && PackPreviewRenderer.render(context, pack.getName(), x + 34, y,
+                entryWidth - 44, Math.min(32, entryHeight))) {
             ci.cancel();
         }
     }

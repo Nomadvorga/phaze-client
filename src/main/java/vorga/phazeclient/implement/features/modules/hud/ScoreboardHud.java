@@ -93,11 +93,6 @@ public final class ScoreboardHud extends RectHudModule {
         return 0.5f;
     }
 
-    @Override
-    public float getMaxHudScale() {
-        return 6.0f;
-    }
-
     public boolean shouldUseVanillaColors() {
         return background.isValue() && isVanillaPreset();
     }

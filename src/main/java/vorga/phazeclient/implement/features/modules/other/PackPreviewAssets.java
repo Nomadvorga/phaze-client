@@ -31,13 +31,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 /**
  * One-shot, bounded asset inspection, independent of the enabled resource stack.
- * Call load/close on the render thread. Cache the returned Data in the screen,
- * then close it on screen removal, pack changes, or resource reload. There is no
- * global cache: a Data owns every texture it exposes, including vanilla copies.
+ * Requests capture client resources on the render thread; decoding needs no GPU.
+ * Prepared images are uploaded and released on the render thread. Each Data
+ * owns every texture it exposes, including vanilla copies.
  */
 public final class PackPreviewAssets {
     public static final long BLOCK_CYCLE_MILLIS = 1500L;
@@ -64,6 +66,119 @@ public final class PackPreviewAssets {
     }
 
     public record Features(boolean animations, boolean lightmap, boolean sounds) {
+    }
+
+    static LoadRequest request(MinecraftClient client, String packId) {
+        if (client == null || packId == null) {
+            throw new IllegalArgumentException("client and packId are required");
+        }
+        return new LoadRequest(client, packId, client.getResourcePackManager().getProfile(packId),
+                client.getDefaultResourcePack());
+    }
+
+    record LoadRequest(MinecraftClient client, String packId, ResourcePackProfile profile, DefaultResourcePack vanilla) {
+        Prepared decode(BooleanSupplier cancelled) {
+            Loader loader = new Loader(client, packId, vanilla, cancelled);
+            ResourcePack pack = null;
+            try {
+                loader.checkCancelled();
+                if (profile != null) {
+                    try {
+                        pack = profile.createResourcePack();
+                    } catch (CancellationException e) {
+                        throw e;
+                    } catch (RuntimeException e) {
+                        loader.note("Could not open inspected profile: " + e.getClass().getSimpleName());
+                    }
+                } else {
+                    loader.note("Profile not found; using vanilla assets");
+                }
+                loader.pack = pack;
+                return loader.load();
+            } catch (RuntimeException | Error e) {
+                loader.destroy();
+                throw e;
+            } finally {
+                if (pack != null && pack != vanilla) {
+                    try {
+                        pack.close();
+                    } catch (RuntimeException ignored) {
+                        // A ZIP close failure does not invalidate decoded images.
+                    }
+                }
+            }
+        }
+    }
+
+    static final class Prepared implements AutoCloseable {
+        private final Data data;
+        private final List<NativeImage> images;
+        private int uploaded;
+        private boolean transferred;
+        private boolean closed;
+
+        private Prepared(Data data, List<NativeImage> images) {
+            this.data = data;
+            this.images = images;
+        }
+
+        long textureBytes() {
+            return data.textureBytes();
+        }
+
+        /** Limits both driver calls and pixel transfer per frame; pixels are not rescaled here. */
+        boolean upload(int maxTextures, long maxBytes) {
+            if (closed || transferred) throw new IllegalStateException("Prepared preview is no longer owned");
+            int textures = 0;
+            long bytes = 0;
+            while (uploaded < images.size() && textures < maxTextures) {
+                NativeImage image = images.get(uploaded);
+                long size = (long) image.getWidth() * image.getHeight() * 4;
+                if (bytes + size > maxBytes) break;
+                NativeImageBackedTexture texture = null;
+                try {
+                    texture = new NativeImageBackedTexture(image);
+                    data.client.getTextureManager().registerTexture(data.owned.get(uploaded), texture);
+                } catch (RuntimeException | Error e) {
+                    if (texture != null) {
+                        data.client.getTextureManager().destroyTexture(data.owned.get(uploaded));
+                        texture.close();
+                    } else {
+                        image.close();
+                    }
+                    images.set(uploaded, null);
+                    close();
+                    throw e;
+                }
+                images.set(uploaded++, null);
+                textures++;
+                bytes += size;
+            }
+            return uploaded == images.size();
+        }
+
+        Data takeData() {
+            if (closed || transferred || uploaded != images.size()) {
+                throw new IllegalStateException("Preview textures are not ready");
+            }
+            transferred = true;
+            images.clear();
+            return data;
+        }
+
+        @Override
+        public void close() {
+            if (closed || transferred) return;
+            closed = true;
+            data.closed = true;
+            for (int i = 0; i < uploaded; i++) {
+                data.client.getTextureManager().destroyTexture(data.owned.get(i));
+            }
+            for (NativeImage image : images) {
+                if (image != null) image.close();
+            }
+            images.clear();
+        }
     }
 
     /** Inspect flags without a client, GPU, enabled packs, or texture uploads. */
@@ -145,36 +260,9 @@ public final class PackPreviewAssets {
 
     /** Opens a profile directly even when disabled. Missing/broken profiles still produce vanilla previews. */
     public static Data load(MinecraftClient client, String packId) {
-        if (client == null || packId == null) {
-            throw new IllegalArgumentException("client and packId are required");
-        }
-        Loader loader = new Loader(client, packId);
-        ResourcePack pack = null;
-        try {
-            ResourcePackProfile profile = client.getResourcePackManager().getProfile(packId);
-            if (profile != null) {
-                try {
-                    pack = profile.createResourcePack();
-                } catch (RuntimeException e) {
-                    loader.note("Could not open inspected profile: " + e.getClass().getSimpleName());
-                }
-            } else {
-                loader.note("Profile not found; using vanilla assets");
-            }
-            loader.pack = pack;
-            return loader.load();
-        } catch (RuntimeException | Error e) {
-            loader.destroy();
-            throw e;
-        } finally {
-            // The shared DefaultResourcePack belongs to MinecraftClient, not this handle.
-            if (pack != null && pack != loader.vanilla) {
-                try {
-                    pack.close();
-                } catch (RuntimeException ignored) {
-                    // A zip close failure must not discard a successfully created texture owner.
-                }
-            }
+        try (Prepared prepared = request(client, packId).decode(() -> false)) {
+            prepared.upload(Integer.MAX_VALUE, Long.MAX_VALUE);
+            return prepared.takeData();
         }
     }
 
@@ -182,12 +270,14 @@ public final class PackPreviewAssets {
         private final MinecraftClient client;
         private final String packId;
         private final DefaultResourcePack vanilla;
+        private final BooleanSupplier cancelled;
         private final String texturePrefix = "pack_preview_assets/" + SERIAL.incrementAndGet() + "/";
         private final TreeMap<Identifier, InputSupplier<InputStream>> resources = new TreeMap<>(Comparator.comparing(Identifier::toString));
         private final Map<Integer, Integer> widths = new TreeMap<>();
         private final Set<String> measured = new HashSet<>();
         private final List<String> diagnostics = new ArrayList<>();
         private final List<Identifier> owned = new ArrayList<>();
+        private final List<NativeImage> images = new ArrayList<>();
         private ResourcePack pack;
         private long customPixels;
         private long customBytesRead;
@@ -196,24 +286,27 @@ public final class PackPreviewAssets {
         private boolean lightmap;
         private boolean sounds;
 
-        private Loader(MinecraftClient client, String packId) {
+        private Loader(MinecraftClient client, String packId, DefaultResourcePack vanilla, BooleanSupplier cancelled) {
             this.client = client;
             this.packId = packId;
-            this.vanilla = client.getDefaultResourcePack();
+            this.vanilla = vanilla;
+            this.cancelled = cancelled;
         }
 
         private Loader(ResourcePack pack) {
             this.client = null;
             this.packId = "feature-inspection";
             this.vanilla = null;
+            this.cancelled = () -> false;
             this.pack = pack;
         }
 
-        private Data load() {
+        private Prepared load() {
             scan();
             // Required icons take priority over the optional block/resolution scan's decode budget.
             Map<String, Sprite> items = new LinkedHashMap<>();
             for (Map.Entry<String, String> entry : PackPreviewAssetLogic.itemPaths().entrySet()) {
+                checkCancelled();
                 try (Image image = preferred(Identifier.ofVanilla(entry.getValue()), true)) {
                     items.put(entry.getKey(), register(image));
                 }
@@ -229,7 +322,12 @@ public final class PackPreviewAssets {
             List<List<Sprite>> blocks = new ArrayList<>();
             int changed = loadBlocks(blocks);
             measureOtherItems();
-            return new Data(this, blocks, items, hearts, particles, changed);
+            checkCancelled();
+            return new Prepared(new Data(this, blocks, items, hearts, particles, changed), images);
+        }
+
+        private void checkCancelled() {
+            if (cancelled.getAsBoolean()) throw new CancellationException("Pack preview was invalidated");
         }
 
         private void note(String message) {
@@ -247,6 +345,7 @@ public final class PackPreviewAssets {
         }
 
         private void scan() {
+            checkCancelled();
             if (pack == null) {
                 return;
             }
@@ -256,9 +355,11 @@ public final class PackPreviewAssets {
                     note("Namespace scan limited to " + MAX_NAMESPACES);
                 }
                 for (String namespace : namespaces.subList(0, Math.min(namespaces.size(), MAX_NAMESPACES))) {
+                    checkCancelled();
                     // Actual API: the second argument is a namespace, the third is a path prefix.
                     try {
                         ResourcePack.ResultConsumer collect = (id, supplier) -> {
+                            checkCancelled();
                             if (!relevant(id.getPath())) {
                                 return;
                             }
@@ -276,6 +377,7 @@ public final class PackPreviewAssets {
                         // PathResourcePack rejects an empty path prefix. Enumerate
                         // supported directories explicitly for folder AND ZIP packs.
                         for (String prefix : List.of("textures", "sounds", "optifine/lightmap", "mcpatcher/lightmap")) {
+                            checkCancelled();
                             pack.findResources(TYPE, namespace, prefix, collect);
                         }
                         Identifier soundsJson = Identifier.of(namespace, "sounds.json");
@@ -283,10 +385,14 @@ public final class PackPreviewAssets {
                         if (definitions != null) {
                             collect.accept(soundsJson, definitions);
                         }
+                    } catch (CancellationException e) {
+                        throw e;
                     } catch (RuntimeException e) {
                         note("Partial namespace scan (" + namespace + "): " + e.getClass().getSimpleName());
                     }
                 }
+            } catch (CancellationException e) {
+                throw e;
             } catch (RuntimeException e) {
                 note("Partial resource scan: " + e.getClass().getSimpleName());
             }
@@ -298,15 +404,15 @@ public final class PackPreviewAssets {
         }
 
         private void destroy() {
-            for (Identifier id : owned) {
-                client.getTextureManager().destroyTexture(id);
-            }
+            images.forEach(NativeImage::close);
+            images.clear();
             owned.clear();
         }
 
         private int loadBlocks(List<List<Sprite>> batches) {
             Map<String, Identifier> candidates = new TreeMap<>();
             for (Identifier id : resources.keySet()) {
+                checkCancelled();
                 String path = PackPreviewAssetLogic.canonicalPath(id.getPath());
                 if (!path.startsWith("textures/block/") || !path.endsWith(".png")) {
                     continue;
@@ -319,6 +425,7 @@ public final class PackPreviewAssets {
             int inspected = 0;
             try {
                 for (String key : PackPreviewAssetLogic.shuffled(new ArrayList<>(candidates.keySet()), packId)) {
+                    checkCancelled();
                     if (inspected++ == MAX_CANDIDATES) {
                         note("Block comparison limited to " + MAX_CANDIDATES + " candidates");
                         break;
@@ -418,6 +525,7 @@ public final class PackPreviewAssets {
         private void measureOtherItems() {
             int count = 0;
             for (Identifier id : resources.keySet()) {
+                checkCancelled();
                 String path = PackPreviewAssetLogic.canonicalPath(id.getPath());
                 if (path.startsWith("textures/item/") && path.endsWith(".png")
                         && !measured.contains(id.getNamespace() + ":" + path)) {
@@ -439,6 +547,7 @@ public final class PackPreviewAssets {
         }
 
         private Raw raw(Identifier id, boolean custom) {
+            checkCancelled();
             if (custom && customPixels >= MAX_CUSTOM_PIXELS) {
                 note("Custom PNG decode budget reached (64 million pixels); detection/resolution may be partial");
                 return null;
@@ -463,11 +572,14 @@ public final class PackPreviewAssets {
             try {
                 NativeImage image = NativeImage.read(bytes);
                 try {
+                    checkCancelled();
                     return new Raw(id, image, bytes, frameInfo(id, custom, image.getWidth(), image.getHeight()));
-                } catch (RuntimeException e) {
+                } catch (RuntimeException | Error e) {
                     image.close();
                     throw e;
                 }
+            } catch (CancellationException e) {
+                throw e;
             } catch (IOException | RuntimeException e) {
                 note("Unreadable PNG: " + id);
                 return null;
@@ -475,6 +587,7 @@ public final class PackPreviewAssets {
         }
 
         private byte[] bytes(Identifier id, boolean custom, int limit) {
+            checkCancelled();
             ResourcePack source = custom ? pack : vanilla;
             if (source == null) {
                 return null;
@@ -495,6 +608,7 @@ public final class PackPreviewAssets {
                 try (InputStream input = supplier.get()) {
                     int readLimit = custom ? (int) Math.min(limit, remaining) : limit;
                     byte[] bytes = input.readNBytes(readLimit + 1);
+                    checkCancelled();
                     if (custom) {
                         customBytesRead += bytes.length;
                     }
@@ -508,6 +622,8 @@ public final class PackPreviewAssets {
                     }
                     return bytes;
                 }
+            } catch (CancellationException e) {
+                throw e;
             } catch (IOException | RuntimeException e) {
                 note("Unreadable resource: " + id);
                 return null;
@@ -592,23 +708,17 @@ public final class PackPreviewAssets {
         }
 
         private Sprite register(Image image) {
-            // Copy ownership: callers can always close their Image, even if upload fails.
+            // The decoded copy belongs to Prepared until a texture takes ownership.
             NativeImage copy = new NativeImage(image.pixels.getWidth(), image.pixels.getHeight(), true);
-            copy.copyFrom(image.pixels);
-            NativeImageBackedTexture texture = null;
             Identifier id = Identifier.of("phaze", texturePrefix + owned.size());
             try {
-                texture = new NativeImageBackedTexture(copy);
-                client.getTextureManager().registerTexture(id, texture);
+                copy.copyFrom(image.pixels);
+                images.add(copy);
                 owned.add(id);
                 textureBytes += (long) copy.getWidth() * copy.getHeight() * 4;
                 return new Sprite(id, copy.getWidth(), copy.getHeight(), image.originalWidth, image.originalHeight, image.custom);
             } catch (RuntimeException | Error e) {
-                if (texture != null) {
-                    texture.close();
-                } else {
-                    copy.close();
-                }
+                copy.close();
                 throw e;
             }
         }
@@ -668,6 +778,7 @@ public final class PackPreviewAssets {
         private void detectFeatures() {
             int metadataCount = 0;
             for (Identifier id : resources.keySet()) {
+                checkCancelled();
                 String path = id.getPath();
                 if (!sounds && path.startsWith("sounds/") && path.endsWith(".ogg")) {
                     byte[] header = header(id, 4);
@@ -696,6 +807,7 @@ public final class PackPreviewAssets {
         }
 
         private byte[] header(Identifier id, int size) {
+            checkCancelled();
             if (pack == null) {
                 return null;
             }
@@ -706,9 +818,13 @@ public final class PackPreviewAssets {
                 }
                 if (supplier != null) {
                     try (InputStream stream = supplier.get()) {
-                        return stream.readNBytes(size);
+                        byte[] bytes = stream.readNBytes(size);
+                        checkCancelled();
+                        return bytes;
                     }
                 }
+            } catch (CancellationException e) {
+                throw e;
             } catch (IOException | RuntimeException e) {
                 note("Unreadable resource header: " + id);
             }

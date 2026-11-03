@@ -1,5 +1,6 @@
 package vorga.phazeclient.implement.menu;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -121,11 +122,17 @@ public final class LoadingOverlayClientTest implements FabricClientGameTest {
                 GL_BLEND_SRC_ALPHA, GL_BLEND_DST_ALPHA, GL_UNPACK_ALIGNMENT, GL_PIXEL_UNPACK_BUFFER_BINDING};
         int[] values = new int[enums.length];
         for (int i = 0; i < enums.length; i++) values[i] = glGetInteger(enums[i]);
+        int cachedTexture0 = RenderSystem.getShaderTexture(0);
+        int cachedAtlasTexture = RenderSystem.getShaderTexture(BootstrapLoadingRenderer.ATLAS_TEXTURE_INDEX);
         boolean depth = glIsEnabled(GL_DEPTH_TEST), blend = glIsEnabled(GL_BLEND);
         BootstrapLoadingRenderer.render(854, 480, 0, 1);
         for (int i = 0; i < enums.length; i++) {
             check(values[i] == glGetInteger(enums[i]), "loading renderer restores GL state " + enums[i]);
         }
+        check(RenderSystem.getShaderTexture(0) == cachedTexture0,
+                "loading renderer restores Minecraft's cached texture binding");
+        check(RenderSystem.getShaderTexture(BootstrapLoadingRenderer.ATLAS_TEXTURE_INDEX) == cachedAtlasTexture,
+                "loading renderer restores its reserved atlas texture binding");
         check(depth == glIsEnabled(GL_DEPTH_TEST) && blend == glIsEnabled(GL_BLEND), "restores GL enables");
         check(glGetError() == GL_NO_ERROR, "no GL errors on first bootstrap render");
     }

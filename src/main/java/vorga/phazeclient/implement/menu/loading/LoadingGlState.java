@@ -1,5 +1,6 @@
 package vorga.phazeclient.implement.menu.loading;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.ARBSamplerObjects;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryStack;
@@ -9,8 +10,24 @@ import java.nio.IntBuffer;
 
 import static org.lwjgl.opengl.GL32C.*;
 
-/** Raw GL only: restoring the real state also preserves Minecraft's state caches. */
+/**
+ * Saves the state touched by the standalone renderer.
+ *
+ * <p>The loading renderer is intentionally independent from Minecraft's shader
+ * loader, but it still runs in Minecraft's GL context. Its reserved texture
+ * unit must therefore be changed through {@link RenderSystem}: GlStateManager
+ * caches the active unit and its 2D bindings, and raw calls can leave that
+ * cache out of sync even when the final OpenGL values look correct.</p>
+ */
 final class LoadingGlState implements AutoCloseable {
+    /**
+     * Keep the bootstrap atlas away from Minecraft's primary sampler. OpenGL
+     * 3.2 guarantees at least 16 texture units, so unit 7 is available even
+     * with Sodium/Iris and does not interfere with the block atlas on unit 0.
+     */
+    static final int ATLAS_TEXTURE_UNIT = GL_TEXTURE7;
+    static final int ATLAS_TEXTURE_INDEX = ATLAS_TEXTURE_UNIT - GL_TEXTURE0;
+
     private static final int[] ENABLES = {
             GL_BLEND, GL_DEPTH_TEST, GL_CULL_FACE, GL_SCISSOR_TEST, GL_STENCIL_TEST,
             GL_COLOR_LOGIC_OP, GL_RASTERIZER_DISCARD, GL_SAMPLE_ALPHA_TO_COVERAGE,
@@ -25,7 +42,7 @@ final class LoadingGlState implements AutoCloseable {
     private final int arrayBuffer = glGetInteger(GL_ARRAY_BUFFER_BINDING);
     private final int unpackBuffer = glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
     private final int activeTexture = glGetInteger(GL_ACTIVE_TEXTURE);
-    private final int texture;
+    private final int atlasTexture;
     private final boolean samplerSupported = GL.getCapabilities().OpenGL33
             || GL.getCapabilities().GL_ARB_sampler_objects;
     private final int sampler;
@@ -55,10 +72,10 @@ final class LoadingGlState implements AutoCloseable {
             glGetBooleanv(GL_COLOR_WRITEMASK, mask);
             for (int i = 0; i < 4; i++) colorMask[i] = mask.get(i) != 0;
         }
-        glActiveTexture(GL_TEXTURE0);
-        texture = glGetInteger(GL_TEXTURE_BINDING_2D);
+        RenderSystem.activeTexture(ATLAS_TEXTURE_UNIT);
+        atlasTexture = glGetInteger(GL_TEXTURE_BINDING_2D);
         sampler = samplerSupported ? glGetInteger(ARBSamplerObjects.GL_SAMPLER_BINDING) : 0;
-        glActiveTexture(activeTexture);
+        RenderSystem.activeTexture(activeTexture);
     }
 
     void prepare(int width, int height) {
@@ -70,8 +87,8 @@ final class LoadingGlState implements AutoCloseable {
         glColorMask(true, true, true, true);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glViewport(0, 0, width, height);
-        glActiveTexture(GL_TEXTURE0);
-        if (samplerSupported) ARBSamplerObjects.glBindSampler(0, 0);
+        RenderSystem.activeTexture(ATLAS_TEXTURE_UNIT);
+        if (samplerSupported) ARBSamplerObjects.glBindSampler(ATLAS_TEXTURE_INDEX, 0);
     }
 
     @Override
@@ -81,10 +98,10 @@ final class LoadingGlState implements AutoCloseable {
         glBindBuffer(GL_ARRAY_BUFFER, arrayBuffer);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpackBuffer);
         for (int i = 0; i < UNPACK.length; i++) glPixelStorei(UNPACK[i], unpack[i]);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        if (samplerSupported) ARBSamplerObjects.glBindSampler(0, sampler);
-        glActiveTexture(activeTexture);
+        RenderSystem.activeTexture(ATLAS_TEXTURE_UNIT);
+        RenderSystem.bindTexture(atlasTexture);
+        if (samplerSupported) ARBSamplerObjects.glBindSampler(ATLAS_TEXTURE_INDEX, sampler);
+        RenderSystem.activeTexture(activeTexture);
         glBlendEquationSeparate(equationRgb, equationAlpha);
         glBlendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha);
         glDepthMask(depthMask);

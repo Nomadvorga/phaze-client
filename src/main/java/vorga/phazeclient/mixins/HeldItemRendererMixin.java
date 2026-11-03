@@ -10,12 +10,11 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.item.HeldItemRenderer;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.component.DataComponentTypes;
 import net.minecraft.item.FishingRodItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.item.ShieldItem;
-import net.minecraft.item.SwordItem;
 import net.minecraft.util.Arm;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.RotationAxis;
@@ -41,6 +40,41 @@ import vorga.phazeclient.implement.features.modules.other.OldAnimations;
  */
 @Mixin(HeldItemRenderer.class)
 public abstract class HeldItemRendererMixin {
+
+    @Inject(
+            method = "renderFirstPersonItem",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/util/math/MatrixStack;push()V",
+                    ordinal = 0,
+                    shift = At.Shift.AFTER
+            ),
+            require = 1
+    )
+    private void phaze$applyHandOffset(
+            AbstractClientPlayerEntity player,
+            float tickDelta,
+            float pitch,
+            Hand hand,
+            float swingProgress,
+            ItemStack item,
+            float equipProgress,
+            MatrixStack matrices,
+            VertexConsumerProvider vertexConsumers,
+            int light,
+            CallbackInfo ci
+    ) {
+        ChangeHand mod = ChangeHand.getInstance();
+        if (mod == null || !mod.isEnabled()) {
+            return;
+        }
+        // Keep the existing item-only behavior: maps and empty hands have separate render paths.
+        if (item.isEmpty() || item.contains(DataComponentTypes.MAP_ID)) {
+            return;
+        }
+        // Offset in view space, before swing/use rotations can rotate the slider axes.
+        mod.applyHandOffset(matrices, hand == Hand.MAIN_HAND, player.getMainArm());
+    }
 
     @Inject(
             method = "renderFirstPersonItem",
@@ -87,35 +121,12 @@ public abstract class HeldItemRendererMixin {
             }
         }
 
-        // --- Change Hand Transforms ---
+        // --- Change Hand Scale (item-local, after the animation pose) ---
         ChangeHand mod = ChangeHand.getInstance();
         if (mod == null || !mod.isEnabled()) {
             return;
         }
-
-        if (isMain) {
-            if (!mod.hasMainHandTransform()) return;
-            matrices.translate(
-                    mod.mainHandX.getValue() * xSign,
-                    mod.mainHandY.getValue(),
-                    mod.mainHandZ.getValue()
-            );
-            float scale = mod.mainHandScale.getValue();
-            if (scale != 1.0f) {
-                matrices.scale(scale, scale, scale);
-            }
-        } else {
-            if (!mod.hasOffHandTransform()) return;
-            matrices.translate(
-                    mod.offHandX.getValue() * xSign,
-                    mod.offHandY.getValue(),
-                    mod.offHandZ.getValue()
-            );
-            float scale = mod.offHandScale.getValue();
-            if (scale != 1.0f) {
-                matrices.scale(scale, scale, scale);
-            }
-        }
+        mod.applyHandScale(matrices, isMain);
     }
 
     @WrapOperation(
@@ -183,7 +194,7 @@ public abstract class HeldItemRendererMixin {
         if (isBlocking) {
             if (mod.swordBlocking.isValue()) {
                 ci.cancel();
-                OldAnimations.renderSwordBlock(matrices, arm, armSign, equipProgress);
+                OldAnimations.renderSwordBlock(matrices, arm, armSign, equipProgress, swingProgress);
                 return;
             }
         }

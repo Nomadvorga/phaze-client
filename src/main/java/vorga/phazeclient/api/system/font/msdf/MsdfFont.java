@@ -49,12 +49,12 @@ public final class MsdfFont {
 
     /**
      * Latches whether {@link #applyGlyphs} has already pinned the
-     * atlas's GL_TEXTURE_MIN/MAG_FILTER to LINEAR/LINEAR. Vanilla's
-     * {@code AbstractTexture.setFilter(true, true)} performs two
-     * {@code glTexParameteri} calls which Sodium / Iris hook for
-     * tracking - cheap individually, but called per-glyph-batch by
-     * the menu they add up. Filter modes never change for an MSDF
-     * atlas after the first paint, so we only set them once.
+     * atlas's GL_TEXTURE_MIN/MAG_FILTER to linear filtering without
+     * mipmaps. Mipmapped MSDF atlases become noticeably soft when the
+     * menu is opened at a non-native GUI scale; resource reloads hide the
+     * problem until the first menu render sets the old mipmapped mode.
+     * Filter modes never change for an MSDF atlas after the first paint,
+     * so we only set them once.
      */
     private boolean filterApplied = false;
 
@@ -73,9 +73,14 @@ public final class MsdfFont {
         return texture.getGlId();
     }
 
+    /** Resource reloads keep this wrapper but recreate/reset the GL atlas. */
+    public void onResourcesReloaded() {
+        filterApplied = false;
+    }
+
     public void applyGlyphs(Matrix4f matrix, VertexConsumer consumer, String text, float size, float thickness, float spacing, float x, float y, float z, int color) {
         if (!filterApplied) {
-            texture.setFilter(true, true);
+            texture.setFilter(true, false);
             filterApplied = true;
         }
 

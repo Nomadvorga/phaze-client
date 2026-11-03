@@ -108,7 +108,7 @@ sourceSets.test.java.srcDir('scripts')
 
 tasks.register('verifyPackPreviewAssets', JavaExec) {
     group = 'verification'
-    description = 'Offline pack scanner, search, cycling and heart-composition regression checks'
+    description = 'Offline pack scanning, search, cycling, composition and asynchronous preview checks'
     dependsOn tasks.named('testClasses')
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'vorga.phazeclient.implement.features.modules.other.PackPreviewChecks'
@@ -124,6 +124,10 @@ tasks.register('verifyMenuLocalization', JavaExec) {
 
 [
     verifyGlintSettings: 'vorga.phazeclient.implement.features.modules.other.GlintSettingsChecks',
+    verifyHandAnimationTransforms: 'vorga.phazeclient.implement.features.modules.other.HandAnimationTransformChecks',
+    verifyHudCompatibility: 'vorga.phazeclient.implement.features.modules.hud.HudCompatibilityChecks',
+    verifyBossBar: 'vorga.phazeclient.implement.features.modules.hud.BossBarChecks',
+    verifyGuiInteractions: 'vorga.phazeclient.implement.menu.components.implement.settings.GuiInteractionChecks',
     verifyGlintTextureClock: 'vorga.phazeclient.base.util.render.GlintTextureClockChecks',
     verifyLowHealthSettings: 'vorga.phazeclient.implement.features.modules.other.LowHealthSettingsChecks',
     verifySettingLabels: 'vorga.phazeclient.implement.menu.components.implement.settings.SettingLabelChecks',

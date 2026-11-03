@@ -49,7 +49,7 @@ public class KillSounds extends Module {
 
     @Override
     public String getIcon() {
-        return "chat_helper.png";
+        return "square-sound-outline.png";
     }
 
     private synchronized void registerEvents() {

@@ -49,10 +49,11 @@ public final class MenuTopTabClientTest implements FabricClientGameTest {
             float tabHeight = 17.0F;
             float gap = 8.0F;
             float textSize = 6.9F;
-            String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
+            String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS", "CHAT"};
             float total = 0.0F;
             for (String tab : labels) total += MsdfWidth.width(tab, textSize) + 19.0F;
             total += gap * (labels.length - 1);
+            if (menu.isConfigsViewOpen()) total += gap + tabHeight;
             float left = menu.x + menu.width / 2.0F - total / 2.0F;
             float tabX = left;
             for (String tab : labels) {

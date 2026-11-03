@@ -60,7 +60,6 @@ import java.util.Locale;
 public final class TrapTimer extends RectHudModule {
     private static final TrapTimer INSTANCE = new TrapTimer();
     private static final float MIN_HUD_SCALE = 0.75F;
-    private static final float MAX_HUD_SCALE = 2.25F;
     public enum TrapType {
         NORMAL(15_000L),
         DRAGON(20_000L);
@@ -119,11 +118,6 @@ public final class TrapTimer extends RectHudModule {
     @Override
     public float getMinHudScale() {
         return MIN_HUD_SCALE;
-    }
-
-    @Override
-    public float getMaxHudScale() {
-        return MAX_HUD_SCALE;
     }
 
     /**

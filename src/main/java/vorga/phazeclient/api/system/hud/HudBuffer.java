@@ -70,7 +70,9 @@ public class HudBuffer {
                 framebuffer.delete();
             }
             framebuffer = new SimpleFramebuffer(width, height, true);
-            framebuffer.setTexFilter(GL11C.GL_LINEAR);
+            // Per-HUD cache is rendered at the native framebuffer size; it
+            // must not soften vanilla/custom text during a cache blit.
+            framebuffer.setTexFilter(GL11C.GL_NEAREST);
             lastScreenWidth = width;
             lastScreenHeight = height;
             hasContent = false;

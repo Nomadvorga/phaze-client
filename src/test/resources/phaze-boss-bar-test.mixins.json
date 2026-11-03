@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "vorga.phazeclient.mixins.test",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "BossBarTestMixins$Bars",
+    "BossBarTestMixins$MouseState",
+    "BossBarTestMixins$ForeignHooks",
+    "BossBarTestMixins$Renders",
+    "BossBarTestMixins$Draws",
+    "BossBarTestMixins$Widths",
+    "BossBarTestMixins$Buffers",
+    "BossBarTestMixins$Images",
+    "BossBarTestMixins$Textures"
+  ],
+  "injectors": { "defaultRequire": 1 }
+}

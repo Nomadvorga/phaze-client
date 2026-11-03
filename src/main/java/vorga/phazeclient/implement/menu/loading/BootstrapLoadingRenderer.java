@@ -1,5 +1,6 @@
 package vorga.phazeclient.implement.menu.loading;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 
@@ -19,6 +20,8 @@ import static org.lwjgl.opengl.GL32C.*;
  */
 public final class BootstrapLoadingRenderer {
     private static final String SHADERS = "/assets/phaze/shaders/loading/";
+    /** Texture-unit index reserved for the bootstrap MSDF atlases. */
+    public static final int ATLAS_TEXTURE_INDEX = LoadingGlState.ATLAS_TEXTURE_INDEX;
     private static BootstrapLoadingRenderer instance;
 
     private final Thread thread = Thread.currentThread();
@@ -106,7 +109,7 @@ public final class BootstrapLoadingRenderer {
         float logoHeight = titleSize + gap + subtitleSize;
         float logoTop = height * 0.46F - logoHeight / 2;
         text.use(width, height);
-        glUniform1i(text.uniform("Atlas"), 0);
+        glUniform1i(text.uniform("Atlas"), LoadingGlState.ATLAS_TEXTURE_INDEX);
         glUniform1f(text.uniform("Alpha"), alpha);
         word(bold, titleSize, width, logoTop, titleSize);
         word(medium, subtitleSize, width, logoTop + titleSize + gap, subtitleSize);
@@ -128,7 +131,10 @@ public final class BootstrapLoadingRenderer {
     private void word(LoadingFont font, float size, int screenWidth, float boxTop, float boxHeight) {
         float x = (screenWidth - font.width * size) / 2 - font.left * size;
         float baseline = boxTop + (boxHeight - font.height * size) / 2 - font.top * size;
-        glBindTexture(GL_TEXTURE_2D, font.texture());
+        // Do not bypass GlStateManager's texture binding cache. The loading
+        // atlas is temporary, while the GL context is shared with Minecraft.
+        RenderSystem.activeTexture(LoadingGlState.ATLAS_TEXTURE_UNIT);
+        RenderSystem.bindTexture(font.texture());
         glUniform1f(text.uniform("DistanceRange"), font.range);
         glUniform2f(text.uniform("AtlasSize"), font.atlasWidth, font.atlasHeight);
         for (LoadingFont.Glyph glyph : font.glyphs) {

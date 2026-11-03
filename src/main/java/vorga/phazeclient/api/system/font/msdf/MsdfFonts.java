@@ -28,4 +28,11 @@ public final class MsdfFonts {
         }
         return hud;
     }
+
+    /** Re-arm atlas filtering after F3+T without discarding the font caches. */
+    public static void onResourcesReloaded() {
+        if (medium != null) medium.onResourcesReloaded();
+        if (bold != null) bold.onResourcesReloaded();
+        if (hud != null) hud.onResourcesReloaded();
+    }
 }

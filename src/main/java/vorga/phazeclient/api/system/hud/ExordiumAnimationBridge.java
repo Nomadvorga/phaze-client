@@ -13,6 +13,7 @@ import org.joml.Vector4f;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.other.NoRender;
 import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
+import vorga.phazeclient.implement.features.modules.hud.BossBarHud;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -48,6 +49,7 @@ public final class ExordiumAnimationBridge {
     public static final String PLAYER_LIST = "minecraft:player_list";
     public static final String CHAT = "minecraft:chat_panel";
     public static final String SCOREBOARD = "minecraft:scoreboard";
+    public static final String BOSS_BAR = "minecraft:boss_bar";
 
     private static final Map<Object, String> COMPONENT_BY_BUFFER = new IdentityHashMap<>();
     private static final Map<Object, String> ID_BY_INSTANCE = new IdentityHashMap<>();
@@ -186,6 +188,10 @@ public final class ExordiumAnimationBridge {
                 registerUpdateListenerMethod.invoke(instance, listener);
             }
 
+            if (BOSS_BAR.equals(id) && BossBarHud.getInstance().shouldRefreshExordium(System.nanoTime())) {
+                FORCE_CAPTURE.add(id);
+            }
+
             if (HOTBAR.equals(id) && lastHotbarEnabled && !hotbarPrepared) {
                 FORCE_CAPTURE.add(id);
             } else if (PLAYER_LIST.equals(id) && lastTabEnabled && !tabPrepared) {
@@ -291,6 +297,10 @@ public final class ExordiumAnimationBridge {
             // only visible sidebar while every other Exordium buffer remains
             // batched normally.
             return true;
+        }
+        if (BOSS_BAR.equals(id)) {
+            NoRender noRender = NoRender.getInstance();
+            if (noRender != null && noRender.isEnabled() && noRender.bossBar.isValue()) return true;
         }
 
         boolean defer;

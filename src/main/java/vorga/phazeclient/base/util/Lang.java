@@ -1282,6 +1282,16 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Themes", "Темы");
         SETTING_TRANSLATIONS.put("just now", "только что");
         SETTING_TRANSLATIONS.put("General", "Общие");
+        SETTING_TRANSLATIONS.put("Render Health", "Показывать здоровье");
+        SETTING_TRANSLATIONS.put("Render Text", "Показывать текст");
+        SETTING_TRANSLATIONS.put("Fill Color", "Цвет заполнения");
+        SETTING_TRANSLATIONS.put("Rainbow Speed", "Скорость радуги");
+        SETTING_TRANSLATIONS.put("Show the boss health bar", "Показывать полосу здоровья босса");
+        SETTING_TRANSLATIONS.put("Show the boss bar name", "Показывать название боссбара");
+        SETTING_TRANSLATIONS.put("Boss bar color mode", "Режим цвета боссбара");
+        SETTING_TRANSLATIONS.put("Boss bar fill color", "Цвет заполнения боссбара");
+        SETTING_TRANSLATIONS.put("Speed of the boss bar rainbow cycle", "Скорость полного радужного цикла боссбара");
+        SETTING_TRANSLATIONS.put("Customizable boss bar", "Настраиваемый боссбар");
         SETTING_TRANSLATIONS.put("Advanced", "Расширенное");
         SETTING_TRANSLATIONS.put("Blocks", "Блоки");
         SETTING_TRANSLATIONS.put("Fluids", "Жидкости");

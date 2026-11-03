@@ -110,7 +110,10 @@ public final class BatchedHudBuffer {
                 fbo = null;
             }
             fbo = new SimpleFramebuffer(w, h, true);
-            fbo.setTexFilter(GL11C.GL_LINEAR);
+            // This is a full-resolution HUD cache, not a blur surface. Keep
+            // text and 1px HUD strokes crisp when the cached quad is reused
+            // after opening/closing a Screen.
+            fbo.setTexFilter(GL11C.GL_NEAREST);
             lastWidth = w;
             lastHeight = h;
             hasContent = false;

@@ -40,11 +40,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
  * preference.
  *
  * <h3>Mixin coupling</h3>
- * {@code DebugHudBetterF3Mixin} cancels vanilla's
- * {@code DebugHud.render(DrawContext)} when this module is on and
- * delegates to {@link BetterF3Renderer#render}. Vanilla's chunk
- * profiler hooks (right column "DimensionType" etc.) are not
- * displayed here.
+ * {@code DebugHudMixin} replaces only vanilla's text columns with
+ * {@link BetterF3Renderer#render}. The normal F3+1/2/3 chart toggles,
+ * profiler navigation and chart rendering remain vanilla.
  */
 public final class BetterF3 extends Module {
     private static final BetterF3 INSTANCE = new BetterF3();

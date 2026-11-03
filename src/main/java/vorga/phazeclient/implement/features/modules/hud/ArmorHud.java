@@ -18,7 +18,6 @@ public final class ArmorHud extends Module {
     private static final float DEFAULT_HUD_Y = 60.0f;
     private static final float DEFAULT_HUD_SCALE = 1.0f;
     private static final float MIN_HUD_SCALE = 0.5f;
-    private static final float MAX_HUD_SCALE = 5.0f;
 
     public final SectionSetting mainSection = new SectionSetting("General");
     public final BooleanSetting textShadow = new BooleanSetting("Text Shadow", "Draw text with vanilla shadow").setValue(true);
@@ -241,7 +240,7 @@ public final class ArmorHud extends Module {
     }
 
     public void setHudScale(float hudScale) {
-        this.hudScale = MathHelper.clamp(hudScale, MIN_HUD_SCALE, MAX_HUD_SCALE);
+        this.hudScale = MathHelper.clamp(hudScale, MIN_HUD_SCALE, RectHudModule.MAX_HUD_SCALE);
         markResolvedForCurrentScreen();
     }
 
@@ -250,7 +249,7 @@ public final class ArmorHud extends Module {
     }
 
     public float getMaxHudScale() {
-        return MAX_HUD_SCALE;
+        return RectHudModule.MAX_HUD_SCALE;
     }
 
     public String formatDurability(int remaining, int max) {

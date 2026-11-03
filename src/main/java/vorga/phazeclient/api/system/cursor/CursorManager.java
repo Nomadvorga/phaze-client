@@ -172,6 +172,11 @@ public final class CursorManager {
      * a 2D pad switching from H to diagonal resize).
      */
     public static void beginDrag(int shape) {
+        // GUI sliders renew the pin every frame; never change the OS
+        // cursor when the module or its Dynamic Cursor toggle is off.
+        if (!vorga.phazeclient.implement.features.modules.other.Animations.getInstance().isDynamicCursorEnabled()) {
+            return;
+        }
         if (dragOverrideShape == shape) {
             return;
         }

@@ -1,6 +1,7 @@
 package vorga.phazeclient.implement.features.modules.other;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Arm;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
@@ -166,8 +167,7 @@ public final class ChangeHand extends Module {
     }
 
     /**
-     * Convenience accessor used by {@code HeldItemRendererMixin} to
-     * decide whether to apply the offset / scale transforms at all.
+     * Convenience accessor for detecting non-default offset / scale transforms.
      * The default values (X=Y=Z=0, Scale=1) are no-ops and we can
      * skip the matrix work entirely on the common path.
      */
@@ -183,6 +183,25 @@ public final class ChangeHand extends Module {
                 || offHandY.getValue() != 0.0f
                 || offHandZ.getValue() != 0.0f
                 || offHandScale.getValue() != 1.0f;
+    }
+
+    /** Apply after the per-hand matrix push, before equip/swing/use rotations. */
+    public void applyHandOffset(MatrixStack matrices, boolean mainHand, Arm mainArm) {
+        float x = mainHand ? mainHandX.getValue() : offHandX.getValue();
+        float y = mainHand ? mainHandY.getValue() : offHandY.getValue();
+        float z = mainHand ? mainHandZ.getValue() : offHandZ.getValue();
+        if (x != 0.0f || y != 0.0f || z != 0.0f) {
+            float xSign = mainArm == Arm.LEFT ? -1.0f : 1.0f;
+            matrices.translate(x * xSign, y, z);
+        }
+    }
+
+    /** Scale only the item model, not the camera-space offset or swing trajectory. */
+    public void applyHandScale(MatrixStack matrices, boolean mainHand) {
+        float scale = mainHand ? mainHandScale.getValue() : offHandScale.getValue();
+        if (scale != 1.0f) {
+            matrices.scale(scale, scale, scale);
+        }
     }
 
     @Override

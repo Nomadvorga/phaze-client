@@ -107,6 +107,7 @@
     "NativeImageSetColorInvoker",
     "UsingItemPropertyMixin",
     "BossBarHudMixin",
+    "DrawContextBossBarMixin",
     "ItemStackMixin",
     "PackScreenMixin",
     "ResourcePackEntryAccessor",

@@ -54,7 +54,8 @@ public class SearchComponent extends AbstractComponent {
     private static final float INPUT_TEXT_X_OFFSET = 12.0F;
     private static final float INPUT_SCISSOR_X_OFFSET = 7.0F;
     private static final float INPUT_SCISSOR_RIGHT_INSET = 2.0F;
-    private static final float SELECTION_X_OFFSET = -2.0F;
+    private static final float SELECTION_X_OFFSET = 0.0F;
+    private static final float SELECTION_EXPANSION = 1.5F;
     private final Animation hoverAnimation = new DecelerateAnimation().setMs(200).setValue(0.15f);
     private final Animation selectAnimation = new DecelerateAnimation().setMs(200).setValue(1);
 
@@ -177,8 +178,10 @@ public class SearchComponent extends AbstractComponent {
                     int s = Math.max(0, Math.min(selStart(), text.length()));
                     int e = Math.max(0, Math.min(selEnd(), text.length()));
                     if (s < e) {
-                        float selX0 = textX + font.getWidth(text.substring(0, s), SEARCH_TEXT_SIZE) + SELECTION_X_OFFSET;
-                        float selX1 = textX + font.getWidth(text.substring(0, e), SEARCH_TEXT_SIZE) + SELECTION_X_OFFSET;
+                        float selX0 = textX + font.getWidth(text.substring(0, s), SEARCH_TEXT_SIZE)
+                                + SELECTION_X_OFFSET - SELECTION_EXPANSION;
+                        float selX1 = textX + font.getWidth(text.substring(0, e), SEARCH_TEXT_SIZE)
+                                + SELECTION_X_OFFSET + SELECTION_EXPANSION;
                         // Center the selection band on the input rect
                         // itself rather than on the baseline-shifted
                         // text position. Using the rect centre keeps

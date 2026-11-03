@@ -5,10 +5,10 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
+import vorga.phazeclient.api.system.cursor.CursorManager;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
-import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
@@ -101,7 +101,9 @@ public class ValueComponent extends AbstractSettingComponent {
 
         isSliderHovered = MathUtil.isHovered(mouseX, mouseY, cachedSliderStartX - 4, centerY - 6, cachedSliderWidth + 8, 12);
         if (dragging) {
-            vorga.phazeclient.api.system.cursor.CursorManager.beginDrag(vorga.phazeclient.api.system.cursor.CursorManager.SHAPE_HRESIZE);
+            CursorManager.beginDrag(CursorManager.SHAPE_HRESIZE);
+        } else if (isSliderHovered) {
+            CursorManager.requestHand();
         }
 
         renderSettingCard(context, 0.0f, hoverProgress);
@@ -141,6 +143,9 @@ public class ValueComponent extends AbstractSettingComponent {
         changeValue(renderSlider(mouseX, matrices, cachedSliderStartX, centerY, cachedSliderWidth));
 
         resetIcon.position(x, y, height).alpha(currentAlpha * resetIconAlpha).modified(isModified).render(matrices);
+        if (isModified && resetIcon.isHovered(mouseX, mouseY)) {
+            CursorManager.requestHand();
+        }
     }
 
     @Override
@@ -165,6 +170,7 @@ public class ValueComponent extends AbstractSettingComponent {
         if (wasClicked) {
             playButtonClickSound();
             dragging = true;
+            CursorManager.beginDrag(CursorManager.SHAPE_HRESIZE);
             if (isGuiScaleSetting()) {
                 Theme.getInstance().beginGuiScaleAdjustment();
             }
@@ -178,8 +184,8 @@ public class ValueComponent extends AbstractSettingComponent {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         boolean wasDragging = dragging;
-        if (dragging) {
-            ScaleSnapOverlay.hide();
+        if (wasDragging) {
+            CursorManager.endDrag();
         }
         dragging = false;
         if (wasDragging && isGuiScaleSetting()) {
@@ -258,7 +264,6 @@ public class ValueComponent extends AbstractSettingComponent {
             rawValue = snapped2;
             setting.setValue(setting.isInteger() ? (int) rawValue : rawValue);
             previousValue = rawValue;
-            announceScale(rawValue, true);
             return;
         }
 
@@ -286,30 +291,6 @@ public class ValueComponent extends AbstractSettingComponent {
         }
 
         setting.setValue(newValue);
-        announceScale(newValue, false);
-    }
-
-    /**
-     * Feeds the centred readout while a magnet-enabled slider is being
-     * dragged. Only sliders that declared a snap get it: those are the
-     * scale sliders, and putting a giant number over the screen for
-     * every unrelated slider would be noise.
-     */
-    private void announceScale(float value, boolean snapped) {
-        if (isGuiScaleSetting()) {
-            ScaleSnapOverlay.hide();
-            return;
-        }
-        String settingName = setting.getName().toLowerCase(java.util.Locale.ROOT);
-        if (setting.getSnapRadius() <= 0.0F
-                && !settingName.contains("scale")
-                && !settingName.contains("size")) {
-            return;
-        }
-        ScaleSnapOverlay.show(
-                value,
-                snapped,
-                snapped ? Lang.t("slider.snapped_to_default") : setting.getName());
     }
 
     private boolean isGuiScaleSetting() {

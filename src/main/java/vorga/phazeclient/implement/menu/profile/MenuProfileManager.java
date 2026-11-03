@@ -12,6 +12,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.*;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
+import vorga.phazeclient.implement.features.modules.hud.BossBarHud;
 import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
 
 import java.io.IOException;
@@ -276,6 +277,9 @@ public final class MenuProfileManager implements QuickImports {
         for (Module module : Main.getInstance().getModuleProvider().getModules()) {
             boolean hasModuleData = modulesObject.has(module.getIdentifier()) && modulesObject.get(module.getIdentifier()).isJsonObject();
             JsonObject moduleData = hasModuleData ? modulesObject.getAsJsonObject(module.getIdentifier()) : null;
+            if (hasModuleData && module instanceof BossBarHud) {
+                moduleData = BossBarHud.migrateLegacyData(moduleData);
+            }
 
             if (module.isShowEnable()) {
                 boolean enabled = hasModuleData && moduleData.has("enabled") && moduleData.get("enabled").getAsBoolean();
@@ -321,6 +325,10 @@ public final class MenuProfileManager implements QuickImports {
                 if (moduleData.has("hud_scale")) {
                     float savedScale = moduleData.get("hud_scale").getAsFloat();
                     rectHudModule.setHudScale(savedScale);
+                }
+                if (rectHudModule instanceof BossBarHud bossBar && moduleData.has("hud_auto_position")
+                        && moduleData.get("hud_auto_position").getAsBoolean()) {
+                    bossBar.resetAutomaticPosition();
                 }
             } else if (module instanceof ArmorHud armorHud) {
                 // Both axes and the reference screen in one call: the
@@ -374,6 +382,9 @@ public final class MenuProfileManager implements QuickImports {
                 moduleData.addProperty("hud_ref_w", rectHudModule.getHudRefWidth());
                 moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
+                if (rectHudModule instanceof BossBarHud bossBar) {
+                    moduleData.addProperty("hud_auto_position", bossBar.isHudPositionAutomatic());
+                }
             } else if (module instanceof ArmorHud armorHud) {
                 moduleData.addProperty("hud_x_ratio", armorHud.getHudXRatio());
                 moduleData.addProperty("hud_y_ratio", armorHud.getHudYRatio());

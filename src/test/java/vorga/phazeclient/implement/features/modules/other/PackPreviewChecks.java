@@ -26,6 +26,7 @@ public final class PackPreviewChecks {
         features();
         search();
         System.out.println("Pack scanner and search checks passed: " + checks);
+        PackPreviewCacheChecks.main(new String[0]);
     }
 
     private static void features() {

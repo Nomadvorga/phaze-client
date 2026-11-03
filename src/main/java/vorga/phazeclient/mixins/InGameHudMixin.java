@@ -18,9 +18,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.item.Item;
 import net.minecraft.text.Text;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Style;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -66,6 +63,7 @@ import vorga.phazeclient.api.system.shape.implement.Rectangle;
 import vorga.phazeclient.api.system.cursor.HudCursorRelay;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
+import vorga.phazeclient.implement.features.modules.hud.BossBarHud;
 import vorga.phazeclient.implement.features.modules.hud.CoordinatesHud;
 import vorga.phazeclient.implement.features.modules.hud.CpsHud;
 import vorga.phazeclient.implement.features.modules.hud.DayCounterHud;
@@ -94,6 +92,7 @@ import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
+import vorga.phazeclient.api.system.hud.BossBarHudAccess;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.menu.MenuScreen;
@@ -181,7 +180,8 @@ public class InGameHudMixin {
     private static final int HUD_TRAP_TIMER = 25;
     private static final int HUD_INVENTORY = 26;
     private static final int HUD_PACK_DISPLAY = 27;
-    private static final int RECT_HUD_COUNT = 28;
+    private static final int HUD_BOSS_BAR = 28;
+    private static final int RECT_HUD_COUNT = 29;
     private static final int HUD_ARMOR_BLUR_SLOT = 27;
     private static final int HUD_SNAP_ARMOR = RECT_HUD_COUNT;
     private static final int HUD_SNAP_COUNT = RECT_HUD_COUNT + 1;
@@ -364,6 +364,17 @@ public class InGameHudMixin {
         // Exordium serves renderHotbar/ChatHud from a cached framebuffer and
         // therefore skips those vanilla methods for this frame.
         ExordiumAnimationBridge.beginHudFrame(context);
+        if (this.client != null && this.client.inGameHud != null) {
+            if (BossBarHud.getInstance().isEnabled()) {
+                ((BossBarHudAccess) this.client.inGameHud.getBossBarHud()).phaze$updateLayout();
+            }
+            BossBarHud.getInstance().beginFrame(System.nanoTime());
+            if (!BossBarHud.getInstance().isEnabled() || !(this.client.currentScreen instanceof ChatScreen)) {
+                RECT_DRAGGING[HUD_BOSS_BAR] = false;
+                RECT_RESIZING[HUD_BOSS_BAR] = false;
+                RECT_HOVER_PROGRESS[HUD_BOSS_BAR] = 0.0F;
+            }
+        }
         phaze$advanceHotbarSlide();
         if (this.client != null && this.client.inGameHud != null
                 && this.client.inGameHud.getChatHud() instanceof ChatAnimationFrameAccess access) {
@@ -397,7 +408,7 @@ public class InGameHudMixin {
         }
     }
 
-    @Inject(method = "renderBossBar", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "method_55808", at = @At("HEAD"), cancellable = true, require = 1)
     private void phaze$suppressVanillaBossBar(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         NoRender noRender = NoRender.getInstance();
         if (noRender != null && noRender.isEnabled() && noRender.bossBar.isValue()) {
@@ -857,8 +868,7 @@ public class InGameHudMixin {
                 context.getMatrices().scale(inverseGuiScale, inverseGuiScale, 1.0f);
                 context.getMatrices().translate(packDisplay.getHudX(), packDisplay.getHudY(), HUD_TEXT_RENDER_Z + 1.0f);
                 context.getMatrices().scale(packDisplay.getRenderHudScale(), packDisplay.getRenderHudScale(), 1.0f);
-                context.drawTexture(RenderLayer::getGuiTextured, packIcon, 0, 0, 0.0f, 0.0f,
-                        28, 28, packDisplay.getPackIconWidth(), packDisplay.getPackIconHeight());
+                packDisplay.drawPackIcon(context);
                 context.getMatrices().pop();
             }
         });
@@ -889,6 +899,14 @@ public class InGameHudMixin {
         renderBufferedHud(context, ScoreboardHud.getInstance(), chatEditing, () ->
                 renderScoreboardHud(context, client, ScoreboardHud.getInstance(), chatEditing, mouseX, mouseY, mouseDown,
                         deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY));
+
+        if (chatEditing) {
+            BossBarHud bossBar = BossBarHud.getInstance();
+            renderBufferedHud(context, bossBar, true, () ->
+                    renderRectHud(context, client, bossBar, "", HUD_BOSS_BAR, true, mouseX, mouseY, mouseDown,
+                            deltaSeconds, inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
+                            bossBar.getBaseWidth(), bossBar.getBaseHeight()));
+        }
 
         if (lastCallThisFrame) {
             if (chatEditing) {
@@ -1219,11 +1237,12 @@ public class InGameHudMixin {
                     float deltaY = (float) mouseY - RECT_RESIZE_START_MOUSE_Y[hudIndex];
                     float delta = (deltaX + deltaY) * 0.5f;
 
-                    float minWidth = baseWidth * module.getMinHudScale() * 2.0F;
-                    float maxWidth = baseWidth * module.getMaxHudScale() * 2.0F;
+                    float scaleBaseline = scale / module.getHudScale();
+                    float minWidth = baseWidth * module.getMinHudScale() * scaleBaseline;
+                    float maxWidth = baseWidth * module.getMaxHudScale() * scaleBaseline;
                     float newWidth = MathHelper.clamp(RECT_RESIZE_START_WIDTH[hudIndex] + delta * 0.9f, minWidth, maxWidth);
                     float newScale = snapAndAnnounceHudScale(
-                            module, newWidth / baseWidth / 2.0F,
+                            module, newWidth / baseWidth / scaleBaseline,
                             module.getMinHudScale(), module.getMaxHudScale());
 
                     module.setHudScale(newScale);
@@ -1268,12 +1287,10 @@ public class InGameHudMixin {
             }
         }
 
-        float textWidth = getHudTextWidth(client, text, HUD_TEXT_SIZE);
-        float textX = (baseWidth - textWidth) / 2.0f;
-        if (module instanceof PackDisplayHud packDisplay && packDisplay.getPackIcon(client) != null) {
-            // Centre the label in the area to the right of the 28px icon.
-            textX += 14.0f;
+        if (hudIndex == HUD_BOSS_BAR && chatEditing && !BossBarHud.getInstance().hasLiveBars()) {
+            ((BossBarHudAccess) client.inGameHud.getBossBarHud()).phaze$renderPreview(context);
         }
+
         float textY = (baseHeight - 8.0f) / 2.0f;
         int hoverOutlineThickness = Math.max(1, Math.round(BASE_HOVER_OUTLINE_THICKNESS / Math.max(1.0f, scale)));
 
@@ -1371,8 +1388,9 @@ public class InGameHudMixin {
         }
 
         if (module instanceof PackDisplayHud packDisplay) {
-            renderPackDisplayText(context, client, packDisplay, x, y, baseWidth, baseHeight, scale, textColor);
-        } else {
+            renderPackDisplayText(context, client, packDisplay, x, y, baseHeight, scale, textColor);
+        } else if (hudIndex != HUD_BOSS_BAR) {
+            float textX = (baseWidth - getHudTextWidth(client, text, HUD_TEXT_SIZE)) / 2.0f;
             renderScaledHudTextColored(context, client, text, x, y, textX, textY, HUD_TEXT_SIZE, scale, module.textShadow.isValue(), textColor);
         }
 
@@ -1406,70 +1424,28 @@ public class InGameHudMixin {
             PackDisplayHud module,
             float x,
             float y,
-            float baseWidth,
             float baseHeight,
             float scale,
             int textColor
     ) {
         net.minecraft.text.Text title = module.getNameText(client);
-        net.minecraft.text.Text description = module.getDescriptionText(client);
-        boolean hasIcon = module.getPackIcon(client) != null;
-        float contentLeft = hasIcon ? 28.0f : 0.0f;
-        float contentWidth = Math.max(1.0f, baseWidth - contentLeft);
-        float titleWidth = client.textRenderer.getWidth(title);
-        float titleX = contentLeft + Math.max(0.0f, (contentWidth - titleWidth) * 0.5f);
-        float titleY = module.hasDescription(client) ? 3.0f : (baseHeight - 8.0f) * 0.5f;
+        int textX = Math.round(module.getTextStartX());
+        boolean hasDescription = module.hasDescription(client);
+        float titleY = hasDescription ? 3.0f : (baseHeight - 8.0f) * 0.5f;
 
         context.getMatrices().push();
         context.getMatrices().translate(x, y, HUD_TEXT_RENDER_Z);
         context.getMatrices().scale(scale, scale, 1.0f);
-        context.drawText(client.textRenderer, title, Math.round(titleX), Math.round(titleY), textColor, module.textShadow.isValue());
+        context.drawText(client.textRenderer, title, textX, Math.round(titleY), textColor, module.textShadow.isValue());
 
-        if (module.hasDescription(client)) {
-            // Text keeps Minecraft's Style objects intact, including all
-            // legacy § colour/format codes and explicit LF line breaks.
-            java.util.List<MutableText> lines = splitPackDescription(description);
+        if (hasDescription) {
             float lineY = 14.0f;
-            for (MutableText line : lines) {
-                float lineWidth = client.textRenderer.getWidth(line);
-                float lineX = contentLeft + Math.max(0.0f, (contentWidth - lineWidth) * 0.5f);
-                context.drawText(client.textRenderer, line, Math.round(lineX), Math.round(lineY), textColor, module.textShadow.isValue());
+            for (Text line : module.getDescriptionLines(client)) {
+                context.drawText(client.textRenderer, line, textX, Math.round(lineY), textColor, module.textShadow.isValue());
                 lineY += 8.0f;
             }
         }
         context.getMatrices().pop();
-    }
-
-    private static java.util.List<MutableText> splitPackDescription(net.minecraft.text.Text description) {
-        java.util.List<MutableText> lines = new java.util.ArrayList<>();
-        MutableText line = Text.empty();
-        final MutableText[] current = {line};
-        description.visit((style, fragment) -> {
-            Style activeStyle = style;
-            for (int i = 0; i < fragment.length(); i++) {
-                char character = fragment.charAt(i);
-                if (character == '\u00A7' && i + 1 < fragment.length()) {
-                    Formatting formatting = Formatting.byCode(fragment.charAt(++i));
-                    if (formatting == Formatting.RESET) {
-                        activeStyle = Style.EMPTY;
-                    } else if (formatting != null) {
-                        activeStyle = formatting.isColor()
-                                ? Style.EMPTY.withColor(formatting)
-                                : activeStyle.withFormatting(formatting);
-                    }
-                } else if (character == '\n' || character == '\r') {
-                    if (character == '\r' && i + 1 < fragment.length() && fragment.charAt(i + 1) == '\n') i++;
-                    lines.add(current[0]);
-                    current[0] = Text.empty();
-                } else {
-                    current[0].append(Text.literal(String.valueOf(character)).setStyle(activeStyle));
-                }
-            }
-            return java.util.Optional.empty();
-        }, description.getStyle());
-        line = current[0];
-        lines.add(line);
-        return lines;
     }
 
     private void renderArmorHud(
@@ -3807,33 +3783,15 @@ public class InGameHudMixin {
                 || vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance().isEnabled()
                 || PlayerModelHud.getInstance().isEnabled()
                 || InventoryHud.getInstance().isEnabled()
-                || ScoreboardHud.getInstance().isEnabled();
+                || ScoreboardHud.getInstance().isEnabled()
+                || BossBarHud.getInstance().isEnabled() && MinecraftClient.getInstance().currentScreen instanceof ChatScreen;
     }
 
     private static boolean isAnyHudInteractionActive() {
-        return RECT_DRAGGING[HUD_FPS] || RECT_RESIZING[HUD_FPS]
-                || RECT_DRAGGING[HUD_CPS] || RECT_RESIZING[HUD_CPS]
-                || RECT_DRAGGING[HUD_REACH] || RECT_RESIZING[HUD_REACH]
-                || RECT_DRAGGING[HUD_SPRINT] || RECT_RESIZING[HUD_SPRINT]
-                || RECT_DRAGGING[HUD_COORDINATES] || RECT_RESIZING[HUD_COORDINATES]
-                || RECT_DRAGGING[HUD_PING] || RECT_RESIZING[HUD_PING]
-                || RECT_DRAGGING[HUD_KEYSTROKES] || RECT_RESIZING[HUD_KEYSTROKES]
-                || RECT_DRAGGING[HUD_POTION] || RECT_RESIZING[HUD_POTION]
-                || RECT_DRAGGING[HUD_DAY_COUNTER] || RECT_RESIZING[HUD_DAY_COUNTER]
-                || RECT_DRAGGING[HUD_TAB] || RECT_RESIZING[HUD_TAB]
-                || RECT_DRAGGING[HUD_NAMETAG] || RECT_RESIZING[HUD_NAMETAG]
-                || RECT_DRAGGING[HUD_TIME] || RECT_RESIZING[HUD_TIME]
-                || RECT_DRAGGING[HUD_SESSION] || RECT_RESIZING[HUD_SESSION]
-                || RECT_DRAGGING[HUD_MEMORY] || RECT_RESIZING[HUD_MEMORY]
-                || RECT_DRAGGING[HUD_TPS] || RECT_RESIZING[HUD_TPS]
-                || RECT_DRAGGING[HUD_COMBO] || RECT_RESIZING[HUD_COMBO]
-                || RECT_DRAGGING[HUD_SERVER_ADDRESS] || RECT_RESIZING[HUD_SERVER_ADDRESS]
-                || RECT_DRAGGING[HUD_SCOREBOARD] || RECT_RESIZING[HUD_SCOREBOARD]
-                || RECT_DRAGGING[HUD_HEALTH_INDICATOR] || RECT_RESIZING[HUD_HEALTH_INDICATOR]
-                || RECT_DRAGGING[HUD_CONSUMABLE] || RECT_RESIZING[HUD_CONSUMABLE]
-                || RECT_DRAGGING[HUD_PLAYER_MODEL] || RECT_RESIZING[HUD_PLAYER_MODEL]
-                || RECT_DRAGGING[HUD_TRAP_TIMER] || RECT_RESIZING[HUD_TRAP_TIMER]
-                || armorDragging || armorResizing;
+        for (int index = 0; index < RECT_HUD_COUNT; index++) {
+            if (RECT_DRAGGING[index] || RECT_RESIZING[index]) return true;
+        }
+        return armorDragging || armorResizing;
     }
 
     /**

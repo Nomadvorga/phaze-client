@@ -1,0 +1,326 @@
+package vorga.phazeclient.implement.menu.components.implement.settings;
+
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
+import org.objectweb.asm.tree.VarInsnNode;
+import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
+import vorga.phazeclient.api.system.cursor.CursorManager;
+
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/** Offline cursor-state and GUI-versus-chat readout regression checks; no window or user config required. */
+public final class GuiInteractionChecks {
+    private static final String CURSOR = "vorga/phazeclient/api/system/cursor/CursorManager";
+    private static final String ANIMATIONS = "vorga/phazeclient/implement/features/modules/other/Animations";
+    private static final String SETTINGS = "vorga/phazeclient/implement/menu/components/implement/settings/";
+    private static final String OVERLAY = SETTINGS + "ScaleSnapOverlay";
+    private static final String CALLBACKS = SETTINGS + "GuiInteractionChecks";
+    private static final List<Integer> appliedShapes = new ArrayList<>();
+    private static final List<Integer> createdShapes = new ArrayList<>();
+    private static int checks;
+
+    public static void main(String[] args) throws Exception {
+        checks = 0;
+        disabledDragging();
+        enabledDragging();
+        disableAndReenable();
+        scrollAndScreenReset();
+        readoutContracts();
+        System.out.println("GUI interaction checks passed: " + checks);
+    }
+
+    private static void disabledDragging() throws Exception {
+        for (boolean[] options : new boolean[][]{{false, false}, {false, true}, {true, false}}) {
+            CursorHarness cursor = new CursorHarness();
+            cursor.options(options[0], options[1]);
+            check(!cursor.enabled(), "either disabled toggle disables the actual Animations cursor gate");
+            cursor.call("forceArrow");
+            appliedShapes.clear();
+            createdShapes.clear();
+            for (int frame = 0; frame < 120; frame++) {
+                cursor.call("beginFrame");
+                cursor.call("requestHand");
+                cursor.call("requestBeam");
+                cursor.call("beginDrag", CursorManager.SHAPE_HRESIZE);
+                cursor.call("notifyScroll", 0.0, 1.0);
+                check(appliedShapes.isEmpty(), "disabled dragging must not briefly apply a resize cursor before endFrame");
+                check(cursor.intField("dragOverrideShape") == 0, "disabled dragging does not arm a drag pin");
+                cursor.call("endFrame", cursor.enabled());
+                check(appliedShapes.isEmpty(), "disabled drag frames keep the existing arrow without OS cursor churn");
+            }
+            check(createdShapes.isEmpty(), "disabled dragging and scrolling allocate no native cursors");
+        }
+    }
+
+    private static void enabledDragging() throws Exception {
+        CursorHarness cursor = new CursorHarness();
+        cursor.options(true, true);
+        check(cursor.enabled(), "both toggles enabled permit dynamic cursors");
+        cursor.call("beginFrame");
+        cursor.call("requestHand");
+        cursor.call("endFrame", cursor.enabled());
+        cursor.call("beginDrag", CursorManager.SHAPE_HRESIZE);
+        check(appliedShapes.equals(List.of(CursorManager.SHAPE_HAND, CursorManager.SHAPE_HRESIZE)),
+                "an enabled drag applies its resize cursor immediately");
+        for (int frame = 0; frame < 120; frame++) {
+            cursor.call("beginFrame");
+            cursor.call("requestHand");
+            cursor.call("requestNotAllowed");
+            cursor.call("requestBeam");
+            cursor.call("beginDrag", CursorManager.SHAPE_HRESIZE);
+            cursor.call("endFrame", cursor.enabled());
+            check(appliedShapes.size() == 2, "repeated drag frames and hover changes do not flicker or reapply the cursor");
+        }
+        check(createdShapes.equals(List.of(CursorManager.SHAPE_HAND, CursorManager.SHAPE_HRESIZE)),
+                "each enabled cursor shape is created once and reused");
+        cursor.call("endDrag");
+        cursor.call("beginFrame");
+        cursor.call("requestBeam");
+        cursor.call("endFrame", cursor.enabled());
+        check(appliedShapes.getLast() == CursorManager.SHAPE_BEAM, "release restores regular hover priorities");
+        cursor.call("beginFrame");
+        cursor.call("endFrame", cursor.enabled());
+        check(appliedShapes.getLast() == CursorManager.SHAPE_ARROW, "leaving all widgets restores the arrow");
+    }
+
+    private static void disableAndReenable() throws Exception {
+        for (boolean disableModule : new boolean[]{true, false}) {
+            CursorHarness cursor = new CursorHarness();
+            cursor.options(true, true);
+            cursor.call("beginFrame");
+            cursor.call("beginDrag", CursorManager.SHAPE_HRESIZE);
+            cursor.call("endFrame", cursor.enabled());
+            cursor.options(!disableModule, disableModule);
+            cursor.call("beginFrame");
+            cursor.call("beginDrag", CursorManager.SHAPE_VRESIZE);
+            check(appliedShapes.equals(List.of(CursorManager.SHAPE_HRESIZE)),
+                    "disabling during a drag prevents any further immediate resize changes");
+            cursor.call("endFrame", cursor.enabled());
+            check(appliedShapes.equals(List.of(CursorManager.SHAPE_HRESIZE, CursorManager.SHAPE_ARROW)),
+                    "disabling an active drag restores the arrow exactly once");
+            check(cursor.intField("dragOverrideShape") == 0, "the disabled frame clears the old drag pin");
+            appliedShapes.clear();
+            cursor.options(true, true);
+            cursor.call("beginFrame");
+            cursor.call("requestHand");
+            cursor.call("endFrame", cursor.enabled());
+            check(appliedShapes.equals(List.of(CursorManager.SHAPE_HAND)), "re-enabling cannot resurrect a stale drag");
+            cursor.call("beginDrag", CursorManager.SHAPE_HRESIZE);
+            check(appliedShapes.getLast() == CursorManager.SHAPE_HRESIZE, "a fresh drag works after re-enabling");
+            cursor.call("endDrag");
+            check(cursor.intField("dragOverrideShape") == 0, "release also clears a newly enabled drag");
+        }
+    }
+
+    private static void scrollAndScreenReset() throws Exception {
+        CursorHarness cursor = new CursorHarness();
+        cursor.options(true, true);
+        cursor.call("notifyScroll", 0.0, 1.0);
+        cursor.field("scrollOverrideUntilNanos").setLong(null, Long.MAX_VALUE);
+        cursor.call("beginFrame");
+        cursor.call("requestBeam");
+        cursor.call("endFrame", cursor.enabled());
+        check(appliedShapes.equals(List.of(CursorManager.SHAPE_VRESIZE)), "enabled scrolling stays stable across hover frames");
+        cursor.options(true, false);
+        cursor.call("beginFrame");
+        cursor.call("notifyScroll", 1.0, 0.0);
+        cursor.call("endFrame", cursor.enabled());
+        check(appliedShapes.equals(List.of(CursorManager.SHAPE_VRESIZE, CursorManager.SHAPE_ARROW)),
+                "disabling clears a pending scroll override without a horizontal-cursor flash");
+        check(cursor.intField("scrollOverrideShape") == 0
+                        && cursor.field("scrollOverrideUntilNanos").getLong(null) == 0L,
+                "disabled frames clear both scroll shape and expiry");
+        cursor.options(true, true);
+        cursor.call("beginFrame");
+        cursor.call("requestHand");
+        cursor.call("endFrame", cursor.enabled());
+        check(appliedShapes.getLast() == CursorManager.SHAPE_HAND, "re-enabling does not restore the old scroll override");
+        cursor.call("beginFrame");
+        cursor.call("beginDrag", CursorManager.SHAPE_HRESIZE);
+        cursor.call("forceArrow");
+        int commits = appliedShapes.size();
+        cursor.call("endFrame", cursor.enabled());
+        check(appliedShapes.size() == commits && appliedShapes.getLast() == CursorManager.SHAPE_ARROW,
+                "closing a screen clears the pin and prevents a late frame from restoring it");
+        check(cursor.intField("dragOverrideShape") == 0 && cursor.intField("scrollOverrideShape") == 0,
+                "screen removal clears all gesture overrides");
+    }
+
+    private static void readoutContracts() throws Exception {
+        ClassNode value = readClass(SETTINGS + "ValueComponent");
+        ClassNode menu = readClass("vorga/phazeclient/implement/menu/MenuScreen");
+        for (ClassNode gui : List.of(value, menu)) {
+            check(gui.methods.stream().flatMap(method -> calls(method).stream()).noneMatch(call -> call.owner.equals(OVERLAY)),
+                    "GUI sliders and menu neither announce nor render nor hide the chat-only readout");
+        }
+        check(calls(method(value, "changeValue")).stream().anyMatch(call -> call.name.equals("applySnap")),
+                "removing the popup preserves slider magnetic snapping");
+        check(calls(method(value, "render")).stream().anyMatch(call -> call.owner.endsWith("/MsdfRenderer")
+                        && call.name.equals("renderText")), "ordinary inline slider values remain visible");
+        check(calls(method(value, "mouseReleased")).stream().anyMatch(call -> call.owner.equals(CURSOR)
+                        && call.name.equals("endDrag")), "GUI slider release explicitly clears its cursor pin");
+
+        ClassNode hud = readClass("vorga/phazeclient/mixins/InGameHudMixin");
+        check(calls(method(hud, "snapAndAnnounceHudScale")).stream().anyMatch(call -> call.owner.equals(OVERLAY)
+                        && call.name.equals("show")), "active chat HUD resizing still updates the scale readout");
+        int renderCalls = 0;
+        for (MethodNode method : hud.methods) {
+            for (AbstractInsnNode instruction : method.instructions) {
+                if (!(instruction instanceof MethodInsnNode call) || !call.owner.equals(OVERLAY)
+                        || !call.name.equals("render")) continue;
+                renderCalls++;
+                boolean chatGuard = false;
+                int renderIndex = method.instructions.indexOf(instruction);
+                for (AbstractInsnNode guard : method.instructions) {
+                    if (method.instructions.indexOf(guard) >= renderIndex) break;
+                    if (guard instanceof TypeInsnNode type && type.getOpcode() == Opcodes.INSTANCEOF
+                            && type.desc.equals("net/minecraft/client/gui/screen/ChatScreen")) {
+                        AbstractInsnNode branch = guard.getNext();
+                        while (branch != null && branch.getOpcode() < 0) branch = branch.getNext();
+                        chatGuard |= branch instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.IFEQ
+                                && method.instructions.indexOf(jump.label) > renderIndex;
+                    }
+                }
+                check(chatGuard, "the HUD readout draw is guarded by an active ChatScreen");
+            }
+        }
+        check(renderCalls == 1, "the chat scale readout is drawn exactly once outside the GUI");
+    }
+
+    /** Native-call replacements used only by the isolated compiled CursorManager. */
+    public static long createStandardCursor(int shape) {
+        createdShapes.add(shape);
+        return shape;
+    }
+
+    public static void setCursor(long window, long cursor) {
+        check(window == 1L, "native cursor changes use the isolated test window");
+        appliedShapes.add((int) cursor);
+    }
+
+    private static final class CursorHarness {
+        private final Class<?> manager;
+        private final Object animations;
+        private final BooleanSetting dynamicCursor;
+        private final Method dynamicEnabled;
+        private final Map<String, Method> methods = new HashMap<>();
+
+        CursorHarness() throws Exception {
+            appliedShapes.clear();
+            createdShapes.clear();
+            OfflineClasses loader = new OfflineClasses();
+            ClassNode module = readClass(ANIMATIONS);
+            // Keep the real isDynamicCursorEnabled implementation, but bypass
+            // unrelated server-policy services and their persisted client ID.
+            check(module.methods.stream().noneMatch(method -> method.name.equals("isEnabled")),
+                    "offline eligibility does not overwrite an Animations-specific implementation");
+            MethodNode eligibility = new MethodNode(Opcodes.ACC_PUBLIC, "isEnabled", "()Z", null, null);
+            eligibility.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            eligibility.instructions.add(new FieldInsnNode(Opcodes.GETFIELD,
+                    "vorga/phazeclient/api/feature/module/Module", "state", "Z"));
+            eligibility.instructions.add(new InsnNode(Opcodes.IRETURN));
+            module.methods.add(eligibility);
+            Class<?> animationClass = loader.define(module);
+            animations = animationClass.getMethod("getInstance").invoke(null);
+            dynamicCursor = (BooleanSetting) animationClass.getField("dynamicCursor").get(animations);
+            dynamicEnabled = animationClass.getMethod("isDynamicCursorEnabled");
+
+            ClassNode cursor = readClass(CURSOR);
+            MethodNode window = method(cursor, "windowHandle");
+            window.instructions.clear();
+            window.tryCatchBlocks.clear();
+            window.instructions.add(new InsnNode(Opcodes.LCONST_1));
+            window.instructions.add(new InsnNode(Opcodes.LRETURN));
+            for (MethodNode method : cursor.methods) {
+                for (MethodInsnNode call : calls(method)) {
+                    if (!call.owner.equals("org/lwjgl/glfw/GLFW")) continue;
+                    call.owner = CALLBACKS;
+                    call.name = switch (call.name) {
+                        case "glfwCreateStandardCursor" -> "createStandardCursor";
+                        case "glfwSetCursor" -> "setCursor";
+                        default -> throw new AssertionError("Unexpected native cursor call: " + call.name);
+                    };
+                }
+            }
+            manager = loader.define(cursor);
+            for (Method method : manager.getMethods()) methods.put(method.getName(), method);
+        }
+
+        void options(boolean moduleEnabled, boolean cursorEnabled) throws Exception {
+            animations.getClass().getField("state").setBoolean(animations, moduleEnabled);
+            dynamicCursor.setValue(cursorEnabled);
+        }
+
+        boolean enabled() throws Exception {
+            return (boolean) dynamicEnabled.invoke(animations);
+        }
+
+        void call(String name, Object... arguments) throws Exception {
+            methods.get(name).invoke(null, arguments);
+        }
+
+        Field field(String name) throws Exception {
+            Field field = manager.getDeclaredField(name);
+            field.setAccessible(true);
+            return field;
+        }
+
+        int intField(String name) throws Exception {
+            return field(name).getInt(null);
+        }
+    }
+
+    private static final class OfflineClasses extends ClassLoader {
+        OfflineClasses() {
+            super(GuiInteractionChecks.class.getClassLoader());
+        }
+
+        Class<?> define(ClassNode node) {
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            byte[] bytes = writer.toByteArray();
+            return defineClass(node.name.replace('/', '.'), bytes, 0, bytes.length);
+        }
+    }
+
+    private static ClassNode readClass(String name) throws Exception {
+        try (InputStream input = GuiInteractionChecks.class.getClassLoader().getResourceAsStream(name + ".class")) {
+            if (input == null) throw new AssertionError("Missing class: " + name);
+            ClassNode node = new ClassNode(Opcodes.ASM9);
+            new ClassReader(input).accept(node, ClassReader.SKIP_DEBUG);
+            return node;
+        }
+    }
+
+    private static MethodNode method(ClassNode node, String name) {
+        return node.methods.stream().filter(method -> method.name.equals(name)).findFirst().orElseThrow();
+    }
+
+    private static List<MethodInsnNode> calls(MethodNode method) {
+        List<MethodInsnNode> calls = new ArrayList<>();
+        for (AbstractInsnNode instruction : method.instructions) {
+            if (instruction instanceof MethodInsnNode call) calls.add(call);
+        }
+        return calls;
+    }
+
+    private static void check(boolean condition, String message) {
+        checks++;
+        if (!condition) throw new AssertionError(message);
+    }
+}

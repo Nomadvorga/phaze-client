@@ -16,6 +16,8 @@ import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuPanoramaRenderer;
 import vorga.phazeclient.implement.menu.MenuPanoramaRegistry;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
+import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 import vorga.phazeclient.implement.features.modules.other.ColorCorrection;
 
@@ -46,9 +48,13 @@ public class ClientMain implements ClientModInitializer {
             public void reload(ResourceManager manager) {
                 MotionBlur.getInstance().shader.reload();
                 ColorCorrection.getInstance().shader.reload();
+                MsdfFonts.onResourcesReloaded();
+                UiMsdfIconAtlas.onResourcesReloaded();
                 MenuPanoramaRenderer.onResourcesReloaded();
                 MenuPanoramaRegistry.onResourcesReloaded();
                 vorga.phazeclient.implement.features.modules.other.PackPreviewRenderer.clear(MinecraftClient.getInstance());
+                vorga.phazeclient.implement.features.modules.hud.PackDisplayHud.getInstance().onResourcesReloaded(MinecraftClient.getInstance());
+                vorga.phazeclient.implement.features.modules.hud.BossBarHud.getInstance().invalidateNameWidths();
             }
 
             @Override

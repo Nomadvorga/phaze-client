@@ -350,9 +350,12 @@ public class ModuleComponent extends AbstractComponent {
         float iconX = x + (width - iconSize) / 2.0F;
         float iconY = y + 12.0F + module.getIconOffsetY();
         String iconTexture = module.getIcon() != null ? "phaze:textures/modules/" + module.getIcon() : "phaze:textures/modules/hand.png";
-        image.setTexture(iconTexture)
-                .render(ShapeProperties.create(context.getMatrices(), iconX, iconY, iconSize, iconSize)
-                        .color(applyGlobalAlpha(MenuStyle.TEXT_PRIMARY)).build());
+        int iconColor = applyGlobalAlpha(MenuStyle.TEXT_PRIMARY);
+        if (!UiMsdfIconAtlas.renderIcon(context, Identifier.of(iconTexture), iconX, iconY, iconSize, iconSize, iconColor, true)) {
+            image.setTexture(iconTexture)
+                    .render(ShapeProperties.create(context.getMatrices(), iconX, iconY, iconSize, iconSize)
+                            .color(iconColor).build());
+        }
 
         String moduleName = module.getLocalizedName();
         float titleAreaY = y + 31.0F;

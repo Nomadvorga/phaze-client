@@ -352,11 +352,8 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.PackDisplayHud.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.PackDisplayHud.getInstance());
         }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.BossbarTweakerHud.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.BossbarTweakerHud.getInstance());
-        }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.DamageIndicator.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.DamageIndicator.getInstance());
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.BossBarHud.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.BossBarHud.getInstance());
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.other.ChunkBorders.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.other.ChunkBorders.getInstance());

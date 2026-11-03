@@ -21,6 +21,7 @@ import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
+import vorga.phazeclient.api.system.cursor.CursorManager;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
@@ -85,7 +86,7 @@ public class BackgroundComponent extends AbstractComponent {
         // the menu chrome stays identical with or without the sidebar.
         boolean configsOpen = MenuScreen.INSTANCE.isConfigsViewOpen();
         boolean cosmeticsOpen = MenuScreen.INSTANCE.isCosmeticsViewOpen();
-        boolean fullWidthPage = configsOpen || cosmeticsOpen;
+        boolean fullWidthPage = configsOpen || cosmeticsOpen || MenuScreen.INSTANCE.isMessengerViewOpen();
 
         rectangle.render(ShapeProperties.create(matrix, x, y, width, height)
                 .round(8).softness(1).thickness(2)
@@ -124,12 +125,13 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private void renderHeader(DrawContext context, int mouseX, int mouseY) {
-        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS", "CHAT"};
         boolean settingsActive = isSettingsTabActive();
         boolean cosmeticsActive = isCosmeticsTabActive();
         boolean configsActive = isConfigsTabActive();
-        boolean modsActive = !settingsActive && !cosmeticsActive && !configsActive;
-        boolean[] active = {modsActive, settingsActive, cosmeticsActive, configsActive};
+        boolean chatActive = isChatTabActive();
+        boolean modsActive = !settingsActive && !cosmeticsActive && !configsActive && !chatActive;
+        boolean[] active = {modsActive, settingsActive, cosmeticsActive, configsActive, chatActive};
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
             totalTabsWidth += getTopTabWidth(labels[i]);
@@ -173,7 +175,8 @@ public class BackgroundComponent extends AbstractComponent {
         float contentY = y + HEADER_HEIGHT + 1.0F;
         float contentHeight = height - HEADER_HEIGHT - 2.0F;
         boolean fullWidthPage = MenuScreen.INSTANCE.isConfigsViewOpen()
-                || MenuScreen.INSTANCE.isCosmeticsViewOpen();
+                || MenuScreen.INSTANCE.isCosmeticsViewOpen()
+                || MenuScreen.INSTANCE.isMessengerViewOpen();
 
         if (fullWidthPage) {
             rectangle.render(ShapeProperties.create(matrix, x + 1.0F, contentY, width - 2.0F, contentHeight)
@@ -203,6 +206,9 @@ public class BackgroundComponent extends AbstractComponent {
         float tabWidth = getTopTabWidth(label);
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, tabX, tabY, tabWidth, TOP_TAB_HEIGHT);
+        if (hovered) {
+            CursorManager.requestHand();
+        }
         Animation hoverAnimation = topTabHoverAnimations.computeIfAbsent(label, ignored -> new DecelerateAnimation().setMs(180).setValue(1));
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
 
@@ -307,6 +313,9 @@ public class BackgroundComponent extends AbstractComponent {
 
             boolean rowHovered = MathUtil.isHovered(mouseX, mouseY, rowX, rowY, rowWidth, CONFIG_ROW_HEIGHT);
             boolean deleteHovered = isDeleteHovered(mouseX, mouseY, rowY);
+            if (rowHovered && mouseY >= viewportY && mouseY < viewportY + viewportHeight) {
+                CursorManager.requestHand();
+            }
             boolean active = config.equalsIgnoreCase(currentConfig);
             Animation rowHoverAnimation = configHoverAnimation(config);
             Animation deleteHoverAnimation = configDeleteHoverAnimation(config);
@@ -380,6 +389,9 @@ public class BackgroundComponent extends AbstractComponent {
         // NEW CONFIG button (top button in footer)
         float newConfigY = footerStartY() - 5.0F - FOOTER_BUTTON_HEIGHT - buttonGap;
         boolean newConfigHovered = MathUtil.isHovered(mouseX, mouseY, footerX, newConfigY, footerWidth, FOOTER_BUTTON_HEIGHT);
+        if (newConfigHovered) {
+            CursorManager.requestHand();
+        }
         saveConfigHoverAnimation.setDirection(newConfigHovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float newConfigHoverProgress = saveConfigHoverAnimation.getOutputFloat();
 
@@ -402,6 +414,9 @@ public class BackgroundComponent extends AbstractComponent {
         // EDIT HUD LAYOUT button (bottom button in footer)
         float editHudY = footerStartY() - 5.0F;
         boolean editHovered = MathUtil.isHovered(mouseX, mouseY, footerX, editHudY, footerWidth, FOOTER_BUTTON_HEIGHT);
+        if (editHovered) {
+            CursorManager.requestHand();
+        }
         editHudHoverAnimation.setDirection(editHovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float editHoverProgress = editHudHoverAnimation.getOutputFloat();
 
@@ -679,7 +694,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private boolean handleTopTabClick(double mouseX, double mouseY) {
-        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS", "CHAT"};
         boolean configsActive = isConfigsTabActive();
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
@@ -718,7 +733,7 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private boolean isTopTabHovered(double mouseX, double mouseY) {
-        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS"};
+        String[] labels = {"MODS", "SETTINGS", "COSMETICS", "CONFIGS", "CHAT"};
         boolean configsActive = isConfigsTabActive();
         float totalTabsWidth = 0.0F;
         for (int i = 0; i < labels.length; i++) {
@@ -757,6 +772,9 @@ public class BackgroundComponent extends AbstractComponent {
         MatrixStack matrix = context.getMatrices();
         float tabY = y + (HEADER_HEIGHT - TOP_TAB_HEIGHT) / 2.0F;
         boolean hovered = MathUtil.isHovered(mouseX, mouseY, tabX, tabY, TOP_TAB_HEIGHT, TOP_TAB_HEIGHT);
+        if (hovered) {
+            CursorManager.requestHand();
+        }
         Animation hoverAnimation = topTabHoverAnimations.computeIfAbsent("__plus__",
                 ignored -> new DecelerateAnimation().setMs(180).setValue(1));
         hoverAnimation.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
@@ -848,5 +866,9 @@ public class BackgroundComponent extends AbstractComponent {
 
     private boolean isCosmeticsTabActive() {
         return MenuScreen.INSTANCE.isCosmeticsViewOpen();
+    }
+
+    private boolean isChatTabActive() {
+        return MenuScreen.INSTANCE.isMessengerViewOpen();
     }
 }

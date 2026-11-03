@@ -21,6 +21,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.TextSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
+import vorga.phazeclient.implement.features.modules.hud.BossBarHud;
 import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
 import vorga.phazeclient.implement.menu.MenuUiSettings;
 
@@ -192,6 +193,9 @@ public final class ConfigManager {
                 moduleData.addProperty("hud_ref_w", rectHudModule.getHudRefWidth());
                 moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
+                if (rectHudModule instanceof BossBarHud bossBar) {
+                    moduleData.addProperty("hud_auto_position", bossBar.isHudPositionAutomatic());
+                }
             } else if (module instanceof ArmorHud armorHud) {
                 moduleData.addProperty("hud_x_ratio", armorHud.getHudXRatio());
                 moduleData.addProperty("hud_y_ratio", armorHud.getHudYRatio());
@@ -506,6 +510,9 @@ public final class ConfigManager {
                 moduleData.addProperty("hud_ref_w", rectHudModule.getHudRefWidth());
                 moduleData.addProperty("hud_ref_h", rectHudModule.getHudRefHeight());
                 moduleData.addProperty("hud_scale", rectHudModule.getHudScale());
+                if (rectHudModule instanceof BossBarHud bossBar) {
+                    moduleData.addProperty("hud_auto_position", bossBar.isHudPositionAutomatic());
+                }
             } else if (module instanceof ArmorHud armorHud) {
                 moduleData.addProperty("hud_x_ratio", armorHud.getHudXRatio());
                 moduleData.addProperty("hud_y_ratio", armorHud.getHudYRatio());
@@ -982,6 +989,9 @@ public final class ConfigManager {
         boolean hasModuleData = modules.has(module.getName())
                 && modules.get(module.getName()).isJsonObject();
         JsonObject moduleData = hasModuleData ? modules.getAsJsonObject(module.getName()) : null;
+        if (hasModuleData && module instanceof BossBarHud) {
+            moduleData = BossBarHud.migrateLegacyData(moduleData);
+        }
 
         if (module.isShowEnable()) {
             boolean enabled = hasModuleData && moduleData.has("enabled")
@@ -1051,6 +1061,10 @@ public final class ConfigManager {
                 }
                 if (moduleData.has("hud_scale")) {
                     rectHudModule.setHudScale(moduleData.get("hud_scale").getAsFloat());
+                }
+                if (rectHudModule instanceof BossBarHud bossBar && moduleData.has("hud_auto_position")
+                        && moduleData.get("hud_auto_position").getAsBoolean()) {
+                    bossBar.resetAutomaticPosition();
                 }
             }
         } else if (module instanceof ArmorHud armorHud) {
