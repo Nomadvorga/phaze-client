@@ -13,6 +13,7 @@ public final class HudBlurOptimizationChecks {
         history();
         samplingCoverage();
         cache();
+        roundedContours();
         System.out.println("HUD blur optimization checks passed: " + checks);
     }
 
@@ -47,6 +48,30 @@ public final class HudBlurOptimizationChecks {
         check(planner.groups().getFirst().regions().size() == HudBlurPlanner.MAX_REQUESTS, "layout hints are bounded");
         planner.reset();
         check(planner.groups().isEmpty(), "reload and resize clear layout hints");
+    }
+
+    private static void roundedContours() {
+        for (float sx : new float[]{0.5F, 1, 1.5F, 3, 4}) for (float sy : new float[]{1, 2, 4}) {
+            for (float radius : new float[]{0.1F, 1, 8, 14}) {
+                HudRoundedContour mesh = HudRoundedContour.get(80, 28, radius, sx, sy);
+                check(mesh == HudRoundedContour.get(80, 28, radius, sx, sy), "warm contour lookup reuses geometry");
+                int[] colors = mesh.colors(0x502060A0, 0xB0FF8020, 4);
+                check(colors == mesh.colors(0x502060A0, 0xB0FF8020, 4), "warm static palette has no allocation");
+                float expectedWidth = Math.min(1, radius * Math.min(sx, sy) * Math.min(sx, sy) / Math.max(sx, sy));
+                for (int i = 0; i < mesh.points(); i++) {
+                    float dx = (mesh.outerX(i) - mesh.innerX(i)) * sx;
+                    float dy = (mesh.outerY(i) - mesh.innerY(i)) * sy;
+                    check(Math.abs(Math.hypot(dx, dy) - expectedWidth) < 0.0001, "one physical pixel AA, also under nonuniform scale");
+                    check(mesh.innerY(i) >= 0 && mesh.innerY(i) <= mesh.height / 2, "inner contour never crosses itself");
+                    if (i > 0) check(mesh.innerX(i) >= mesh.innerX(i - 1), "fill strips share monotonic endpoints");
+                }
+            }
+        }
+        HudRoundedContour typical = HudRoundedContour.get(160, 48, 8, 1, 1);
+        int newQuads = (typical.points() - 1) * 3 + 2;
+        int oldQuads = 1 + HudBackgroundGeometry.caps(8, 1).strips * 6;
+        check(newQuads < oldQuads, "typical rounded solid emits fewer quads than the old staircase");
+        System.out.println("Rounded contour topology (160x48, radius 8, scale 1): " + oldQuads + " -> " + newQuads + " quads; not an FPS benchmark");
     }
 
     private static void samplingCoverage() {

@@ -6,112 +6,83 @@ import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import org.joml.Matrix4f;
 
-/** Vanilla GUI BufferBuilder output: no shaders, framebuffer coordinates, flushes or matrix-stack churn. */
+/** Smooth contour geometry in the existing vanilla GUI batch, with no additional render passes. */
 public final class HudBackgroundGeometryRenderer {
     private HudBackgroundGeometryRenderer() {}
 
     public static void solidRounded(DrawContext context, float x, float y, float width, float height, int color, float radius) {
-        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
-        VertexConsumer vertices = context.vertexConsumers.getBuffer(RenderLayer.getGui());
-        float windowScale = windowScale();
-        float scaleX = Math.max(0.01F, Math.abs(matrix.m00()) * windowScale);
-        float scaleY = Math.max(0.01F, Math.abs(matrix.m11()) * windowScale);
-        HudBackgroundGeometry.Caps caps = HudBackgroundGeometry.caps(radius, scaleX);
-        float aa = Math.min(radius, 1.0F / scaleY);
-        quad(vertices, matrix, x + radius, y, x + width - radius, y + height, color, color, color, color);
-        for (int i = 0; i < caps.strips; i++) {
-            float exactTop = y + caps.inset(i), exactBottom = y + height - caps.inset(i);
-            if (exactBottom <= exactTop) continue;
-            solidStrip(vertices, matrix, x + caps.x0(i), exactTop, caps.width(i), exactBottom, color, aa);
-            solidStrip(vertices, matrix, x + width - caps.x1(i), exactTop, caps.width(i), exactBottom, color, aa);
-        }
-    }
-
-    private static void solidStrip(VertexConsumer vertices, Matrix4f matrix, float x, float top, float width,
-                                   float bottom, int color, float aa) {
-        float half = aa * 0.5F;
-        vertical(vertices, matrix, x, Math.min(bottom, top + half), width,
-                Math.max(top, bottom - half) - Math.min(bottom, top + half), color, color);
-        if (aa > 0.001F) {
-            vertical(vertices, matrix, x, top - half, width, aa, color & 0x00FFFFFF, color);
-            vertical(vertices, matrix, x, bottom - half, width, aa, color, color & 0x00FFFFFF);
-        }
+        roundedGradient(context, x, y, x + width, y + height, color, color, "Left to Right", 0, false, radius);
     }
 
     public static void roundedGradient(DrawContext context, float left, float top, float right, float bottom,
                                        int first, int second, String selectedDirection, float offset, boolean animated, float radius) {
+        if (right <= left || bottom <= top) return;
+        if (radius <= 0.01F) { staticGradient(context, left, top, right, bottom, first, second, selectedDirection); return; }
         Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
         VertexConsumer vertices = context.vertexConsumers.getBuffer(RenderLayer.getGui());
-        float windowScale = windowScale();
-        HudBackgroundGeometry geometry = HudBackgroundGeometry.rounded(right - left, bottom - top, radius,
-                Math.max(0.01F, Math.abs(matrix.m00()) * windowScale), Math.max(0.01F, Math.abs(matrix.m11()) * windowScale));
+        float scale = windowScale();
+        HudRoundedContour mesh = HudRoundedContour.get(right - left, bottom - top, radius,
+                Math.abs(matrix.m00()) * scale, Math.abs(matrix.m11()) * scale);
         int direction = HudBackgroundGeometryGradients.direction(selectedDirection);
-        HudBackgroundGeometry.Colors colors = animated || direction == HudBackgroundGeometryGradients.PULSE
-                ? null : geometry.staticColors(first, second, direction);
+        boolean uniform = first == second || direction == HudBackgroundGeometryGradients.PULSE;
         int pulse = direction == HudBackgroundGeometryGradients.PULSE
-                ? HudBackgroundGeometryGradients.sample(first, second, direction, 0, 0, offset, animated) : 0;
-
-        // Animated diagonals intentionally retain the old strip topology: a four-corner
-        // quad's triangle interpolation is not the old vertically-interpolated cosine field.
-        boolean splitCenter = !animated || !HudBackgroundGeometryGradients.diagonal(direction);
-        for (int i = 0; i < geometry.strips; i++) {
-            if (splitCenter && i == geometry.centerStart && geometry.centerEnd > i) {
-                center(vertices, matrix, geometry, left, top, first, second, direction, offset, animated, pulse);
-                i = geometry.centerEnd - 1;
-                continue;
+                ? HudBackgroundGeometryGradients.sample(first, second, direction, 0, 0, offset, animated) : first;
+        int[] palette = uniform || animated ? null : mesh.colors(first, second, direction);
+        for (int i = 0; i < mesh.points() - 1; i++) {
+            float x0 = mesh.innerX(i), x1 = mesh.innerX(i + 1);
+            float y0 = mesh.innerY(i), y1 = mesh.innerY(i + 1);
+            int tl = uniform ? pulse : palette != null ? palette[i * 2]
+                    : sample(mesh, first, second, direction, x0, y0, offset, animated);
+            int bl = uniform ? pulse : palette != null ? palette[i * 2 + 1]
+                    : sample(mesh, first, second, direction, x0, mesh.height - y0, offset, animated);
+            int tr = uniform ? pulse : palette != null ? palette[(i + 1) * 2]
+                    : sample(mesh, first, second, direction, x1, y1, offset, animated);
+            int br = uniform ? pulse : palette != null ? palette[(i + 1) * 2 + 1]
+                    : sample(mesh, first, second, direction, x1, mesh.height - y1, offset, animated);
+            // Centre cosine field still needs subdivisions; corners and the AA fringe share endpoints.
+            if (i == mesh.capSegments && animated && !uniform
+                    && (HudBackgroundGeometryGradients.horizontal(direction) || HudBackgroundGeometryGradients.diagonal(direction))) {
+                float from = x0;
+                int fromTop = tl, fromBottom = bl;
+                for (int s = 1; s <= 64; s++) {
+                    float to = x0 + (x1 - x0) * (s / 64.0F);
+                    int toTop = sample(mesh, first, second, direction, to, y0, offset, true);
+                    int toBottom = sample(mesh, first, second, direction, to, mesh.height - y0, offset, true);
+                    column(vertices, matrix, left, top, mesh.height, from, to, y0, y0,
+                            fromTop, fromBottom, toBottom, toTop);
+                    edge(vertices, matrix, left, top, from, y0, to, y0, from, mesh.outerY(i), to, mesh.outerY(i), fromTop, toTop);
+                    edge(vertices, matrix, left, top, to, mesh.height - y0, from, mesh.height - y0,
+                            to, mesh.height - mesh.outerY(i), from, mesh.height - mesh.outerY(i), toBottom, fromBottom);
+                    from = to; fromTop = toTop; fromBottom = toBottom;
+                }
+            } else {
+                column(vertices, matrix, left, top, mesh.height, x0, x1, y0, y1, tl, bl, br, tr);
+                edge(vertices, matrix, left, top, x0, y0, x1, y1,
+                        mesh.outerX(i), mesh.outerY(i), mesh.outerX(i + 1), mesh.outerY(i + 1), tl, tr);
+                edge(vertices, matrix, left, top, x1, mesh.height - y1, x0, mesh.height - y0,
+                        mesh.outerX(i + 1), mesh.height - mesh.outerY(i + 1), mesh.outerX(i), mesh.height - mesh.outerY(i), br, bl);
             }
-            float inset = geometry.inset(i);
-            float exactTop = top + inset, exactBottom = bottom - inset;
-            if (exactBottom <= exactTop) continue;
-            float solidTop = top + geometry.solidTop(i), solidBottom = top + geometry.solidBottom(i);
-            float x = left + geometry.x0(i), width = geometry.x1(i) - geometry.x0(i);
-            float progress = geometry.xProgress(i);
-            boolean uniformY = HudBackgroundGeometryGradients.horizontal(direction) || direction == HudBackgroundGeometryGradients.PULSE;
-            int topColor = direction == HudBackgroundGeometryGradients.PULSE ? pulse : colors != null ? colors.top(i)
-                    : HudBackgroundGeometryGradients.sample(first, second, direction, progress, geometry.solidTop(i) / geometry.height, offset, true);
-            int bottomColor = uniformY ? topColor : colors != null ? colors.bottom(i)
-                    : HudBackgroundGeometryGradients.sample(first, second, direction, progress, geometry.solidBottom(i) / geometry.height, offset, true);
-            vertical(vertices, matrix, x, solidTop, width, solidBottom - solidTop, topColor, bottomColor);
-            if (geometry.isCap(i) && geometry.antialias > 0.001F) {
-                int exactTopColor = uniformY ? topColor : colors != null ? colors.exactTop(i)
-                        : HudBackgroundGeometryGradients.sample(first, second, direction, progress, inset / geometry.height, offset, true);
-                int exactBottomColor = uniformY ? topColor : colors != null ? colors.exactBottom(i)
-                        : HudBackgroundGeometryGradients.sample(first, second, direction, progress, 1.0F - inset / geometry.height, offset, true);
-                vertical(vertices, matrix, x, exactTop - geometry.antialias * 0.5F, width, geometry.antialias,
-                        exactTopColor & 0x00FFFFFF, exactTopColor);
-                vertical(vertices, matrix, x, exactBottom - geometry.antialias * 0.5F, width, geometry.antialias,
-                        exactBottomColor, exactBottomColor & 0x00FFFFFF);
-            }
+            if (i == 0) edge(vertices, matrix, left, top, x0, mesh.height - y0, x0, y0,
+                    mesh.outerX(i), mesh.height - y0, mesh.outerX(i), y0, bl, tl);
+            if (i == mesh.points() - 2) edge(vertices, matrix, left, top, x1, y1, x1, mesh.height - y1,
+                    mesh.outerX(i + 1), y1, mesh.outerX(i + 1), mesh.height - y1, tr, br);
         }
     }
 
-    private static void center(VertexConsumer vertices, Matrix4f matrix, HudBackgroundGeometry geometry, float left, float top,
-                               int first, int second, int direction, float offset, boolean animated, int pulse) {
-        float x0 = geometry.x0(geometry.centerStart), x1 = geometry.x1(geometry.centerEnd - 1);
-        float y0 = geometry.solidTop(geometry.centerStart), y1 = geometry.solidBottom(geometry.centerStart);
-        if (direction == HudBackgroundGeometryGradients.PULSE) {
-            quad(vertices, matrix, left + x0, top + y0, left + x1, top + y1, pulse, pulse, pulse, pulse);
-            return;
-        }
-        if (!animated || !HudBackgroundGeometryGradients.horizontal(direction)) {
-            int tl = HudBackgroundGeometryGradients.sample(first, second, direction, x0 / geometry.width, y0 / geometry.height, offset, animated);
-            int bl = HudBackgroundGeometryGradients.sample(first, second, direction, x0 / geometry.width, y1 / geometry.height, offset, animated);
-            int br = HudBackgroundGeometryGradients.sample(first, second, direction, x1 / geometry.width, y1 / geometry.height, offset, animated);
-            int tr = HudBackgroundGeometryGradients.sample(first, second, direction, x1 / geometry.width, y0 / geometry.height, offset, animated);
-            quad(vertices, matrix, left + x0, top + y0, left + x1, top + y1, tl, bl, br, tr);
-            return;
-        }
-        // Keep the rounded HUD's cosine wave, NOT the unrounded axis helper's
-        // triangular wave. 64 segments/cycle bound curvature error below 0.31/255.
-        int segments = geometry.horizontalCenterSegments();
-        float from = x0;
-        int fromColor = HudBackgroundGeometryGradients.sample(first, second, direction, from / geometry.width, 0, offset, true);
-        for (int i = 0; i < segments; i++) {
-            float to = x0 + (x1 - x0) * ((i + 1.0F) / segments);
-            int toColor = HudBackgroundGeometryGradients.sample(first, second, direction, to / geometry.width, 0, offset, true);
-            quad(vertices, matrix, left + from, top + y0, left + to, top + y1, fromColor, fromColor, toColor, toColor);
-            from = to; fromColor = toColor;
-        }
+    private static int sample(HudRoundedContour mesh, int first, int second, int direction, float x, float y, float offset, boolean animated) {
+        return HudBackgroundGeometryGradients.sample(first, second, direction, x / mesh.width, y / mesh.height, offset, animated);
+    }
+
+    private static void column(VertexConsumer v, Matrix4f m, float x, float y, float height,
+                               float x0, float x1, float y0, float y1, int tl, int bl, int br, int tr) {
+        vertex(v, m, x + x0, y + y0, tl); vertex(v, m, x + x0, y + height - y0, bl);
+        vertex(v, m, x + x1, y + height - y1, br); vertex(v, m, x + x1, y + y1, tr);
+    }
+
+    private static void edge(VertexConsumer v, Matrix4f m, float x, float y,
+                             float ax, float ay, float bx, float by, float ox, float oy, float px, float py, int a, int b) {
+        vertex(v, m, x + ax, y + ay, a); vertex(v, m, x + bx, y + by, b);
+        vertex(v, m, x + px, y + py, b & 0x00FFFFFF); vertex(v, m, x + ox, y + oy, a & 0x00FFFFFF);
     }
 
     public static void staticGradient(DrawContext context, float left, float top, float right, float bottom,
@@ -133,10 +104,9 @@ public final class HudBackgroundGeometryRenderer {
             float progress = (i + 0.5F) / 96;
             float x = left + (right - left) * (i / 96.0F);
             float next = left + (right - left) * ((i + 1.0F) / 96);
-            // The legacy non-axis fallback also used a cosine horizontal field.
             int from = HudBackgroundGeometryGradients.sample(first, second, direction, progress, 0, offset, true);
             int to = HudBackgroundGeometryGradients.sample(first, second, direction, progress, 1, offset, true);
-            vertical(vertices, matrix, x, top, next - x, bottom - top, from, to);
+            quad(vertices, matrix, x, top, next, bottom, from, to, to, from);
         }
     }
 
@@ -146,18 +116,14 @@ public final class HudBackgroundGeometryRenderer {
                 left, top, right, bottom, tl, bl, br, tr);
     }
 
-    private static void vertical(VertexConsumer vertices, Matrix4f matrix, float x, float y, float width, float height, int from, int to) {
-        quad(vertices, matrix, x, y, x + width, y + height, from, to, to, from);
+    private static void quad(VertexConsumer v, Matrix4f m, float left, float top, float right, float bottom, int tl, int bl, int br, int tr) {
+        if (right <= left || bottom <= top) return;
+        vertex(v, m, left, top, tl); vertex(v, m, left, bottom, bl);
+        vertex(v, m, right, bottom, br); vertex(v, m, right, top, tr);
     }
 
-    private static void quad(VertexConsumer vertices, Matrix4f matrix, float left, float top, float right, float bottom,
-                              int tl, int bl, int br, int tr) {
-        if (right <= left || bottom <= top) return;
-        // Same winding, local Z and GUI layer as DrawContext.fillGradient.
-        vertices.vertex(matrix, left, top, 0.0F).color(tl);
-        vertices.vertex(matrix, left, bottom, 0.0F).color(bl);
-        vertices.vertex(matrix, right, bottom, 0.0F).color(br);
-        vertices.vertex(matrix, right, top, 0.0F).color(tr);
+    private static void vertex(VertexConsumer v, Matrix4f m, float x, float y, int color) {
+        v.vertex(m, x, y, 0.0F).color(color);
     }
 
     private static float windowScale() {

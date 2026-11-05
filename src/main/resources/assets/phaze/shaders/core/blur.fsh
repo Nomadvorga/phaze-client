@@ -269,7 +269,11 @@ void main() {
     // deferred uniform uploads can otherwise expose the previous rounded
     // menu radius for one draw and clip a nametag's corners.
     if (RectMask == 0) {
-        color.a *= ralpha(Size, FragCoord, Radius, Smoothness);
+        // Size is in physical pixels. Symmetric, narrow AA independent of blur strength.
+        vec2 halfSize = Size * 0.5;
+        float distance = rdist(halfSize - FragCoord * Size, halfSize, Radius);
+        float edgeWidth = max(1.0, Smoothness);
+        color.a *= 1.0 - smoothstep(-0.5 * edgeWidth, 0.5 * edgeWidth, distance);
     }
 
     if (color.a == 0.0) {

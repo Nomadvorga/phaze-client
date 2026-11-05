@@ -49,6 +49,7 @@ public final class HudBlurClientTest implements FabricClientGameTest {
             context.runOnClient(client -> {
                 try (Render2DState state = Render2DState.capture()) {
                     for (int[] size : new int[][]{{320, 180}, {321, 181}, {127, 73}}) testSize(size[0], size[1]);
+                    roundedEdges(client);
                     if (Boolean.getBoolean("phaze.hudBlur.benchmark")) benchmarkSubmissions();
                 }
             });
@@ -181,6 +182,92 @@ public final class HudBlurClientTest implements FabricClientGameTest {
         }
     }
 
+    private void roundedEdges(net.minecraft.client.MinecraftClient client) throws Exception {
+        SimpleFramebuffer target = framebuffer(256, 192), source = framebuffer(256, 192);
+        Field framebufferField = client.getClass().getDeclaredField("framebuffer");
+        framebufferField.setAccessible(true);
+        Object originalFramebuffer = framebufferField.get(client);
+        framebufferField.set(client, target);
+        String[] directions = {"Left to Right", "Right to Left", "Top to Bottom", "Bottom to Top", "Diagonal Down", "Diagonal Up", "Pulse"};
+        try {
+            source.setClearColor(1, 1, 1, 1); source.clear();
+            for (float scale : new float[]{1, 1.5F, 3, 4}) {
+                float x = 14.25F, y = 12.375F, w = 40 * scale, h = 28 * scale, r = 8 * scale;
+                byte[] geometry = null;
+                for (boolean animated : new boolean[]{false, true}) for (String direction : directions) {
+                    clearRoundedTarget(target);
+                    var draw = new net.minecraft.client.gui.DrawContext(client, client.getBufferBuilders().getEntityVertexConsumers());
+                    float guiScale = (float) client.getWindow().getScaleFactor();
+                    RenderSystem.setProjectionMatrix(new Matrix4f().ortho2D(0, 256 / guiScale, 192 / guiScale, 0), ProjectionType.ORTHOGRAPHIC);
+                    draw.getMatrices().scale(scale / guiScale, scale / guiScale, 1);
+                    HudBackgroundGeometryRenderer.roundedGradient(draw, x / scale, y / scale, (x + w) / scale, (y + h) / scale,
+                            0xFFFFFFFF, 0xFF2060A0, direction, 0.37F, animated, 8);
+                    draw.draw();
+                    byte[] pixels = read(target);
+                    for (int py = 0; py < 192; py++) for (int px = 0; px < 256; px++) {
+                        float qx = Math.abs(px + 0.5F - x - w / 2) - w / 2 + r;
+                        float qy = Math.abs((192 - py - 0.5F) - y - h / 2) - h / 2 + r;
+                        float d = Math.min(Math.max(qx, qy), 0) + (float) Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - r;
+                        float expected = Math.max(0, Math.min(1, 0.5F - d));
+                        int alpha = pixels[(py * 256 + px) * 4 + 3] & 255;
+                        check(Math.abs(alpha / 255.0F - expected) <= 0.17F,
+                                "rounded contour coverage " + scale + " " + direction + " at " + px + "," + py + " alpha=" + alpha + " expected=" + expected);
+                        if (geometry != null) check(alpha == (geometry[(py * 256 + px) * 4 + 3] & 255), "gradient/animation preserves contour alpha");
+                    }
+                    if (geometry == null) geometry = pixels;
+                }
+                byte[] previous = null;
+                clearRoundedTarget(target);
+                float guiScale = (float) client.getWindow().getScaleFactor();
+                RenderSystem.setProjectionMatrix(new Matrix4f().ortho2D(0, 256 / guiScale, 192 / guiScale, 0), ProjectionType.ORTHOGRAPHIC);
+                var solid = new net.minecraft.client.gui.DrawContext(client, client.getBufferBuilders().getEntityVertexConsumers());
+                solid.getMatrices().scale(scale / guiScale, scale / guiScale, 1);
+                HudBackgroundGeometryRenderer.solidRounded(solid, x / scale, y / scale, 40, 28, -1, 8);
+                solid.draw();
+                byte[] solidPixels = read(target);
+                for (int i = 3; i < solidPixels.length; i += 4) check(solidPixels[i] == geometry[i], "solid and gradient have identical rounding");
+                for (int mode : new int[]{0, 4, 5}) for (float strength : new float[]{0.001F, 1, 24}) {
+                    clearRoundedTarget(target);
+                    RenderSystem.disableBlend();
+                    RenderSystem.setShaderTexture(0, source.getColorAttachment()); RenderSystem.setShaderTexture(1, source.getColorAttachment());
+                    ShaderProgram shader = RenderSystem.setShader(MASK);
+                    shader.getUniformOrDefault("Size").set(w, h);
+                    shader.getUniformOrDefault("MaskPadding").set(0.5F, 0.5F);
+                    shader.getUniformOrDefault("Radius").set(r, r, r, r);
+                    shader.getUniformOrDefault("RectMask").set(0);
+                    shader.getUniformOrDefault("Smoothness").set(0.001F);
+                    shader.getUniformOrDefault("BlurScreenSize").set(256.0F, 192.0F);
+                    shader.getUniformOrDefault("BlurMode").set(mode);
+                    shader.getUniformOrDefault("BlurRadius").set(strength);
+                    shader.getUniformOrDefault("FrameMix").set(1.0F);
+                    shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
+                    BufferBuilder b = Render2DBuffers.begin(VertexFormats.POSITION_COLOR);
+                    b.vertex(x - 0.5F, y - 0.5F, 0).color(-1); b.vertex(x - 0.5F, y + h + 0.5F, 0).color(-1);
+                    b.vertex(x + w + 0.5F, y + h + 0.5F, 0).color(-1); b.vertex(x + w + 0.5F, y - 0.5F, 0).color(-1);
+                    try (BuiltBuffer built = b.end()) { BufferRenderer.drawWithGlobalProgram(built); }
+                    byte[] pixels = read(target);
+                    for (int i = 3; i < pixels.length; i += 4) {
+                        check(Math.abs((pixels[i] & 255) - (geometry[i] & 255)) <= 48, "blur/gradient contour alignment");
+                        if (previous != null) check(pixels[i] == previous[i], "blur strength/mode cannot change rounding");
+                    }
+                    previous = pixels;
+                }
+            }
+            System.out.println("Rounded HUD GL coverage passed: solid/7 gradients/animation, scales 1/1.5/3/4, 3 blur modes and strengths");
+        } finally { framebufferField.set(client, originalFramebuffer); target.delete(); source.delete(); }
+    }
+
+    private static void clearRoundedTarget(Framebuffer target) {
+        target.setClearColor(0, 0, 0, 0); target.clear();
+        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target.fbo);
+        RenderSystem.viewport(0, 0, 256, 192);
+        RenderSystem.disableScissor(); RenderSystem.disableDepthTest(); RenderSystem.disableCull();
+        RenderSystem.enableBlend(); RenderSystem.defaultBlendFunc();
+        RenderSystem.setShaderColor(1, 1, 1, 1);
+        RenderSystem.getModelViewStack().identity();
+        RenderSystem.setProjectionMatrix(new Matrix4f().ortho2D(0, 256, 192, 0), ProjectionType.ORTHOGRAPHIC);
+    }
+
     private static void mask(Framebuffer source, Framebuffer target, int width, int height, int mode, float radius) {
         mask(source, source, target, width, height, mode, radius);
     }
@@ -200,6 +287,7 @@ public final class HudBlurClientTest implements FabricClientGameTest {
         shader.getUniformOrDefault("BlurScreenSize").set((float) width, (float) height);
         shader.getUniformOrDefault("Size").set((float) width, (float) height);
         shader.getUniformOrDefault("RectMask").set(1);
+        shader.getUniformOrDefault("MaskPadding").set(0.0F, 0.0F);
         shader.getUniformOrDefault("BlurMode").set(mode);
         shader.getUniformOrDefault("BlurRadius").set(radius);
         shader.getUniformOrDefault("FrameMix").set(1.0F);

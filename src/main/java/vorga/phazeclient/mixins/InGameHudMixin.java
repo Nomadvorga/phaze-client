@@ -59,7 +59,6 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
-import vorga.phazeclient.api.system.shape.implement.Rectangle;
 import vorga.phazeclient.api.system.cursor.HudCursorRelay;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
@@ -140,7 +139,6 @@ import java.time.format.DateTimeFormatter;
 
 @Mixin(InGameHud.class)
 public class InGameHudMixin {
-    private static final Rectangle HUD_BACKGROUND_RECTANGLE = new Rectangle();
     private static final float BASE_WIDTH = 60.0f;
     private static final float BASE_HEIGHT = 20.0f;
     private static final int HUD_TEXT_COLOR = 0xFFFFFFFF;
@@ -1357,7 +1355,7 @@ public class InGameHudMixin {
                 }
                 if (hudIndex != HUD_KEYSTROKES) {
                     renderSolidHudBackground(context, 0.0F, 0.0F, baseWidth, baseHeight, bgColor,
-                            module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                            module.cornerRounding.getValue());
                     context.draw();
                 }
             }
@@ -1715,7 +1713,7 @@ public class InGameHudMixin {
                     bgColor = blendARGB(bgColor, hoverFill);
                 }
                 renderSolidHudBackground(context, 0.0F, 0.0F, baseWidth, baseHeight, bgColor,
-                        module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                        module.cornerRounding.getValue());
                 context.draw();
             }
         }
@@ -2012,7 +2010,7 @@ public class InGameHudMixin {
                     bgColor = blendARGB(bgColor, hoverFill);
                 }
                 renderSolidHudBackground(context, 0.0F, 0.0F, baseWidth, baseHeight, bgColor,
-                        module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                        module.cornerRounding.getValue());
                 context.draw();
             }
         }
@@ -2681,10 +2679,10 @@ public class InGameHudMixin {
         }
         if (module.showTitle.isValue()) {
             renderSolidHudBackground(context, 0.0F, -topInset, rightEdgeLocal, topInset - 1.0F,
-                    titleBgColor, module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                    titleBgColor, module.cornerRounding.getValue());
         }
         renderSolidHudBackground(context, 0.0F, -1.0F, rightEdgeLocal, verticalPosLocal + 1.0F,
-                rowBgColor, module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                rowBgColor, module.cornerRounding.getValue());
     }
 
     @Unique
@@ -3444,7 +3442,7 @@ public class InGameHudMixin {
         int alpha = MathHelper.clamp(Math.round(185.0f * progress), 0, 185);
         if (alpha > 0) {
             renderSolidHudBackground(context, x, y, width, height, withAlpha(0xFFFFFF, alpha),
-                    module.cornerRounding.getValue(), module.backgroundBlurRadius.getValue() <= 0.0F);
+                    module.cornerRounding.getValue());
         }
     }
 
@@ -3501,8 +3499,7 @@ public class InGameHudMixin {
     private static void renderKeyButton(DrawContext context, KeystrokesHud module, int x, int y, int width, int height, int idleColor, float progress) {
         int activeOverlay = withAlpha(0xFFFFFF, Math.round(185.0f * progress));
         int color = blendARGB(idleColor, activeOverlay);
-        renderSolidHudBackground(context, x, y, width, height, color, module.cornerRounding.getValue(),
-                module.backgroundBlurRadius.getValue() <= 0.0F);
+        renderSolidHudBackground(context, x, y, width, height, color, module.cornerRounding.getValue());
     }
 
     private static void renderGradientKeyButton(
@@ -4029,8 +4026,7 @@ public class InGameHudMixin {
             float width,
             float height,
             int color,
-            float requestedRadius,
-            boolean useSdfRenderer
+            float requestedRadius
     ) {
         float radius = getClampedHudCornerRadius(requestedRadius, width, height);
         if (radius <= 0.01F) {
@@ -4038,21 +4034,8 @@ public class InGameHudMixin {
             return;
         }
 
-        if (useSdfRenderer) {
-            context.draw();
-            HUD_BACKGROUND_RECTANGLE.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
-                    .round(radius)
-                    .softness(1.0F)
-                    .color(color)
-                    .build());
-            return;
-        }
-
-        // Keep the fill inside DrawContext's GUI batch. The standalone SDF
-        // rectangle shader derives its clip position from gl_FragCoord and can
-        // therefore use the wrong framebuffer height after a cached blur pass,
-        // making the fill disappear. Only the two rounded caps are segmented;
-        // the centre remains one quad, so cost scales with radius, not HUD size.
+        // All HUD fills share the gradient's one-pixel contour, including the
+        // no-blur path. No standalone shader flush or framebuffer coordinates.
         vorga.phazeclient.api.system.hud.HudBackgroundGeometryRenderer.solidRounded(context, x, y, width, height, color, radius);
     }
 
@@ -4086,10 +4069,10 @@ public class InGameHudMixin {
         int right = Math.max(left + 1, Math.round(x + width));
         int bottom = Math.max(top + 1, Math.round(y + height));
         String selectedDirection = direction == null ? "Left to Right" : direction;
-        float radius = getClampedHudCornerRadius(requestedRadius, right - left, bottom - top);
+        float radius = getClampedHudCornerRadius(requestedRadius, width, height);
 
         if (radius > 0.01F) {
-            renderRoundedGradient(context, left, top, right, bottom, startColor, endColor,
+            renderRoundedGradient(context, x, y, x + width, y + height, startColor, endColor,
                     selectedDirection, animationOffset, animated, radius);
             return;
         }

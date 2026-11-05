@@ -43,7 +43,7 @@
 - Полный `build --console=plain` без фильтрующих test properties завершился успешно, включая `remapJar`, 832 032 offline-проверки оптимизаций blur и 88 проверок сохранения конфигов/HUD. Ошибки записи/чтения внутри `verifyConfigPersistence` — намеренная проверка retry и восстановления из backup, а не сбой сборки.
 - Готовый runtime JAR проверен отдельно: все 101 UI `.mcmeta` и девять blur shader-ресурсов совпадают с текущими исходниками; исправленные UI-классы не содержат texture-filter вызовов или GL queries, bootstrap использует cache-aware TextureUtil lifecycle и явную привязку собственного atlas. Классы blur и восстановления позиций присутствуют, test fixtures и переопределение vanilla block-atlas metadata отсутствуют.
 
-Сборка: `build/libs/PhazeClient-1.2.jar` (26 036 777 байт).
+Сборка на момент проверки фильтрации: `build/libs/PhazeClient-1.2.jar` (26 036 777 байт). Более новая сборка со сглаживанием углов описана в `HUD_ROUNDING_SMOOTHNESS.md`.
 
 SHA-256: `74790D51AD99A186386B8781DF25B9FD2E15D202E2A53684ADC4F6A8D66B70D6`.
 

@@ -817,6 +817,14 @@ public class Blur implements Shape {
 
     /** Reserve tessellator memory only once the shader/uniforms are ready. */
     private void drawShape(ShapeProperties shape, Matrix4f matrix, float softness, int color) {
+        // One physical pixel of coverage, even when the caller requested near-zero softness.
+        float windowScale = (float) MinecraftClient.getInstance().getWindow().getScaleFactor();
+        Vector3f physicalScale = matrix.getScale(scratchScale).mul(windowScale);
+        float padX = Math.max(0.5F, softness * physicalScale.x * 0.5F);
+        float padY = Math.max(0.5F, softness * physicalScale.y * 0.5F);
+        RenderSystem.getShader().getUniformOrDefault("MaskPadding").set(padX, padY);
+        float localPadX = padX / Math.max(0.001F, physicalScale.x);
+        float localPadY = padY / Math.max(0.001F, physicalScale.y);
         // Offscreen filters and preceding rectangles may have changed these since the batch began.
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
@@ -824,8 +832,8 @@ public class Blur implements Shape {
         RenderSystem.disableDepthTest();
         BufferBuilder builder = Render2DBuffers.begin(VertexFormats.POSITION_COLOR);
         try {
-            drawEngine.quad(matrix, builder, shape.getX() - softness / 2, shape.getY() - softness / 2,
-                    shape.getWidth() + softness, shape.getHeight() + softness, color);
+            drawEngine.quad(matrix, builder, shape.getX() - localPadX, shape.getY() - localPadY,
+                    shape.getWidth() + 2 * localPadX, shape.getHeight() + 2 * localPadY, color);
             try (BuiltBuffer built = builder.end()) {
                 BufferRenderer.drawWithGlobalProgram(built);
             }
