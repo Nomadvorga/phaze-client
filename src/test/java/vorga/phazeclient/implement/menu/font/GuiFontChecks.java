@@ -2,6 +2,7 @@ package vorga.phazeclient.implement.menu.font;
 
 import com.google.gson.Gson;
 import vorga.phazeclient.api.system.font.msdf.FontData;
+import vorga.phazeclient.api.system.font.msdf.MsdfTextMetrics;
 
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +19,9 @@ public final class GuiFontChecks {
         multilineAndEmpty();
         unsupportedCharacters();
         gradients();
+        fallbackSizing();
         menuFontBoundary();
+        fontCacheBounds();
         System.out.println("GUI MSDF font checks PASSED");
     }
 
@@ -129,6 +132,44 @@ public final class GuiFontChecks {
         String picker = Files.readString(menu.resolve("ItemPickerScreen.java"));
         check(picker.contains("Math.round(slotY + 1.0F), \"\")"), "vanilla item overlay must suppress bitmap counts");
         check(picker.contains("countFont.drawString"), "item counts use the GUI adapter");
+        String api = Files.readString(menu.resolve("font/GuiTextRenderer.java"));
+        check(api.contains("Metrics measure(String text)") && api.contains("double top"),
+                "explicit text API uses screen-space metrics and top coordinates");
+        check(!api.contains("extends FontRenderer"), "explicit text API does not expose the legacy renderer");
+        String fonts = Files.readString(menu.resolve("font/GuiFonts.java"));
+        check(fonts.contains("GuiTextRenderer atSize(float size") && fonts.contains("renderer(size / 2.0F, type)"),
+                "new screen-space API and legacy doubled sizes share the same renderer cache");
+    }
+
+    private static void fallbackSizing() {
+        for (float size : new float[]{5.5F, 7, 9, 14, 24}) {
+            float scaleY = MsdfTextMetrics.fallbackScaleY(size, 9);
+            near(9 * scaleY, size, "fallback preserves requested line box at every GUI font size");
+            for (boolean bold : new boolean[]{false, true}) {
+                GuiTextLayout layout = GuiTextLayout.create("AV Цвет HUD", size, bold);
+                float scaleX = MsdfTextMetrics.fallbackScaleX(layout.width, 61, scaleY);
+                near(61 * scaleX, layout.width, "fallback matches the measured run width");
+                float advance = layout.width - (layout.glyphs.size() - 1) * GuiTextLayout.GLYPH_SPACING * size;
+                near(MsdfTextMetrics.renderedWidth(advance, layout.glyphs.size(), size,
+                        MsdfTextMetrics.DEFAULT_THICKNESS), layout.width, "renderer and CPU spacing contract agree");
+            }
+            near(MsdfTextMetrics.fallbackScaleX(0, 0, scaleY), scaleY, "empty fallback avoids dividing by zero");
+            near(MsdfTextMetrics.renderedWidth(3 * size, 1, size, 0.2F), 3 * size, "one glyph has no trailing gap");
+            near(MsdfTextMetrics.renderedWidth(0, 0, size, 0.2F), 0, "empty run has no spacing");
+        }
+    }
+
+    private static void fontCacheBounds() throws Exception {
+        var type = vorga.phazeclient.api.system.font.Fonts.Type.INTER_DEFAULT;
+        GuiTextRenderer hot = GuiFonts.atSize(7, type);
+        for (int index = 0; index < 500; index++) {
+            GuiFonts.atSize(5 + index / 100.0F, type);
+            check(GuiFonts.atSize(7, type) == hot, "frequently used font survives LRU eviction");
+        }
+        var field = GuiFonts.class.getDeclaredField("CACHE");
+        field.setAccessible(true);
+        check(((java.util.Map<?, ?>) field.get(null)).size() <= 128, "fractional sizes cannot grow the font/layout cache without bound");
+        check(GuiFonts.getSize(14, type) == hot, "legacy and screen-space sizes share their renderer");
     }
 
     private static void near(float actual, float expected, String message) {

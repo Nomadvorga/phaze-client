@@ -32,6 +32,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
  * HUD copy.
  */
 public final class PlayerModelHud extends RectHudModule {
+    @Override
+    protected boolean usesGuiCoordinates() { return true; }
+
     private static final PlayerModelHud INSTANCE = new PlayerModelHud();
     private static final float BASE_MODEL_SIZE = 30.0F;
 

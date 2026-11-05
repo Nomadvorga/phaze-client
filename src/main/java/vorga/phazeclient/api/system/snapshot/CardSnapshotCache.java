@@ -22,6 +22,7 @@ import org.lwjgl.opengl.GL40C;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Rectangle;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
+import vorga.phazeclient.api.system.hud.Render2DState;
 
 import java.util.ArrayList;
 import java.nio.ByteBuffer;
@@ -38,16 +39,10 @@ import java.util.Map;
  *
  * <h3>Why per-card FBO caching</h3>
  *
- * The Phaze menu re-renders every visible module card from scratch
- * each frame: per-card that's ~5-10 rounded-rect SDF draws, ~3-5 MSDF
- * text draws, and an icon image - dozens of GL state changes /
- * uniform sets / BufferBuilder begin-end cycles per card. With ~30
- * cards visible in {@code MenuScreen} the per-frame overhead is
- * 1.5-3 ms even when nothing on-screen actually changes (no hover, no
- * toggle, palette stable). Because most cards spend most of their life
- * in a fully-static state, capturing the rendered pixels into an FBO
- * once and replaying that texture turns the per-frame cost into a
- * single textured-quad blit (~10 us per card).
+ * Reusable off-screen snapshots, currently used by cosmetic previews.
+ * Module-card caching is intentionally disabled in ModuleComponent
+ * pending graphical validation. This class makes no FPS/timing guarantees;
+ * callers must benchmark their live and cached paths in the actual game.
  *
  * <h3>Cache key</h3>
  *
@@ -96,10 +91,8 @@ import java.util.Map;
  *   <li>FBO color is RGBA8, no depth attachment - components that
  *       depend on depth-test ordering inside their own draws would
  *       see no z-buffer effect inside capture.</li>
- *   <li>Sodium / Iris hooks instrument framebuffer binds and shader
- *       binds; capture introduces extra binds compared to the eager
- *       path. In practice the saved per-card draw cost dwarfs the
- *       extra bind overhead.</li>
+ *   <li>Sodium / Iris hooks can redirect framebuffer and shader binds.
+ *       Captures need graphical validation with the actual shaderpack.</li>
  *   <li>Components that read the main framebuffer color (Phaze blur
  *       backdrops) cannot be cached this way - they explicitly opt
  *       out by never calling into this cache.</li>
@@ -160,13 +153,26 @@ public final class CardSnapshotCache {
      */
     private static final class CaptureState {
         Snapshot snapshot;
-        Framebuffer mainFb;
-        Matrix4f savedProj;
-        ProjectionType savedProjType;
-        int savedViewportX, savedViewportY, savedViewportW, savedViewportH;
-        boolean savedScissorEnabled;
-        int savedScissorX, savedScissorY, savedScissorW, savedScissorH;
-        float[] savedShaderColor;
+        float savedTargetHeight;
+        Render2DState renderState;
+    }
+
+    /** Framebuffer creation/deletion can bind FBO 0; preserve the enclosing GUI target. */
+    private static final class FramebufferState implements AutoCloseable {
+        private final int draw = GL11.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
+        private final int read = GL11.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING);
+        private final int[] viewport = new int[4];
+
+        private FramebufferState() {
+            GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
+        }
+
+        @Override
+        public void close() {
+            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, draw);
+            GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, read);
+            RenderSystem.viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        }
     }
 
     /**
@@ -188,20 +194,29 @@ public final class CardSnapshotCache {
             int fbHeight,
             boolean useDepth
     ) {
+        if (fbWidth <= 0 || fbHeight <= 0) {
+            throw new IllegalArgumentException("Snapshot framebuffer dimensions must be positive");
+        }
         Snapshot snap = CACHE.computeIfAbsent(key, k -> new Snapshot());
         if (snap.fbo == null
                 || snap.fbWidth != fbWidth
                 || snap.fbHeight != fbHeight
                 || snap.useDepth != useDepth) {
-            if (snap.fbo != null) {
-                snap.fbo.delete();
+            if (active != null && active.snapshot == snap) {
+                throw new IllegalStateException("Cannot resize an active snapshot");
             }
-            snap.fbo = new SimpleFramebuffer(fbWidth, fbHeight, useDepth);
-            snap.fbo.setTexFilter(GL11C.GL_LINEAR);
-            snap.fbWidth = fbWidth;
-            snap.fbHeight = fbHeight;
-            snap.useDepth = useDepth;
-            snap.populated = false;
+            try (FramebufferState ignored = new FramebufferState()) {
+                if (snap.fbo != null) {
+                    snap.fbo.delete();
+                    snap.fbo = null;
+                }
+                snap.populated = false;
+                snap.fbo = new SimpleFramebuffer(fbWidth, fbHeight, useDepth);
+                snap.fbo.setTexFilter(GL11C.GL_LINEAR);
+                snap.fbWidth = fbWidth;
+                snap.fbHeight = fbHeight;
+                snap.useDepth = useDepth;
+            }
         }
         return snap;
     }
@@ -213,9 +228,17 @@ public final class CardSnapshotCache {
      * detached from the screen, or the screen itself closes).
      */
     public static void invalidate(Object key) {
-        Snapshot snap = CACHE.remove(key);
+        Snapshot snap = CACHE.get(key);
+        if (active != null && active.snapshot == snap) {
+            throw new IllegalStateException("Cannot delete an active snapshot");
+        }
+        CACHE.remove(key);
         if (snap != null && snap.fbo != null) {
-            snap.fbo.delete();
+            try (FramebufferState ignored = new FramebufferState()) {
+                snap.fbo.delete();
+                snap.fbo = null;
+                snap.populated = false;
+            }
         }
     }
 
@@ -226,15 +249,21 @@ public final class CardSnapshotCache {
      * window/scale resize (FBO sizes are wrong).
      */
     public static void clearAll() {
+        endCapture(false);
         // Defensive copy because we mutate CACHE during iteration via
         // the closing loop (vanilla Framebuffer.delete unbinds, no
         // map-side effect, but this future-proofs the call against
         // any added side effect on Framebuffer.delete).
         List<Snapshot> snapshots = new ArrayList<>(CACHE.values());
         CACHE.clear();
-        for (Snapshot s : snapshots) {
-            if (s.fbo != null) {
-                s.fbo.delete();
+        if (snapshots.isEmpty()) return;
+        try (FramebufferState ignored = new FramebufferState()) {
+            for (Snapshot s : snapshots) {
+                if (s.fbo != null) {
+                    s.fbo.delete();
+                    s.fbo = null;
+                    s.populated = false;
+                }
             }
         }
     }
@@ -266,6 +295,10 @@ public final class CardSnapshotCache {
      * snapshot's FBO until {@link #endCapture} runs.
      */
     public static void beginCapture(Snapshot snapshot, float widthGui, float heightGui) {
+        if (active != null) throw new IllegalStateException("Snapshot captures cannot be nested");
+        if (!(widthGui > 0) || !(heightGui > 0) || !Float.isFinite(widthGui) || !Float.isFinite(heightGui)) {
+            throw new IllegalArgumentException("Snapshot dimensions must be positive");
+        }
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.getFramebuffer() == null || snapshot == null || snapshot.fbo == null) {
             return;
@@ -283,75 +316,39 @@ public final class CardSnapshotCache {
 
         CaptureState s = new CaptureState();
         s.snapshot = snapshot;
-        s.mainFb = mc.getFramebuffer();
-        s.savedProj = new Matrix4f(RenderSystem.getProjectionMatrix());
-        s.savedProjType = RenderSystem.getProjectionType();
-        // Vanilla doesn't expose a getter for the current viewport, so
-        // we ask GL directly. Same for scissor below.
-        int[] viewport = new int[4];
-        GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
-        s.savedViewportX = viewport[0];
-        s.savedViewportY = viewport[1];
-        s.savedViewportW = viewport[2];
-        s.savedViewportH = viewport[3];
-        s.savedScissorEnabled = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
-        if (s.savedScissorEnabled) {
-            int[] scissor = new int[4];
-            GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, scissor);
-            s.savedScissorX = scissor[0];
-            s.savedScissorY = scissor[1];
-            s.savedScissorW = scissor[2];
-            s.savedScissorH = scissor[3];
-            // Scissor box was set up against the main framebuffer
-            // dimensions; it does not apply to our smaller card FBO
-            // and would clip the entire card to nothing.
-            RenderSystem.disableScissor();
-        }
-        s.savedShaderColor = RenderSystem.getShaderColor().clone();
-        // Ensure the card's content is captured at full opacity - the
-        // caller already excludes the cache while globalAlpha < 1.0
-        // (menu fade), so any setShaderColor alpha less than 1 here
-        // would be the caller's mistake. Reset for safety.
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-
-        // Bind FBO + clear to transparent. Vanilla SimpleFramebuffer
-        // defaults clearColor to (1, 1, 1, 0) (white with alpha 0)
-        // which would tint anti-aliased edges; force fully transparent
-        // black so blended pixels in the FBO source = (0, 0, 0, 0).
-        snapshot.fbo.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
-        snapshot.fbo.clear();
-        snapshot.fbo.beginWrite(true);
-
-        RenderSystem.viewport(0, 0, snapshot.fbWidth, snapshot.fbHeight);
-
-        // Card-local ortho: x=0..widthGui maps to NDC -1..1, y=0..
-        // heightGui maps to NDC 1..-1 (y-down GUI convention). Same
-        // projection vanilla uses for its DrawContext rendering, just
-        // sized to the card box instead of the screen box.
-        Matrix4f cardProj = new Matrix4f().setOrtho(0.0F, widthGui, heightGui, 0.0F, 1000.0F, 21000.0F);
-        // The translate matches DrawContext's -2000 z-translate so
-        // GUI z values stay inside the [near, far] range and don't
-        // get z-clipped. (Without this, MC rounds z-positions like
-        // -1000 outside the projection.)
-        cardProj.translate(0.0F, 0.0F, -11000.0F);
-        RenderSystem.setProjectionMatrix(cardProj, ProjectionType.ORTHOGRAPHIC);
-
-        // Inform the rounded-rect SDF that gl_FragCoord during this
-        // capture pass spans the small card FBO, not the main window
-        // framebuffer. Without this, every batched rect's baseY is
-        // computed against the 1000-2000px-tall main FB while the
-        // card FBO only spans ~160-200px, so the SDF distance is
-        // dominated by a constant offset and every fragment falls
-        // outside the rounded box - the rect captures as fully
-        // transparent and the cache blits an empty texture. Rect
-        // body, outline, and the options/state rows all rely on
-        // this; the card looks completely invisible without it.
-        BatchedRectangle.setRenderTargetFbHeight(snapshot.fbHeight);
-
+        s.renderState = Render2DState.capture();
+        s.savedTargetHeight = BatchedRectangle.getRenderTargetFbHeight();
         active = s;
+        snapshot.populated = false;
+        try {
+            RenderSystem.disableScissor();
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+            snapshot.fbo.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
+            snapshot.fbo.clear();
+            snapshot.fbo.beginWrite(true);
+            RenderSystem.viewport(0, 0, snapshot.fbWidth, snapshot.fbHeight);
+
+            // Preserve the established card-local projection and GUI Z range.
+            Matrix4f cardProj = new Matrix4f().setOrtho(0.0F, widthGui, heightGui, 0.0F, 1000.0F, 21000.0F);
+            cardProj.translate(0.0F, 0.0F, -11000.0F);
+            RenderSystem.setProjectionMatrix(cardProj, ProjectionType.ORTHOGRAPHIC);
+            BatchedRectangle.setRenderTargetFbHeight(snapshot.fbHeight);
+        } catch (RuntimeException | Error failure) {
+            try {
+                endCapture(false);
+            } catch (RuntimeException | Error cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
     }
 
     public static void endCapture() {
+        endCapture(true);
+    }
+
+    /** An interrupted/failed capture must never become a reusable snapshot. */
+    public static void endCapture(boolean completed) {
         if (active == null) {
             return;
         }
@@ -366,36 +363,23 @@ public final class CardSnapshotCache {
         // queued vertices, whose RECT_BASE values were pre-baked
         // against the card FBO height, render correctly into the
         // FBO.
-        BatchedRectangle.flushIfBatching();
-
-        // Restore the main-window FB height baseline for SDF math so
-        // any rects submitted AFTER this capture pass (e.g. the menu's
-        // background, sibling cards still using the eager path,
-        // post-card chrome) compute their RECT_BASE against the main
-        // window framebuffer again. clearRenderTargetFbHeight() also
-        // calls flushIfBatching internally as a defense against a
-        // future caller queueing rects between our flush above and
-        // this reset; with the queue empty here the inner flush is a
-        // no-op.
-        BatchedRectangle.clearRenderTargetFbHeight();
-
-        // Restore main framebuffer first - any subsequent shader /
-        // viewport / scissor changes must apply to the main FB so the
-        // caller's after-capture draws (typically the blit itself)
-        // render to the screen.
-        s.mainFb.beginWrite(false);
-
-        RenderSystem.viewport(s.savedViewportX, s.savedViewportY, s.savedViewportW, s.savedViewportH);
-        RenderSystem.setProjectionMatrix(s.savedProj, s.savedProjType);
-        if (s.savedScissorEnabled) {
-            // RenderSystem.enableScissor takes (x, y, width, height)
-            // in framebuffer coords - same coord system glGetIntegerv
-            // returned, so just pass through.
-            RenderSystem.enableScissor(s.savedScissorX, s.savedScissorY, s.savedScissorW, s.savedScissorH);
+        boolean flushed = false;
+        try {
+            BatchedRectangle.flushIfBatching();
+            flushed = true;
+        } finally {
+            try {
+                BatchedRectangle.restoreRenderTargetFbHeight(s.savedTargetHeight);
+            } finally {
+                restoreCaptureState(s);
+                s.snapshot.populated = completed && flushed;
+            }
         }
-        RenderSystem.setShaderColor(s.savedShaderColor[0], s.savedShaderColor[1], s.savedShaderColor[2], s.savedShaderColor[3]);
+    }
 
-        s.snapshot.populated = true;
+    private static void restoreCaptureState(CaptureState s) {
+        // Restore the actual caller target, which need not be the main framebuffer.
+        s.renderState.close();
     }
 
     /**

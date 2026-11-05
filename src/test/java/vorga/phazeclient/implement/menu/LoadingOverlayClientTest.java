@@ -73,6 +73,8 @@ public final class LoadingOverlayClientTest implements FabricClientGameTest {
     }
 
     private static void screenshot(ClientGameTestContext context, String name, float progress) {
+        // setOverlay/progress changes run between frames; don't inspect the previous menu frame.
+        context.waitTicks(2);
         Path screenshot = context.takeScreenshot(name);
         try (var input = Files.newInputStream(screenshot); NativeImage pixels = NativeImage.read(input)) {
             int w = pixels.getWidth(), h = pixels.getHeight();

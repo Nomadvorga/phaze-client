@@ -8,18 +8,14 @@ package vorga.phazeclient.mixins;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.render.BufferBuilderStorage;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.Fog;
 import net.minecraft.client.render.FrameGraphBuilder;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.entity.EntityRenderDispatcher;
-import net.minecraft.client.render.entity.EntityRenderer;
-import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.ObjectAllocator;
 import net.minecraft.client.util.Handle;
 import net.minecraft.client.util.math.MatrixStack;
@@ -46,19 +42,12 @@ import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.other.BlockOverlay;
-import vorga.phazeclient.implement.features.modules.other.FTHelper;
-import vorga.phazeclient.implement.features.modules.other.FTHelperRenderer;
-import vorga.phazeclient.implement.features.modules.other.HolyWorldHelper;
-import vorga.phazeclient.implement.features.modules.other.HolyWorldHelperRenderer;
 import vorga.phazeclient.implement.features.modules.other.HitRange;
 import vorga.phazeclient.implement.features.modules.other.MotionBlur;
 import vorga.phazeclient.implement.features.modules.other.NoRender;
-import vorga.phazeclient.implement.features.modules.other.PredictionsRenderer;
-import vorga.phazeclient.implement.features.modules.other.Predictions;
 import vorga.phazeclient.implement.features.modules.other.WeatherChanger;
 import vorga.phazeclient.implement.hitrange.HitRangeCircleRenderer;
 
-import java.util.ArrayList;
 import java.util.List;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -75,7 +64,7 @@ import net.minecraft.util.math.Box;
  *   <li>HitRange (self-circle on {@code renderEntities} TAIL) -
  *       ported from <a href="https://github.com/uku3lig/hitrange">uku's
  *       hitrange</a> mod (MIT)</li>
- *   <li>FT helper / Predictions overlays ({@code renderEntities} TAIL)</li>
+ *   <li>World-overlay frame capture (drawn after the world pass)</li>
  *   <li>BlockOverlay (outline tint + filled face draw)</li>
  * </ul>
  * The Sodium-incompatible {@code WorldRendererChunkAnimatorMixin} stays
@@ -90,7 +79,6 @@ public abstract class WorldRendererMixin {
     // HitRange shadows
     // ---------------------------------------------------------------
 
-    @Shadow @Final private BufferBuilderStorage bufferBuilders;
     @Shadow @Final private EntityRenderDispatcher entityRenderDispatcher;
 
     // ---------------------------------------------------------------
@@ -126,9 +114,9 @@ public abstract class WorldRendererMixin {
     // MotionBlur: capture matrix pair around the render frame
     // ---------------------------------------------------------------
 
-    @Inject(method = "render", at = @At("HEAD"))
+    @Inject(method = "render", at = @At("HEAD"), require = 1)
     private void phaze$motionBlurSetMatrices(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, Matrix4f positionMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
-        WorldOverlayRenderer.beginFrame(positionMatrix, camera, tickCounter);
+        WorldOverlayRenderer.beginFrame(positionMatrix, projectionMatrix, camera, tickCounter);
         MinecraftClient client = MinecraftClient.getInstance();
         Object currentScreen = client == null ? null : client.currentScreen;
         if (currentScreen != phaze$lastScreen) {
@@ -227,16 +215,15 @@ public abstract class WorldRendererMixin {
         double py = MathHelper.lerp(tickDelta, player.lastRenderY, player.getY());
         double pz = MathHelper.lerp(tickDelta, player.lastRenderZ, player.getZ());
 
-        Vec3d playerPos = new Vec3d(px, py, pz).subtract(camera.getPos());
-
-        EntityRenderer<? super ClientPlayerEntity, ?> renderer = this.entityRenderDispatcher.getRenderer(player);
-        PlayerEntityRenderState state = (PlayerEntityRenderState) renderer.getAndUpdateRenderState(player, tickDelta);
-
         matrices.push();
-        matrices.translate(playerPos.x, playerPos.y, playerPos.z);
-        VertexConsumerProvider vertexConsumers = this.bufferBuilders.getEntityVertexConsumers();
-        HitRangeCircleRenderer.drawCircle(matrices, vertexConsumers, state);
-        matrices.pop();
+        try {
+            Vec3d cameraPos = camera.getPos();
+            matrices.translate(px - cameraPos.x, py - cameraPos.y, pz - cameraPos.z);
+            HitRangeCircleRenderer.drawCircle(matrices, px, py, pz, player.getId(),
+                    player.getGameProfile().getName(), player.isSneaky());
+        } finally {
+            matrices.pop();
+        }
     }
 
     // ---------------------------------------------------------------

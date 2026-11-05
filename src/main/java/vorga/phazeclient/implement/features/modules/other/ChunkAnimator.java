@@ -19,22 +19,19 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Animates freshly-uploaded chunk sections falling into place from
- * above. Hooks the per-section model-offset uniform that
+ * Animates freshly-uploaded chunks sliding into their original position.
+ * Distance is measured from each section's final position, not the player.
+ * Hooks the per-section model-offset uniform that
  * {@code WorldRenderer.renderLayer} sets right before each
  * {@code VertexBuffer.draw()} (see
  * {@link vorga.phazeclient.mixins.WorldRendererChunkAnimatorMixin}),
  * so the offset is applied on the GPU side without touching any
  * chunk geometry, builder thread, or render-section state.
  *
- * <p>Per-section animation state is keyed by {@link
- * ChunkSectionPos#asLong(int, int, int)} (origin block pos shifted
- * by 4) so re-entering a previously animated section reuses its
- * timestamp and the chunk doesn't pop back up. Map growth is
- * bounded by lazy eviction inside {@link #getYOffset(BlockPos)} -
- * entries older than {@code 2 * duration} are dropped on the next
- * read of any section, which keeps the map at ~ render-distance^2
- * live entries in steady state.
+ * <p>Animation state is keyed by {@link ChunkPos#toLong(int, int)} so
+ * all sections in one column share a timestamp and retain their spacing.
+ * Only fresh chunk-load events start a column animation; returning to the
+ * camera frustum cannot replay it, even after lazy timestamp eviction.
  *
  * <p>The easing dropdown reuses the shared {@link Interpolations}
  * curves so the dropdown stays consistent with the other Phaze
@@ -88,25 +85,6 @@ public final class ChunkAnimator extends Module {
      * Sodium uses for its own per-section caches.
      */
     private final Set<Long> pendingAnimationKeys = ConcurrentHashMap.newKeySet();
-
-    /**
-     * Player {@code y} captured at the moment each column was first
-     * registered. Drives the new "{@code distance} above the player"
-     * semantic: instead of every chunk starting {@code distance}
-     * blocks above its OWN final position, it starts {@code distance}
-     * blocks above the player's Y at the moment the chunk first
-     * became visible. The captured Y is frozen per column so a chunk
-     * that registers while the player is mid-air doesn't suddenly
-     * shift its starting point if the player falls (which would
-     * visibly jitter the in-flight animation).
-     *
-     * <p>Keyed by the same {@code ChunkPos.toLong(x,z)} as
-     * {@link #firstSeenMs} so the two maps walk together: a column
-     * either has both entries or neither. Cleared by
-     * {@link #resetTracker()} on dimension change so the next world's
-     * Y reference starts fresh.
-     */
-    private final Map<Long, Float> playerYAtRegister = new ConcurrentHashMap<>();
 
     /**
      * Wall-clock timestamp of the most recently registered first-seen
@@ -216,8 +194,8 @@ public final class ChunkAnimator extends Module {
      * different granularities:
      *
      * <ul>
-     *   <li>{@link #firstSeenMs} - per (sx,sy,sz) section, used by
-     *       the per-section uniform path. New sections appearing
+     *   <li>{@link #firstSeenMs} - per (x,z) column, used by
+     *       the per-section uniform path. New columns appearing
      *       inside an already-seen region animate independently.</li>
      *   <li>{@link #regionFirstSeenMs} - per region, used by
      *       {@link #getRegionMagnitude}. The region animates exactly
@@ -353,8 +331,8 @@ public final class ChunkAnimator extends Module {
         // should animate the next time Sodium draws it"; frustum-cull
         // returns from camera rotation never fire CHUNK_LOAD, so
         // turning around can't replay the animation. Stale firstSeenMs
-        // / playerYAtRegister entries from a previous load of the same
-        // column are wiped here so the next animation starts cleanly
+        // entries from a previous load of the same column are wiped
+        // here so the next animation starts cleanly
         // from full distance instead of resuming someone else's curve.
         ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
             if (!isEnabled()) {
@@ -362,19 +340,16 @@ public final class ChunkAnimator extends Module {
             }
             long key = ChunkPos.toLong(chunk.getPos().x, chunk.getPos().z);
             firstSeenMs.remove(key);
-            playerYAtRegister.remove(key);
             pendingAnimationKeys.add(key);
         });
         // CHUNK_UNLOAD: drop every per-column cache so the next
         // CHUNK_LOAD on the same coords is treated as a brand-new
         // chunk. Without this, a player flying back to an unloaded
-        // area would inherit the previous load's playerYAtRegister
-        // (the wrong reference Y) the moment CHUNK_LOAD adds the key
-        // back to pendingAnimationKeys.
+        // area would inherit the previous load's animation timestamp
+        // the moment CHUNK_LOAD adds the key back to pendingAnimationKeys.
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) -> {
             long key = ChunkPos.toLong(chunk.getPos().x, chunk.getPos().z);
             firstSeenMs.remove(key);
-            playerYAtRegister.remove(key);
             pendingAnimationKeys.remove(key);
         });
     }
@@ -462,43 +437,8 @@ public final class ChunkAnimator extends Module {
         out[0] = 0.0F; out[1] = -1.0F; out[2] = 0.0F;
     }
 
-    /**
-     * Companion to {@link #writeAnimationDirection(float[])} for the
-     * per-section Sodium path. The Sodium per-section upload writes
-     * SIGNED Y deltas into {@code u_PhazeChunkAnimOffset[slot]} -
-     * positive for Top (section ABOVE final), negative for Bottom
-     * (section BELOW final) - so the direction uniform must always
-     * be {@code (0, 1, 0)} on the vertical axes. The shader does
-     * {@code _vert_position += offset * dir}; if we let dir be
-     * {@code (0, -1, 0)} for Bottom (the old "magnitude" convention)
-     * the negative offset gets flipped to positive Y, lifting the
-     * section ABOVE its target instead of below.
-     *
-     * <p>Side animations don't have the player-Y semantic at all
-     * (horizontal slide-in isn't relative to player altitude), so
-     * the per-section upload still uses constant magnitude in those
-     * cases and we delegate to the original
-     * {@link #writeAnimationDirection(float[])} for the horizontal
-     * unit vector.
-     */
+    /** All render paths use a non-negative magnitude and the same entry direction. */
     public void writeAnimationDirectionPerSection(float[] out) {
-        if (out == null || out.length < 3) return;
-        // Fade uses the dither-discard fragment path and Scale uses
-        // the mix-to-centre vertex path - neither touches the
-        // per-section position-offset path, so the direction
-        // multiplier must be a no-op. See {@link #writeAnimationDirection}.
-        if (animationType.isSelected("Fade") || animationType.isSelected("Scale")) {
-            out[0] = 0.0F; out[1] = 0.0F; out[2] = 0.0F;
-            return;
-        }
-        if (animationType.isSelected("Top") || animationType.isSelected("Bottom")) {
-            out[0] = 0.0F; out[1] = 1.0F; out[2] = 0.0F;
-            return;
-        }
-        // Side / unknown - fall through to the magnitude-based
-        // direction vector. For Side this returns a horizontal unit
-        // vector that pairs correctly with the constant-magnitude
-        // offset written by writeRegionSectionYOffsets' Side branch.
         writeAnimationDirection(out);
     }
 
@@ -513,15 +453,11 @@ public final class ChunkAnimator extends Module {
     }
 
     /**
-     * Y offset (in blocks) the mixin should add to the chunk's model
-     * offset uniform this frame. Returns 0 when the module is off,
-     * the section's animation already finished, or this is the first
-     * time we're seeing the section (in which case the start time is
-     * recorded for next-frame interpolation; one frame at full drop
-     * is imperceptible compared to the typical 600 ms duration).
+     * Offset magnitude in blocks, multiplied by the entry direction in the mixin.
+     * A freshly loaded column starts at Distance and reaches zero after Duration.
+     * Returns 0 when disabled, finished, or merely returning to the camera frustum.
      *
-     * <p>Always returns a non-negative offset - chunks fall DOWN to
-     * their target position, never overshoot below it.
+     * <p>The direction supplies the sign: Bottom uses -Y and Top uses +Y.
      */
     public float getYOffset(BlockPos origin) {
         if (!isEnabled() || origin == null) {
@@ -584,37 +520,26 @@ public final class ChunkAnimator extends Module {
             return 0.0F;
         }
 
-        double progress = (double) elapsed / (double) total;
-        Interpolation curve = Interpolations.getByName(easing.getSelected());
-        double eased = curve.interpolate(progress);
-        // (1 - eased) inverts the curve so we start at full drop and
-        // approach 0 - the easing shapes the arrival, not the launch.
-        double offset = dist * (1.0 - eased);
-        // Clamp negative values from overshooting easings (Bounce,
-        // Elastic) so the chunk never dips BELOW its final position
-        // while landing - looks wrong with terrain.
-        if (offset < 0.0) {
-            offset = 0.0;
-        }
-        return (float) offset;
+        return offsetMagnitude(dist, elapsed, total, Interpolations.getByName(easing.getSelected()));
+    }
+
+    /** Shared timing for vanilla, Sodium sections and the Iris region fallback. */
+    static float offsetMagnitude(int distance, long elapsedMs, long durationMs, Interpolation curve) {
+        long total = Math.max(1L, durationMs);
+        if (elapsedMs >= total) return 0.0F;
+        if (elapsedMs <= 0L) return (float) distance;
+        double progress = (double) elapsedMs / (double) total;
+        // The axis carries the sign; an overshooting curve must not reverse it.
+        return (float) Math.max(0.0, distance * (1.0 - curve.interpolate(progress)));
     }
 
     /** Drops sections whose animation finished comfortably in the past. */
     private void evictExpired(long now, long total) {
         evictExpiredFrom(firstSeenMs, now, total);
-        // playerYAtRegister walks lock-step with firstSeenMs (both
-        // keyed on the column key); drop any entry whose key is no
-        // longer in firstSeenMs after the eviction above. Cheap O(N)
-        // scan with O(1) containsKey lookups. pendingAnimationKeys is
-        // populated/drained event-driven (CHUNK_LOAD fills, the first
-        // matching frame drains) so it doesn't need eviction here -
-        // it only ever holds entries waiting to be registered for the
-        // first time and is bounded by the loaded-chunk count.
-        playerYAtRegister.keySet().removeIf(k -> !firstSeenMs.containsKey(k));
     }
 
     /**
-     * Per-section Y offsets for one Sodium {@link
+     * Per-section offset magnitudes for one Sodium {@link
      * net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion}
      * packed into the layout the patched terrain vertex shader expects.
      *
@@ -628,26 +553,20 @@ public final class ChunkAnimator extends Module {
      * section slot in a region; unused slots receive {@code 0.0F}
      * which is the no-op identity for the addition the shader does.
      *
-     * <p>Each section's offset is computed exactly the same way as
-     * the vanilla path: the per-section first-seen timestamp drives
-     * the configured easing curve, and the offset is the distance
-     * setting times {@code (1 - eased)}. So a freshly-seen section
-     * inside an already-known region animates from the full drop
-     * height the same way it would on the vanilla renderer - which
-     * is what fixes the "elytra flight only animates whole regions"
-     * bug under Sodium.
+     * <p>Each section's offset is computed exactly the same way as the
+     * vanilla path: its column's first-seen timestamp drives the easing
+     * curve, and the offset is Distance times {@code (1 - eased)}.
+     * Freshly loaded columns animate independently inside a known region;
+     * later uploads within one column join its existing clock.
      *
-     * <p>Allocates a fresh 1KB array each call. Even at render
-     * distance 32 with ~30 visible regions per frame that's
-     * {@code 30 * 1KB = 30KB} of throwaway allocation per frame,
-     * which the GC absorbs without measurable impact.
+     * <p>Reuses the caller's array. Every Y stratum of a column receives the
+     * same magnitude, preserving its shape instead of collapsing it toward player Y.
      *
      * @param regionOriginBlockX region's block-coord X origin
      *                           (from {@code RenderRegion.getOriginX()})
      * @param regionOriginBlockY region's block-coord Y origin
      * @param regionOriginBlockZ region's block-coord Z origin
-     * @return float[256] indexed by the shader's encoded draw_id,
-     *         or all-zero array when the module is off
+     * @return whether any drawable slot has a nonzero offset
      */
     public boolean writeRegionSectionYOffsets(
             int regionOriginBlockX, int regionOriginBlockY, int regionOriginBlockZ,
@@ -677,39 +596,12 @@ public final class ChunkAnimator extends Module {
         // on a side, so >> 4 turns the region origin into the
         // section/chunk coord of the region's first section.
         int regionChunkX = regionOriginBlockX >> 4;
-        int regionChunkY = regionOriginBlockY >> 4;
         int regionChunkZ = regionOriginBlockZ >> 4;
 
         long now = System.currentTimeMillis();
         long total = Math.max(1L, (long) duration.getInt());
         int dist = distance.getInt();
         Interpolation curve = Interpolations.getByName(easing.getSelected());
-
-        // Player Y at THIS frame - captured into playerYAtRegister
-        // for any column that registers right now, then re-read from
-        // that map for columns that already registered. The "from
-        // player Y" semantic only kicks in for vertical animation
-        // types (Top / Bottom); Side keeps the old behaviour
-        // (constant magnitude in a horizontal direction) because
-        // "distance blocks above the player" doesn't translate to
-        // horizontal slide-in.
-        MinecraftClient mc = MinecraftClient.getInstance();
-        float currentPlayerY = (mc != null && mc.player != null)
-                ? (float) mc.player.getY()
-                : 0.0F;
-
-        // verticalSign = +1 for Top (sections start ABOVE player Y),
-        // -1 for Bottom (sections start BELOW player Y), 0 for Side
-        // (we'll fall back to the constant-magnitude path below).
-        float verticalSign;
-        if (animationType.isSelected("Top")) {
-            verticalSign = 1.0F;
-        } else if (animationType.isSelected("Bottom")) {
-            verticalSign = -1.0F;
-        } else {
-            verticalSign = 0.0F;
-        }
-        boolean verticalMode = verticalSign != 0.0F;
 
         // One eviction per region per frame at most - cheap, and
         // keeps the map from growing unbounded if the player is
@@ -723,23 +615,18 @@ public final class ChunkAnimator extends Module {
         // produces these slot indices). Sections without geometry
         // - either not yet uploaded or unloaded - keep their slots
         // at the array's default 0.0F. This is what gives us the
-        // per-section animation: as the player flies into a region,
-        // sections finish uploading one by one, each registers a
-        // first-seen timestamp at that moment, and animates from
-        // full distance back to 0 over `duration` ms - matching the
-        // vanilla path's per-section feel.
+        // per-column animation: the first drawable section starts
+        // its column's clock, and later Y strata join it instead of
+        // restarting from full distance on their own upload.
         boolean hasNonZero = false;
         for (int i = 0; i < drawableCount; i++) {
             int slot = drawableSlots[i] & 0xFF;
             // Decode (relX, relY, relZ) from the slot index using the
             // same packing the shader's _get_relative_chunk_coord
-            // expects: pos >> (5, 0, 2) & (7, 3, 7). relY is needed
-            // for the vertical "from-player-Y" mode below so each
-            // section knows its own world Y; the per-column timestamp
-            // key still ignores relY so all Y strata of one chunk
-            // share an animation clock.
+            // expects: pos >> (5, 0, 2) & (7, 3, 7). The timestamp
+            // ignores relY so all Y strata retain their relative
+            // spacing while sharing one offset and animation clock.
             int relX = (slot >> 5) & 7;
-            int relY = slot & 3;
             int relZ = (slot >> 2) & 7;
 
             int sx = regionChunkX + relX;
@@ -756,14 +643,6 @@ public final class ChunkAnimator extends Module {
             // (x,z) into a long the same way ChunkSectionPos
             // packs (x,y,z), so the map keying remains O(1).
             long key = ChunkPos.toLong(sx, sz);
-
-            // Section's bottom-Y in world space. Used by the vertical
-            // "from-player-Y" mode to compute the per-section initial
-            // offset (each section ends up at the same start WORLD Y,
-            // which means the offset MAGNITUDE differs per section -
-            // a high-Y section needs a smaller upward shift than a
-            // low-Y one to land at "player Y + distance").
-            int sectionWorldY = regionOriginBlockY + relY * 16;
 
             Long start = firstSeenMs.get(key);
             float offset;
@@ -796,27 +675,9 @@ public final class ChunkAnimator extends Module {
                 pendingAnimationKeys.remove(key);
                 firstSeenMs.put(key, now);
                 lastAnimRegisterMs = now;
-                if (verticalMode) {
-                    playerYAtRegister.put(key, currentPlayerY);
-                    // Initial offset: section needs to start at
-                    // (playerY + sign*dist) in world space, so its
-                    // additive Y delta is (start - sectionWorldY).
-                    // Sign of the result encodes direction:
-                    //   Top: positive (section appears above)
-                    //   Bottom: negative (section appears below)
-                    // The shader applies this with u_PhazeChunkAnimDir
-                    // forced to (0,1,0) - see writeAnimationDirection
-                    // PerSection - so the sign rides cleanly through
-                    // the multiplication.
-                    float startWorldY = currentPlayerY + verticalSign * (float) dist;
-                    offset = startWorldY - (float) sectionWorldY;
-                } else {
-                    // Side mode keeps the constant-magnitude semantics:
-                    // every section shifts by `dist` along the chosen
-                    // horizontal direction (the writeAnimationDirection
-                    // vector). No per-section sectionWorldY math.
-                    offset = (float) dist;
-                }
+                // Distance from each section's OWN final position.
+                // The mixin multiplies by the same direction as vanilla.
+                offset = (float) dist;
             } else {
                 long elapsed = now - start;
                 if (elapsed >= total) {
@@ -826,30 +687,9 @@ public final class ChunkAnimator extends Module {
                     // the GPU upload as a no-op.
                     continue;
                 }
-                double progress = (double) elapsed / (double) total;
-                double eased = curve.interpolate(progress);
-                if (verticalMode) {
-                    Float storedPy = playerYAtRegister.get(key);
-                    float py = storedPy != null ? storedPy : currentPlayerY;
-                    float startWorldY = py + verticalSign * (float) dist;
-                    float initial = startWorldY - (float) sectionWorldY;
-                    offset = initial * (float) (1.0 - eased);
-                    // Don't clamp at 0 - in vertical mode the sign of
-                    // `offset` IS direction, so a negative value is
-                    // valid (Bottom: section currently below final).
-                    if (offset == 0.0F) {
-                        continue;
-                    }
-                } else {
-                    double off = dist * (1.0 - eased);
-                    offset = off < 0.0 ? 0.0F : (float) off;
-                    if (offset == 0.0F) {
-                        // The easing landed exactly on 0 (Bounce can do
-                        // this mid-curve). Skip the assign so we don't
-                        // flag hasNonZero on what the GPU sees as a
-                        // no-op anyway.
-                        continue;
-                    }
+                offset = offsetMagnitude(dist, elapsed, total, curve);
+                if (offset == 0.0F) {
+                    continue;
                 }
             }
 
@@ -1198,10 +1038,7 @@ public final class ChunkAnimator extends Module {
             return 0.0F;
         }
 
-        Interpolation curve = Interpolations.getByName(easing.getSelected());
-        double progress = (double) elapsed / (double) total;
-        double eased = curve.interpolate(progress);
-        return (float) (dist * (1.0 - eased));
+        return offsetMagnitude(dist, elapsed, total, Interpolations.getByName(easing.getSelected()));
     }
 
     /** Shared eviction primitive for both per-section and per-region trackers. */
@@ -1237,7 +1074,6 @@ public final class ChunkAnimator extends Module {
         // which would clear an in-flight animation mid-fall.
         firstSeenMs.clear();
         regionFirstSeenMs.clear();
-        playerYAtRegister.clear();
         // Drop pending CHUNK_LOAD requests too - the events that
         // populated them fired against the previous world, and the
         // new world will fire its own CHUNK_LOAD batch as Minecraft
@@ -1248,8 +1084,8 @@ public final class ChunkAnimator extends Module {
     /**
      * F3+A handler: re-trigger the fall-in animation for every
      * currently-loaded chunk. Walks the player's render-distance
-     * square, drops every column's stale {@link #firstSeenMs} /
-     * {@link #playerYAtRegister} entry (otherwise the "elapsed &gt;=
+     * square, drops every column's stale {@link #firstSeenMs}
+     * entry (otherwise the "elapsed &gt;=
      * total" steady-state branch would short-circuit the next draw
      * and skip the animation), and seeds {@link
      * #pendingAnimationKeys} so the per-section path treats each
@@ -1270,7 +1106,6 @@ public final class ChunkAnimator extends Module {
     public void onF3AReload() {
         firstSeenMs.clear();
         regionFirstSeenMs.clear();
-        playerYAtRegister.clear();
         // No CHUNK_LOAD will fire on F3+A (the WorldChunk objects
         // aren't reloaded - only Sodium's GPU-side render data is
         // rebuilt), so we have to populate pendingAnimationKeys by

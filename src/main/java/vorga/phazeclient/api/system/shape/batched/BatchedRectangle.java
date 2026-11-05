@@ -8,7 +8,6 @@ import net.minecraft.client.gl.ShaderProgramKey;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormatElement;
 import net.minecraft.util.Identifier;
@@ -18,6 +17,8 @@ import org.joml.Vector4f;
 import org.joml.Vector4i;
 import org.lwjgl.system.MemoryUtil;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.hud.Render2DState;
+import vorga.phazeclient.api.system.hud.Render2DBuffers;
 import vorga.phazeclient.base.util.color.ColorUtil;
 
 /**
@@ -184,6 +185,8 @@ public final class BatchedRectangle {
     private static int scopeDepth = 0;
     private static BufferBuilder activeBuilder = null;
     private static int pendingRects = 0;
+    private static Render2DState scopeState;
+    private static int stateScopeDepth;
     private static final Vector3f SCRATCH_BASE_POS = new Vector3f();
     private static final Vector3f SCRATCH_SIZE = new Vector3f();
     private static final Vector4f SCRATCH_RADIUS = new Vector4f();
@@ -215,6 +218,8 @@ public final class BatchedRectangle {
     }
 
     public static void beginScope() {
+        if (stateScopeDepth == 0) scopeState = Render2DState.join();
+        stateScopeDepth++;
         // No-op when batching infrastructure failed to initialize -
         // beginScope/endScope counters never increment, isBatching()
         // stays false, every Rectangle.render call falls through to
@@ -226,11 +231,15 @@ public final class BatchedRectangle {
     }
 
     public static void endScope() {
-        if (DISABLED || scopeDepth <= 0) {
-            return;
-        }
-        if (--scopeDepth == 0) {
-            flush();
+        if (stateScopeDepth <= 0) return;
+        try {
+            if (!DISABLED && scopeDepth > 0 && --scopeDepth == 0) flush();
+        } finally {
+            if (--stateScopeDepth == 0) {
+                Render2DState state = scopeState;
+                scopeState = null;
+                state.close();
+            }
         }
     }
 
@@ -271,8 +280,38 @@ public final class BatchedRectangle {
     }
 
     public static void clearRenderTargetFbHeight() {
-        flushIfBatching();
-        renderTargetFbHeightOverride = -1.0F;
+        try {
+            flushIfBatching();
+        } finally {
+            renderTargetFbHeightOverride = -1.0F;
+        }
+    }
+
+    /** Raw override, including the -1 sentinel; used to restore nested FBO captures. */
+    public static float getRenderTargetFbHeight() { return renderTargetFbHeightOverride; }
+
+    /** Restore after pending geometry has been flushed or discarded, without drawing on the wrong FBO. */
+    public static void restoreRenderTargetFbHeight(float height) { renderTargetFbHeightOverride = height; }
+
+    /** Drop partial vertices after failure; never publish them in the next frame. */
+    public static void discardPending() {
+        BufferBuilder builder = activeBuilder;
+        activeBuilder = null;
+        pendingRects = 0;
+        if (builder != null) Render2DBuffers.discardBatch();
+    }
+
+    public static void cleanup() {
+        try {
+            discardPending();
+        } finally {
+            scopeDepth = 0;
+            stateScopeDepth = 0;
+            renderTargetFbHeightOverride = -1.0F;
+            Render2DState state = scopeState;
+            scopeState = null;
+            if (state != null) state.close();
+        }
     }
 
     /**
@@ -307,11 +346,6 @@ public final class BatchedRectangle {
             return;
         }
 
-        BuiltBuffer built = builder.endNullable();
-        if (built == null) {
-            return;
-        }
-
         // Match the legacy Rectangle.render GL state setup so this
         // path is a drop-in replacement: alpha-blended with
         // src=src.alpha, dst=1-src.alpha (also declared in the shader
@@ -319,20 +353,24 @@ public final class BatchedRectangle {
         // but depth test stays on so ordering matches the eager path,
         // back-face cull stays on (we emit in the same winding the
         // legacy quad emitter does, so no flipped quads).
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-
-        try {
+        try (Render2DState state = Render2DState.join(); BuiltBuffer built = builder.endNullable()) {
+            if (built == null) return;
+            try {
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.enableDepthTest();
+            RenderSystem.enableCull();
             ShaderProgram shader = RenderSystem.setShader(SHADER_KEY);
             if (shader == null) {
-                built.close();
                 return;
             }
             BufferRenderer.drawWithGlobalProgram(built);
-        } finally {
-            RenderSystem.disableBlend();
+            } finally {
+                RenderSystem.disableBlend();
+            }
+        } catch (RuntimeException | Error failure) {
+            Render2DBuffers.discardBatch();
+            throw failure;
         }
     }
 
@@ -409,7 +447,7 @@ public final class BatchedRectangle {
         int outlineColor = ColorUtil.multAlpha(shape.getOutlineColor(), globalAlpha);
 
         if (activeBuilder == null) {
-            activeBuilder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, BATCHED_FORMAT);
+            activeBuilder = Render2DBuffers.beginBatch(BATCHED_FORMAT);
         }
 
         float x0 = shape.getX() - softness / 2.0F;
@@ -430,6 +468,7 @@ public final class BatchedRectangle {
         // space (see baseY computation above) so the SDF math is
         // expressed in framebuffer pixels and the per-corner colors
         // align with the legacy shader's coords-(x,y) gradient mapping.
+        try {
         emit(activeBuilder, matrix, x0, y0, color2,
                 baseX, baseY, scaledWidth, scaledHeight, scaledRadius, thickness, softness, outlineColor);
         emit(activeBuilder, matrix, x0, y0 + h, color1,
@@ -440,6 +479,10 @@ public final class BatchedRectangle {
                 baseX, baseY, scaledWidth, scaledHeight, scaledRadius, thickness, softness, outlineColor);
 
         pendingRects++;
+        } catch (RuntimeException | Error failure) {
+            discardPending();
+            throw failure;
+        }
     }
 
     /**

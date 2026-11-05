@@ -16,7 +16,6 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -843,9 +842,6 @@ public class BackgroundComponent extends AbstractComponent {
         RenderSystem.defaultBlendFunc();
         RenderSystem.setShaderTexture(0, Identifier.of("phaze", "textures/menu/cross.png"));
         RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 
         Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);

@@ -10,6 +10,7 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
@@ -25,7 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Offline checks for vanilla debug charts, complete pack icons and cached left-aligned pack text. */
+/** Offline checks for vanilla debug charts, pack icons/text, HUD scale and background opacity. */
 public final class HudCompatibilityChecks {
     private static int checks;
 
@@ -37,6 +38,7 @@ public final class HudCompatibilityChecks {
         packTextLayout();
         packTextFormatting();
         hudScaleLimits();
+        hudBackgroundOpacity();
         System.out.println("HUD compatibility checks passed: " + checks);
     }
 
@@ -298,6 +300,41 @@ public final class HudCompatibilityChecks {
         }
         check(hudCount >= 25, "scale limits cover the full registered HUD catalog, not just a few examples");
         System.out.println("Uniform 3x scale checked for " + hudCount + " HUDs");
+    }
+
+    private static void hudBackgroundOpacity() throws Exception {
+        for (Class<?> type : List.of(ArmorHud.class, RectHudModule.class)) {
+            MethodNode resolver = method(readClass(type.getName().replace('.', '/')), "getResolvedBackgroundColor");
+            List<MethodInsnNode> vanillaColors = calls(resolver).stream().filter(call -> call.owner.equals(
+                    "net/minecraft/client/option/GameOptions") && call.name.equals("getTextBackgroundColor")
+                    && call.desc.equals("(F)I")).toList();
+            check(vanillaColors.size() == 1, type.getSimpleName() + ": Vanilla retains Minecraft's opacity override");
+            MethodInsnNode vanillaColor = vanillaColors.getFirst();
+            check(vanillaColor.getPrevious() instanceof LdcInsnNode constant && Float.valueOf(0.5F).equals(constant.cst),
+                    type.getSimpleName() + ": Vanilla uses the shared 0.5 background opacity");
+            check(vanillaColor.getNext().getOpcode() == Opcodes.IRETURN,
+                    type.getSimpleName() + ": custom-preset opacity does not alter Vanilla's resolved color");
+        }
+
+        ArmorHud armor = ArmorHud.getInstance();
+        String savedPreset = armor.backgroundPreset.getSelected();
+        float savedOpacity = armor.backgroundOpacity.getValue();
+        try {
+            for (String preset : List.of("Lunar Blue", "Custom Color", "Gradient")) {
+                armor.backgroundPreset.setSelected(preset);
+                int rgb = armor.getResolvedBackgroundColor(null) & 0x00FFFFFF;
+                for (int opacity : new int[]{0, 20, 50, 100}) {
+                    armor.backgroundOpacity.setValue(opacity);
+                    int color = armor.getResolvedBackgroundColor(null);
+                    check((color >>> 24) == Math.round((opacity / 100.0F) * 255.0F),
+                            "Armor " + preset + ": explicit background opacity remains effective");
+                    check((color & 0x00FFFFFF) == rgb, "Armor " + preset + ": opacity preserves the selected RGB color");
+                }
+            }
+        } finally {
+            armor.backgroundPreset.setSelected(savedPreset);
+            armor.backgroundOpacity.setValue(savedOpacity);
+        }
     }
 
     @SuppressWarnings("unchecked")

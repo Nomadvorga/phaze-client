@@ -526,8 +526,9 @@ public abstract class DefaultChunkRendererChunkAnimatorMixin {
             if (!hasNonZero) {
                 return false;
             }
-            // Per-section direction is always (0,1,0) for Top/Bottom
-            // (the magnitude carries the sign) or (sx, 0, sz) for Side.
+            // Magnitudes are positive distances from each section's final
+            // position. Direction supplies +Y for Top and -Y for Bottom,
+            // exactly like the vanilla and Iris region-offset paths.
             // CPU-side pre-multiply means the vertex shader drops the
             // old per-vertex {@code offset * dir} multiply and just
             // does {@code _vert_position += data.xyz}.

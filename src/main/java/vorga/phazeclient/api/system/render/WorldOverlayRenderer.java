@@ -2,6 +2,7 @@ package vorga.phazeclient.api.system.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.systems.ProjectionType;
+import com.mojang.blaze3d.systems.VertexSorter;
 import com.mojang.blaze3d.platform.GlStateManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.ShaderProgram;
@@ -22,23 +23,20 @@ import vorga.phazeclient.mixins.OverlayTextureAccessor;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.ArrayList;
 
 /** Client geometry is buffered separately, then drawn after the world's framebuffer passes. */
 public final class WorldOverlayRenderer {
     private static final Map<Key, Batch> BATCHES = new LinkedHashMap<>();
     private static final Matrix4f VIEW = new Matrix4f();
-    private static final ArrayList<Runnable> LABELS = new ArrayList<>();
+    private static final Matrix4f PROJECTION = new Matrix4f();
     private static boolean recording;
-    private static boolean drawing;
     private static long frame;
     private static Vec3d camera;
     private static RenderTickCounter tickCounter;
 
     private WorldOverlayRenderer() {}
 
-    public static void beginFrame(Matrix4f view, Camera worldCamera, RenderTickCounter counter) {
-        LABELS.clear();
+    public static void beginFrame(Matrix4f view, Matrix4f projection, Camera worldCamera, RenderTickCounter counter) {
         TntCountdown.clearPendingTimers();
         for (var iterator = BATCHES.entrySet().iterator(); iterator.hasNext();) {
             Batch batch = iterator.next().getValue();
@@ -50,14 +48,40 @@ public final class WorldOverlayRenderer {
         }
         frame++;
         VIEW.set(view);
+        PROJECTION.set(projection);
         camera = worldCamera.getPos();
         tickCounter = counter;
         recording = true;
     }
 
     public static boolean isRecording() { return recording; }
-    public static boolean isDrawing() { return drawing; }
-    public static void deferLabel(Runnable action) { LABELS.add(action); }
+
+    /** Render-thread lifecycle boundary: release native buffers, not just their contents. */
+    public static void clear() {
+        recording = false;
+        camera = null;
+        tickCounter = null;
+        TntCountdown.clearPendingTimers();
+        Throwable failure = null;
+        try {
+            for (Batch batch : BATCHES.values()) {
+                try {
+                    try {
+                        batch.discard();
+                    } finally {
+                        batch.allocator.close();
+                    }
+                } catch (RuntimeException | Error cleanupFailure) {
+                    if (failure == null) failure = cleanupFailure;
+                    else failure.addSuppressed(cleanupFailure);
+                }
+            }
+        } finally {
+            BATCHES.clear();
+        }
+        if (failure instanceof RuntimeException exception) throw exception;
+        if (failure instanceof Error error) throw error;
+    }
 
     public static BufferBuilder buffer(VertexFormat.DrawMode mode, VertexFormat format, float width, boolean depth) {
         return buffer(new Key(mode, format, null, width, depth));
@@ -113,27 +137,27 @@ public final class WorldOverlayRenderer {
         int texture = RenderSystem.getShaderTexture(0);
         RenderSystem.getModelViewStack().pushMatrix();
         try {
-            drawing = true;
             // WorldRenderer/Iris has finished compositing clouds, water and shaderpack targets.
             client.getFramebuffer().beginWrite(false);
-            RenderSystem.getModelViewStack().identity();
+            // Vanilla entity/debug matrices contain local transforms only: the camera
+            // rotation lives in ModelViewMat. Keep the same contract for queued
+            // hitboxes/ranges AND late helper geometry, without applying VIEW twice.
+            RenderSystem.getModelViewStack().set(VIEW);
+            RenderSystem.setProjectionMatrix(PROJECTION, ProjectionType.PERSPECTIVE);
             RenderSystem.setShaderColor(1, 1, 1, 1);
             RenderSystem.setShaderFog(Fog.DUMMY);
             RenderSystem.disablePolygonOffset();
             RenderSystem.depthFunc(GL11.GL_LEQUAL);
             MatrixStack matrices = new MatrixStack();
-            matrices.multiplyPositionMatrix(VIEW);
             FTHelperRenderer.renderHighlight(matrices, camera, tickCounter);
             FTHelperRenderer.renderSnowballs(matrices, camera, tickCounter);
             HolyWorldHelperRenderer.render(matrices, camera, tickCounter);
             PredictionsRenderer.render(matrices, camera, tickCounter);
             Waypoints.getInstance().renderOverlay(matrices, camera);
             TntCountdown.renderPendingTimers();
-            for (Runnable label : LABELS) label.run();
             flush();
         } finally {
-            recording = drawing = false;
-            LABELS.clear();
+            recording = false;
             for (Batch batch : BATCHES.values()) batch.discard();
             RenderSystem.getModelViewStack().popMatrix();
             RenderSystem.setProjectionMatrix(projection, projectionType);
@@ -157,40 +181,74 @@ public final class WorldOverlayRenderer {
     }
 
     public static void flush() {
-            for (var entry : BATCHES.entrySet()) {
-                Key key = entry.getKey();
-                Batch batch = entry.getValue();
-                if (batch.builder == null) continue;
-                BuiltBuffer built = batch.builder.endNullable();
-                batch.builder = null;
-                if (built == null) continue;
-                try (built) {
-                    RenderSystem.enableBlend();
-                    RenderSystem.defaultBlendFunc();
-                    RenderSystem.disableCull();
-                    if (key.depth) RenderSystem.enableDepthTest(); else RenderSystem.disableDepthTest();
-                    RenderSystem.depthMask(false);
-                    RenderSystem.lineWidth(key.width);
-                    RenderSystem.setShaderColor(1, 1, 1, 1);
-                    RenderSystem.setShaderFog(Fog.DUMMY);
-                    if (key.texture != null) {
-                        RenderSystem.setShaderTexture(0, key.texture);
-                        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-                    } else {
-                        RenderSystem.setShader(key.format == VertexFormats.LINES
-                                ? ShaderProgramKeys.RENDERTYPE_LINES : ShaderProgramKeys.POSITION_COLOR);
-                    }
-                    BufferRenderer.drawWithGlobalProgram(built);
-                }
-            }
+        // Cached insertion order changes when Fill is enabled after the outline.
+        // Always draw translucent surfaces first so they cannot wash out the edges.
+        flush(false);
+        flush(true);
     }
 
-    private record Key(VertexFormat.DrawMode mode, VertexFormat format, Identifier texture, float width, boolean depth) {}
+    private static void flush(boolean lines) {
+        for (var entry : BATCHES.entrySet()) {
+            Key key = entry.getKey();
+            Batch batch = entry.getValue();
+            if (key.isLines() != lines || batch.builder == null) continue;
+            try (BuiltBuffer built = batch.end(key)) {
+                if (built == null) continue;
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+                RenderSystem.disableCull();
+                if (key.depth) RenderSystem.enableDepthTest(); else RenderSystem.disableDepthTest();
+                RenderSystem.depthMask(false);
+                RenderSystem.lineWidth(key.width);
+                RenderSystem.setShaderColor(1, 1, 1, 1);
+                RenderSystem.setShaderFog(Fog.DUMMY);
+                if (key.depth && !lines && key.format == VertexFormats.POSITION_COLOR) {
+                    // Replace the old RenderLayer view bias without executing its
+                    // Iris phases. Ground-aligned fills must not z-fight with terrain.
+                    RenderSystem.polygonOffset(-1, -1);
+                    RenderSystem.enablePolygonOffset();
+                } else {
+                    RenderSystem.disablePolygonOffset();
+                }
+                if (key.texture != null) {
+                    RenderSystem.setShaderTexture(0, key.texture);
+                    RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+                } else {
+                    RenderSystem.setShader(key.format == VertexFormats.LINES
+                            ? ShaderProgramKeys.RENDERTYPE_LINES : ShaderProgramKeys.POSITION_COLOR);
+                }
+                BufferRenderer.drawWithGlobalProgram(built);
+            }
+        }
+    }
+
+    private record Key(VertexFormat.DrawMode mode, VertexFormat format, Identifier texture, float width, boolean depth) {
+        private boolean isLines() {
+            return mode == VertexFormat.DrawMode.LINES || mode == VertexFormat.DrawMode.LINE_STRIP
+                    || mode == VertexFormat.DrawMode.DEBUG_LINES || mode == VertexFormat.DrawMode.DEBUG_LINE_STRIP;
+        }
+    }
 
     private static final class Batch {
         private final BufferAllocator allocator = new BufferAllocator(4096);
         private BufferBuilder builder;
         private long lastUsed;
+
+        private BuiltBuffer end(Key key) {
+            BuiltBuffer built = builder.endNullable();
+            builder = null;
+            try {
+                if (built != null && key.mode == VertexFormat.DrawMode.QUADS && key.format == VertexFormats.POSITION_COLOR) {
+                    // Vertices are camera-relative: sort translucent box faces back
+                    // to front, including boxes belonging to different entities.
+                    built.sortQuads(allocator, VertexSorter.BY_DISTANCE);
+                }
+                return built;
+            } catch (RuntimeException | Error failure) {
+                if (built != null) built.close();
+                throw failure;
+            }
+        }
 
         private void discard() {
             if (builder != null) {

@@ -386,8 +386,8 @@ public class Main implements ModInitializer {
         );
         // Module enable / disable + keybind changes go through a
         // separate state-change channel (Module.notifyStateChange);
-        // wire it to the same dirty flag so toggling a module from the
-        // GUI / a hotkey is persisted by the next flushIfDirty tick.
+        // persist it synchronously so a toggle/key change survives a
+        // crash even before the next tick or the debounce deadline.
         // Without this, the `globalStateChangeListener` is null, so
         // toggling a module never marks the config dirty, and on a
         // crash within ~250ms of the toggle (or before the user makes
@@ -421,7 +421,7 @@ public class Main implements ModInitializer {
         // user-mode code.
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
-                configManager.saveCurrentConfig();
+                configManager.saveOnShutdown();
             } catch (Throwable ignored) {
                 // Shutdown hooks must never throw - the JVM is already
                 // tearing down and any exception here is unobservable.
@@ -429,30 +429,12 @@ public class Main implements ModInitializer {
         }, "phaze-config-shutdown"));
 
         // Final save on game close. The tick-based debounce can miss a
-        // change made within ~250ms of quitting; this catches it. We call
-        // saveCurrentConfig() unconditionally rather than flushIfDirty()
-        // because dirty flag may be cleared by an unrelated flush moments
-        // earlier - re-saving a clean config is cheap.
+        // change made within ~250ms of quitting; this catches it. The
+        // shared final-save barrier makes the JVM hook a no-op after a
+        // successful clean stop (and lets it retry a failed final write).
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(
-                client -> configManager.saveCurrentConfig()
+                client -> configManager.saveOnShutdown()
         );
-
-        // JVM shutdown hook as the final safety net. CLIENT_STOPPING
-        // only fires on a clean Minecraft shutdown path; it gets
-        // skipped entirely when the game crashes with an uncaught
-        // exception (the more common case for users reporting "my
-        // settings reset after a crash"). Shutdown hooks fire on most
-        // JVM exit paths INCLUDING uncaught exception crashes and the
-        // window-close X button, so adding one catches the crash case
-        // the lifecycle event misses. We swallow exceptions because
-        // we're already inside a shutdown sequence and have nothing
-        // useful to do with an error here.
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                configManager.saveCurrentConfig();
-            } catch (Throwable ignored) {
-            }
-        }, "Phaze-ShutdownSave"));
 
         discordManager.init();
 

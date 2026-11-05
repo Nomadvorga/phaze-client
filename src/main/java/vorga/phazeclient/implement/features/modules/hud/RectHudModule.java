@@ -10,6 +10,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.system.hud.HudBuffer;
+import vorga.phazeclient.api.system.hud.HudPositionMath;
 import vorga.phazeclient.implement.menu.MenuPalettes;
 
 public abstract class RectHudModule extends Module {
@@ -122,6 +123,26 @@ public abstract class RectHudModule extends Module {
      */
     private int hudRefWidth = -1;
     private int hudRefHeight = -1;
+    private float hudLayoutWidth;
+    private float hudLayoutHeight;
+
+    protected boolean usesGuiCoordinates() { return false; }
+
+    private int screenWidth(MinecraftClient client) {
+        return usesGuiCoordinates() ? client.getWindow().getScaledWidth() : client.getWindow().getWidth();
+    }
+
+    private int screenHeight(MinecraftClient client) {
+        return usesGuiCoordinates() ? client.getWindow().getScaledHeight() : client.getWindow().getHeight();
+    }
+
+    public void setHudLayoutSize(float width, float height) {
+        hudLayoutWidth = Float.isFinite(width) ? Math.max(0, width) : 0;
+        hudLayoutHeight = Float.isFinite(height) ? Math.max(0, height) : 0;
+    }
+
+    public float getHudLayoutWidth() { return hudLayoutWidth; }
+    public float getHudLayoutHeight() { return hudLayoutHeight; }
 
     protected RectHudModule(String name, String visibleName) {
         this(name, visibleName, DEFAULT_HUD_X, DEFAULT_HUD_Y, DEFAULT_HUD_SCALE);
@@ -206,7 +227,6 @@ public abstract class RectHudModule extends Module {
 
     public void setHudScale(float hudScale) {
         this.hudScale = MathHelper.clamp(hudScale, getMinHudScale(), getMaxHudScale());
-        markResolvedForCurrentScreen();
     }
 
     public float getMinHudScale() {
@@ -239,7 +259,7 @@ public abstract class RectHudModule extends Module {
     }
 
     /**
-     * Animated gradients ask the shared HUD cache for a smooth 60 FPS
+     * Animated gradients ask the shared HUD cache for a smooth 120 FPS
      * refresh. This keeps the effect fluid without forcing an uncapped draw
      * pass or disabling the optimizer for every other HUD.
      */
@@ -248,6 +268,7 @@ public abstract class RectHudModule extends Module {
     }
 
     public void resetHudTransform() {
+        setHudLayoutSize(0, 0);
         this.hudX = defaultHudX;
         this.hudY = defaultHudY;
         this.hudScale = defaultHudScale;
@@ -260,7 +281,7 @@ public abstract class RectHudModule extends Module {
             return 0.0f;
         }
         resolveForCurrentScreen();
-        return MathHelper.clamp(hudX / Math.max(1.0f, client.getWindow().getWidth()), 0.0f, 1.0f);
+        return MathHelper.clamp(hudX / Math.max(1.0f, screenWidth(client)), 0.0f, 1.0f);
     }
 
     public float getHudYRatio() {
@@ -269,7 +290,7 @@ public abstract class RectHudModule extends Module {
             return 0.0f;
         }
         resolveForCurrentScreen();
-        return MathHelper.clamp(hudY / Math.max(1.0f, client.getWindow().getHeight()), 0.0f, 1.0f);
+        return MathHelper.clamp(hudY / Math.max(1.0f, screenHeight(client)), 0.0f, 1.0f);
     }
 
     public void setHudXRatio(float ratio) {
@@ -278,7 +299,7 @@ public abstract class RectHudModule extends Module {
             return;
         }
         this.hudX = MathHelper.clamp(ratio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getWidth());
+                * Math.max(1, screenWidth(client));
         markResolvedForCurrentScreen();
     }
 
@@ -288,7 +309,7 @@ public abstract class RectHudModule extends Module {
             return;
         }
         this.hudY = MathHelper.clamp(ratio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getHeight());
+                * Math.max(1, screenHeight(client));
         markResolvedForCurrentScreen();
     }
 
@@ -299,9 +320,9 @@ public abstract class RectHudModule extends Module {
             return;
         }
         this.hudX = MathHelper.clamp(xRatio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getWidth());
+                * Math.max(1, screenWidth(client));
         this.hudY = MathHelper.clamp(yRatio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getHeight());
+                * Math.max(1, screenHeight(client));
         markResolvedForCurrentScreen();
     }
 
@@ -439,8 +460,8 @@ public abstract class RectHudModule extends Module {
         if (client == null || client.getWindow() == null) {
             return;
         }
-        int screenWidth = client.getWindow().getWidth();
-        int screenHeight = client.getWindow().getHeight();
+        int screenWidth = screenWidth(client);
+        int screenHeight = screenHeight(client);
         if (screenWidth <= 0 || screenHeight <= 0) {
             return;
         }
@@ -454,8 +475,8 @@ public abstract class RectHudModule extends Module {
         if (screenWidth == hudRefWidth && screenHeight == hudRefHeight) {
             return;
         }
-        this.hudX = this.hudX * (screenWidth / (float) hudRefWidth);
-        this.hudY = this.hudY * (screenHeight / (float) hudRefHeight);
+        this.hudX = HudPositionMath.rescale(hudX, hudRefWidth, screenWidth, hudLayoutWidth);
+        this.hudY = HudPositionMath.rescale(hudY, hudRefHeight, screenHeight, hudLayoutHeight);
         this.hudRefWidth = screenWidth;
         this.hudRefHeight = screenHeight;
     }
@@ -488,8 +509,8 @@ public abstract class RectHudModule extends Module {
         if (client == null || client.getWindow() == null) {
             return;
         }
-        this.hudRefWidth = client.getWindow().getWidth();
-        this.hudRefHeight = client.getWindow().getHeight();
+        this.hudRefWidth = screenWidth(client);
+        this.hudRefHeight = screenHeight(client);
     }
 
     /** Screen size these coordinates were measured on; -1 = unknown. */

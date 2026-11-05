@@ -81,6 +81,7 @@ public final class ExordiumAnimationBridge {
     private static boolean lastTabEnabled;
     private static boolean lastChatAnimationEnabled;
     private static boolean hotbarPrepared;
+    private static boolean hotbarSubmitted;
     private static boolean tabPrepared;
     private static boolean chatPrepared;
 
@@ -109,6 +110,7 @@ public final class ExordiumAnimationBridge {
     public static void beginHudFrame(DrawContext context) {
         frameContext = context;
         DEFERRED.clear();
+        hotbarSubmitted = false;
 
         Animations animations = Animations.getInstance();
         boolean hotbarEnabled = animations != null && animations.isHotbarSlideEnabled();
@@ -116,7 +118,7 @@ public final class ExordiumAnimationBridge {
         boolean chatEnabled = animations != null
                 && (animations.isChatSmoothScrollEnabled() || animations.isChatFadeEnabled());
 
-        if (hotbarEnabled && !lastHotbarEnabled) {
+        if (hotbarEnabled != lastHotbarEnabled) {
             hotbarPrepared = false;
             hotbarSelector = null;
             requestImmediateCapture(HOTBAR);
@@ -305,7 +307,10 @@ public final class ExordiumAnimationBridge {
 
         boolean defer;
         if (HOTBAR.equals(id)) {
-            defer = lastHotbarEnabled && hotbarSelector != null;
+            // The cache has no selector, but its background/items need no live transform.
+            // Keep it in Exordium's combined draw rather than replaying a full-screen texture.
+            hotbarSubmitted = lastHotbarEnabled && hotbarSelector != null;
+            return false;
         } else if (PLAYER_LIST.equals(id)) {
             defer = lastTabEnabled && tabPrepared && isTabVisuallyAnimated();
         } else if (CHAT.equals(id)) {
@@ -324,13 +329,14 @@ public final class ExordiumAnimationBridge {
     }
 
     /**
-     * Called after Exordium has drawn its normal batch. Only cached textures
-     * collected by {@link #deferBufferedComponent(Object)} are submitted.
+     * Called after Exordium's normal batch. Submit the live hotbar selector
+     * and only the other cached textures that require a live transform.
      */
     public static void renderDeferredComponents() {
         DrawContext context = frameContext;
-        if (context == null || DEFERRED.isEmpty() || reflectionFailed) {
+        if (context == null || (!hotbarSubmitted && DEFERRED.isEmpty()) || reflectionFailed) {
             DEFERRED.clear();
+            hotbarSubmitted = false;
             return;
         }
 
@@ -345,6 +351,11 @@ public final class ExordiumAnimationBridge {
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
         try {
+            if (hotbarSubmitted) {
+                renderHotbarSelection(context);
+                // Only the small live selector; the cache was drawn by the normal batch.
+                context.draw();
+            }
             for (Map.Entry<Object, String> entry : DEFERRED.entrySet()) {
                 int texture;
                 try {
@@ -356,7 +367,6 @@ public final class ExordiumAnimationBridge {
                     continue;
                 }
                 switch (entry.getValue()) {
-                    case HOTBAR -> renderHotbar(context, texture);
                     case PLAYER_LIST -> renderPlayerList(context, texture);
                     case CHAT -> renderChat(context, texture);
                     default -> {
@@ -366,6 +376,7 @@ public final class ExordiumAnimationBridge {
             context.draw();
         } finally {
             DEFERRED.clear();
+            hotbarSubmitted = false;
             RenderSystem.setShaderTexture(0, 0);
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
             // This hook runs immediately before Exordium's own
@@ -395,12 +406,6 @@ public final class ExordiumAnimationBridge {
         float screenWidth = client.getWindow().getScaledWidth();
         float screenHeight = client.getWindow().getScaledHeight();
         float hotbarLeft = screenWidth * 0.5F - 91.0F;
-        Rect component = new Rect(
-                Math.max(0.0F, hotbarLeft - 36.0F),
-                Math.max(0.0F, screenHeight - 42.0F),
-                Math.min(screenWidth, hotbarLeft + 182.0F + 36.0F),
-                screenHeight
-        );
         Rect clip = new Rect(hotbarLeft, screenHeight - 22.0F, hotbarLeft + 182.0F, screenHeight);
         // Keep an absolute slot-zero origin. The cached selector may have
         // been captured for the previous selected slot because Exordium
@@ -409,7 +414,7 @@ public final class ExordiumAnimationBridge {
         // wrong direction. The slot-zero origin stays valid across selection
         // changes, so only Phaze's display-FPS animation position is added.
         int baseX = x - Math.round(hotbarTargetSlotX);
-        hotbarSelector = new HotbarSelector(layerFactory, texture, baseX, y, width, height, component, clip);
+        hotbarSelector = new HotbarSelector(layerFactory, texture, baseX, y, width, height, clip);
     }
 
     public static void recordTabGeometry(float pivotX, float pivotY) {
@@ -452,41 +457,22 @@ public final class ExordiumAnimationBridge {
         }
     }
 
-    private static void renderHotbar(DrawContext context, int texture) {
+    private static void renderHotbarSelection(DrawContext context) {
         HotbarSelector selector = hotbarSelector;
         if (selector == null) {
             return;
         }
-        Matrix4f matrix = baseModelViewMatrix(context);
-        drawExordiumTexture(texture, matrix, 1.0F);
-
         int drawX = selector.baseX + Math.round(hotbarCurrentSlotX);
-        context.enableScissor(
-                Math.round(selector.clipBounds.left),
-                Math.round(selector.clipBounds.top),
-                Math.round(selector.clipBounds.right),
-                Math.round(selector.clipBounds.bottom)
-        );
-        context.drawGuiTexture(
-                selector.layerFactory,
-                selector.texture,
-                drawX,
-                selector.y,
-                selector.width,
-                selector.height
-        );
+        HotbarSelectionRenderer.drawClipped(context, selector.layerFactory, selector.texture,
+                drawX, selector.y, selector.width, selector.height,
+                Math.round(selector.clipBounds.left), Math.round(selector.clipBounds.top),
+                Math.round(selector.clipBounds.right), Math.round(selector.clipBounds.bottom));
         if (hotbarMirror) {
-            context.drawGuiTexture(
-                    selector.layerFactory,
-                    selector.texture,
-                    drawX + hotbarMirrorOffset,
-                    selector.y,
-                    selector.width,
-                    selector.height
-            );
+            HotbarSelectionRenderer.drawClipped(context, selector.layerFactory, selector.texture,
+                    drawX + hotbarMirrorOffset, selector.y, selector.width, selector.height,
+                    Math.round(selector.clipBounds.left), Math.round(selector.clipBounds.top),
+                    Math.round(selector.clipBounds.right), Math.round(selector.clipBounds.bottom));
         }
-        context.draw();
-        context.disableScissor();
     }
 
     private static void renderPlayerList(DrawContext context, int texture) {
@@ -829,7 +815,6 @@ public final class ExordiumAnimationBridge {
             int y,
             int width,
             int height,
-            Rect componentBounds,
             Rect clipBounds
     ) {
     }

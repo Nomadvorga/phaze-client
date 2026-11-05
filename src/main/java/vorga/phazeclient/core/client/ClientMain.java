@@ -31,10 +31,8 @@ public class ClientMain implements ClientModInitializer {
             )
     );
 
-    private int saveTimer = 0;
     private int preloadTimer = 0;
     private boolean guiPreloaded = false;
-    private static final int SAVE_INTERVAL_TICKS = 100;
     private static final int PRELOAD_DELAY_TICKS = 40;
 
     @Override
@@ -52,9 +50,9 @@ public class ClientMain implements ClientModInitializer {
                 UiMsdfIconAtlas.onResourcesReloaded();
                 MenuPanoramaRenderer.onResourcesReloaded();
                 MenuPanoramaRegistry.onResourcesReloaded();
-                vorga.phazeclient.implement.features.modules.other.PackPreviewRenderer.clear(MinecraftClient.getInstance());
                 vorga.phazeclient.implement.features.modules.hud.PackDisplayHud.getInstance().onResourcesReloaded(MinecraftClient.getInstance());
                 vorga.phazeclient.implement.features.modules.hud.BossBarHud.getInstance().invalidateNameWidths();
+                ClientRenderResources.clear(MinecraftClient.getInstance());
             }
 
             @Override
@@ -82,15 +80,13 @@ public class ClientMain implements ClientModInitializer {
             }
         }
 
-        saveTimer++;
-        if (saveTimer >= SAVE_INTERVAL_TICKS) {
-            saveTimer = 0;
-        }
     }
 
     private void onClientStopping(MinecraftClient client) {
+        ClientRenderResources.close(client);
+        vorga.phazeclient.base.util.MessengerService.getInstance().stop();
+        vorga.phazeclient.base.util.RemoteRulesService.getInstance().stop();
+        vorga.phazeclient.core.Main.getInstance().getDiscordManager().stopRPC();
         vorga.phazeclient.implement.menu.loading.BootstrapLoadingRenderer.close();
-        vorga.phazeclient.core.Main.getInstance().getConfigManager().saveCurrentConfig();
-        System.out.println("[Phaze Client] Client stopping, config saved!");
     }
 }

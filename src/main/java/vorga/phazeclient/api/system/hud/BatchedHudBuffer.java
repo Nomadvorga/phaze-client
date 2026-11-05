@@ -4,15 +4,9 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gl.SimpleFramebuffer;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
 import org.lwjgl.opengl.GL11C;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 
 /**
  * Single global FBO that captures all of our 2D HUD rendering and blits the
@@ -28,7 +22,7 @@ public final class BatchedHudBuffer {
     private SimpleFramebuffer fbo;
     private int lastWidth = -1;
     private int lastHeight = -1;
-    private long lastRefreshMs = 0L;
+    private final HudAnimationRefreshClock refreshClock = new HudAnimationRefreshClock(30);
     private boolean dirty = true;
     private boolean hasContent = false;
     private int targetFps = 30;
@@ -39,12 +33,14 @@ public final class BatchedHudBuffer {
      * world framebuffer rather than our HUD capture FBO.
      */
     private Framebuffer realMainFramebuffer;
+    private HudCapture capture;
 
     private BatchedHudBuffer() {
     }
 
     public void setTargetFps(int fps) {
-        this.targetFps = Math.max(1, Math.min(240, fps));
+        this.targetFps = Math.max(1, Math.min(360, fps));
+        refreshClock.setFps(this.targetFps);
     }
 
     public int getTargetFps() {
@@ -66,7 +62,7 @@ public final class BatchedHudBuffer {
      * HUD capture (Exordium-style {@code Minecraft#getMainRenderTarget} redirect).
      */
     public SimpleFramebuffer getActiveCaptureFramebuffer() {
-        return (HudBuffer.activeCaptureTarget >= 0) ? fbo : null;
+        return fbo != null && HudBuffer.activeCaptureTarget == fbo.fbo ? fbo : null;
     }
 
     /**
@@ -84,8 +80,7 @@ public final class BatchedHudBuffer {
         if (force || dirty || !hasContent) {
             return true;
         }
-        long elapsed = System.currentTimeMillis() - lastRefreshMs;
-        return elapsed >= (1000L / targetFps);
+        return refreshClock.due(System.nanoTime());
     }
 
     /**
@@ -94,6 +89,12 @@ public final class BatchedHudBuffer {
      * window state.
      */
     public boolean ensureFramebuffer() {
+        try (Render2DState state = Render2DState.capture()) {
+            return ensureFramebufferInternal();
+        }
+    }
+
+    private boolean ensureFramebufferInternal() {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.getWindow() == null) {
             return false;
@@ -106,8 +107,9 @@ public final class BatchedHudBuffer {
 
         if (fbo == null || w != lastWidth || h != lastHeight) {
             if (fbo != null) {
-                fbo.delete();
+                SimpleFramebuffer old = fbo;
                 fbo = null;
+                old.delete();
             }
             fbo = new SimpleFramebuffer(w, h, true);
             // This is a full-resolution HUD cache, not a blur surface. Keep
@@ -123,16 +125,43 @@ public final class BatchedHudBuffer {
     }
 
     public void beginCapture() {
-        if (!ensureFramebuffer()) {
-            return;
-        }
-        // Snapshot REAL main framebuffer BEFORE enabling redirect flag.
-        // Once activeCaptureTarget >= 0, MinecraftClientFramebufferMixin
-        // returns our FBO from mc.getFramebuffer(), which would break any
-        // code that needs to read the actual world (e.g. Blur world capture).
-        MinecraftClient mc = MinecraftClient.getInstance();
-        realMainFramebuffer = mc != null ? mc.getFramebuffer() : null;
+        openCapture();
+    }
 
+    /** Null on an invalid/minimized window. The scope restores state even if allocation/clear fails. */
+    public HudCapture openCapture() {
+        if (capture != null) throw new IllegalStateException("HUD capture already open");
+        BatchedRectangle.flushIfBatching();
+        Render2DState state = Render2DState.capture();
+        long refreshStarted = System.nanoTime();
+        HudCapture next = new HudCapture(state, () -> {
+            capture = null;
+            hasContent = true;
+            dirty = false;
+            refreshClock.captured(refreshStarted);
+        }, () -> {
+            capture = null;
+            hasContent = false;
+            dirty = true;
+        });
+        try {
+            if (!ensureFramebufferInternal()) {
+                next.close();
+                return null;
+            }
+            // Snapshot REAL main framebuffer BEFORE enabling the redirect flag.
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (HudBuffer.activeCaptureTarget < 0) realMainFramebuffer = mc != null ? mc.getFramebuffer() : null;
+            clearCaptureTarget();
+            capture = next;
+            return next;
+        } catch (RuntimeException | Error failure) {
+            try { next.close(); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
+        }
+    }
+
+    private void clearCaptureTarget() {
         // Defensive GL-state reset before clearing the cached FBO.
         // glClear is gated by THREE pieces of state that vanilla MC and
         // Phaze freely toggle during world / vanilla-HUD rendering:
@@ -181,20 +210,19 @@ public final class BatchedHudBuffer {
         fbo.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         fbo.clear();
         fbo.beginWrite(false);
+        RenderSystem.viewport(0, 0, fbo.textureWidth, fbo.textureHeight);
+        BatchedRectangle.setRenderTargetFbHeight(fbo.textureHeight);
         HudBuffer.activeCaptureTarget = fbo.fbo;
     }
 
     public void endCapture() {
-        if (fbo == null) {
-            HudBuffer.activeCaptureTarget = -1;
-            return;
-        }
-        HudBuffer.activeCaptureTarget = -1;
-        fbo.endWrite();
-        MinecraftClient.getInstance().getFramebuffer().beginWrite(false);
-        hasContent = true;
-        dirty = false;
-        lastRefreshMs = System.currentTimeMillis();
+        if (capture == null) return;
+        capture.commit();
+        capture.close();
+    }
+
+    public void abortCapture() {
+        if (capture != null) capture.close();
     }
 
     /**
@@ -202,62 +230,21 @@ public final class BatchedHudBuffer {
      * premultiplied alpha. Safe to call every frame.
      */
     public void blit() {
-        if (fbo == null || !hasContent) {
-            return;
-        }
-
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.getFramebuffer() == null) {
-            return;
-        }
-
-        int width = mc.getWindow().getFramebufferWidth();
-        int height = mc.getWindow().getFramebufferHeight();
-
-        mc.getFramebuffer().beginWrite(false);
-
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(
-                GlStateManager.SrcFactor.ONE,
-                GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
-        );
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.disableCull();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        GlStateManager._viewport(0, 0, width, height);
-
-        ShaderProgram shader = RenderSystem.setShader(ShaderProgramKeys.BLIT_SCREEN);
-        shader.addSamplerTexture("InSampler", fbo.getColorAttachment());
-
-        BufferBuilder bb = Tessellator.getInstance().begin(
-                VertexFormat.DrawMode.QUADS,
-                VertexFormats.BLIT_SCREEN
-        );
-        bb.vertex(0.0F, 0.0F, 0.0F);
-        bb.vertex(1.0F, 0.0F, 0.0F);
-        bb.vertex(1.0F, 1.0F, 0.0F);
-        bb.vertex(0.0F, 1.0F, 0.0F);
-        BufferRenderer.drawWithGlobalProgram(bb.end());
-
-        RenderSystem.setShaderTexture(0, 0);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.defaultBlendFunc();
-
-        mc.getFramebuffer().beginWrite(true);
+        if (fbo != null && hasContent) HudBlit.draw(fbo);
     }
 
     public void cleanup() {
-        if (fbo != null) {
-            fbo.delete();
-            fbo = null;
-        }
+        abortCapture();
+        realMainFramebuffer = null;
+        refreshClock.reset();
         hasContent = false;
         dirty = true;
         lastWidth = -1;
         lastHeight = -1;
+        if (fbo != null) {
+            SimpleFramebuffer target = fbo;
+            fbo = null;
+            target.delete();
+        }
     }
 }

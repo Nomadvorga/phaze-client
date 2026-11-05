@@ -8,6 +8,7 @@ in vec4 FragColor;
 uniform sampler2D Sampler0;
 uniform sampler2D Sampler1;
 uniform vec2 Size;
+uniform vec2 BlurScreenSize;
 uniform vec4 Radius;
 uniform int RectMask;
 uniform float Smoothness;
@@ -18,9 +19,25 @@ uniform float FrameMix;
 
 out vec4 fragColor;
 
+vec2 screenUV() {
+    vec2 screen = BlurScreenSize.x > 0.0 ? BlurScreenSize : vec2(textureSize(Sampler0, 0));
+    return gl_FragCoord.xy / screen;
+}
+
+vec3 sampleBlurFine() {
+    vec2 uv = screenUV();
+    vec2 o = vec2(BlurRadius) / vec2(textureSize(Sampler0, 0));
+    vec3 c = texture(Sampler0, uv).rgb * 4.0;
+    c += texture(Sampler0, uv + vec2( o.x,  o.y)).rgb;
+    c += texture(Sampler0, uv + vec2(-o.x,  o.y)).rgb;
+    c += texture(Sampler0, uv + vec2( o.x, -o.y)).rgb;
+    c += texture(Sampler0, uv + vec2(-o.x, -o.y)).rgb;
+    return c / 8.0;
+}
+
 vec3 sampleBlurCurrent() {
     vec2 texSize = vec2(textureSize(Sampler0, 0));
-    vec2 texCoord = gl_FragCoord.xy / texSize;
+    vec2 texCoord = screenUV();
     vec2 texel = 1.0 / texSize;
 
     if (BlurRadius <= 0.001) {
@@ -68,7 +85,7 @@ vec3 sampleBlurCurrent() {
 
 vec3 sampleBlurSoup() {
     vec2 texSize = vec2(textureSize(Sampler0, 0));
-    vec2 texCoord = gl_FragCoord.xy / texSize;
+    vec2 texCoord = screenUV();
     vec2 texel = 1.0 / texSize;
     vec2 directionScale = vec2(BlurRadius) * texel;
 
@@ -121,7 +138,7 @@ vec3 sampleBlurSoup() {
 
 vec3 sampleBlurKawase() {
     vec2 texSize = vec2(textureSize(Sampler0, 0));
-    vec2 texCoord = gl_FragCoord.xy / texSize;
+    vec2 texCoord = screenUV();
     vec2 texel = 1.0 / texSize;
 
     if (BlurRadius <= 0.10) {
@@ -187,7 +204,7 @@ vec3 sampleBlurKawase() {
 
 vec3 sampleBlurBox() {
     vec2 texSize = vec2(textureSize(Sampler0, 0));
-    vec2 texCoord = gl_FragCoord.xy / texSize;
+    vec2 texCoord = screenUV();
     vec2 texel = 1.0 / texSize;
 
     if (BlurRadius <= 0.10) {
@@ -212,6 +229,20 @@ vec3 sampleBlurBox() {
 }
 
 vec3 sampleBlur() {
+    if (BlurMode == 5) {
+        // Only the narrow transition band needs both sources. No extra FBO pass.
+        vec2 uv = screenUV();
+        vec2 o = 1.0 / vec2(textureSize(Sampler1, 0));
+        vec3 fine = texture(Sampler1, uv).rgb * 4.0;
+        fine += texture(Sampler1, uv + vec2( o.x,  o.y)).rgb;
+        fine += texture(Sampler1, uv + vec2(-o.x,  o.y)).rgb;
+        fine += texture(Sampler1, uv + vec2( o.x, -o.y)).rgb;
+        fine += texture(Sampler1, uv + vec2(-o.x, -o.y)).rgb;
+        return mix(fine / 8.0, texture(Sampler0, uv).rgb, smoothstep(8.0, 12.0, BlurRadius));
+    }
+    if (BlurMode == 4) {
+        return sampleBlurFine();
+    }
     if (BlurMode == 3) {
         return sampleBlurBox();
     }
@@ -227,7 +258,7 @@ vec3 sampleBlur() {
 void main() {
     vec3 blurred = sampleBlur();
     if (FrameMix < 0.999) {
-        vec2 texCoord = gl_FragCoord.xy / vec2(textureSize(Sampler0, 0));
+        vec2 texCoord = screenUV();
         blurred = mix(texture(Sampler1, texCoord).rgb, blurred, clamp(FrameMix, 0.0, 1.0));
     }
     vec3 tinted = mix(blurred, TintColor.rgb, clamp(TintColor.a, 0.0, 1.0));

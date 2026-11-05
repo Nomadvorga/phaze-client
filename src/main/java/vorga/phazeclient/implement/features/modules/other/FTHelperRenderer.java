@@ -95,9 +95,9 @@ public final class FTHelperRenderer {
         ClientPlayerEntity player = mc.player;
         float td = tickCounter.getTickDelta(false);
         return new Vec3d(
-                MathHelper.lerp(td, player.prevX, player.getX()),
-                MathHelper.lerp(td, player.prevY, player.getY()),
-                MathHelper.lerp(td, player.prevZ, player.getZ())
+                MathHelper.lerp(td, player.lastRenderX, player.getX()),
+                MathHelper.lerp(td, player.lastRenderY, player.getY()),
+                MathHelper.lerp(td, player.lastRenderZ, player.getZ())
         );
     }
 
@@ -149,9 +149,11 @@ public final class FTHelperRenderer {
         // chonky as a 10-block dezo ring at the same slider value -
         // visually balanced across all FT helper circles.
         float thickness = scaledThickness(module, radius);
-        float ringY = (float) (p.y + 0.05);
-        matrices.push();
-        matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
+        // Subtract in double precision before emitting floats, just like the
+        // snowball impact rings. Matrix translation cannot recover lost bits.
+        float ringX = (float) (p.x - cameraPos.x);
+        float ringY = (float) (p.y - cameraPos.y + 0.05);
+        float ringZ = (float) (p.z - cameraPos.z);
 
         // Optional flat glow disc UNDER the ring. Drawn first so
         // the ring paints on top of the halo. The disc fades from
@@ -165,7 +167,7 @@ public final class FTHelperRenderer {
             // Glow disc extends 1.4x the ring radius - large enough
             // to read as a halo, small enough not to overlap
             // adjacent abilities.
-            Render3DUtil.drawFlatGlowDisc(matrices, (float) p.x, ringY, (float) p.z,
+            Render3DUtil.drawFlatGlowDisc(matrices, ringX, ringY, ringZ,
                     radius * (1.0F + 0.2F * Math.min(2.0F, strength)),
                     centerColor, rimColor, 96, true);
         }
@@ -175,9 +177,8 @@ public final class FTHelperRenderer {
         // OpenGL line width clamps to 1px on most drivers, so we
         // emit real geometry instead of relying on RenderSystem
         // .lineWidth which would silently fail.
-        Render3DUtil.drawThickFlatRing(matrices, (float) p.x, ringY, (float) p.z,
+        Render3DUtil.drawThickFlatRing(matrices, ringX, ringY, ringZ,
                 radius, thickness, color, 96, true);
-        matrices.pop();
     }
 
     /**

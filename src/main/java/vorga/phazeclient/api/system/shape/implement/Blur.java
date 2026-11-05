@@ -11,6 +11,7 @@ import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
@@ -28,9 +29,13 @@ import vorga.phazeclient.base.util.render.shader.ShaderHelper;
 import vorga.phazeclient.base.util.color.ColorUtil;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 import vorga.phazeclient.api.system.hud.HudBuffer;
+import vorga.phazeclient.api.system.hud.HudBlurPlanner;
+import vorga.phazeclient.api.system.hud.Render2DState;
+import vorga.phazeclient.api.system.hud.Render2DBuffers;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 
 import java.util.List;
+import java.util.ArrayList;
 
 public class Blur implements Shape {
     public static final Blur INSTANCE = new Blur();
@@ -60,6 +65,7 @@ public class Blur implements Shape {
 
     private final DrawEngineImpl drawEngine = new DrawEngineImpl();
     private Framebuffer input;
+    private Framebuffer immediateInput;
     private Framebuffer menuInput;
     private Framebuffer hudHalfInput;
     private Framebuffer nametagInput;
@@ -71,6 +77,11 @@ public class Blur implements Shape {
     private Framebuffer quarterB;
     private final MenuBlurSlot[] menuBlurSlots = new MenuBlurSlot[MENU_BLUR_CACHE_SLOTS];
     private final MenuBlurSlot[] hudBlurSlots = new MenuBlurSlot[MENU_BLUR_CACHE_SLOTS];
+    private final HudBlurCache hudBlurCache = new HudBlurCache();
+    private final HudBlurPlanner hudBlurPlanner = new HudBlurPlanner();
+    private boolean hudGroupsPrepared;
+    private long hudHalfInputRevision = -1L;
+    private final HudRefreshClock hudRefreshClock = new HudRefreshClock(120);
     private boolean cachedFramePrepared = false;
     private boolean hudBatchMode = false;
     private boolean hudBatchStateApplied = false;
@@ -121,9 +132,7 @@ public class Blur implements Shape {
     private boolean menuOverlayValid = false;
     private boolean hudInputValid = false;
     private long hudInputRevision = 0L;
-    private long lastHudInputRefreshNs = 0L;
     private int hudBackgroundFps = 120;
-    private long lastHudBackgroundStateKey = Long.MIN_VALUE;
     private boolean stableHudCapturePoint = false;
     private Object lastObservedScreen = null;
     private final long[] preparedHudGaussianRegionKeys = new long[MAX_PREPARED_HUD_GAUSSIAN_REGIONS];
@@ -139,12 +148,62 @@ public class Blur implements Shape {
             return;
         }
         hudBackgroundFps = clamped;
-        lastHudInputRefreshNs = 0L;
+        hudRefreshClock.setFps(clamped);
         forceHudRefresh = true;
     }
 
     public int getHudBackgroundFps() {
         return hudBackgroundFps;
+    }
+
+    /** Render-thread lifecycle hook. Resets every cache revision and releases lazily allocated targets. */
+    public void cleanup() {
+        Framebuffer[] targets = {input, immediateInput, menuInput, hudHalfInput, nametagInput, ping, pong,
+                halfA, halfB, quarterA, quarterB, menuOverlayInput};
+        input = immediateInput = menuInput = hudHalfInput = nametagInput = ping = pong = null;
+        halfA = halfB = quarterA = quarterB = menuOverlayInput = null;
+        cachedFramePrepared = hudBatchMode = hudBatchStateApplied = false;
+        hudBatchMaskShader = null;
+        forceHudRefresh = true;
+        hudInputValid = menuOverlayValid = menuBlurCurrentValid = menuBlurPreviousValid = false;
+        dualKawasePrepared = worldSpaceFramePrepared = worldSpaceSpeedPrepared = nametagBlurWasActive = false;
+        stableHudCapturePoint = false;
+        lastObservedScreen = null;
+        hudInputRevision = menuInputRevision = menuOverlayRevision = 0L;
+        hudRefreshClock.reset();
+        hudBlurCache.invalidate();
+        hudBlurPlanner.reset();
+        hudHalfInputRevision = -1L;
+        hudGroupsPrepared = false;
+        menuInputLastCaptureNs = menuBlurLastRefreshNs = menuBlurTransitionStartNs = 0L;
+        lastNametagBlurRefreshNs = lastSpeedCheckTime = 0L;
+        menuBlurRegionKey = Long.MIN_VALUE;
+        menuBlurRegion = null;
+        menuBlurRadius = lastDualKawaseRadius = -1.0F;
+        lastWorldCaptureWidth = lastWorldCaptureHeight = lastDualKawaseWidth = lastDualKawaseHeight = -1;
+        lastPlayerX = lastPlayerY = lastPlayerZ = Double.NaN;
+        cachedPlayerSpeed = 0;
+        preparedHudGaussianRegionCount = 0;
+        java.util.Arrays.fill(hudStateInitialized, false);
+        java.util.Arrays.fill(hudStateKeys, 0L);
+        RuntimeException failure = null;
+        for (Framebuffer target : targets) {
+            if (target == null) continue;
+            try { target.delete(); } catch (RuntimeException e) {
+                if (failure == null) failure = e; else failure.addSuppressed(e);
+            }
+        }
+        for (MenuBlurSlot[] slots : new MenuBlurSlot[][]{menuBlurSlots, hudBlurSlots}) {
+            for (int i = 0; i < slots.length; i++) {
+                MenuBlurSlot slot = slots[i];
+                slots[i] = null;
+                if (slot == null) continue;
+                try { slot.framebuffer.delete(); } catch (RuntimeException e) {
+                    if (failure == null) failure = e; else failure.addSuppressed(e);
+                }
+            }
+        }
+        if (failure != null) throw failure;
     }
 
     public void beginCachedFrame() {
@@ -153,12 +212,12 @@ public class Blur implements Shape {
         if (currentScreen != lastObservedScreen) {
             lastObservedScreen = currentScreen;
             hudInputValid = false;
-            lastHudBackgroundStateKey = Long.MIN_VALUE;
             forceHudRefresh = true;
             menuInputLastCaptureNs = 0L;
             menuOverlayValid = false;
             BatchedHudBuffer.INSTANCE.invalidate();
             invalidateHudKawaseCache();
+            hudBlurPlanner.reset();
             invalidateMenuBlurCache();
         }
         cachedFramePrepared = false;
@@ -166,6 +225,8 @@ public class Blur implements Shape {
         hudBatchStateApplied = false;
         hudBatchMaskShader = null;
         preparedHudGaussianRegionCount = 0;
+        hudGroupsPrepared = false;
+        hudBlurPlanner.beginFrame();
     }
 
     /**
@@ -203,19 +264,21 @@ public class Blur implements Shape {
         // blur widget lazily capture an intermediate/cleared framebuffer.
         stableHudCapturePoint = true;
         try {
-            prepareFramebuffers(client, true, false);
+            prepare2DFramebuffers(client, true, false);
         } finally {
             stableHudCapturePoint = false;
         }
     }
 
     public void endCachedFrame() {
-        if (hudBatchStateApplied) {
-            restoreRenderState(true);
+        try {
+            if (hudBatchStateApplied) restoreRenderState(true);
+        } finally {
+            hudBlurPlanner.endFrame();
+            hudBatchMode = false;
+            hudBatchStateApplied = false;
+            hudBatchMaskShader = null;
         }
-        hudBatchMode = false;
-        hudBatchStateApplied = false;
-        hudBatchMaskShader = null;
     }
 
     public void registerHudBlurState(int slot, long stateKey) {
@@ -226,7 +289,8 @@ public class Blur implements Shape {
         if (!hudStateInitialized[slot] || hudStateKeys[slot] != stateKey) {
             hudStateInitialized[slot] = true;
             hudStateKeys[slot] = stateKey;
-            forceHudRefresh = true;
+            // Prepared results validate the live radius and full sampling region themselves.
+            // A resized widget must not invalidate already prepared neighbours from the same source.
         }
     }
 
@@ -254,11 +318,23 @@ public class Blur implements Shape {
 
     private void renderGaussian(ShapeProperties shape, boolean overlaySource) {
         MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getFramebuffer() == null) return;
+        try (Render2DState state = Render2DState.join()) {
+            try {
+                renderGaussianInternal(shape, overlaySource);
+            } finally {
+                restoreRenderState(true);
+            }
+        }
+    }
+
+    private void renderGaussianInternal(ShapeProperties shape, boolean overlaySource) {
+        MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
             return;
         }
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
-        if (!prepareFramebuffers(client, false, false)) {
+        if (!prepare2DFramebuffers(client, false, false)) {
             return;
         }
         Theme theme = Theme.getInstance();
@@ -335,16 +411,6 @@ public class Blur implements Shape {
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableCull();
         RenderSystem.disableDepthTest();
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        drawEngine.quad(
-                matrix4f,
-                buffer,
-                shape.getX() - softness / 2.0F,
-                shape.getY() - softness / 2.0F,
-                shape.getWidth() + softness,
-                shape.getHeight() + softness,
-                color
-        );
         RenderSystem.setShaderTexture(0, slot.framebuffer.getColorAttachment());
         RenderSystem.setShaderTexture(1, slot.framebuffer.getColorAttachment());
         ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
@@ -357,9 +423,8 @@ public class Blur implements Shape {
             shader.getUniformOrDefault("BlurMode").set(0);
             shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
             shader.getUniformOrDefault("FrameMix").set(1.0F);
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
-        } else {
-            buffer.end();
+            shader.getUniformOrDefault("BlurScreenSize").set((float) input.textureWidth, (float) input.textureHeight);
+            drawShape(shape, matrix4f, softness, color);
         }
         RenderSystem.enableDepthTest();
         restoreRenderState(true);
@@ -453,6 +518,7 @@ public class Blur implements Shape {
             shader.getUniformOrDefault("BlurRadius").set(Math.max(0.0f, quality) * theme.getHudBlurRadiusMultiplier());
             shader.getUniformOrDefault("BlurMode").set(blurMode);
             shader.getUniformOrDefault("FrameMix").set(1.0F);
+            shader.getUniformOrDefault("BlurScreenSize").set((float) nametagInput.textureWidth, (float) nametagInput.textureHeight);
             setTintUniform(shader, tintColor);
             BufferRenderer.drawWithGlobalProgram(buffer.end());
         } else {
@@ -521,6 +587,25 @@ public class Blur implements Shape {
     }
 
     public void renderCachedBatch(List<ShapeProperties> shapes) {
+        if (shapes == null || shapes.isEmpty()) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getFramebuffer() == null) return;
+        try (Render2DState state = Render2DState.join()) {
+            boolean complete = false;
+            try {
+                renderCachedBatchInternal(shapes);
+                complete = true;
+            } finally {
+                if (!complete || !hudBatchMode) {
+                    restoreRenderState(true);
+                    hudBatchStateApplied = false;
+                    hudBatchMaskShader = null;
+                }
+            }
+        }
+    }
+
+    private void renderCachedBatchInternal(List<ShapeProperties> shapes) {
         if (shapes == null || shapes.isEmpty()) {
             return;
         }
@@ -529,7 +614,7 @@ public class Blur implements Shape {
             return;
         }
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
-        if (!prepareFramebuffers(client, true, true)) {
+        if (!prepare2DFramebuffers(client, true, true)) {
             return;
         }
 
@@ -556,7 +641,7 @@ public class Blur implements Shape {
             if (shape == null) {
                 continue;
             }
-            if (computeHudGaussianRegion(client, shape, 0.0f) == null) {
+            if (batchState != null && computeHudGaussianRegion(client, shape, 0.0f) == null) {
                 continue;
             }
             PreparedBlurState preparedState = batchState != null
@@ -567,7 +652,7 @@ public class Blur implements Shape {
             }
             if (!preparedState.matches(activeState)) {
                 RenderSystem.setShaderTexture(0, preparedState.sourceTexture());
-                RenderSystem.setShaderTexture(1, preparedState.sourceTexture());
+                RenderSystem.setShaderTexture(1, preparedState.blurMode() == 5 ? input.getColorAttachment() : preparedState.sourceTexture());
                 shader = RenderSystem.setShader(MASK_SHADER_KEY);
                 hudBatchMaskShader = shader;
                 if (shader == null) {
@@ -577,6 +662,7 @@ public class Blur implements Shape {
                     return;
                 }
                 activeState = preparedState;
+                setPreparedMaskUniforms(shader, preparedState);
             }
             renderPreparedShapeWithBoundShader(shape, shader, preparedState);
         }
@@ -605,29 +691,32 @@ public class Blur implements Shape {
         float height = shape.getHeight() * size.y;
         int color = ColorUtil.multAlpha(shape.getColor().x, alpha);
 
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        drawEngine.quad(
-                matrix4f,
-                buffer,
-                shape.getX() - softness / 2.0F,
-                shape.getY() - softness / 2.0F,
-                shape.getWidth() + softness,
-                shape.getHeight() + softness,
-                color
-        );
-
         shader.getUniformOrDefault("Size").set(width, height);
         shader.getUniformOrDefault("Radius").set(round);
         shader.getUniformOrDefault("RectMask").set(maxCornerRadius(round) <= 0.001F ? 1 : 0);
         shader.getUniformOrDefault("Smoothness").set(softness);
-        shader.getUniformOrDefault("BlurRadius").set(preparedState.blurRadius());
-        shader.getUniformOrDefault("BlurMode").set(preparedState.blurMode());
-        shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
-        shader.getUniformOrDefault("FrameMix").set(1.0F);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        drawShape(shape, matrix4f, softness, color);
     }
 
     private void render(ShapeProperties shape, boolean cacheFrame) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getFramebuffer() == null) return;
+        try (Render2DState state = Render2DState.join()) {
+            boolean complete = false;
+            try {
+                render2DInternal(shape, cacheFrame);
+                complete = true;
+            } finally {
+                if (!complete || !cacheFrame || !hudBatchMode) {
+                    restoreRenderState(true);
+                    hudBatchStateApplied = false;
+                    hudBatchMaskShader = null;
+                }
+            }
+        }
+    }
+
+    private void render2DInternal(ShapeProperties shape, boolean cacheFrame) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
             return;
@@ -643,13 +732,9 @@ public class Blur implements Shape {
         // GUI panels behind it, not skip over them).
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
 
-        if (!prepareFramebuffers(client, cacheFrame, true)) {
+        if (!prepare2DFramebuffers(client, cacheFrame, true)) {
             return;
         }
-
-        Theme theme = Theme.getInstance();
-        int blurMode = theme.getHudBlurMode();
-        float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
 
         boolean useHudBatch = cacheFrame && hudBatchMode;
         if (useHudBatch) {
@@ -705,19 +790,8 @@ public class Blur implements Shape {
         float height = shape.getHeight() * size.y;
         int color = ColorUtil.multAlpha(shape.getColor().x, alpha);
 
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        drawEngine.quad(
-                matrix4f,
-                buffer,
-                shape.getX() - softness / 2.0F,
-                shape.getY() - softness / 2.0F,
-                shape.getWidth() + softness,
-                shape.getHeight() + softness,
-                color
-        );
-
         RenderSystem.setShaderTexture(0, preparedState.sourceTexture());
-        RenderSystem.setShaderTexture(1, preparedState.sourceTexture());
+        RenderSystem.setShaderTexture(1, preparedState.blurMode() == 5 ? input.getColorAttachment() : preparedState.sourceTexture());
         ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
         hudBatchMaskShader = shader;
         if (shader == null) {
@@ -727,12 +801,51 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("Radius").set(round);
         shader.getUniformOrDefault("RectMask").set(maxCornerRadius(round) <= 0.001F ? 1 : 0);
         shader.getUniformOrDefault("Smoothness").set(softness);
-        shader.getUniformOrDefault("BlurRadius").set(preparedState.blurRadius());
-        shader.getUniformOrDefault("BlurMode").set(preparedState.blurMode());
+        setPreparedMaskUniforms(shader, preparedState);
+        drawShape(shape, matrix4f, softness, color);
+        return true;
+    }
+
+    // Only shared inside an uninterrupted explicit batch, never cached across HUD/menu/world draws.
+    private void setPreparedMaskUniforms(ShaderProgram shader, PreparedBlurState state) {
+        shader.getUniformOrDefault("BlurRadius").set(state.blurRadius());
+        shader.getUniformOrDefault("BlurMode").set(state.blurMode());
         shader.getUniformOrDefault("TintColor").set(0.0F, 0.0F, 0.0F, 0.0F);
         shader.getUniformOrDefault("FrameMix").set(1.0F);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        return true;
+        shader.getUniformOrDefault("BlurScreenSize").set((float) input.textureWidth, (float) input.textureHeight);
+    }
+
+    /** Reserve tessellator memory only once the shader/uniforms are ready. */
+    private void drawShape(ShapeProperties shape, Matrix4f matrix, float softness, int color) {
+        // Offscreen filters and preceding rectangles may have changed these since the batch began.
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
+        RenderSystem.disableDepthTest();
+        BufferBuilder builder = Render2DBuffers.begin(VertexFormats.POSITION_COLOR);
+        try {
+            drawEngine.quad(matrix, builder, shape.getX() - softness / 2, shape.getY() - softness / 2,
+                    shape.getWidth() + softness, shape.getHeight() + softness, color);
+            try (BuiltBuffer built = builder.end()) {
+                BufferRenderer.drawWithGlobalProgram(built);
+            }
+        } catch (RuntimeException | Error failure) {
+            Render2DBuffers.discardImmediate();
+            throw failure;
+        }
+    }
+
+    private boolean prepare2DFramebuffers(MinecraftClient client, boolean cache, boolean refresh) {
+        if (input == null || input.textureWidth != Math.max(1, client.getWindow().getFramebufferWidth())
+                || input.textureHeight != Math.max(1, client.getWindow().getFramebufferHeight())) {
+            try (Render2DState state = Render2DState.capture()) {
+                return prepareFramebuffers(client, cache, refresh);
+            } catch (RuntimeException | Error failure) {
+                cleanup();
+                throw failure;
+            }
+        }
+        return prepareFramebuffers(client, cache, refresh);
     }
 
     private PreparedBlurState resolvePreparedBlurState(MinecraftClient client, ShapeProperties shape, boolean useHudCache) {
@@ -746,7 +859,9 @@ public class Blur implements Shape {
         float hudGaussianRadius = blurRadius * HUD_GAUSSIAN_STRENGTH_MULTIPLIER;
         int effectiveBlurMode = blurMode;
         float effectiveBlurRadius = blurRadius;
-        int sourceTexture = input.getColorAttachment();
+        Framebuffer sourceInput = useHudCache ? input : immediateInput;
+        if (sourceInput == null) return null;
+        int sourceTexture = sourceInput.getColorAttachment();
 
         BlurRegion visibleRegion = computeHudGaussianRegion(client, shape, 0.0f);
         if (visibleRegion == null) {
@@ -754,14 +869,19 @@ public class Blur implements Shape {
         }
 
         if (useHudCache && blurMode == 2 && blurRadius > 0.0f && cacheFrameReadyForHud()) {
-            BlurRegion blurRegion = computeHudGaussianRegion(client, shape, hudGaussianRadius);
-            Framebuffer prepared = hudGaussianRadius <= HUD_FINE_KAWASE_THRESHOLD
-                    ? applyOptimizedHudFineKawaseBlur(client, hudGaussianRadius, blurRegion)
-                    : applyOptimizedHudKawaseBlur(client, hudGaussianRadius, blurRegion);
+            BlurRegion blurRegion = visibleRegion.expand(hudGaussianRadius,
+                    input.textureWidth, input.textureHeight);
+            hudBlurPlanner.remember(Math.min(hudGaussianRadius, 24.0F), plannerRect(blurRegion));
+            // Keep fine taps within one pixel: wide isolated taps look like shifted copies.
+            if (hudGaussianRadius <= HUD_FINE_KAWASE_THRESHOLD) {
+                return new PreparedBlurState(sourceTexture, 4, hudGaussianRadius / HUD_FINE_KAWASE_THRESHOLD);
+            }
+            prepareHudBlurGroups();
+            Framebuffer prepared = applyOptimizedHudKawaseBlur(client, hudGaussianRadius, blurRegion);
             if (prepared != null) {
                 sourceTexture = prepared.getColorAttachment();
-                effectiveBlurMode = 0;
-                effectiveBlurRadius = 0.0f;
+                effectiveBlurMode = hudGaussianRadius < 12.0F ? 5 : 0;
+                effectiveBlurRadius = effectiveBlurMode == 5 ? hudGaussianRadius : 0.0F;
             } else {
                 effectiveBlurMode = 2;
                 effectiveBlurRadius = blurRadius;
@@ -782,10 +902,12 @@ public class Blur implements Shape {
 
         float sharedRadius = -1.0f;
         BlurRegion union = null;
+        long regionArea = 0L;
         for (ShapeProperties shape : shapes) {
             if (shape == null) continue;
             float radius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
-            if (radius <= 0.0f) continue;
+            // A clean/zero-radius shape must not inherit its neighbours' prepared blur.
+            if (radius <= 0.0f) return null;
             if (sharedRadius < 0.0f) {
                 sharedRadius = radius;
             } else if (Math.abs(sharedRadius - radius) >= 0.01f) {
@@ -794,20 +916,27 @@ public class Blur implements Shape {
             BlurRegion region = computeHudGaussianRegion(client, shape, radius * HUD_GAUSSIAN_STRENGTH_MULTIPLIER);
             if (region != null) {
                 union = union == null ? region : unionBlurRegions(union, region);
+                regionArea += (long) region.width * region.height;
             }
         }
         if (sharedRadius <= 0.0f || union == null) {
             return null;
         }
+        // Sparse HUDs can make a shared bounding box far more expensive than separate scissored passes.
+        if ((long) union.width * union.height > regionArea) return null;
 
         float hudRadius = sharedRadius * HUD_GAUSSIAN_STRENGTH_MULTIPLIER;
-        Framebuffer prepared = hudRadius <= HUD_FINE_KAWASE_THRESHOLD
-                ? applyOptimizedHudFineKawaseBlur(client, hudRadius, union)
-                : applyOptimizedHudKawaseBlur(client, hudRadius, union);
+        hudBlurPlanner.remember(Math.min(hudRadius, 24.0F), plannerRect(union));
+        if (hudRadius <= HUD_FINE_KAWASE_THRESHOLD) {
+            return new PreparedBlurState(input.getColorAttachment(), 4, hudRadius / HUD_FINE_KAWASE_THRESHOLD);
+        }
+        prepareHudBlurGroups();
+        Framebuffer prepared = applyOptimizedHudKawaseBlur(client, hudRadius, union);
         if (prepared == null) {
             return null;
         }
-        return new PreparedBlurState(prepared.getColorAttachment(), 0, 0.0f);
+        return new PreparedBlurState(prepared.getColorAttachment(), hudRadius < 12.0F ? 5 : 0,
+                hudRadius < 12.0F ? hudRadius : 0.0F);
     }
 
     private boolean cacheFrameReadyForHud() {
@@ -842,8 +971,8 @@ public class Blur implements Shape {
             quarterB = new SimpleFramebuffer(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4), false);
             quarterB.setTexFilter(GL11C.GL_LINEAR);
             // The menu / HUD cache slots are NOT allocated here - see
-            // ensureBlurSlots(). Each slot owns a full-resolution
-            // framebuffer, and the two groups together are 8 of them
+            // ensureBlurSlots() / acquireHudBlurSlot(). Menu slots remain full resolution;
+            // HUD results are now half resolution. Previously both groups reserved 8 full-size targets
             // (~66 MB at 1080p, ~118 MB at 1440p, ~265 MB at 4K). Reserving
             // both up front charged that to every session, including ones
             // that only ever use HUD blur or only ever open the menu.
@@ -851,6 +980,10 @@ public class Blur implements Shape {
         } else if (input.textureWidth != framebufferWidth || input.textureHeight != framebufferHeight) {
             input.resize(framebufferWidth, framebufferHeight);
             input.setTexFilter(GL11C.GL_LINEAR);
+            if (immediateInput != null) {
+                immediateInput.resize(framebufferWidth, framebufferHeight);
+                immediateInput.setTexFilter(GL11C.GL_LINEAR);
+            }
             menuInput.resize(framebufferWidth, framebufferHeight);
             menuInput.setTexFilter(GL11C.GL_LINEAR);
             hudHalfInput.resize(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2));
@@ -869,8 +1002,7 @@ public class Blur implements Shape {
             quarterA.setTexFilter(GL11C.GL_LINEAR);
             quarterB.resize(Math.max(1, framebufferWidth / 4), Math.max(1, framebufferHeight / 4));
             quarterB.setTexFilter(GL11C.GL_LINEAR);
-            // Null slots are groups that were never used this session; they
-            // get created at the new size by ensureBlurSlots() on demand.
+            // Unused slots are allocated at the new size on demand.
             for (MenuBlurSlot slot : menuBlurSlots) {
                 if (slot == null) {
                     continue;
@@ -883,11 +1015,9 @@ public class Blur implements Shape {
                 if (slot == null) {
                     continue;
                 }
-                slot.framebuffer.resize(framebufferWidth, framebufferHeight);
+                slot.framebuffer.resize(Math.max(1, framebufferWidth / 2), Math.max(1, framebufferHeight / 2));
                 slot.framebuffer.setTexFilter(GL11C.GL_LINEAR);
                 slot.valid = false;
-                slot.hudInputRevision = -1L;
-                slot.hudRegionCount = 0;
             }
             menuBlurCurrentValid = false;
             menuBlurPreviousValid = false;
@@ -896,6 +1026,8 @@ public class Blur implements Shape {
             // just mark it stale so nothing blurs a mismatched copy.
             menuOverlayValid = false;
             hudInputValid = false;
+            hudHalfInputRevision = -1L;
+            hudBlurPlanner.reset();
             invalidateHudKawaseCache();
             resized = true;
         }
@@ -904,35 +1036,37 @@ public class Blur implements Shape {
             return false;
         }
         // menuBlurSlots / hudBlurSlots are deliberately not checked here:
-        // they are created lazily by ensureBlurSlots() at the point of use.
+        // they are created lazily at the point of use.
         if (halfA == null || halfB == null || quarterA == null || quarterB == null) {
             return false;
         }
 
         if (cacheFrame) {
-            if (cachedFramePrepared && !resized && !forceHudRefresh) {
+            if (cachedFramePrepared && !resized) {
+                // Widget state can change after the clean pre-HUD capture. Invalidate its results,
+                // but never re-capture already composited Phaze HUD pixels in this same frame.
+                if (forceHudRefresh) {
+                    invalidateHudKawaseCache();
+                    forceHudRefresh = false;
+                }
                 return true;
             }
             long now = System.nanoTime();
-            long backgroundStateKey = computeHudBackgroundStateKey(client);
-            long refreshIntervalNs = 1_000_000_000L / MathHelper.clamp(hudBackgroundFps, 10, 360);
-            boolean backgroundChanged = backgroundStateKey != lastHudBackgroundStateKey;
-            boolean refreshDue = now - lastHudInputRefreshNs >= refreshIntervalNs;
             // Opening a GUI can temporarily leave the main framebuffer in a
             // cleared/intermediate state. Re-capturing it makes every HUD
             // blur mask flash black for one frame. Keep the last valid world
             // snapshot while a GUI is open; it is both stable and cheaper.
             boolean guiOpen = client.currentScreen != null;
-            boolean needsCapture = !hudInputValid
-                    || resized
-                    || ((!guiOpen || stableHudCapturePoint) && backgroundChanged && refreshDue);
+            // Camera/world ticks cannot identify unchanged pixels: entities, particles and animated
+            // textures keep moving with a stationary camera. Refresh on a phase-preserving clock.
+            boolean needsCapture = hudRefreshClock.shouldCapture(hudInputValid, resized,
+                    guiOpen, stableHudCapturePoint, now);
             if (needsCapture) {
                 captureHudInput(client, framebufferWidth, framebufferHeight);
-                lastHudInputRefreshNs = now;
-                lastHudBackgroundStateKey = backgroundStateKey;
+                hudRefreshClock.captured(now);
             }
             if (forceHudRefresh) {
-                invalidateHudKawaseCache();
+                if (!needsCapture) invalidateHudKawaseCache();
                 forceHudRefresh = false;
             }
             cachedFramePrepared = true;
@@ -946,13 +1080,23 @@ public class Blur implements Shape {
     }
 
     private void captureWorldInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        captureFramebufferInput(client, input, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST);
+        // Immediate icon/panel blur samples previously submitted GUI pixels. It must never replace
+        // the clean cached HUD source: fine-kernel misses and non-Kawase modes still sample that source.
+        if (immediateInput == null) {
+            try (Render2DState state = Render2DState.capture()) {
+                immediateInput = new SimpleFramebuffer(framebufferWidth, framebufferHeight, false);
+                immediateInput.setTexFilter(GL11C.GL_LINEAR);
+                captureFramebufferInput(client, immediateInput, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST, null);
+            }
+        } else {
+            captureFramebufferInput(client, immediateInput, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST, null);
+        }
         dualKawasePrepared = false;
         preparedHudGaussianRegionCount = 0;
     }
 
     private void captureMenuInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        captureFramebufferInput(client, menuInput, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST);
+        captureFramebufferInput(client, menuInput, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST, null);
     }
 
     /**
@@ -969,6 +1113,12 @@ public class Blur implements Shape {
      * previous behaviour.
      */
     public void captureMenuOverlayFrame() {
+        try (Render2DState state = Render2DState.capture()) {
+            captureMenuOverlayFrameInternal();
+        }
+    }
+
+    private void captureMenuOverlayFrameInternal() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
             return;
@@ -976,7 +1126,7 @@ public class Blur implements Shape {
         // Menu geometry is queued in the shared BatchedRectangle buffer; it
         // has to land in the framebuffer before we can copy it out.
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.flushIfBatching();
-        if (!prepareFramebuffers(client, false, false)) {
+        if (!prepare2DFramebuffers(client, false, false)) {
             return;
         }
 
@@ -993,23 +1143,27 @@ public class Blur implements Shape {
             menuOverlayInput.setTexFilter(GL11C.GL_LINEAR);
         }
 
-        captureFramebufferInput(client, menuOverlayInput, width, height, GL11C.GL_NEAREST);
+        captureFramebufferInput(client, menuOverlayInput, width, height, GL11C.GL_NEAREST, null);
         menuOverlayRevision++;
         menuOverlayValid = true;
     }
 
     private void captureHudInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        captureFramebufferInput(client, input, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST);
-        captureFramebufferInput(client, hudHalfInput, framebufferWidth, framebufferHeight, GL11C.GL_LINEAR);
-        hudInputValid = true;
-        hudInputRevision++;
+        // A failed/partial snapshot must not expose old revision metadata over new pixels.
+        hudInputValid = false;
+        cachedFramePrepared = false;
+        invalidateHudKawaseCache();
         dualKawasePrepared = false;
         preparedHudGaussianRegionCount = 0;
-        invalidateHudKawaseCache();
+        // Fine blur only needs the full-resolution source. Prepare the half image lazily from
+        // this clean snapshot, never from a main FBO that may already contain our own HUD.
+        captureFramebufferInput(client, input, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST, null);
+        hudInputValid = true;
+        hudInputRevision++;
     }
 
     private void captureNametagInput(MinecraftClient client, int framebufferWidth, int framebufferHeight) {
-        captureFramebufferInput(client, nametagInput, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST);
+        captureFramebufferInput(client, nametagInput, framebufferWidth, framebufferHeight, GL11C.GL_NEAREST, null);
     }
 
     private void captureFramebufferInput(
@@ -1017,7 +1171,8 @@ public class Blur implements Shape {
             Framebuffer target,
             int framebufferWidth,
             int framebufferHeight,
-            int filter
+            int filter,
+            Framebuffer halfTarget
     ) {
         // When a HUD batch capture is active, mc.getFramebuffer() is redirected
         // to the HUD FBO by MinecraftClientFramebufferMixin. We need the REAL
@@ -1028,9 +1183,12 @@ public class Blur implements Shape {
         if (framebuffer == null) {
             framebuffer = client.getFramebuffer();
         }
-        int restoreFramebuffer = HudBuffer.activeCaptureTarget >= 0
-                ? HudBuffer.activeCaptureTarget
-                : client.getFramebuffer().fbo;
+        int read = GL11C.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING);
+        int draw = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
+        boolean scissor = GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST);
+        // glBlitFramebuffer is scissor-gated; the world snapshot must be complete.
+        try {
+        RenderSystem.disableScissor();
         GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, framebuffer.fbo);
         GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target.fbo);
         GL30C.glBlitFramebuffer(
@@ -1045,8 +1203,17 @@ public class Blur implements Shape {
                 GL30C.GL_COLOR_BUFFER_BIT,
                 filter
         );
-        GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, restoreFramebuffer);
-        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, restoreFramebuffer);
+        if (halfTarget != null) {
+            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, halfTarget.fbo);
+            GL30C.glBlitFramebuffer(0, 0, framebufferWidth, framebufferHeight,
+                    0, 0, halfTarget.textureWidth, halfTarget.textureHeight,
+                    GL30C.GL_COLOR_BUFFER_BIT, GL11C.GL_LINEAR);
+        }
+        } finally {
+            GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, read);
+            GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, draw);
+            if (scissor) GlStateManager._enableScissorTest();
+        }
     }
 
     private boolean applyDualKawaseBlur(
@@ -1059,6 +1226,7 @@ public class Blur implements Shape {
         if (sourceInput == null || output == null || halfA == null || halfB == null || quarterA == null || quarterB == null) {
             return false;
         }
+        try (Render2DState state = Render2DState.capture()) {
         int w = sourceInput.textureWidth;
         int h = sourceInput.textureHeight;
         // Keep radius continuous to avoid abrupt jumps on the HUD slider.
@@ -1097,13 +1265,12 @@ public class Blur implements Shape {
         runDualKawasePass(shader, src, halfB, upOffset1, false, region);
         blitColorRegion(halfB, output, region, GL11C.GL_LINEAR);
 
-        bindMainDrawTarget(client);
-        RenderSystem.viewport(0, 0, sourceInput.textureWidth, sourceInput.textureHeight);
         dualKawasePrepared = true;
         lastDualKawaseRadius = quantizedRadius;
         lastDualKawaseWidth = w;
         lastDualKawaseHeight = h;
         return true;
+        }
     }
 
     private void blitColorRegion(Framebuffer source, Framebuffer target, BlurRegion region, int filter) {
@@ -1140,75 +1307,179 @@ public class Blur implements Shape {
     }
 
     private Framebuffer applyOptimizedHudKawaseBlur(MinecraftClient client, float blurRadius, BlurRegion region) {
-        if (hudHalfInput == null || quarterA == null || quarterB == null || halfB == null || region == null) {
+        if (hudHalfInput == null || quarterA == null || quarterB == null || region == null) {
             return null;
         }
 
-        int w = client.getWindow().getFramebufferWidth();
-        int h = client.getWindow().getFramebufferHeight();
         float radius = MathHelper.clamp(blurRadius, 0.0f, 24.0f);
-        MenuBlurSlot slot = acquireHudBlurSlot(2, radius, System.nanoTime());
-        if (isHudBlurRegionPrepared(slot, region)) {
+        BlurRegion writeRegion = hudWriteRegion(region);
+        int slotIndex = hudBlurCache.select(2, radius, region, writeRegion, hudInputRevision);
+        MenuBlurSlot slot = acquireHudBlurSlot(slotIndex);
+        if (hudBlurCache.selectedPrepared) {
             return slot.framebuffer;
         }
-
+        try (Render2DState state = Render2DState.capture()) {
         ShaderProgram shader = RenderSystem.setShader(DUAL_KAWASE_SHADER_KEY);
         if (shader == null) {
             return null;
         }
+        ensureHudHalfInput();
+        // Drop affected metadata before any write, so a partially failed refresh cannot leave a hit.
+        hudBlurCache.discardOverlapping(slotIndex, writeRegion);
+        runHudKawasePasses(shader, slot.framebuffer, radius, List.of(region));
+        slot.valid = false;
+        hudBlurCache.remember(slotIndex, 2, radius, region, writeRegion);
+        return slot.framebuffer;
+        }
+    }
 
-        float normalized = MathHelper.clamp(radius / 24.0f, 0.0f, 1.0f);
-        runDualKawasePass(shader, hudHalfInput, quarterA, radius * 0.14f, true, region);
+    /** Prepare known layout groups once, before their masks; hints never bypass live cache validation. */
+    private void prepareHudBlurGroups() {
+        if (hudGroupsPrepared) return;
+        hudGroupsPrepared = true;
+        List<HudBlurPlanner.Group> groups = hudBlurPlanner.groups();
+        if (groups.stream().noneMatch(group -> group.regions().size() > 1)) return;
+        try (Render2DState state = Render2DState.capture()) {
+            ShaderProgram shader = RenderSystem.setShader(DUAL_KAWASE_SHADER_KEY);
+            if (shader == null) return;
+            for (HudBlurPlanner.Group group : groups) {
+                if (group.regions().size() <= 1) continue;
+                List<BlurRegion> regions = new ArrayList<>(group.regions().size());
+                BlurRegion union = null;
+                BlurRegion writeUnion = null;
+                boolean allPrepared = true;
+                for (HudBlurPlanner.Rect rect : group.regions()) {
+                    BlurRegion region = blurRegion(rect);
+                    regions.add(region);
+                    union = union == null ? region : unionBlurRegions(union, region);
+                    BlurRegion write = hudWriteRegion(region);
+                    writeUnion = writeUnion == null ? write : unionBlurRegions(writeUnion, write);
+                    allPrepared &= hudBlurCache.hasPrepared(2, group.radius(), region, hudInputRevision);
+                }
+                if (allPrepared) continue;
+                int index = hudBlurCache.select(2, group.radius(), union, writeUnion, hudInputRevision);
+                MenuBlurSlot slot = acquireHudBlurSlot(index);
+                ensureHudHalfInput();
+                // The bounding box is used only for conservative slot conflict detection, NOT drawing.
+                hudBlurCache.discardOverlapping(index, writeUnion);
+                runHudKawasePasses(shader, slot.framebuffer, group.radius(), regions);
+                for (BlurRegion region : regions) {
+                    hudBlurCache.remember(index, 2, group.radius(), region, hudWriteRegion(region));
+                }
+            }
+        }
+    }
 
-        int quarterPasses = radius > 16.0f ? 2 : radius > 8.0f ? 1 : 0;
+    private void ensureHudHalfInput() {
+        if (hudHalfInputRevision == hudInputRevision) return;
+        RenderSystem.disableScissor();
+        blitColorRegion(input, hudHalfInput, null, GL11C.GL_LINEAR);
+        hudHalfInputRevision = hudInputRevision;
+    }
+
+    private BlurRegion hudWriteRegion(BlurRegion region) {
+        HudBlurPlanner.Rect half = HudBlurPlanner.scale(plannerRect(region), input.textureWidth,
+                input.textureHeight, hudHalfInput.textureWidth, hudHalfInput.textureHeight);
+        // Track the actual write guard, not only the widget's visible pixels.
+        return blurRegion(HudBlurPlanner.scale(half, hudHalfInput.textureWidth, hudHalfInput.textureHeight,
+                input.textureWidth, input.textureHeight));
+    }
+
+    private static HudBlurPlanner.Rect plannerRect(BlurRegion region) {
+        return new HudBlurPlanner.Rect(region.x, region.y, region.width, region.height);
+    }
+
+    private static BlurRegion blurRegion(HudBlurPlanner.Rect rect) {
+        return new BlurRegion(rect.x(), rect.y(), rect.width(), rect.height());
+    }
+
+    private void runHudKawasePasses(ShaderProgram shader, Framebuffer output, float radius, List<BlurRegion> regions) {
+        int passes = radius > 16.0F ? 2 : 1;
+        float normalized = MathHelper.clamp(radius / 24.0F, 0.0F, 1.0F);
+        float[] offsets = new float[passes];
+        for (int i = 0; i < passes; i++) {
+            // An extra same-size pass starts as an identity, instead of abruptly
+            // adding a wide sampling ring at radius 16. At 24 the old kernel is retained.
+            offsets[i] = i == 0 ? radius * 0.18F
+                    : radius * (0.18F + 0.025F + normalized * 0.015F) * smoothHudRamp(radius, 16.0F, 24.0F);
+        }
+        List<HudBlurPlanner.Rect> outputRegions = new ArrayList<>(regions.size());
+        for (BlurRegion region : regions) {
+            outputRegions.add(HudBlurPlanner.scale(plannerRect(region), input.textureWidth, input.textureHeight,
+                    output.textureWidth, output.textureHeight));
+        }
+        List<List<HudBlurPlanner.Rect>> quarterRegions = new ArrayList<>(passes + 1);
+        for (int i = 0; i <= passes; i++) quarterRegions.add(null);
+        quarterRegions.set(passes, requiredHudSource(outputRegions, output, quarterA, radius * 0.10F, false));
+        for (int i = passes - 1; i >= 0; i--) {
+            quarterRegions.set(i, requiredHudSource(quarterRegions.get(i + 1), quarterA, quarterA, offsets[i], true));
+        }
+
+        RenderSystem.disableBlend();
+        RenderSystem.disableDepthTest();
+        RenderSystem.disableCull();
+        RenderSystem.disableScissor();
+        GlStateManager._colorMask(true, true, true, true);
+        runHudKawasePass(shader, hudHalfInput, quarterA, radius * 0.14F, true, quarterRegions.get(0));
         Framebuffer src = quarterA;
         Framebuffer dst = quarterB;
-        for (int i = 0; i < quarterPasses; i++) {
-            float offset = radius * (0.18f + i * (0.025f + normalized * 0.015f));
-            runDualKawasePass(shader, src, dst, offset, true, region);
+        for (int i = 0; i < passes; i++) {
+            runHudKawasePass(shader, src, dst, offsets[i], true, quarterRegions.get(i + 1));
             Framebuffer swap = src;
             src = dst;
             dst = swap;
         }
-
-        runDualKawasePass(shader, src, halfB, radius * 0.10f, false, region);
-        blitColorRegion(halfB, slot.framebuffer, region, GL11C.GL_LINEAR);
-        bindMainDrawTarget(client);
-        RenderSystem.viewport(0, 0, w, h);
-
-        slot.valid = false;
-        rememberHudBlurRegion(slot, region);
-        return slot.framebuffer;
+        // Produce the cached half-resolution result directly. Mask sampling performs the final linear upscale.
+        runHudKawasePass(shader, src, output, radius * 0.10F, false, outputRegions);
     }
 
-    private boolean isHudBlurRegionPrepared(MenuBlurSlot slot, BlurRegion region) {
-        for (int i = 0; i < slot.hudRegionCount; i++) {
-            BlurRegion prepared = slot.hudRegions[i];
-            if (prepared != null
-                    && region.x >= prepared.x
-                    && region.y >= prepared.y
-                    && region.x + region.width <= prepared.x + prepared.width
-                    && region.y + region.height <= prepared.y + prepared.height) {
-                return true;
+    private static float smoothHudRamp(float radius, float start, float end) {
+        float t = MathHelper.clamp((radius - start) / (end - start), 0.0F, 1.0F);
+        return t * t * (3.0F - 2.0F * t);
+    }
+
+    private static List<HudBlurPlanner.Rect> requiredHudSource(List<HudBlurPlanner.Rect> regions,
+            Framebuffer target, Framebuffer source, float offset, boolean downsample) {
+        List<HudBlurPlanner.Rect> required = new ArrayList<>(regions.size());
+        for (HudBlurPlanner.Rect region : regions) {
+            required.add(HudBlurPlanner.requiredSource(region, target.textureWidth, target.textureHeight,
+                    source.textureWidth, source.textureHeight, offset, downsample));
+        }
+        return required;
+    }
+
+    private void runHudKawasePass(ShaderProgram shader, Framebuffer source, Framebuffer target,
+            float offset, boolean downsample, List<HudBlurPlanner.Rect> regions) {
+        // No endWrite()/bind-to-zero between stages: the enclosing state scope restores the caller once.
+        GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target.fbo);
+        RenderSystem.viewport(0, 0, target.textureWidth, target.textureHeight);
+        RenderSystem.setShaderTexture(0, source.getColorAttachment());
+        shader.getUniformOrDefault("TexelSize").set(1.0F / source.textureWidth, 1.0F / source.textureHeight);
+        shader.getUniformOrDefault("Offset").set(offset);
+        shader.getUniformOrDefault("Downsample").set(downsample ? 1 : 0);
+        BufferBuilder builder = Render2DBuffers.begin(VertexFormats.POSITION);
+        try {
+            for (HudBlurPlanner.Rect region : regions) {
+                float left = region.x() * 2.0F / target.textureWidth - 1.0F;
+                float bottom = region.y() * 2.0F / target.textureHeight - 1.0F;
+                float right = (region.x() + region.width()) * 2.0F / target.textureWidth - 1.0F;
+                float top = (region.y() + region.height()) * 2.0F / target.textureHeight - 1.0F;
+                builder.vertex(left, bottom, 0);
+                builder.vertex(right, bottom, 0);
+                builder.vertex(right, top, 0);
+                builder.vertex(left, top, 0);
             }
+            try (BuiltBuffer built = builder.end()) {
+                BufferRenderer.drawWithGlobalProgram(built);
+            }
+        } catch (RuntimeException | Error failure) {
+            Render2DBuffers.discardImmediate();
+            throw failure;
         }
-        return false;
-    }
-
-    private void rememberHudBlurRegion(MenuBlurSlot slot, BlurRegion region) {
-        if (slot.hudRegionCount >= slot.hudRegions.length) {
-            slot.hudRegionCount = 0;
-        }
-        slot.hudRegions[slot.hudRegionCount++] = region;
     }
 
     private void invalidateHudKawaseCache() {
-        for (MenuBlurSlot slot : hudBlurSlots) {
-            if (slot != null) {
-                slot.hudInputRevision = -1L;
-                slot.hudRegionCount = 0;
-            }
-        }
+        hudBlurCache.invalidate();
     }
 
     private void invalidateMenuBlurCache() {
@@ -1221,23 +1492,20 @@ public class Blur implements Shape {
     }
 
     /**
-     * Creates a slot group's framebuffers on first use.
+     * Creates the full-resolution menu slot group on first use.
      *
-     * <p>Each slot owns a full-resolution framebuffer. Allocating both the
-     * menu group and the HUD group up front in {@code prepareFramebuffers}
-     * meant a session that only uses HUD blur still paid for four unused
-     * full-screen targets, and vice versa. Both acquire* methods funnel
-     * through here, so the group exists by the time any caller dereferences
-     * a slot - the never-null contract those callers rely on is preserved.
+     * <p>Menu acquisition creates its group here. HUD slots instead allocate
+     * individually at half resolution in acquireHudBlurSlot(), so HUD-only
+     * sessions do not pay for unused full-resolution menu targets.
      *
      * <p>Groups are never freed once created: reclaiming them would mean
      * re-allocating (and re-warming the cache) the next time the user opens
      * the menu, which is exactly the kind of hitch the cache exists to avoid.
      */
     private void ensureBlurSlots(MenuBlurSlot[] slots) {
-        if (slots[0] != null) {
-            return;
-        }
+        boolean complete = true;
+        for (MenuBlurSlot slot : slots) complete &= slot != null;
+        if (complete) return;
 
         int width;
         int height;
@@ -1250,35 +1518,28 @@ public class Blur implements Shape {
             height = Math.max(1, client.getWindow().getFramebufferHeight());
         }
 
+        try (Render2DState state = Render2DState.capture()) {
         for (int i = 0; i < slots.length; i++) {
+            if (slots[i] != null) continue;
             SimpleFramebuffer framebufferCache = new SimpleFramebuffer(width, height, false);
-            framebufferCache.setTexFilter(GL11C.GL_LINEAR);
             slots[i] = new MenuBlurSlot(framebufferCache);
+            framebufferCache.setTexFilter(GL11C.GL_LINEAR);
+        }
         }
     }
 
-    private MenuBlurSlot acquireHudBlurSlot(int mode, float radius, long now) {
-        ensureBlurSlots(hudBlurSlots);
-        MenuBlurSlot oldest = hudBlurSlots[0];
-        for (MenuBlurSlot slot : hudBlurSlots) {
-            if (slot.hudInputRevision == hudInputRevision
-                    && slot.hudMode == mode
-                    && Math.abs(slot.hudRadius - radius) < 0.05f) {
-                slot.hudLastUseNs = now;
-                return slot;
-            }
-            if (slot.hudLastUseNs < oldest.hudLastUseNs) {
-                oldest = slot;
-            }
+    private MenuBlurSlot acquireHudBlurSlot(int index) {
+        // Disjoint radii can coexist in one half-resolution texture. Only allocate another target
+        // when overlapping output footprints require it, keeping the existing four-target ceiling.
+        MenuBlurSlot slot = hudBlurSlots[index];
+        if (slot != null) return slot;
+        try (Render2DState state = Render2DState.capture()) {
+            SimpleFramebuffer framebufferCache = new SimpleFramebuffer(hudHalfInput.textureWidth, hudHalfInput.textureHeight, false);
+            slot = new MenuBlurSlot(framebufferCache);
+            hudBlurSlots[index] = slot;
+            framebufferCache.setTexFilter(GL11C.GL_LINEAR);
         }
-
-        oldest.hudInputRevision = hudInputRevision;
-        oldest.hudMode = mode;
-        oldest.hudRadius = radius;
-        oldest.hudLastUseNs = now;
-        oldest.hudRegionCount = 0;
-        oldest.valid = false;
-        return oldest;
+        return slot;
     }
 
     private static BlurRegion unionBlurRegions(BlurRegion a, BlurRegion b) {
@@ -1287,56 +1548,6 @@ public class Blur implements Shape {
         int right = Math.max(a.x + a.width, b.x + b.width);
         int top = Math.max(a.y + a.height, b.y + b.height);
         return new BlurRegion(left, bottom, right - left, top - bottom);
-    }
-
-    private long computeHudBackgroundStateKey(MinecraftClient client) {
-        long key = client.world == null ? 0L : client.world.getTime();
-        if (client.gameRenderer != null && client.gameRenderer.getCamera() != null) {
-            var camera = client.gameRenderer.getCamera();
-            var pos = camera.getPos();
-            var rotation = camera.getRotation();
-            key = mixStateKey(key, Double.doubleToRawLongBits(pos.x));
-            key = mixStateKey(key, Double.doubleToRawLongBits(pos.y));
-            key = mixStateKey(key, Double.doubleToRawLongBits(pos.z));
-            key = mixStateKey(key, Float.floatToRawIntBits(rotation.x));
-            key = mixStateKey(key, Float.floatToRawIntBits(rotation.y));
-            key = mixStateKey(key, Float.floatToRawIntBits(rotation.z));
-            key = mixStateKey(key, Float.floatToRawIntBits(rotation.w));
-        }
-        key = mixStateKey(key, client.currentScreen == null ? 0L : client.currentScreen.getClass().hashCode());
-        return key;
-    }
-
-    private static long mixStateKey(long current, long value) {
-        return (current ^ value) * 0x9E3779B97F4A7C15L;
-    }
-
-    private Framebuffer applyOptimizedHudFineKawaseBlur(MinecraftClient client, float blurRadius, BlurRegion region) {
-        if (input == null || region == null) {
-            return null;
-        }
-
-        float radius = MathHelper.clamp(blurRadius, 0.0f, HUD_FINE_KAWASE_THRESHOLD);
-        MenuBlurSlot slot = acquireHudBlurSlot(1, radius, System.nanoTime());
-        if (isHudBlurRegionPrepared(slot, region)) {
-            return slot.framebuffer;
-        }
-
-        ShaderProgram shader = RenderSystem.setShader(DUAL_KAWASE_SHADER_KEY);
-        if (shader == null) {
-            return null;
-        }
-
-        // No downsample here: offset 0 is visually clean and low slider
-        // values increase continuously instead of inheriting a fixed blur
-        // floor from the half/quarter-resolution pipeline.
-        runDualKawasePass(shader, input, slot.framebuffer, radius * 0.35f, true, region);
-
-        bindMainDrawTarget(client);
-        RenderSystem.viewport(0, 0, input.textureWidth, input.textureHeight);
-        slot.valid = false;
-        rememberHudBlurRegion(slot, region);
-        return slot.framebuffer;
     }
 
     private void runDualKawasePass(
@@ -1348,6 +1559,7 @@ public class Blur implements Shape {
             BlurRegion region
     ) {
         target.beginWrite(false);
+        try {
         RenderSystem.viewport(0, 0, target.textureWidth, target.textureHeight);
         RenderSystem.disableBlend();
         RenderSystem.disableDepthTest();
@@ -1357,9 +1569,27 @@ public class Blur implements Shape {
         shader.getUniformOrDefault("Downsample").set(downsample ? 1 : 0);
         BlurRegion targetRegion = scaleBlurRegion(region, target.textureWidth, target.textureHeight);
         RenderSystem.enableScissor(targetRegion.x, targetRegion.y, targetRegion.width, targetRegion.height);
-        ShaderHelper.drawFullScreenQuad();
-        RenderSystem.disableScissor();
-        target.endWrite();
+        drawBlurFullscreenQuad();
+        } finally {
+            RenderSystem.disableScissor();
+            target.endWrite();
+        }
+    }
+
+    private void drawBlurFullscreenQuad() {
+        BufferBuilder builder = Render2DBuffers.begin(VertexFormats.POSITION);
+        try {
+            builder.vertex(-1, -1, 0);
+            builder.vertex(1, -1, 0);
+            builder.vertex(1, 1, 0);
+            builder.vertex(-1, 1, 0);
+            try (BuiltBuffer built = builder.end()) {
+                BufferRenderer.drawWithGlobalProgram(built);
+            }
+        } catch (RuntimeException | Error failure) {
+            Render2DBuffers.discardImmediate();
+            throw failure;
+        }
     }
 
     public float getPlayerSpeed(MinecraftClient client) {
@@ -1547,11 +1777,159 @@ public class Blur implements Shape {
         return oldest;
     }
     private record BlurRegion(int x, int y, int width, int height) {
+        private boolean contains(BlurRegion other) {
+            return other.x >= x && other.y >= y
+                    && other.x + other.width <= x + width && other.y + other.height <= y + height;
+        }
+
+        private boolean intersects(BlurRegion other) {
+            return x < other.x + other.width && other.x < x + width
+                    && y < other.y + other.height && other.y < y + height;
+        }
+
+        private BlurRegion expand(float radius, int framebufferWidth, int framebufferHeight) {
+            // The visible region already includes the two-pixel softness guard. Expanding its
+            // clipped bounds matches recomputing the transform with the additional blur margin.
+            int margin = Math.max(0, (int) Math.ceil(radius));
+            int left = Math.max(0, x - margin);
+            int bottom = Math.max(0, y - margin);
+            int right = Math.min(framebufferWidth, x + width + margin);
+            int top = Math.min(framebufferHeight, y + height + margin);
+            return new BlurRegion(left, bottom, right - left, top - bottom);
+        }
+    }
+
+    /** Pure CPU metadata; no GL resources, world ticks, or per-widget wall-clock queries. */
+    private static final class HudBlurCache {
+        private final BlurRegion[][] regions = new BlurRegion[MENU_BLUR_CACHE_SLOTS][MAX_PREPARED_HUD_KAWASE_REGIONS];
+        private final BlurRegion[][] writes = new BlurRegion[MENU_BLUR_CACHE_SLOTS][MAX_PREPARED_HUD_KAWASE_REGIONS];
+        private final int[][] modes = new int[MENU_BLUR_CACHE_SLOTS][MAX_PREPARED_HUD_KAWASE_REGIONS];
+        private final float[][] radii = new float[MENU_BLUR_CACHE_SLOTS][MAX_PREPARED_HUD_KAWASE_REGIONS];
+        private final int[] counts = new int[MENU_BLUR_CACHE_SLOTS];
+        private final long[] lastUse = new long[MENU_BLUR_CACHE_SLOTS];
+        private long revision = Long.MIN_VALUE;
+        private long sequence;
+        private boolean selectedPrepared;
+
+        private void invalidate() {
+            revision = Long.MIN_VALUE;
+            selectedPrepared = false;
+            java.util.Arrays.fill(counts, 0);
+            for (BlurRegion[] slot : regions) java.util.Arrays.fill(slot, null);
+            for (BlurRegion[] slot : writes) java.util.Arrays.fill(slot, null);
+        }
+
+        private boolean contains(int slot, int mode, float radius, BlurRegion region) {
+            for (int i = 0; i < counts[slot]; i++) {
+                if (modes[slot][i] == mode && Float.floatToIntBits(radii[slot][i]) == Float.floatToIntBits(radius)
+                        && regions[slot][i].contains(region)) return true;
+            }
+            return false;
+        }
+
+        private boolean hasPrepared(int mode, float radius, BlurRegion region, long sourceRevision) {
+            if (revision != sourceRevision) return false;
+            for (int slot = 0; slot < regions.length; slot++) {
+                if (contains(slot, mode, radius, region)) return true;
+            }
+            return false;
+        }
+
+        private int select(int mode, float radius, BlurRegion region, BlurRegion write, long sourceRevision) {
+            selectedPrepared = false;
+            if (revision != sourceRevision) {
+                invalidate();
+                revision = sourceRevision;
+            }
+            int best = 0;
+            int bestOverlaps = Integer.MAX_VALUE;
+            for (int slot = 0; slot < regions.length; slot++) {
+                if (contains(slot, mode, radius, region)) {
+                    selectedPrepared = true;
+                    lastUse[slot] = ++sequence;
+                    return slot;
+                }
+                int overlaps = 0;
+                for (int i = 0; i < counts[slot]; i++) {
+                    if (write.intersects(writes[slot][i])) overlaps++;
+                }
+                if (overlaps == 0 && counts[slot] == regions[slot].length) overlaps = 1;
+                // Pack non-conflicting results before opening an unused full-screen target.
+                if (overlaps < bestOverlaps || (overlaps == bestOverlaps
+                        && (overlaps == 0 ? counts[slot] > counts[best] : lastUse[slot] < lastUse[best]))) {
+                    best = slot;
+                    bestOverlaps = overlaps;
+                }
+            }
+            lastUse[best] = ++sequence;
+            return best;
+        }
+
+        private void discardOverlapping(int slot, BlurRegion write) {
+            int kept = 0;
+            for (int i = 0; i < counts[slot]; i++) {
+                // Include the actual full-resolution write guard, not just the requested rectangle.
+                // Even same-radius overlapping passes can have different intermediate edge pixels.
+                if (write.intersects(writes[slot][i])) continue;
+                regions[slot][kept] = regions[slot][i];
+                writes[slot][kept] = writes[slot][i];
+                modes[slot][kept] = modes[slot][i];
+                radii[slot][kept++] = radii[slot][i];
+            }
+            if (kept < counts[slot]) {
+                java.util.Arrays.fill(regions[slot], kept, counts[slot], null);
+                java.util.Arrays.fill(writes[slot], kept, counts[slot], null);
+            }
+            counts[slot] = kept;
+        }
+
+        private void remember(int slot, int mode, float radius, BlurRegion region, BlurRegion write) {
+            // Invalidation happens BEFORE drawing. Results within one prepared radius group
+            // may overlap safely: all stages have freshly computed tap coverage.
+            int kept = counts[slot];
+            if (kept == regions[slot].length) {
+                // Bounded metadata overflow evicts one oldest region, not all 32 prepared regions.
+                System.arraycopy(regions[slot], 1, regions[slot], 0, --kept);
+                System.arraycopy(writes[slot], 1, writes[slot], 0, kept);
+                System.arraycopy(modes[slot], 1, modes[slot], 0, kept);
+                System.arraycopy(radii[slot], 1, radii[slot], 0, kept);
+            }
+            regions[slot][kept] = region;
+            writes[slot][kept] = write;
+            modes[slot][kept] = mode;
+            radii[slot][kept++] = radius;
+            counts[slot] = kept;
+        }
+    }
+
+    /** Phase-preserving throttle: 120 Hz does not degrade to 72 Hz on a 144 FPS render loop. */
+    private static final class HudRefreshClock {
+        private long interval;
+        private long next;
+        private boolean initialized;
+
+        private HudRefreshClock(int fps) { setFps(fps); }
+
+        private void setFps(int fps) {
+            interval = 1_000_000_000L / Math.max(10, Math.min(360, fps));
+            reset();
+        }
+
+        private void reset() { initialized = false; }
+
+        private boolean shouldCapture(boolean valid, boolean resized, boolean guiOpen, boolean stable, long now) {
+            return !valid || resized || ((!guiOpen || stable) && (!initialized || now - next >= 0L));
+        }
+
+        private void captured(long now) {
+            if (!initialized || now - next < 0L) next = now + interval;
+            else next = now + interval - (now - next) % interval;
+            initialized = true;
+        }
     }
 
     private static final class MenuBlurSlot {
         private final Framebuffer framebuffer;
-        private final BlurRegion[] hudRegions = new BlurRegion[MAX_PREPARED_HUD_KAWASE_REGIONS];
         private long regionKey = Long.MIN_VALUE;
         /** Revision of the snapshot this slot's blur was produced from. */
         private long sourceRevision = Long.MIN_VALUE;
@@ -1559,11 +1937,6 @@ public class Blur implements Shape {
         private long lastUseNs = 0L;
         private float blurRadius = -1.0f;
         private boolean valid = false;
-        private long hudInputRevision = -1L;
-        private long hudLastUseNs = 0L;
-        private int hudMode = -1;
-        private float hudRadius = -1.0f;
-        private int hudRegionCount = 0;
 
         private MenuBlurSlot(Framebuffer framebuffer) {
             this.framebuffer = framebuffer;

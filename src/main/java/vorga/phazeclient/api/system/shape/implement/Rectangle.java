@@ -6,7 +6,7 @@ import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gl.ShaderProgramKey;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
@@ -16,6 +16,8 @@ import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.api.system.shape.Shape;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.hud.Render2DState;
+import vorga.phazeclient.api.system.hud.Render2DBuffers;
 import vorga.phazeclient.base.util.color.ColorUtil;
 
 public class Rectangle implements Shape, QuickImports {
@@ -43,12 +45,13 @@ public class Rectangle implements Shape, QuickImports {
             return;
         }
 
+        if (window() == null) return;
+        try (Render2DState state = Render2DState.join()) {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.enableDepthTest();
         RenderSystem.enableCull();
 
-        if (window() == null) return;
         float scale = (float) window().getScaleFactor();
         float alpha = RenderSystem.getShaderColor()[3];
 
@@ -61,9 +64,6 @@ public class Rectangle implements Shape, QuickImports {
         float thickness = shape.getThickness();
         float width = shape.getWidth() * size.x;
         float height = shape.getHeight() * size.y;
-
-        BufferBuilder buffer = tessellator().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION);
-        drawEngine.quad(matrix4f, buffer, shape.getX() - softness / 2, shape.getY() - softness / 2, shape.getWidth() + softness, shape.getHeight() + softness);
 
         ShaderProgram shader = RenderSystem.setShader(SHADER_KEY);
 
@@ -87,7 +87,19 @@ public class Rectangle implements Shape, QuickImports {
         shader.getUniformOrDefault("color4").set(ColorUtil.redf(shape.getColor().w), ColorUtil.greenf(shape.getColor().w), ColorUtil.bluef(shape.getColor().w), ColorUtil.alphaf(ColorUtil.multAlpha(shape.getColor().w, alpha)));
         shader.getUniformOrDefault("outlineColor").set(ColorUtil.redf(shape.getOutlineColor()), ColorUtil.greenf(shape.getOutlineColor()), ColorUtil.bluef(shape.getOutlineColor()), ColorUtil.alphaf(ColorUtil.multAlpha(shape.getOutlineColor(), alpha)));
 
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        RenderSystem.disableBlend();
+        // Resolve shader and all uniforms before reserving tessellator memory.
+        BufferBuilder buffer = Render2DBuffers.begin(VertexFormats.POSITION);
+        try {
+            drawEngine.quad(matrix4f, buffer, shape.getX() - softness / 2, shape.getY() - softness / 2, shape.getWidth() + softness, shape.getHeight() + softness);
+            try (BuiltBuffer built = buffer.end()) {
+                BufferRenderer.drawWithGlobalProgram(built);
+            }
+        } catch (RuntimeException | Error failure) {
+            Render2DBuffers.discardImmediate();
+            throw failure;
+        } finally {
+            RenderSystem.disableBlend();
+        }
+        }
     }
 }

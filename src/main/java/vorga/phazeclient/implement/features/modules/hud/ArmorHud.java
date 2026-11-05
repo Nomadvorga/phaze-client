@@ -134,6 +134,16 @@ public final class ArmorHud extends Module {
      */
     private int hudRefWidth = -1;
     private int hudRefHeight = -1;
+    private float hudLayoutWidth;
+    private float hudLayoutHeight;
+
+    public void setHudLayoutSize(float width, float height) {
+        hudLayoutWidth = Float.isFinite(width) ? Math.max(0, width) : 0;
+        hudLayoutHeight = Float.isFinite(height) ? Math.max(0, height) : 0;
+    }
+
+    public float getHudLayoutWidth() { return hudLayoutWidth; }
+    public float getHudLayoutHeight() { return hudLayoutHeight; }
 
     public static ArmorHud getInstance() {
         return INSTANCE;
@@ -221,6 +231,7 @@ public final class ArmorHud extends Module {
     }
 
     public void resetHudTransform() {
+        setHudLayoutSize(0, 0);
         this.hudX = DEFAULT_HUD_X;
         this.hudY = DEFAULT_HUD_Y;
         this.hudScale = DEFAULT_HUD_SCALE;
@@ -241,7 +252,6 @@ public final class ArmorHud extends Module {
 
     public void setHudScale(float hudScale) {
         this.hudScale = MathHelper.clamp(hudScale, MIN_HUD_SCALE, RectHudModule.MAX_HUD_SCALE);
-        markResolvedForCurrentScreen();
     }
 
     public float getMinHudScale() {
@@ -287,7 +297,7 @@ public final class ArmorHud extends Module {
 
     public int getResolvedBackgroundColor(net.minecraft.client.MinecraftClient client) {
         if (isVanillaPreset()) {
-            return client.options.getTextBackgroundColor(0.3F);
+            return client.options.getTextBackgroundColor(0.5F);
         }
         if (isCustomColorPreset()) {
             return applyColorOptions(customBackgroundColor.getColor());
@@ -399,7 +409,7 @@ public final class ArmorHud extends Module {
             return 0.0f;
         }
         resolveForCurrentScreen();
-        return MathHelper.clamp(hudX / Math.max(1.0f, client.getWindow().getScaledWidth()), 0.0f, 1.0f);
+        return MathHelper.clamp(hudX / Math.max(1.0f, client.getWindow().getWidth()), 0.0f, 1.0f);
     }
 
     public float getHudYRatio() {
@@ -408,7 +418,7 @@ public final class ArmorHud extends Module {
             return 0.0f;
         }
         resolveForCurrentScreen();
-        return MathHelper.clamp(hudY / Math.max(1.0f, client.getWindow().getScaledHeight()), 0.0f, 1.0f);
+        return MathHelper.clamp(hudY / Math.max(1.0f, client.getWindow().getHeight()), 0.0f, 1.0f);
     }
 
     public void setHudXRatio(float ratio) {
@@ -417,7 +427,7 @@ public final class ArmorHud extends Module {
             return;
         }
         this.hudX = MathHelper.clamp(ratio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getScaledWidth());
+                * Math.max(1, client.getWindow().getWidth());
         markResolvedForCurrentScreen();
     }
 
@@ -427,7 +437,7 @@ public final class ArmorHud extends Module {
             return;
         }
         this.hudY = MathHelper.clamp(ratio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getScaledHeight());
+                * Math.max(1, client.getWindow().getHeight());
         markResolvedForCurrentScreen();
     }
 
@@ -438,9 +448,9 @@ public final class ArmorHud extends Module {
             return;
         }
         this.hudX = MathHelper.clamp(xRatio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getScaledWidth());
+                * Math.max(1, client.getWindow().getWidth());
         this.hudY = MathHelper.clamp(yRatio, 0.0f, 1.0f)
-                * Math.max(1, client.getWindow().getScaledHeight());
+                * Math.max(1, client.getWindow().getHeight());
         markResolvedForCurrentScreen();
     }
 
@@ -461,8 +471,8 @@ public final class ArmorHud extends Module {
         if (client == null || client.getWindow() == null) {
             return;
         }
-        int screenWidth = client.getWindow().getScaledWidth();
-        int screenHeight = client.getWindow().getScaledHeight();
+        int screenWidth = client.getWindow().getWidth();
+        int screenHeight = client.getWindow().getHeight();
         if (screenWidth <= 0 || screenHeight <= 0) {
             return;
         }
@@ -476,8 +486,8 @@ public final class ArmorHud extends Module {
         if (screenWidth == hudRefWidth && screenHeight == hudRefHeight) {
             return;
         }
-        this.hudX = this.hudX * (screenWidth / (float) hudRefWidth);
-        this.hudY = this.hudY * (screenHeight / (float) hudRefHeight);
+        this.hudX = vorga.phazeclient.api.system.hud.HudPositionMath.rescale(hudX, hudRefWidth, screenWidth, hudLayoutWidth);
+        this.hudY = vorga.phazeclient.api.system.hud.HudPositionMath.rescale(hudY, hudRefHeight, screenHeight, hudLayoutHeight);
         this.hudRefWidth = screenWidth;
         this.hudRefHeight = screenHeight;
     }
@@ -510,8 +520,8 @@ public final class ArmorHud extends Module {
         if (client == null || client.getWindow() == null) {
             return;
         }
-        this.hudRefWidth = client.getWindow().getScaledWidth();
-        this.hudRefHeight = client.getWindow().getScaledHeight();
+        this.hudRefWidth = client.getWindow().getWidth();
+        this.hudRefHeight = client.getWindow().getHeight();
     }
 
     /** Screen size these coordinates were measured on; -1 = unknown. */

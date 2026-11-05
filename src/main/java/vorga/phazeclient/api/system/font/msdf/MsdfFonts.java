@@ -29,8 +29,9 @@ public final class MsdfFonts {
         return hud;
     }
 
-    /** Re-arm atlas filtering after F3+T without discarding the font caches. */
+    /** Re-arm atlas filtering and retry a previously failed shader after F3+T. Render-thread only. */
     public static void onResourcesReloaded() {
+        MsdfRenderer.onResourcesReloaded();
         if (medium != null) medium.onResourcesReloaded();
         if (bold != null) bold.onResourcesReloaded();
         if (hud != null) hud.onResourcesReloaded();

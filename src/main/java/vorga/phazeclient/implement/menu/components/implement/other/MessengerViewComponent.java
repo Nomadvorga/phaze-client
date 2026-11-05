@@ -7,6 +7,7 @@ import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
+import vorga.phazeclient.api.system.cursor.CursorManager;
 import vorga.phazeclient.api.system.font.msdf.MsdfFont;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
@@ -18,10 +19,13 @@ import vorga.phazeclient.base.util.render.Render2DUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.MenuLayout;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
+import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabel;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -40,6 +44,7 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final float RIGHT_WIDTH = 90.0F;
     private static final float PANEL_RADIUS = 4.0F;
     private static final float PANEL_PAD = MenuLayout.CONTENT_INSET;
+    private static final float HEADER_TEXT_INSET = 2.0F;
     private static final float NAV_HEIGHT = 14.0F;
     private static final float NAV_GAP = 2.0F;
     private static final float PROFILE_HEIGHT = 42.0F;
@@ -47,16 +52,29 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final float FRIEND_PREVIEW_TOP_OFFSET = NAV_TOP_OFFSET
             + Section.values().length * NAV_HEIGHT - NAV_GAP + 16.0F;
     private static final float MESSAGE_ROW = 22.0F;
-    private static final float FRIEND_CARD_HEIGHT = 38.0F;
+    private static final float COMPACT_FRIEND_NAME_OFFSET = (18.0F - (7.0F + 4.8F)) / 2.0F;
+    private static final float COMPACT_FRIEND_STATUS_OFFSET = COMPACT_FRIEND_NAME_OFFSET + 7.0F;
+    private static final float FRIEND_CARD_HEIGHT = AbstractSettingComponent.ROW_HEIGHT;
     private static final float FRIEND_ROW_STEP = FRIEND_CARD_HEIGHT + 5.0F;
-    private static final float DIRECT_CARD_HEIGHT = 44.0F;
+    private static final float DIRECT_CARD_HEIGHT = FRIEND_CARD_HEIGHT;
     private static final float DIRECT_ROW_STEP = DIRECT_CARD_HEIGHT + 5.0F;
+    private static final float CARD_AVATAR_SIZE = 17.5F;
+    private static final float CARD_AVATAR_INSET = (FRIEND_CARD_HEIGHT - CARD_AVATAR_SIZE) / 2.0F;
+    private static final float CARD_TEXT_INSET = CARD_AVATAR_INSET + CARD_AVATAR_SIZE + 6.0F;
+    private static final float CARD_TEXT_LINE_STEP = 10.0F;
+    private static final float FRIEND_CARD_NAME_OFFSET = (FRIEND_CARD_HEIGHT - (CARD_TEXT_LINE_STEP + 4.8F)) / 2.0F;
+    private static final float DIRECT_CARD_NAME_OFFSET = (DIRECT_CARD_HEIGHT - (CARD_TEXT_LINE_STEP + 5.2F)) / 2.0F;
     private static final float REQUEST_CARD_HEIGHT = 43.0F;
     private static final float REQUEST_ROW_STEP = REQUEST_CARD_HEIGHT + 5.0F;
     private static final float CARD_RADIUS = 5.0F;
     private static final float DIRECT_HEADER_HEIGHT = 27.0F;
+    private static final float DIRECT_BACK_WIDTH = 25.0F;
+    private static final float DIRECT_BACK_ICON_SIZE = 10.0F;
+    private static final float DIRECT_BACK_ICON_X_INSET = (DIRECT_BACK_WIDTH - DIRECT_BACK_ICON_SIZE) / 2.0F;
+    private static final float DIRECT_BACK_ICON_Y_INSET = (DIRECT_HEADER_HEIGHT - DIRECT_BACK_ICON_SIZE) / 2.0F;
     private static final float INPUT_HEIGHT = 18.0F;
     private static final float INPUT_TEXT_SIZE = 7.2F;
+    private static final int HOVER_MS = 170;
     private static final int MAX_INPUT_CODEPOINTS = 255;
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm")
             .withZone(ZoneId.systemDefault());
@@ -86,6 +104,8 @@ public final class MessengerViewComponent extends AbstractComponent {
     private volatile String actionError;
     private long nextRequestsRefreshAt;
     private final Map<String, SettingLabel> marqueeLabels = new HashMap<>();
+    private final Map<String, Animation> hoverAnimations = new HashMap<>();
+    private final Set<String> renderedHoverKeys = new HashSet<>();
 
     public MessengerViewComponent() {
         pageAnimation.setDirectionAndFinish(Direction.BACKWARDS);
@@ -106,6 +126,7 @@ public final class MessengerViewComponent extends AbstractComponent {
     }
 
     public void open() {
+        if (!open) hoverAnimations.clear();
         open = true;
         pageAnimation.setDirection(Direction.FORWARDS);
         service.start();
@@ -148,6 +169,7 @@ public final class MessengerViewComponent extends AbstractComponent {
             }
         }
 
+        renderedHoverKeys.clear();
         try {
 
         float pageX = x + SIDE;
@@ -175,6 +197,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         renderDetails(context, rightX + PANEL_PAD, pageY + PANEL_PAD,
                 RIGHT_WIDTH - PANEL_PAD * 2.0F, pageH - PANEL_PAD * 2.0F, mouseX, mouseY);
         } finally {
+            hoverAnimations.keySet().retainAll(renderedHoverKeys);
             globalAlpha = inheritedAlpha;
         }
     }
@@ -189,7 +212,7 @@ public final class MessengerViewComponent extends AbstractComponent {
                 panelX + panelW - 2.0F, panelY + 5.0F, 12.0F,
                 MenuStyle.TEXT_PRIMARY, true,
                 inside(mouseX, mouseY, panelX + 34.0F, panelY + 4.0F, panelW - 34.0F, 16.0F));
-        drawStatus(context, panelX + 36.0F, panelY + 24.0F, service.getStatus().equals("Online"));
+        drawStatus(context, panelX + 36.0F, panelY + 18.0F, service.getStatus().equals("Online"));
     }
 
     private void renderNavigation(DrawContext context, float navX, float navY, float navW,
@@ -198,14 +221,16 @@ public final class MessengerViewComponent extends AbstractComponent {
             float rowY = navY + item.ordinal() * (NAV_HEIGHT + NAV_GAP);
             boolean active = section == item;
             boolean hovered = inside(mouseX, mouseY, navX, rowY, navW, NAV_HEIGHT);
+            float hover = animatedHover("nav:" + item.name(), hovered);
             int fill = active
                     ? MenuStyle.mix(MenuStyle.PANEL_ROW_ACTIVE, MenuStyle.CHIP_ACTIVE, 0.42F)
-                    : MenuStyle.mix(MenuStyle.PANEL_ROW, MenuStyle.CARD_INNER, hovered ? 0.32F : 0.12F);
+                    : MenuStyle.mix(MenuStyle.PANEL_ROW, MenuStyle.CARD_INNER, 0.12F);
             int border = active ? MenuStyle.mix(MenuStyle.BORDER_LIGHT, MenuStyle.CHIP_ACTIVE, 0.55F)
                     : MenuStyle.BORDER;
-            drawSurface(context, navX, rowY, navW, NAV_HEIGHT, fill, border);
+            drawButtonSurface(context, navX, rowY, navW, NAV_HEIGHT, fill, border, hover);
             drawCentered(context, Lang.t(item.label), navX, rowY, navW, NAV_HEIGHT, 5.2F,
-                    active ? MenuStyle.TEXT_PRIMARY : MenuStyle.TEXT_MUTED, true);
+                    active ? MenuStyle.TEXT_PRIMARY
+                            : MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, hover * 0.45F), true);
             if (item == Section.FRIENDS && !service.getFriends().isEmpty()) {
                 drawBadge(context, navX, rowY, navW, NAV_HEIGHT, String.valueOf(service.getFriends().size()));
             } else if (item == Section.DIRECT && !service.getConversations().isEmpty()) {
@@ -234,12 +259,15 @@ public final class MessengerViewComponent extends AbstractComponent {
 
     private void renderCompactFriend(DrawContext context, MessengerService.Friend friend,
                                       float rowX, float rowY, float rowW, int mouseX, int mouseY) {
+        boolean hovered = inside(mouseX, mouseY, rowX, rowY, rowW, 18.0F);
+        float hover = animatedHover("compact:" + friend.id(), hovered);
+        if (hover > 0.0F) drawChatCard(context, rowX, rowY, rowW, 18.0F, hover, hover);
         renderAvatar(context, rowX, rowY, 15.0F, friend.username(), MenuStyle.CHIP_ACTIVE);
         drawMarqueeLabel(context, "compact:" + friend.id(), friend.username(), 5.0F,
-                rowX + 20.0F, rowY + 1.0F, rowX + rowW, rowY, 12.0F,
+                rowX + 20.0F, rowY + COMPACT_FRIEND_NAME_OFFSET, rowX + rowW, rowY, 12.0F,
                 MenuStyle.TEXT_PRIMARY, false,
                 inside(mouseX, mouseY, rowX + 18.0F, rowY, rowW - 18.0F, 18.0F));
-        drawStatus(context, rowX + 20.0F, rowY + 11.0F, service.isUserOnline(friend.id()));
+        drawStatus(context, rowX + 20.0F, rowY + COMPACT_FRIEND_STATUS_OFFSET, service.isUserOnline(friend.id()));
     }
 
     private void renderCenter(DrawContext context, float contentX, float contentY, float contentW,
@@ -247,23 +275,24 @@ public final class MessengerViewComponent extends AbstractComponent {
         MessengerService.Conversation conversation = selectedConversation();
         boolean directConversationOpen = section == Section.DIRECT && conversation != null;
         if (directConversationOpen) {
-            renderConversationHeader(context, conversation, contentX, contentY, contentW);
+            renderConversationHeader(context, conversation, contentX, contentY, contentW, mouseX, mouseY);
         } else {
             String title = section == Section.GLOBAL ? Lang.t("messenger.title") : Lang.t(section.label);
-            drawText(context, title, contentX + 2.0F, contentY + 2.0F, 8.2F, MenuStyle.TEXT_PRIMARY, true);
+            drawText(context, title, contentX + HEADER_TEXT_INSET, contentY + 2.0F, 8.2F, MenuStyle.TEXT_PRIMARY, true);
         }
-        if (!directConversationOpen) {
+        if (section == Section.GLOBAL) {
             String online = service.getOnlineCount() < 0 ? "—" : service.getOnlineCount() + " online";
             float onlineWidth = MsdfFonts.medium().getWidth(online, 5.0F);
-            drawText(context, online, contentX + contentW - onlineWidth - 23.0F, contentY + 4.0F,
+            drawText(context, online, headerRightTextX(contentX, contentW, onlineWidth), contentY + 4.0F,
                     5.0F, MenuStyle.TEXT_MUTED, false);
+        }
+        if (!directConversationOpen) {
             drawLine(context, contentX, contentY + 21.0F, contentW, MenuStyle.BORDER);
         }
 
         float inputY = contentY + contentH - INPUT_HEIGHT;
         float listTop = contentY + (directConversationOpen ? DIRECT_HEADER_HEIGHT + 5.0F : 27.0F);
-        float listBottom = directConversationOpen || section == Section.GLOBAL
-                ? inputY - 5.0F : contentY + contentH - 2.0F;
+        float listBottom = listBottom(contentY, contentH, directConversationOpen || section == Section.GLOBAL);
         context.enableScissor((int) contentX, (int) listTop, (int) (contentX + contentW), (int) listBottom);
         if (section == Section.GLOBAL) {
             renderGlobalMessages(context, contentX, listTop, contentW, listBottom, mouseX, mouseY);
@@ -275,22 +304,36 @@ public final class MessengerViewComponent extends AbstractComponent {
         context.disableScissor();
 
         if (section == Section.GLOBAL || directConversationOpen) {
-            renderInput(context, contentX, inputY, contentW);
+            renderInput(context, contentX, inputY, contentW, mouseX, mouseY);
         }
     }
 
     private void renderConversationHeader(DrawContext context, MessengerService.Conversation conversation,
-                                          float contentX, float contentY, float contentW) {
+                                          float contentX, float contentY, float contentW, int mouseX, int mouseY) {
         drawSurface(context, contentX, contentY, contentW, DIRECT_HEADER_HEIGHT,
                 MenuStyle.CARD_OPTIONS, MenuStyle.BORDER);
-        drawCentered(context, "‹", contentX, contentY, 25.0F, DIRECT_HEADER_HEIGHT,
-                10.0F, MenuStyle.TEXT_PRIMARY, true);
+        float hover = animatedHover("conversation:back",
+                inside(mouseX, mouseY, contentX, contentY, DIRECT_BACK_WIDTH, DIRECT_HEADER_HEIGHT));
+        if (hover > 0.0F) {
+            drawChatCard(context, contentX + 3.0F, contentY + 3.0F, DIRECT_BACK_WIDTH - 6.0F,
+                    DIRECT_HEADER_HEIGHT - 6.0F, hover, hover);
+        }
+        float backIconX = contentX + DIRECT_BACK_ICON_X_INSET;
+        float backIconY = contentY + DIRECT_BACK_ICON_Y_INSET;
+        // Image shifts X by its width; compensate just as the module-settings arrow does.
+        image.setTexture("textures/back_arrow.png")
+                .render(ShapeProperties.create(context.getMatrices(),
+                                backIconX - DIRECT_BACK_ICON_SIZE, backIconY,
+                                DIRECT_BACK_ICON_SIZE, DIRECT_BACK_ICON_SIZE)
+                        .rotation(0)
+                        .color(applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, hover * 0.18F)))
+                        .build());
         renderAvatar(context, contentX + 28.0F, contentY + 3.0F, 21.0F,
                 conversation.username(), MenuStyle.CHIP_ACTIVE);
         drawMarqueeLabel(context, "conversation:" + conversation.id(), conversation.username(), 6.0F,
                 contentX + 54.0F, contentY + 3.0F, contentX + contentW - 6.0F,
                 contentY + 2.0F, 12.0F, MenuStyle.TEXT_PRIMARY, true, false);
-        drawStatus(context, contentX + 54.0F, contentY + 15.0F,
+        drawStatus(context, contentX + 54.0F, contentY + 12.0F,
                 service.isUserOnline(conversation.participantId()));
     }
 
@@ -375,49 +418,50 @@ public final class MessengerViewComponent extends AbstractComponent {
     private void renderFriendCard(DrawContext context, MessengerService.Friend friend,
                                   float rowX, float rowY, float rowW, int mouseX, int mouseY) {
         boolean hovered = inside(mouseX, mouseY, rowX, rowY, rowW, FRIEND_CARD_HEIGHT);
-        drawSurface(context, rowX, rowY, rowW, FRIEND_CARD_HEIGHT,
-                MenuStyle.mix(MenuStyle.CARD_OPTIONS, MenuStyle.TEXT_PRIMARY, hovered ? 0.06F : 0.0F),
-                hovered ? MenuStyle.BORDER_LIGHT : MenuStyle.BORDER);
-        renderAvatar(context, rowX + 6.0F, rowY + 6.0F, 26.0F,
+        float hover = animatedHover("friend-card:" + friend.id(), hovered);
+        drawChatCard(context, rowX, rowY, rowW, FRIEND_CARD_HEIGHT, hover);
+        renderAvatar(context, rowX + CARD_AVATAR_INSET, rowY + CARD_AVATAR_INSET, CARD_AVATAR_SIZE,
                 friend.username(), MenuStyle.CHIP_ACTIVE);
+        float textX = rowX + CARD_TEXT_INSET;
+        float nameY = rowY + FRIEND_CARD_NAME_OFFSET;
         drawMarqueeLabel(context, "friend-card:" + friend.id(), friend.username(), 6.0F,
-                rowX + 39.0F, rowY + 8.0F, rowX + rowW - 6.0F,
-                rowY + 5.0F, 13.0F, MenuStyle.TEXT_PRIMARY, true, hovered);
-        drawStatus(context, rowX + 39.0F, rowY + 23.0F,
+                textX, nameY, rowX + rowW - 6.0F,
+                rowY, FRIEND_CARD_HEIGHT, MenuStyle.TEXT_PRIMARY, true, hovered);
+        drawStatus(context, textX, nameY + CARD_TEXT_LINE_STEP,
                 service.isUserOnline(friend.id()));
     }
 
     private void renderConversationCard(DrawContext context, MessengerService.Conversation conversation,
                                         float rowX, float rowY, float rowW, int mouseX, int mouseY) {
         boolean hovered = inside(mouseX, mouseY, rowX, rowY, rowW, DIRECT_CARD_HEIGHT);
-        drawSurface(context, rowX, rowY, rowW, DIRECT_CARD_HEIGHT,
-                MenuStyle.mix(MenuStyle.CARD_OPTIONS, MenuStyle.TEXT_PRIMARY, hovered ? 0.06F : 0.0F),
-                hovered ? MenuStyle.BORDER_LIGHT : MenuStyle.BORDER);
-        renderAvatar(context, rowX + 6.0F, rowY + 8.0F, 28.0F,
+        float hover = animatedHover("conversation-card:" + conversation.id(), hovered);
+        drawChatCard(context, rowX, rowY, rowW, DIRECT_CARD_HEIGHT, hover);
+        renderAvatar(context, rowX + CARD_AVATAR_INSET, rowY + CARD_AVATAR_INSET, CARD_AVATAR_SIZE,
                 conversation.username(), MenuStyle.CHIP_ACTIVE);
+        float textX = rowX + CARD_TEXT_INSET;
+        float nameY = rowY + DIRECT_CARD_NAME_OFFSET;
 
         String time = conversation.lastCreatedAt() > 0L
                 ? formatTime(conversation.lastCreatedAt()) : "";
         float timeWidth = time.isEmpty() ? 0.0F : renderedTextWidth(time, 4.8F);
         float right = rowX + rowW - 7.0F - timeWidth;
         drawMarqueeLabel(context, "conversation-card:" + conversation.id(), conversation.username(), 6.0F,
-                rowX + 42.0F, rowY + 7.0F, right - 5.0F,
-                rowY + 4.0F, 13.0F, MenuStyle.TEXT_PRIMARY, true, hovered);
+                textX, nameY, right - 5.0F,
+                rowY, DIRECT_CARD_HEIGHT, MenuStyle.TEXT_PRIMARY, true, hovered);
         if (!time.isEmpty()) {
-            drawText(context, time, right, rowY + 7.0F, 4.8F, MenuStyle.TEXT_MUTED, false);
+            drawText(context, time, right, nameY + 0.6F, 4.8F, MenuStyle.TEXT_MUTED, false);
         }
         String preview = conversation.lastText() == null || conversation.lastText().isBlank()
                 ? Lang.t("messenger.message_placeholder") : conversation.lastText();
-        drawText(context, fitSingleLine(preview, Math.max(24.0F, right - rowX - 42.0F), 5.2F, "..."),
-                rowX + 42.0F, rowY + 24.0F, 5.2F, MenuStyle.TEXT_MUTED, false);
+        drawText(context, fitSingleLine(preview, Math.max(24.0F, right - textX), 5.2F, "..."),
+                textX, nameY + CARD_TEXT_LINE_STEP, 5.2F, MenuStyle.TEXT_MUTED, false);
     }
 
     private void renderFriendRequestCard(DrawContext context, MessengerService.FriendRequest request,
                                           float rowX, float rowY, float rowW, int mouseX, int mouseY) {
         boolean hovered = inside(mouseX, mouseY, rowX, rowY, rowW, REQUEST_CARD_HEIGHT);
-        drawSurface(context, rowX, rowY, rowW, REQUEST_CARD_HEIGHT,
-                MenuStyle.mix(MenuStyle.CARD_OPTIONS, MenuStyle.TEXT_PRIMARY, hovered ? 0.06F : 0.0F),
-                hovered ? MenuStyle.BORDER_LIGHT : MenuStyle.BORDER);
+        float hover = animatedHover("request:" + request.id(), hovered);
+        drawChatCard(context, rowX, rowY, rowW, REQUEST_CARD_HEIGHT, hover);
         renderAvatar(context, rowX + 6.0F, rowY + 6.0F, 20.0F,
                 request.requesterUsername(), MenuStyle.CHIP_ACTIVE);
         drawMarqueeLabel(context, "request:" + request.id(), request.requesterUsername(), 5.8F,
@@ -427,9 +471,9 @@ public final class MessengerViewComponent extends AbstractComponent {
         float actionY = rowY + 26.0F;
         float actionX = rowX + 6.0F;
         float actionW = (rowW - 16.0F) / 2.0F;
-        renderCompactActionButton(context, Lang.t("messenger.accept"), actionX, actionY, actionW,
+        renderCompactActionButton(context, "request:accept:" + request.id(), Lang.t("messenger.accept"), actionX, actionY, actionW,
                 mouseX, mouseY, MenuStyle.ACCENT_GREEN);
-        renderCompactActionButton(context, Lang.t("messenger.decline"), actionX + actionW + 4.0F,
+        renderCompactActionButton(context, "request:decline:" + request.id(), Lang.t("messenger.decline"), actionX + actionW + 4.0F,
                 actionY, actionW, mouseX, mouseY, 0xFFE76868);
     }
 
@@ -437,22 +481,35 @@ public final class MessengerViewComponent extends AbstractComponent {
                                       float rowY, float rowW, int mouseX, int mouseY) {
         boolean selected = id.equals(selectedFriendId) || id.equals(selectedConversationId);
         boolean hovered = inside(mouseX, mouseY, rowX, rowY, rowW, 25.0F);
-        drawSurface(context, rowX, rowY, rowW, 25.0F,
+        float hover = animatedHover("user:" + id, hovered);
+        drawButtonSurface(context, rowX, rowY, rowW, 25.0F,
                 selected ? MenuStyle.PANEL_ROW_ACTIVE : MenuStyle.mix(MenuStyle.PANEL_ROW, MenuStyle.CARD_INNER,
-                        hovered ? 0.28F : 0.10F), selected ? MenuStyle.CHIP_ACTIVE : MenuStyle.BORDER);
+                        0.10F), selected ? MenuStyle.CHIP_ACTIVE : MenuStyle.BORDER, hover);
         renderAvatar(context, rowX + 5.0F, rowY + 5.0F, 15.0F, username, MenuStyle.CHIP_ACTIVE);
         drawMarqueeLabel(context, "user:" + id, username, 5.8F, rowX + 26.0F, rowY + 5.0F,
                 rowX + rowW - (section == Section.BLOCKED ? 56.0F : 6.0F), rowY + 2.0F,
                 19.0F, MenuStyle.TEXT_PRIMARY, false, hovered);
         if (section == Section.BLOCKED) {
+            float unblockHover = animatedHover("unblock:" + id,
+                    inside(mouseX, mouseY, rowX + rowW - 56.0F, rowY, 50.0F, 25.0F));
+            drawButtonSurface(context, rowX + rowW - 50.0F, rowY + 4.0F, 44.0F, 17.0F,
+                    MenuStyle.CARD_INNER, MenuStyle.BORDER, unblockHover);
             drawCentered(context, Lang.t("messenger.unblock"), rowX + rowW - 50.0F, rowY + 4.0F,
-                    44.0F, 17.0F, 4.2F, MenuStyle.TEXT_MUTED, true);
+                    44.0F, 17.0F, 4.2F,
+                    MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, unblockHover * 0.45F), true);
         }
     }
 
     private void renderMessage(DrawContext context, MessengerService.Message message, float rowX,
                                float rowY, float rowW, int mouseX, int mouseY) {
+        float avatarHover = animatedHover("message-avatar:" + message.id(),
+                inside(mouseX, mouseY, rowX, rowY + 1.0F, 17.0F, 17.0F));
         renderAvatar(context, rowX, rowY + 1.0F, 17.0F, message.senderUsername(), MenuStyle.CHIP_ACTIVE);
+        if (avatarHover > 0.0F) {
+            rectangle.render(ShapeProperties.create(context.getMatrices(), rowX, rowY + 1.0F, 17.0F, 17.0F)
+                    .round(2.0F)
+                    .color(applyGlobalAlpha(MenuStyle.withAlpha(0xFFFFFFFF, avatarHover * 0.08F))).build());
+        }
         int senderColor = message.senderId().equals(service.getCurrentUser() == null
                 ? "" : service.getCurrentUser().id()) ? MenuStyle.CHIP_ACTIVE : MenuStyle.TEXT_PRIMARY;
         drawMarqueeLabel(context, "sender:" + message.senderId(), message.senderUsername(), 6.2F,
@@ -465,7 +522,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         drawText(context, text, rowX + 22.0F, rowY + 11.0F, 6.0F, MenuStyle.TEXT_PRIMARY, false);
     }
 
-    private void renderInput(DrawContext context, float inputX, float inputY, float inputW) {
+    private void renderInput(DrawContext context, float inputX, float inputY, float inputW, int mouseX, int mouseY) {
         float sendW = 42.0F;
         float boxW = inputW - sendW - GAP;
         drawSurface(context, inputX, inputY, boxW, INPUT_HEIGHT, MenuStyle.CARD_INNER, MenuStyle.BORDER);
@@ -511,8 +568,9 @@ public final class MessengerViewComponent extends AbstractComponent {
         float sendX = inputX + boxW + GAP;
         long remaining = Math.max(0L, nextSendAt - System.currentTimeMillis());
         boolean enabled = !input.isEmpty() && !sendPending && remaining == 0L;
-        drawSurface(context, sendX, inputY, sendW, INPUT_HEIGHT,
-                enabled ? MenuStyle.CHIP_ACTIVE : MenuStyle.PANEL_ROW, MenuStyle.BORDER_LIGHT);
+        float hover = animatedHover("input:send", enabled && inside(mouseX, mouseY, sendX, inputY, sendW, INPUT_HEIGHT));
+        drawButtonSurface(context, sendX, inputY, sendW, INPUT_HEIGHT,
+                enabled ? MenuStyle.CHIP_ACTIVE : MenuStyle.PANEL_ROW, MenuStyle.BORDER_LIGHT, hover);
         drawCentered(context, remaining > 0L ? String.format("%.1f", remaining / 1000.0D) : (sendPending ? "..." : Lang.t("messenger.send")), sendX, inputY, sendW, INPUT_HEIGHT,
                 5.8F, enabled ? MenuStyle.TEXT_PRIMARY : MenuStyle.TEXT_MUTED, true);
     }
@@ -529,42 +587,45 @@ public final class MessengerViewComponent extends AbstractComponent {
                 34.0F, selected.username(), MenuStyle.CHIP_ACTIVE);
         drawCentered(context, clip(selected.username(), 16), panelX, panelY + 49.0F,
                 panelW, 12.0F, 6.4F, MenuStyle.TEXT_PRIMARY, true);
-        drawCenteredStatus(context, panelX, panelY + 63.0F, panelW, service.isUserOnline(selected.id()));
+        drawCenteredStatus(context, panelX, panelY + 61.0F, panelW, service.isUserOnline(selected.id()));
 
         float buttonY = panelY + 82.0F;
         boolean blockedUser = isBlocked(selected.id());
         boolean friend = isFriend(selected.id());
-        renderActionButton(context, blockedUser ? Lang.t("messenger.unblock") : Lang.t("messenger.message"), panelX, buttonY, panelW, mouseX, mouseY,
+        renderActionButton(context, "details:message", blockedUser ? Lang.t("messenger.unblock") : Lang.t("messenger.message"), panelX, buttonY, panelW, mouseX, mouseY,
                  selectedFriendId != null && selectedFriendId.equals(selected.id()), false);
         if (!blockedUser) {
-            renderActionButton(context, friend ? Lang.t("messenger.remove_friend") : Lang.t("messenger.add_friend"),
+            renderActionButton(context, "details:friend", friend ? Lang.t("messenger.remove_friend") : Lang.t("messenger.add_friend"),
                     panelX, buttonY + 22.0F, panelW, mouseX, mouseY, false, friend);
-            renderActionButton(context, Lang.t("messenger.block"), panelX, buttonY + 44.0F, panelW, mouseX, mouseY, false, false);
+            renderActionButton(context, "details:block", Lang.t("messenger.block"), panelX, buttonY + 44.0F, panelW, mouseX, mouseY, false, false);
         }
         if (actionError != null) {
             drawText(context, actionError, panelX, buttonY + 68.0F, 3.8F, 0xFFE76868, false);
         }
     }
 
-    private void renderActionButton(DrawContext context, String label, float buttonX, float buttonY,
+    private void renderActionButton(DrawContext context, String key, String label, float buttonX, float buttonY,
                                     float buttonW, int mouseX, int mouseY, boolean active, boolean destructive) {
         boolean hovered = inside(mouseX, mouseY, buttonX, buttonY, buttonW, 18.0F);
+        float hover = animatedHover(key, hovered);
         int fill = destructive
-                ? MenuStyle.mix(0xFFB64055, MenuStyle.CARD_INNER, hovered ? 0.18F : 0.42F)
+                ? MenuStyle.mix(0xFFB64055, MenuStyle.CARD_INNER, 0.42F)
                 : active ? MenuStyle.mix(MenuStyle.PANEL_ROW_ACTIVE, MenuStyle.CHIP_ACTIVE, 0.42F)
-                : MenuStyle.mix(MenuStyle.PANEL_ROW, MenuStyle.CARD_INNER, hovered ? 0.28F : 0.10F);
-        drawSurface(context, buttonX, buttonY, buttonW, 18.0F, fill,
-                destructive ? 0xFFE76868 : active ? MenuStyle.CHIP_ACTIVE : MenuStyle.BORDER);
+                : MenuStyle.mix(MenuStyle.PANEL_ROW, MenuStyle.CARD_INNER, 0.10F);
+        drawButtonSurface(context, buttonX, buttonY, buttonW, 18.0F, fill,
+                destructive ? 0xFFE76868 : active ? MenuStyle.CHIP_ACTIVE : MenuStyle.BORDER, hover);
+        int text = destructive ? 0xFFFFC1C8 : active ? MenuStyle.TEXT_PRIMARY : MenuStyle.TEXT_MUTED;
         drawCentered(context, label, buttonX, buttonY, buttonW, 18.0F, 5.2F,
-                destructive ? 0xFFFFC1C8 : active ? MenuStyle.TEXT_PRIMARY : MenuStyle.TEXT_MUTED, true);
+                MenuStyle.mix(text, MenuStyle.TEXT_PRIMARY, hover * 0.45F), true);
     }
 
-    private void renderCompactActionButton(DrawContext context, String label, float buttonX, float buttonY,
+    private void renderCompactActionButton(DrawContext context, String key, String label, float buttonX, float buttonY,
                                             float buttonW, int mouseX, int mouseY, int accent) {
         boolean hovered = inside(mouseX, mouseY, buttonX, buttonY, buttonW, 13.0F);
-        int fill = MenuStyle.mix(MenuStyle.CARD_INNER, accent, hovered ? 0.32F : 0.18F);
-        drawSurface(context, buttonX, buttonY, buttonW, 13.0F, fill,
-                MenuStyle.mix(MenuStyle.BORDER, accent, hovered ? 0.72F : 0.45F));
+        float hover = animatedHover(key, hovered);
+        int fill = MenuStyle.mix(MenuStyle.CARD_INNER, accent, 0.18F);
+        drawButtonSurface(context, buttonX, buttonY, buttonW, 13.0F, fill,
+                MenuStyle.mix(MenuStyle.BORDER, accent, 0.45F), hover);
         drawCentered(context, label, buttonX, buttonY, buttonW, 13.0F, 4.1F,
                 MenuStyle.TEXT_PRIMARY, true);
     }
@@ -690,7 +751,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         float inputX = contentX;
         float inputW = contentW - 42.0F - GAP;
         boolean directConversationOpen = section == Section.DIRECT && selectedConversation() != null;
-        if (directConversationOpen && inside(mouseX, mouseY, contentX, contentY, 25.0F, DIRECT_HEADER_HEIGHT)) {
+        if (directConversationOpen && inside(mouseX, mouseY, contentX, contentY, DIRECT_BACK_WIDTH, DIRECT_HEADER_HEIGHT)) {
             conversationRequestGeneration++;
             selectedConversationId = null;
             selectedFriendId = null;
@@ -788,7 +849,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         }
 
         float listTop = contentY + (directConversationOpen ? DIRECT_HEADER_HEIGHT + 5.0F : 27.0F);
-        float listBottom = inputY - 5.0F;
+        float listBottom = listBottom(contentY, contentH, section == Section.GLOBAL || directConversationOpen);
         if (section == Section.FRIENDS) {
             List<MessengerService.Friend> currentFriends = service.getFriends();
             int index = cardIndex(mouseX, mouseY, contentX, listTop, contentW,
@@ -852,7 +913,15 @@ public final class MessengerViewComponent extends AbstractComponent {
         return inside(mouseX, mouseY, pageX, pageY, pageW, pageH);
     }
 
-    private int cardIndex(double mouseX, double mouseY, float listX, float listTop, float listW,
+    private static float headerRightTextX(float contentX, float contentW, float textWidth) {
+        return contentX + contentW - textWidth - HEADER_TEXT_INSET;
+    }
+
+    private static float listBottom(float contentY, float contentH, boolean hasInput) {
+        return contentY + contentH - (hasInput ? INPUT_HEIGHT + 5.0F : 2.0F);
+    }
+
+    private static int cardIndex(double mouseX, double mouseY, float listX, float listTop, float listW,
                           float cardHeight, float step, float listBottom, int size) {
         if (!inside(mouseX, mouseY, listX, listTop, listW, Math.max(0.0F, listBottom - listTop))) {
             return -1;
@@ -860,6 +929,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         int index = (int) ((mouseY - listTop) / step);
         if (index < 0 || index >= size) return -1;
         float rowY = listTop + index * step;
+        if (rowY + cardHeight > listBottom) return -1;
         return inside(mouseX, mouseY, listX, rowY, listW, cardHeight) ? index : -1;
     }
 
@@ -1152,6 +1222,39 @@ public final class MessengerViewComponent extends AbstractComponent {
                 + Math.max(0, text.length() - 1) * 0.025F * size;
     }
 
+    private float animatedHover(String key, boolean hovered) {
+        renderedHoverKeys.add(key);
+        Animation animation = hoverAnimations.computeIfAbsent(key, ignored -> new DecelerateAnimation()
+                .setMs(HOVER_MS).setValue(1).setDirectionAndFinish(Direction.BACKWARDS));
+        animation.setDirection(open && hovered ? Direction.FORWARDS : Direction.BACKWARDS);
+        if (open && hovered) CursorManager.requestHand();
+        return animation.getOutputFloat();
+    }
+
+    private void drawButtonSurface(DrawContext context, float drawX, float drawY, float drawW, float drawH,
+                                   int color, int border, float hover) {
+        drawSurface(context, drawX, drawY, drawW, drawH,
+                MenuStyle.mix(color, 0xFFFFFFFF, hover * 0.08F),
+                MenuStyle.mix(border, 0xFFFFFFFF, hover * 0.12F));
+    }
+
+    private void drawChatCard(DrawContext context, float drawX, float drawY, float drawW, float drawH,
+                              float hover) {
+        drawChatCard(context, drawX, drawY, drawW, drawH, hover, 1.0F);
+    }
+
+    private void drawChatCard(DrawContext context, float drawX, float drawY, float drawW, float drawH,
+                              float hover, float opacity) {
+        // Match module-setting rows, including their translucent fill and soft outline.
+        int color = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.settingSurface(false), 0xFFFFFFFF,
+                hover * 0.08F), opacity * 0.78F);
+        int border = MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.settingOutline(false), 0xFFFFFFFF,
+                hover * 0.12F), opacity * 0.74F);
+        rectangle.render(ShapeProperties.create(context.getMatrices(), drawX, drawY, drawW, drawH)
+                .round(PANEL_RADIUS).softness(1.12F).thickness(1.2F)
+                .outlineColor(applyGlobalAlpha(border)).color(applyGlobalAlpha(color)).build());
+    }
+
     private void drawPanel(DrawContext context, float panelX, float panelY, float panelW, float panelH, int color) {
         drawSurface(context, panelX, panelY, panelW, panelH, color, MenuStyle.BORDER);
     }
@@ -1184,14 +1287,12 @@ public final class MessengerViewComponent extends AbstractComponent {
     }
 
     private void drawStatus(DrawContext context, float statusX, float statusY, boolean online) {
-        rectangle.render(ShapeProperties.create(context.getMatrices(), statusX, statusY + 2.0F, 4.0F, 4.0F)
-                .round(2.0F).color(applyGlobalAlpha(online ? MenuStyle.ACCENT_GREEN : MenuStyle.TEXT_MUTED)).build());
-        drawText(context, Lang.t(online ? "messenger.online" : "messenger.offline"), statusX + 7.0F, statusY,
+        drawText(context, Lang.t(online ? "messenger.online" : "messenger.offline"), statusX, statusY,
                 4.8F, online ? MenuStyle.ACCENT_GREEN : MenuStyle.TEXT_MUTED, false);
     }
 
     private void drawCenteredStatus(DrawContext context, float boxX, float boxY, float boxW, boolean online) {
-        float textW = MsdfFonts.medium().getWidth(Lang.t(online ? "messenger.online" : "messenger.offline"), 4.8F) + 7.0F;
+        float textW = MsdfFonts.medium().getWidth(Lang.t(online ? "messenger.online" : "messenger.offline"), 4.8F);
         float start = boxX + (boxW - textW) / 2.0F;
         drawStatus(context, start, boxY, online);
     }

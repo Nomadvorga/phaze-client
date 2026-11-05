@@ -22,13 +22,11 @@ import org.joml.Vector3f;
  * {@link BufferBuilder}, and restores neutral state on exit.
  *
  * <h3>Camera-relative coordinates</h3>
- * Every call expects coordinates already translated by the camera
- * position. The world-render mixin pushes that translate before
- * invoking these helpers, so callers pass plain world-space values
- * and the matrix stack handles the camera offset implicitly. The
- * one exception is {@link #drawLineWorld} which subtracts the
- * camera position itself for ad-hoc callers that don't sit inside
- * a pushed camera-relative frame.
+ * Callers subtract the camera position in double precision BEFORE
+ * converting coordinates to floats. The late world pass supplies
+ * camera rotation through ModelViewMat; it must not also be baked
+ * into the helper's local matrix. {@link #drawLineWorld} handles
+ * camera subtraction itself for ad-hoc world-space callers.
  *
  * <h3>Shader / state contract</h3>
  * The line / box variants use {@code RENDERTYPE_LINES} and
@@ -219,6 +217,8 @@ public final class Render3DUtil {
         RenderSystem.disableBlend();
     }
 
+    /** Append six faces using the same local matrix as the outline.
+     * The box is entity-local, or already camera-relative for world helpers. */
     public static void vertexBoxFill(MatrixStack matrices,
                                      VertexConsumer consumer,
                                      Box box,

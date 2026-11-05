@@ -18,7 +18,6 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.RotationAxis;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 
 @Setter
 @Accessors(chain = true)
@@ -40,10 +39,8 @@ public class Image implements Shape, QuickImports {
         RenderSystem.defaultBlendFunc();
 
         Identifier textureId = Identifier.of(texture);
-        RenderSystem.setShaderTexture(0, textureId);
-
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        // Filtering is defined by the image's .mcmeta at load time. Shader texture
+        // selection is deferred and cannot make ambient glTexParameteri calls safe.
 
         float width = shape.getWidth();
         float x = shape.getX() + width;

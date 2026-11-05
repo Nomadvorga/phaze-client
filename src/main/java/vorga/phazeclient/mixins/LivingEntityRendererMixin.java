@@ -19,7 +19,6 @@ import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -167,8 +166,8 @@ public abstract class LivingEntityRendererMixin<
             return;
         }
 
-        Vec3d pos = new Vec3d(state.x, state.y, state.z);
-        if (!pos.isInRange(player.getPos(), config.maxDistance.getInt())) {
+        if (!HitRangeCircleRenderer.isInRange(state.x, state.y, state.z,
+                player.getX(), player.getY(), player.getZ(), config.maxDistance.getInt())) {
             return;
         }
 
@@ -182,7 +181,7 @@ public abstract class LivingEntityRendererMixin<
             return;
         }
 
-        HitRangeCircleRenderer.drawCircle(matrices, vertexConsumers, playerState);
+        HitRangeCircleRenderer.drawCircle(matrices, playerState);
     }
 
     /**

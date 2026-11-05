@@ -1,15 +1,35 @@
 package vorga.phazeclient.api.system.hud;
 
+import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gl.SimpleFramebuffer;
-import net.minecraft.client.render.*;
 import org.lwjgl.opengl.GL11C;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
 
 public class HudBuffer {
     public static volatile int activeCaptureTarget = -1;
+    private static final Set<HudBuffer> BUFFERS = Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+    private HudCapture capture;
+
+    public HudBuffer() { BUFFERS.add(this); }
+
+    public static void cleanupAll() {
+        RuntimeException failure = null;
+        for (HudBuffer buffer : BUFFERS.toArray(HudBuffer[]::new)) {
+            try { buffer.cleanup(); } catch (RuntimeException e) {
+                if (failure == null) failure = e; else failure.addSuppressed(e);
+            }
+        }
+        if (failure != null) throw failure;
+    }
+
+    public static void abortAllCaptures() {
+        for (HudBuffer buffer : BUFFERS.toArray(HudBuffer[]::new)) buffer.abortCapture();
+    }
 
     private SimpleFramebuffer framebuffer;
     private long lastRenderTimeMs = 0;
@@ -61,39 +81,66 @@ public class HudBuffer {
     }
 
     public void beginCapture() {
+        openCapture();
+    }
+
+    public HudCapture openCapture() {
+        if (capture != null) throw new IllegalStateException("HUD capture already open");
         MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getWindow() == null) return null;
         int width = mc.getWindow().getFramebufferWidth();
         int height = mc.getWindow().getFramebufferHeight();
-
-        if (framebuffer == null || lastScreenWidth != width || lastScreenHeight != height) {
-            if (framebuffer != null) {
-                framebuffer.delete();
+        if (width <= 0 || height <= 0) return null;
+        BatchedRectangle.flushIfBatching();
+        Render2DState state = Render2DState.capture();
+        HudCapture next = new HudCapture(state, () -> {
+            capture = null;
+            hasContent = true;
+            lastRenderTimeMs = System.currentTimeMillis();
+        }, () -> { capture = null; hasContent = false; });
+        try {
+            if (framebuffer == null || lastScreenWidth != width || lastScreenHeight != height) {
+                if (framebuffer != null) {
+                    SimpleFramebuffer old = framebuffer;
+                    framebuffer = null;
+                    old.delete();
+                }
+                framebuffer = new SimpleFramebuffer(width, height, true);
+                // Native-resolution HUD caches must not soften text during composition.
+                framebuffer.setTexFilter(GL11C.GL_NEAREST);
+                lastScreenWidth = width;
+                lastScreenHeight = height;
+                hasContent = false;
             }
-            framebuffer = new SimpleFramebuffer(width, height, true);
-            // Per-HUD cache is rendered at the native framebuffer size; it
-            // must not soften vanilla/custom text during a cache blit.
-            framebuffer.setTexFilter(GL11C.GL_NEAREST);
-            lastScreenWidth = width;
-            lastScreenHeight = height;
-            hasContent = false;
+            GlStateManager._disableScissorTest();
+            GlStateManager._colorMask(true, true, true, true);
+            GlStateManager._depthMask(true);
+            framebuffer.setClearColor(0, 0, 0, 0);
+            framebuffer.clear();
+            framebuffer.beginWrite(false);
+            RenderSystem.viewport(0, 0, width, height);
+            BatchedRectangle.setRenderTargetFbHeight(height);
+            activeCaptureTarget = framebuffer.fbo;
+            capture = next;
+            return next;
+        } catch (RuntimeException | Error failure) {
+            try { next.close(); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
         }
-
-        framebuffer.setClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        framebuffer.clear();
-        framebuffer.beginWrite(false);
-        activeCaptureTarget = framebuffer.fbo;
     }
 
     public void endCapture() {
-        activeCaptureTarget = -1;
-        framebuffer.endWrite();
-        MinecraftClient.getInstance().getFramebuffer().beginWrite(false);
-        hasContent = true;
-        lastRenderTimeMs = System.currentTimeMillis();
+        if (capture == null) return;
+        capture.commit();
+        capture.close();
+    }
+
+    public void abortCapture() {
+        if (capture != null) capture.close();
     }
 
     public void bindCaptureTarget() {
-        if (framebuffer != null) {
+        if (capture != null && framebuffer != null) {
             framebuffer.beginWrite(false);
             activeCaptureTarget = framebuffer.fbo;
         }
@@ -104,49 +151,7 @@ public class HudBuffer {
     }
 
     public boolean drawCached() {
-        if (framebuffer == null || !hasContent) {
-            return false;
-        }
-
-        MinecraftClient mc = MinecraftClient.getInstance();
-        int width = mc.getWindow().getFramebufferWidth();
-        int height = mc.getWindow().getFramebufferHeight();
-
-        mc.getFramebuffer().beginWrite(false);
-
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(
-                com.mojang.blaze3d.platform.GlStateManager.SrcFactor.ONE,
-                com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA
-        );
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.disableCull();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        com.mojang.blaze3d.platform.GlStateManager._viewport(0, 0, width, height);
-
-        ShaderProgram shader = RenderSystem.setShader(ShaderProgramKeys.BLIT_SCREEN);
-        shader.addSamplerTexture("InSampler", framebuffer.getColorAttachment());
-
-        BufferBuilder bufferBuilder = Tessellator.getInstance().begin(
-                VertexFormat.DrawMode.QUADS,
-                VertexFormats.BLIT_SCREEN
-        );
-        bufferBuilder.vertex(0.0F, 0.0F, 0.0F);
-        bufferBuilder.vertex(1.0F, 0.0F, 0.0F);
-        bufferBuilder.vertex(1.0F, 1.0F, 0.0F);
-        bufferBuilder.vertex(0.0F, 1.0F, 0.0F);
-        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
-
-        RenderSystem.setShaderTexture(0, 0);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.defaultBlendFunc();
-
-        mc.getFramebuffer().beginWrite(true);
-        return true;
+        return framebuffer != null && hasContent && HudBlit.draw(framebuffer);
     }
 
     public void invalidate() {
@@ -157,9 +162,15 @@ public class HudBuffer {
     }
 
     public void cleanup() {
+        abortCapture();
+        invalidate();
+        lastRenderTimeMs = 0L;
+        lastScreenWidth = lastScreenHeight = 0;
         if (framebuffer != null) {
-            framebuffer.delete();
+            SimpleFramebuffer target = framebuffer;
             framebuffer = null;
+            hasContent = false;
+            target.delete();
         }
         hasContent = false;
     }

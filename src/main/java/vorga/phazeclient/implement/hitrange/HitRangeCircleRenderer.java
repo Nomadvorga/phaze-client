@@ -33,36 +33,36 @@ package vorga.phazeclient.implement.hitrange;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import vorga.phazeclient.implement.features.modules.other.HitRange;
 import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
-import net.minecraft.client.render.BufferBuilder;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Draws the configurable hit-range circle around an entity, in three
  * geometric flavours (line / thick ring / filled disc).
  *
- * <p>Geometry is cached in {@link #angles}; the cache is recomputed
+ * <p>Geometry is cached in primitive arrays; the cache is recomputed
  * whenever a geometry-impacting Phaze setting (radius / thickness /
  * segments / render mode) fires its {@code onChange} - see
  * {@link HitRange}'s constructor wiring. Reading from a pre-computed
- * list keeps the per-frame cost to a tight {@code for} over the
+ * arrays keep the per-frame cost to a tight {@code for} over the
  * segment count, with no per-vertex trig.
  */
 public final class HitRangeCircleRenderer {
     private static final float FILLED_OUTLINE_Y_EPSILON = 0.0015F;
 
-    private static final List<Angle> angles = new ArrayList<>();
+    private static int segments;
+    private static float[] innerXZ, outerXZ;
+    private static float[] transformedInner, transformedOuter;
+    // Only used synchronously on the client/render thread. Never retained by BufferBuilder.
+    private static final Vector3f TRANSFORM_POINT = new Vector3f();
 
     static {
         computeAngles();
@@ -74,27 +74,33 @@ public final class HitRangeCircleRenderer {
     /**
      * Emits the configured circle around the given player state.
      * Caller must have transformed {@code matrices} to the player's
-     * render position; the renderer only walks the cached angle list
+     * camera-relative render position; the late pass supplies the view.
+     * The renderer only walks the cached angle list
      * and lays down vertices at {@code (dx, dy, dz)}.
      */
-    public static void drawCircle(MatrixStack matrices, VertexConsumerProvider vertexConsumers, PlayerEntityRenderState state) {
+    public static void drawCircle(MatrixStack matrices, PlayerEntityRenderState state) {
+        drawCircle(matrices, state.x, state.y, state.z, state.id, state.name, state.sneaking);
+    }
+
+    /** Self rendering doesn't need to rebuild vanilla's full player/item/armor render state. */
+    public static void drawCircle(MatrixStack matrices, double x, double y, double z,
+                                  int id, String name, boolean sneaking) {
+        if (!WorldOverlayRenderer.isRecording()) return;
         HitRange config = HitRange.getInstance();
         ClientPlayerEntity player = MinecraftClient.getInstance().player;
         if (player == null) {
             return;
         }
 
-        Vec3d entityPos = new Vec3d(state.x, state.y, state.z);
-
         int color = config.color.getColor();
         if (config.randomColors.isValue()) {
             // Hash the display name into an opaque-ARGB color. Same name
             // -> same color across frames -> visually stable per player.
-            color = state.name.hashCode() | 0xFF000000;
+            color = name.hashCode() | 0xFF000000;
         } else if (
                 config.colorWhenInRange.isValue()
-                        && state.id != player.getId()
-                        && entityPos.isInRange(player.getPos(), config.radius.getValue())
+                        && id != player.getId()
+                        && isInRange(x, y, z, player.getX(), player.getY(), player.getZ(), config.radius.getValue())
         ) {
             color = config.inRangeColor.getColor();
         }
@@ -102,16 +108,18 @@ public final class HitRangeCircleRenderer {
         // Sneaking lifts the visual model by 1/8 block; mirror that here
         // so the ring stays anchored to the visible feet, not the
         // hitbox feet, when the target is sneaking.
-        float dy = (state.sneaking ? 0.125f : 0.0f) + config.height.getValue();
+        float dy = (sneaking ? 0.125f : 0.0f) + config.height.getValue();
 
         HitRange.Mode mode = config.mode();
-        ResolvedCircleColors resolvedColors = resolveColors(config, mode, color);
-
-        matrices.push();
         switch (mode) {
-            case LINE -> drawCircleLines(matrices, buffer(VertexFormat.DrawMode.DEBUG_LINES), dy, resolvedColors.outlineArgb());
-            case THICK -> drawCircleQuad(matrices, buffer(VertexFormat.DrawMode.QUADS), dy, resolvedColors.outlineArgb());
+            case LINE -> {
+                if ((color >>> 24) != 0) drawCircleLines(matrices, buffer(VertexFormat.DrawMode.DEBUG_LINES), dy, color);
+            }
+            case THICK -> {
+                if ((color >>> 24) != 0) drawCircleQuad(matrices, buffer(VertexFormat.DrawMode.QUADS), dy, color);
+            }
             case FILLED -> {
+                ResolvedCircleColors resolvedColors = resolveColors(config, mode, color);
                 if (((resolvedColors.fillArgb() >>> 24) & 0xFF) > 0) {
                     drawCircleTriangles(matrices, buffer(VertexFormat.DrawMode.TRIANGLES), dy, resolvedColors.fillArgb());
                 }
@@ -120,7 +128,12 @@ public final class HitRangeCircleRenderer {
                 }
             }
         }
-        matrices.pop();
+    }
+
+    /** Same strict squared-distance comparison as Vec3d.isInRange, without temporary Vec3ds. */
+    public static boolean isInRange(double x, double y, double z, double px, double py, double pz, double radius) {
+        double dx = x - px, dy = y - py, dz = z - pz;
+        return dx * dx + dy * dy + dz * dz < radius * radius;
     }
 
     private static ResolvedCircleColors resolveColors(HitRange config, HitRange.Mode mode, int color) {
@@ -140,6 +153,14 @@ public final class HitRangeCircleRenderer {
 
     private static void drawCircleLines(MatrixStack matrices, BufferBuilder vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+        if ((positionMatrix.properties() & Matrix4f.PROPERTY_TRANSLATION) != 0) {
+            float x = positionMatrix.m30(), y = dy + positionMatrix.m31(), z = positionMatrix.m32();
+            for (int i = 0; i < segments; i++) {
+                translatedVertex(vertices, innerXZ, i * 2, x, y, z, argb);
+                translatedVertex(vertices, innerXZ, (i + 1) * 2, x, y, z, argb);
+            }
+            return;
+        }
 
         // DEBUG_LINES (not DEBUG_LINE_STRIP) so the vertex stream is
         // pairs of independent line segments. Strip mode connects the
@@ -147,31 +168,49 @@ public final class HitRangeCircleRenderer {
         // next player's ring when both render in the same batch,
         // producing the spurious "cones" that fan out from each player
         // toward the local player.
-        int n = angles.size();
-        for (int i = 0; i < n; i++) {
-            Angle a = angles.get(i);
-            Angle b = angles.get((i + 1) % n);
-            vertices.vertex(positionMatrix, a.dx, dy, a.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
-            vertices.vertex(positionMatrix, b.dx, dy, b.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
+        transformPoints(positionMatrix, innerXZ, transformedInner, dy);
+        for (int i = 0; i < segments; i++) {
+            vertex(vertices, transformedInner, i * 3, argb);
+            vertex(vertices, transformedInner, (i + 1) * 3, argb);
         }
     }
 
     private static void drawCircleQuad(MatrixStack matrices, BufferBuilder vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+        if ((positionMatrix.properties() & Matrix4f.PROPERTY_TRANSLATION) != 0) {
+            float x = positionMatrix.m30(), y = dy + positionMatrix.m31(), z = positionMatrix.m32();
+            for (int i = 0; i < segments; i++) {
+                int a = i * 2, b = a + 2;
+                translatedVertex(vertices, innerXZ, a, x, y, z, argb);
+                translatedVertex(vertices, outerXZ, a, x, y, z, argb);
+                translatedVertex(vertices, outerXZ, b, x, y, z, argb);
+                translatedVertex(vertices, innerXZ, b, x, y, z, argb);
+            }
+            return;
+        }
 
-        for (int i = 1; i < angles.size() + 1; i++) {
-            Angle angle = angles.get(i % angles.size());
-            Angle prevAngle = angles.get(i - 1);
-
-            vertices.vertex(positionMatrix, prevAngle.dx, dy, prevAngle.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
-            vertices.vertex(positionMatrix, prevAngle.farDx, dy, prevAngle.farDz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
-            vertices.vertex(positionMatrix, angle.farDx, dy, angle.farDz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
-            vertices.vertex(positionMatrix, angle.dx, dy, angle.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
+        transformPoints(positionMatrix, innerXZ, transformedInner, dy);
+        transformPoints(positionMatrix, outerXZ, transformedOuter, dy);
+        for (int i = 0; i < segments; i++) {
+            int a = i * 3, b = a + 3;
+            vertex(vertices, transformedInner, a, argb);
+            vertex(vertices, transformedOuter, a, argb);
+            vertex(vertices, transformedOuter, b, argb);
+            vertex(vertices, transformedInner, b, argb);
         }
     }
 
     private static void drawCircleTriangles(MatrixStack matrices, BufferBuilder vertices, float dy, int argb) {
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+        if ((positionMatrix.properties() & Matrix4f.PROPERTY_TRANSLATION) != 0) {
+            float x = positionMatrix.m30(), y = dy + positionMatrix.m31(), z = positionMatrix.m32();
+            for (int i = 0; i < segments; i++) {
+                vertices.vertex(x, y, z).color(argb);
+                translatedVertex(vertices, innerXZ, i * 2, x, y, z, argb);
+                translatedVertex(vertices, innerXZ, (i + 1) * 2, x, y, z, argb);
+            }
+            return;
+        }
 
         // TRIANGLES (not TRIANGLE_FAN) so each disc is independent.
         // Fan mode shares the first emitted vertex as the pivot for
@@ -181,14 +220,34 @@ public final class HitRangeCircleRenderer {
         // "cones" the user sees on a server with many ranged rings.
         // Emitting (centre, A, B) for each segment as an explicit
         // triangle list makes every disc self-contained and cone-free.
-        int n = angles.size();
-        for (int i = 0; i < n; i++) {
-            Angle a = angles.get(i);
-            Angle b = angles.get((i + 1) % n);
-            vertices.vertex(positionMatrix, 0.0f, dy, 0.0f).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
-            vertices.vertex(positionMatrix, a.dx, dy, a.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
-            vertices.vertex(positionMatrix, b.dx, dy, b.dz).color(argb).normal(matrices.peek(), 0.0f, 0.0f, 0.0f);
+        transformPoints(positionMatrix, innerXZ, transformedInner, dy);
+        positionMatrix.transformPosition(0, dy, 0, TRANSFORM_POINT);
+        float cx = TRANSFORM_POINT.x, cy = TRANSFORM_POINT.y, cz = TRANSFORM_POINT.z;
+        for (int i = 0; i < segments; i++) {
+            vertices.vertex(cx, cy, cz).color(argb);
+            vertex(vertices, transformedInner, i * 3, argb);
+            vertex(vertices, transformedInner, (i + 1) * 3, argb);
         }
+    }
+
+    private static void vertex(BufferBuilder vertices, float[] points, int offset, int argb) {
+        vertices.vertex(points[offset], points[offset + 1], points[offset + 2]).color(argb);
+    }
+
+    private static void translatedVertex(BufferBuilder vertices, float[] xz, int offset, float x, float y, float z, int argb) {
+        vertices.vertex(xz[offset] + x, y, xz[offset + 1] + z).color(argb);
+    }
+
+    private static void transformPoints(Matrix4f matrix, float[] xz, float[] xyz, float dy) {
+        for (int i = 0; i < segments; i++) {
+            matrix.transformPosition(xz[i * 2], dy, xz[i * 2 + 1], TRANSFORM_POINT);
+            int offset = i * 3;
+            xyz[offset] = TRANSFORM_POINT.x;
+            xyz[offset + 1] = TRANSFORM_POINT.y;
+            xyz[offset + 2] = TRANSFORM_POINT.z;
+        }
+        // Copy the exact first point; no modulo, extra transform or seam rounding difference.
+        System.arraycopy(xyz, 0, xyz, segments * 3, 3);
     }
 
     /**
@@ -197,10 +256,13 @@ public final class HitRangeCircleRenderer {
      * {@link HitRange}.
      */
     public static void computeAngles() {
-        angles.clear();
         HitRange config = HitRange.getInstance();
 
-        int segments = Math.max(3, config.circleSegments.getInt());
+        segments = Math.max(3, config.circleSegments.getInt());
+        innerXZ = new float[(segments + 1) * 2];
+        outerXZ = new float[(segments + 1) * 2];
+        transformedInner = new float[(segments + 1) * 3];
+        transformedOuter = new float[(segments + 1) * 3];
         float radius = config.radius.getValue();
         HitRange.Mode mode = config.mode();
 
@@ -217,7 +279,10 @@ public final class HitRangeCircleRenderer {
                 float farDx = outer * MathHelper.sin(angle);
                 float farDz = outer * MathHelper.cos(angle);
 
-                angles.add(new Angle(dx, dz, farDx, farDz));
+                innerXZ[i * 2] = dx;
+                innerXZ[i * 2 + 1] = dz;
+                outerXZ[i * 2] = farDx;
+                outerXZ[i * 2 + 1] = farDz;
             }
         } else {
             for (int i = 0; i < segments; i++) {
@@ -225,20 +290,12 @@ public final class HitRangeCircleRenderer {
                 float dx = radius * MathHelper.sin(angle);
                 float dz = radius * MathHelper.cos(angle);
 
-                angles.add(new Angle(dx, dz));
+                innerXZ[i * 2] = dx;
+                innerXZ[i * 2 + 1] = dz;
             }
         }
-    }
-
-    /**
-     * Per-segment cached angle. {@code (dx, dz)} is the on-radius point;
-     * {@code (farDx, farDz)} is the outer-radius point used only by the
-     * THICK render mode (= 0 for LINE / FILLED).
-     */
-    private record Angle(float dx, float dz, float farDx, float farDz) {
-        Angle(float dx, float dz) {
-            this(dx, dz, 0.0f, 0.0f);
-        }
+        System.arraycopy(innerXZ, 0, innerXZ, segments * 2, 2);
+        System.arraycopy(outerXZ, 0, outerXZ, segments * 2, 2);
     }
 
     private record ResolvedCircleColors(int fillArgb, int outlineArgb) {

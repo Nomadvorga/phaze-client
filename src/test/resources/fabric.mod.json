@@ -15,10 +15,14 @@
       "vorga.phazeclient.implement.menu.components.implement.settings.SettingsFadeClientTest",
       "vorga.phazeclient.implement.menu.MenuTopTabClientTest",
       "vorga.phazeclient.implement.menu.components.implement.module.ModuleCardGeometryClientTest",
+      "vorga.phazeclient.implement.menu.TextureFilteringClientTest",
       "vorga.phazeclient.implement.menu.LoadingOverlayClientTest",
       "vorga.phazeclient.api.system.cursor.CursorClientTest",
       "vorga.phazeclient.implement.features.modules.hud.HudScaleClientTest",
-      "vorga.phazeclient.implement.features.modules.hud.BossBarClientTest"
+      "vorga.phazeclient.implement.features.modules.hud.BossBarClientTest",
+      "vorga.phazeclient.api.system.font.msdf.MsdfTextClientTest",
+      "vorga.phazeclient.api.system.hud.RenderSafetyClientTest",
+      "vorga.phazeclient.api.system.hud.HudBlurClientTest"
     ]
   },
   "mixins": ["phaze-overlay-test.mixins.json", "phaze-boss-bar-test.mixins.json"]

@@ -12,7 +12,6 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.setting.implement.ColorSetting;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
@@ -122,11 +121,8 @@ public class SaturationComponent extends AbstractComponent {
         RenderSystem.setShaderTexture(0, Identifier.of(texture));
         RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
 
-        // Linear filtering so the gradient interpolates smoothly when
-        // a small source texture (e.g. 256x1 hue.png) gets stretched
-        // across the slider's height.
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        // hue.png.mcmeta supplies linear interpolation when the image is loaded,
+        // without modifying whichever world/HUD texture is currently bound.
 
         Matrix4f mat = matrix.peek().getPositionMatrix();
         BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
@@ -178,9 +174,6 @@ public class SaturationComponent extends AbstractComponent {
         RenderSystem.defaultBlendFunc();
         RenderSystem.setShaderTexture(0, Identifier.of(texture));
         RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 
         Matrix4f mat = matrix.peek().getPositionMatrix();
         BufferBuilder buf = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);

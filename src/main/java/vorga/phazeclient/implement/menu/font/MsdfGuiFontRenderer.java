@@ -14,7 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /** FontRenderer-compatible menu adapter. No draw/measurement path uses legacy glyph maps. */
-public final class MsdfGuiFontRenderer extends FontRenderer {
+public final class MsdfGuiFontRenderer extends FontRenderer implements GuiTextRenderer {
     private static final int LAYOUT_CACHE_LIMIT = 512;
     private final float size;
     private final boolean bold;
@@ -77,10 +77,21 @@ public final class MsdfGuiFontRenderer extends FontRenderer {
 
     @Override
     public void drawString(MatrixStack matrix, String text, double x, double y, int color) {
+        draw(matrix, text, x, msdfY(y), color);
+    }
+
+    @Override
+    public Metrics measure(String text) {
+        GuiTextLayout layout = layout(text);
+        return new Metrics(layout.width, layout.height);
+    }
+
+    @Override
+    public void draw(MatrixStack matrix, String text, double x, double top, int color) {
         if ((color >>> 24) == 0) return;
         for (GuiTextLayout.Run run : layout(text).runs) {
             MsdfRenderer.renderText(atlas(run.bold()), run.text(), size, GuiTextLayout.color(color, run.rgb()),
-                    matrix.peek().getPositionMatrix(), (float) x + run.x(), msdfY(y) + run.y(), 0.0F);
+                    matrix.peek().getPositionMatrix(), (float) x + run.x(), (float) top + run.y(), 0.0F);
         }
     }
 

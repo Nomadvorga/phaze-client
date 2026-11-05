@@ -3,6 +3,7 @@ package vorga.phazeclient.implement.menu.loading;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.mojang.blaze3d.platform.TextureUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.texture.NativeImage;
 import org.lwjgl.system.MemoryUtil;
@@ -114,7 +115,7 @@ final class LoadingFont {
                     }
                 }
                 pixels.flip();
-                font.texture = glGenTextures();
+                font.texture = TextureUtil.generateTextureId();
                 if (font.texture == 0) throw new IOException("Cannot allocate bootstrap atlas " + base);
                 // Keep Minecraft's texture-unit cache in sync. The bootstrap
                 // atlas lives on a reserved unit, away from Minecraft's
@@ -152,7 +153,9 @@ final class LoadingFont {
     }
 
     void close() {
-        if (texture != 0) glDeleteTextures(texture);
+        // Deletion also invalidates GlStateManager's cached bindings on every unit.
+        // A raw delete can make a later bind of a reused GL name incorrectly a no-op.
+        if (texture != 0) TextureUtil.releaseTextureId(texture);
         texture = 0;
     }
 

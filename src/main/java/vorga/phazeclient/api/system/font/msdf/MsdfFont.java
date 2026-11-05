@@ -1,6 +1,5 @@
 package vorga.phazeclient.api.system.font.msdf;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import it.unimi.dsi.fastutil.ints.Int2FloatMap;
 import it.unimi.dsi.fastutil.ints.Int2FloatOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -85,8 +84,9 @@ public final class MsdfFont {
         }
 
         int previousChar = -1;
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
+        for (int i = 0; i < text.length();) {
+            int c = text.codePointAt(i);
+            i += Character.charCount(c);
             MsdfGlyph glyph = glyphs.get(c);
             if (glyph == null) {
                 continue;
@@ -118,8 +118,9 @@ public final class MsdfFont {
         int previousChar = -1;
         float width = 0.0F;
 
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
+        for (int i = 0; i < text.length();) {
+            int c = text.codePointAt(i);
+            i += Character.charCount(c);
             MsdfGlyph glyph = glyphs.get(c);
             if (glyph == null) {
                 continue;
@@ -146,6 +147,17 @@ public final class MsdfFont {
         return width;
     }
 
+    /** Width of a rendered plain run, including inter-glyph thickness spacing but not a trailing gap. */
+    public float getRenderedWidth(String text, float size, float thickness) {
+        if (text == null || text.isEmpty()) return 0;
+        int count = (int) text.codePoints().filter(glyphs::containsKey).count();
+        return MsdfTextMetrics.renderedWidth(getWidth(text, size), count, size, thickness);
+    }
+
+    public float getRenderedWidth(String text, float size) {
+        return getRenderedWidth(text, size, MsdfTextMetrics.DEFAULT_THICKNESS);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -167,8 +179,6 @@ public final class MsdfFont {
         public MsdfFont build() {
             FontData data = ResourceProvider.fromJsonToInstance(dataIdentifier, FontData.class);
             AbstractTexture texture = MC.getTextureManager().getTexture(atlasIdentifier);
-
-            RenderSystem.recordRenderCall(() -> texture.setFilter(true, false));
 
             float atlasWidth = data.atlas().width();
             float atlasHeight = data.atlas().height();

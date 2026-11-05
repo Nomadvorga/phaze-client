@@ -1,6 +1,8 @@
 package vorga.phazeclient.mixins;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.InGameHud;
@@ -53,10 +55,8 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
-import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.api.system.shape.implement.Rectangle;
@@ -91,9 +91,14 @@ import vorga.phazeclient.implement.features.modules.hud.TpsHud;
 import vorga.phazeclient.implement.features.modules.other.Zoom;
 import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
+import vorga.phazeclient.api.system.hud.HudCapture;
+import vorga.phazeclient.api.system.hud.HudPassState;
+import vorga.phazeclient.api.system.hud.Render2DState;
 import vorga.phazeclient.api.system.hud.ChatAnimationFrameAccess;
 import vorga.phazeclient.api.system.hud.BossBarHudAccess;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
+import vorga.phazeclient.api.system.hud.HotbarSelectionRenderer;
+import vorga.phazeclient.api.system.hud.HotbarSlideAnimation;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.components.implement.settings.ScaleSnapOverlay;
@@ -182,7 +187,8 @@ public class InGameHudMixin {
     private static final int HUD_PACK_DISPLAY = 27;
     private static final int HUD_BOSS_BAR = 28;
     private static final int RECT_HUD_COUNT = 29;
-    private static final int HUD_ARMOR_BLUR_SLOT = 27;
+    // Armor must never alias a rectangular HUD's blur state (27 is Pack Display).
+    private static final int HUD_ARMOR_BLUR_SLOT = RECT_HUD_COUNT;
     private static final int HUD_SNAP_ARMOR = RECT_HUD_COUNT;
     private static final int HUD_SNAP_COUNT = RECT_HUD_COUNT + 1;
     private static final int KEYSTROKE_W = 0;
@@ -299,13 +305,8 @@ public class InGameHudMixin {
     private static float hudHorizontalGuideY = 0.0f;
     private static float hudHorizontalGuideLeft = 0.0f;
     private static float hudHorizontalGuideRight = 0.0f;
-    /** When true, blur HUDs are skipped in the current renderHudInternal call (batch FBO pass). */
-    private static boolean inBatchPass = false;
-    /** Cached pass includes blur HUDs; the follow-up pass updates input state only. */
-    private static boolean batchIncludesBlur = false;
-    private static boolean inLogicOnlyPass = false;
-    /** Renders animated gradient HUDs directly after the cached HUD blit. */
-    private static boolean inGradientPass = false;
+    @Unique
+    private static final HudPassState PHAZE_HUD_PASS = new HudPassState();
     /** Actual blur state, separate from animated-gradient high-refresh state. */
     private static boolean phaze$hasActiveHudBlurThisFrame = false;
     /**
@@ -353,10 +354,7 @@ public class InGameHudMixin {
     @Inject(method = "render", at = @At("HEAD"))
     private void beginHudFrame(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         renderedThisFrame = false;
-        inBatchPass = false;
-        batchIncludesBlur = false;
-        inLogicOnlyPass = false;
-        inGradientPass = false;
+        PHAZE_HUD_PASS.reset();
         HudCursorRelay.reset();
         Blur.INSTANCE.beginCachedFrame();
 
@@ -418,6 +416,30 @@ public class InGameHudMixin {
 
     @Inject(method = "render", at = @At("TAIL"))
     private void renderCustomHudFallback(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        // Drain vanilla geometry before establishing our boundary (Exordium may own the target).
+        try {
+            context.draw();
+        } catch (RuntimeException | Error failure) {
+            PHAZE_HUD_PASS.reset();
+            try { Blur.INSTANCE.endCachedFrame(); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
+        }
+        try (Render2DState state = Render2DState.capture()) {
+            try {
+                phaze$renderCustomHud(context);
+            } finally {
+                try {
+                    Blur.INSTANCE.endCachedFrame();
+                } finally {
+                    PHAZE_HUD_PASS.reset();
+                    context.draw();
+                }
+            }
+        }
+    }
+
+    @Unique
+    private void phaze$renderCustomHud(DrawContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         boolean hudHidden = client == null || client.options == null || client.options.hudHidden;
 
@@ -469,16 +491,22 @@ public class InGameHudMixin {
                 // blit shows fresh content matching what Pass 2 draws.
                 int configuredRefreshRate = HudOptimizer.getInstance().refreshRate.getInt();
                 boolean smoothGuiBackdrop = client.currentScreen instanceof MenuScreen;
-                int effectiveRefreshRate = hasLiveHudAnimation || smoothGuiBackdrop
-                        ? Math.max(60, configuredRefreshRate)
-                        : configuredRefreshRate;
+                // Animated HUDs keep native-resolution geometry/text together in the
+                // existing FBO. Rebuilding them once per 120 Hz animation sample avoids
+                // repeating all text, item and driver work at uncapped game FPS.
+                // Blur can request a higher cadence; never cap it at the data refresh.
+                int animationRefreshRate = phaze$hasActiveHudBlurThisFrame
+                        ? Math.max(120, HudOptimizer.getInstance().blurBackgroundFps.getInt()) : 120;
+                int effectiveRefreshRate = hasLiveHudAnimation
+                        ? Math.max(animationRefreshRate, configuredRefreshRate)
+                        : smoothGuiBackdrop ? Math.max(60, configuredRefreshRate) : configuredRefreshRate;
                 BatchedHudBuffer.INSTANCE.setTargetFps(effectiveRefreshRate);
                 boolean chatEditing = client.currentScreen instanceof ChatScreen;
 
                 boolean shouldRefresh = chatEditing || BatchedHudBuffer.INSTANCE.shouldRefresh(false);
 
-                // Pass 1 — refresh frames only: render NON-blur HUDs into the
-                // batched FBO at the throttled refresh rate.
+                // Refresh frames only: draw all HUDs in their original order,
+                // including blur/gradient, into the native-resolution batched FBO.
                 if (shouldRefresh) {
                     // Flush vanilla's pending deferred draws onto the
                     // REAL main framebuffer before we switch the bound
@@ -502,36 +530,23 @@ public class InGameHudMixin {
                     // the main framebuffer where it belongs, and the
                     // FBO ends up containing ONLY our own HUD widgets.
                     context.draw();
-                    inBatchPass = true;
-                    batchIncludesBlur = true;
-                    BatchedHudBuffer.INSTANCE.beginCapture();
-                    renderHudInternal(context);
-                    // Flush deferred DrawContext draws into the FBO before unbinding,
-                    // otherwise vanilla flushes them later into the main framebuffer.
-                    context.draw();
-                    BatchedHudBuffer.INSTANCE.endCapture();
-                    batchIncludesBlur = false;
-                    inBatchPass = false;
+                    PHAZE_HUD_PASS.run(HudPassState.Mode.CAPTURE, () -> {
+                        try (HudCapture capture = BatchedHudBuffer.INSTANCE.openCapture()) {
+                            if (capture == null) return;
+                            try {
+                                renderHudInternal(context);
+                            } finally {
+                                // Also drain partial deferred geometry before abort restores the caller's FBO.
+                                context.draw();
+                            }
+                            capture.commit();
+                        }
+                    });
                 }
                 BatchedHudBuffer.INSTANCE.blit();
 
-                // Gradients are intentionally kept out of the throttled HUD
-                // FBO. Draw their complete HUD once on the real framebuffer
-                // after the cached widgets were blitted, so both the text and
-                // its background update in lockstep on every display frame.
-                if (hasLiveHudAnimation) {
-                    inBatchPass = true;
-                    inGradientPass = true;
-                    renderHudInternal(context);
-                    context.draw();
-                    inGradientPass = false;
-                    inBatchPass = false;
-                }
-
                 // Keep click/drag state live without redrawing any HUD content.
-                inLogicOnlyPass = true;
-                renderHudInternal(context);
-                inLogicOnlyPass = false;
+                PHAZE_HUD_PASS.run(HudPassState.Mode.LOGIC, () -> renderHudInternal(context));
             }
         }
         Blur.INSTANCE.endCachedFrame();
@@ -565,7 +580,7 @@ public class InGameHudMixin {
         // blend state active here makes pause/options buttons and text look
         // blurred after leaving the HUD editor or opening a GUI.
         context.draw();
-        phaze$resetGuiRenderState();
+        // Outer Render2DState restores the exact pre-Phaze state, not a guessed GUI baseline.
     }
 
     private void renderHudInternal(DrawContext context) {
@@ -583,7 +598,7 @@ public class InGameHudMixin {
         // circuit the press-edge detection for blur HUDs and prevent dragging
         // them while chat is open.
         boolean firstCallThisFrame = !renderedThisFrame;
-        boolean lastCallThisFrame = !inBatchPass;
+        boolean lastCallThisFrame = !PHAZE_HUD_PASS.isBatchPass();
         renderedThisFrame = true;
 
         MinecraftClient client = MinecraftClient.getInstance();
@@ -635,7 +650,7 @@ public class InGameHudMixin {
             showHudVerticalGuideThisFrame = false;
             showHudHorizontalGuideThisFrame = false;
         }
-        if (inLogicOnlyPass) {
+        if (PHAZE_HUD_PASS.isLogicOnlyPass()) {
             renderLiveKeystrokeAnimation(context, client, inverseGuiScale);
             if (chatEditing) {
                 verticalGuideProgress = approachExp(verticalGuideProgress, showVerticalGuideThisFrame ? 1.0f : 0.0f, GUIDE_FADE_SPEED, deltaSeconds);
@@ -929,13 +944,10 @@ public class InGameHudMixin {
         boolean liveBackground = module.hasActiveBackgroundBlur() || module.hasActiveAnimatedBackground();
         phaze$trackBlurStateChange(module, liveBackground);
         phaze$trackGradientStateChange(module, module.hasActiveAnimatedBackground());
-        if (inGradientPass) {
+        if (PHAZE_HUD_PASS.isGradientPass()) {
             if (module.hasActiveAnimatedBackground()) {
                 renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
             }
-            return;
-        }
-        if (inBatchPass && module.hasActiveAnimatedBackground()) {
             return;
         }
         if (shouldSkipForCurrentPass(liveBackground)) return;
@@ -1040,13 +1052,10 @@ public class InGameHudMixin {
         boolean liveBackground = module.hasActiveBackgroundBlur() || module.hasActiveAnimatedBackground();
         phaze$trackBlurStateChange(module, liveBackground);
         phaze$trackGradientStateChange(module, module.hasActiveAnimatedBackground());
-        if (inGradientPass) {
+        if (PHAZE_HUD_PASS.isGradientPass()) {
             if (module.hasActiveAnimatedBackground()) {
                 renderBufferedHudInternal(context, module.isEnabled(), false, module.getHudBuffer(), 60, chatEditing, renderLogic);
             }
-            return;
-        }
-        if (inBatchPass && module.hasActiveAnimatedBackground()) {
             return;
         }
         if (shouldSkipForCurrentPass(liveBackground)) return;
@@ -1059,8 +1068,8 @@ public class InGameHudMixin {
      * normal (un-batched) path both passes are inactive and all HUDs render.
      */
     private static boolean shouldSkipForCurrentPass(boolean hasBlur) {
-        if (inLogicOnlyPass) return true;
-        if (inBatchPass && hasBlur && !batchIncludesBlur) return true;
+        if (PHAZE_HUD_PASS.isLogicOnlyPass()) return true;
+        if (PHAZE_HUD_PASS.isBatchPass() && hasBlur && !PHAZE_HUD_PASS.includesBlur()) return true;
         return false;
     }
 
@@ -1147,13 +1156,10 @@ public class InGameHudMixin {
         int currentScreenHeight = Math.round(screenHeight);
         float x = module.getHudX();
         float y = module.getHudY();
+        module.setHudLayoutSize(hudWidth, hudHeight);
         boolean resized = RECT_LAYOUT_INITIALIZED[hudIndex]
                 && (RECT_LAST_SCREEN_WIDTH[hudIndex] != currentScreenWidth
                 || RECT_LAST_SCREEN_HEIGHT[hudIndex] != currentScreenHeight);
-        if (resized && !RECT_DRAGGING[hudIndex] && !RECT_RESIZING[hudIndex]) {
-            x = maxX <= 0.0f ? 0.0f : RECT_POSITION_RATIO_X[hudIndex] * maxX;
-            y = maxY <= 0.0f ? 0.0f : RECT_POSITION_RATIO_Y[hudIndex] * maxY;
-        }
         x = MathHelper.clamp(x, 0.0f, maxX);
         y = MathHelper.clamp(y, 0.0f, maxY);
         module.setHudX(x);
@@ -1305,7 +1311,7 @@ public class InGameHudMixin {
             float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
             if (blurRadius > 0.0f) {
                 float safeScale = Math.max(scale, 1.0f);
-                float normalizedBlurRadius = blurRadius / safeScale;
+                float normalizedBlurRadius = blurRadius;
                 float blurX = 0.0f;
                 float blurY = 0.0f;
                 float blurWidth = baseWidth;
@@ -1525,12 +1531,9 @@ public class InGameHudMixin {
         float y = module.getHudY();
         int currentScreenWidth = Math.round(screenWidth);
         int currentScreenHeight = Math.round(screenHeight);
+        module.setHudLayoutSize(hudWidth, hudHeight);
         boolean resized = armorLayoutInitialized
                 && (armorLastScreenWidth != currentScreenWidth || armorLastScreenHeight != currentScreenHeight);
-        if (resized && !armorDragging && !armorResizing) {
-            x = maxX <= 0.0f ? 0.0f : armorPositionRatioX * maxX;
-            y = maxY <= 0.0f ? 0.0f : armorPositionRatioY * maxY;
-        }
         x = MathHelper.clamp(x, 0.0f, maxX);
         y = MathHelper.clamp(y, 0.0f, maxY);
         module.setHudX(x);
@@ -1669,7 +1672,7 @@ public class InGameHudMixin {
             float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
             if (blurRadius > 0.0f) {
                 float safeScale = Math.max(scale, 1.0f);
-                float normalizedBlurRadius = blurRadius / safeScale;
+                float normalizedBlurRadius = blurRadius;
                 float blurX = 0.0f;
                 float blurY = 0.0f;
                 float blurWidth = baseWidth;
@@ -1842,6 +1845,7 @@ public class InGameHudMixin {
         float maxY = Math.max(0.0f, screenHeight - hudHeight);
         float x = MathHelper.clamp(module.getHudX(), 0.0f, maxX);
         float y = MathHelper.clamp(module.getHudY(), 0.0f, maxY);
+        module.setHudLayoutSize(hudWidth, hudHeight);
         module.setHudX(x);
         module.setHudY(y);
 
@@ -1966,7 +1970,7 @@ public class InGameHudMixin {
             float blurRadius = Math.max(0.0f, module.backgroundBlurRadius.getValue());
             if (blurRadius > 0.0f) {
                 float safeScale = Math.max(scale, 1.0f);
-                float normalizedBlurRadius = blurRadius / safeScale;
+                float normalizedBlurRadius = blurRadius;
                 float blurX = 0.0f;
                 float blurY = 0.0f;
                 float blurWidth = baseWidth;
@@ -2589,7 +2593,7 @@ public class InGameHudMixin {
                 // matrix, so enlarging the scoreboard also multiplied its
                 // apparent blur strength.
                 float safeScale = Math.max(hudScale, 1.0f);
-                float normalizedBlurRadius = blurRadius / safeScale;
+                float normalizedBlurRadius = blurRadius;
                 float blurQuality = getOptimizedHudBlurQuality(normalizedBlurRadius);
                 float blurWidth = rightEdgeLocal;
                 float blurHeight = backgroundBottomLocal - backgroundTopLocal;
@@ -2904,7 +2908,7 @@ public class InGameHudMixin {
         context.getMatrices().translate(x, y, HUD_RENDER_Z + 20.0f);
         context.getMatrices().scale(scale, scale, 1.0f);
         renderKeystrokeButtonBlur(context, module, scale);
-        float cachedProgressScale = inBatchPass ? 0.0f : 1.0f;
+        float cachedProgressScale = PHAZE_HUD_PASS.isBatchPass() ? 0.0f : 1.0f;
         if (module.background.isValue() && module.isGradientPreset()) {
             renderGradientKeyButton(context, module, 20, 0, 16, 18, KEYSTROKE_PROGRESS[KEYSTROKE_W] * cachedProgressScale);
             renderGradientKeyButton(context, module, 0, 19, 18, 18, KEYSTROKE_PROGRESS[KEYSTROKE_A] * cachedProgressScale);
@@ -3471,7 +3475,7 @@ public class InGameHudMixin {
             return;
         }
         float safeScale = Math.max(scale, 1.0f);
-        float normalizedBlurRadius = blurRadius / safeScale;
+        float normalizedBlurRadius = blurRadius;
         float blurQuality = getOptimizedHudBlurQuality(normalizedBlurRadius);
         if (blurQuality <= 0.0f) {
             return;
@@ -3626,6 +3630,7 @@ public class InGameHudMixin {
     }
 
     private static float getOptimizedHudBlurQuality(float normalizedBlurRadius) {
+        // Blur samples screen-space textures: widget matrix scale must not divide its radius.
         float radius = Math.max(0.0f, normalizedBlurRadius);
         if (radius <= 0.001f) {
             return 0.0f;
@@ -4048,60 +4053,7 @@ public class InGameHudMixin {
         // therefore use the wrong framebuffer height after a cached blur pass,
         // making the fill disappear. Only the two rounded caps are segmented;
         // the centre remains one quad, so cost scales with radius, not HUD size.
-        float centerLeft = x + radius;
-        float centerRight = x + width - radius;
-        drawVerticalGradient(context, centerLeft, y, Math.max(0.0F, centerRight - centerLeft), height, color, color);
-
-        MinecraftClient client = MinecraftClient.getInstance();
-        float windowScale = client == null || client.getWindow() == null
-                ? 1.0F
-                : Math.max(1.0F, (float) client.getWindow().getScaleFactor());
-        float matrixScaleX = Math.abs(context.getMatrices().peek().getPositionMatrix().m00());
-        float matrixScaleY = Math.abs(context.getMatrices().peek().getPositionMatrix().m11());
-        float physicalScaleX = Math.max(0.01F, matrixScaleX * windowScale);
-        float physicalScaleY = Math.max(0.01F, matrixScaleY * windowScale);
-        int capStrips = MathHelper.clamp((int) Math.ceil(radius * physicalScaleX * 1.5F), 8, 128);
-        float antialiasSize = Math.min(radius, 1.0F / physicalScaleY);
-        for (int strip = 0; strip < capStrips; strip++) {
-            float p0 = strip / (float) capStrips;
-            float p1 = (strip + 1.0F) / capStrips;
-            float centerProgress = (p0 + p1) * 0.5F;
-            float edgeDistance = centerProgress * radius;
-            float dx = radius - edgeDistance;
-            float inset = radius - (float) Math.sqrt(Math.max(0.0F, radius * radius - dx * dx));
-            float stripWidth = (p1 - p0) * radius;
-            float exactTop = y + inset;
-            float exactBottom = y + height - inset;
-            if (exactBottom <= exactTop) {
-                continue;
-            }
-            renderAntialiasedSolidStrip(context, x + p0 * radius, exactTop, stripWidth,
-                    exactBottom, color, antialiasSize);
-            renderAntialiasedSolidStrip(context, x + width - p1 * radius, exactTop, stripWidth,
-                    exactBottom, color, antialiasSize);
-        }
-    }
-
-    private static void renderAntialiasedSolidStrip(
-            DrawContext context,
-            float x,
-            float exactTop,
-            float width,
-            float exactBottom,
-            int color,
-            float antialiasSize
-    ) {
-        float halfAntialias = antialiasSize * 0.5F;
-        float solidTop = Math.min(exactBottom, exactTop + halfAntialias);
-        float solidBottom = Math.max(exactTop, exactBottom - halfAntialias);
-        if (solidBottom > solidTop) {
-            drawVerticalGradient(context, x, solidTop, width, solidBottom - solidTop, color, color);
-        }
-        if (antialiasSize > 0.001F) {
-            int transparent = multiplyColorAlpha(color, 0.0F);
-            drawVerticalGradient(context, x, exactTop - halfAntialias, width, antialiasSize, transparent, color);
-            drawVerticalGradient(context, x, exactBottom - halfAntialias, width, antialiasSize, color, transparent);
-        }
+        vorga.phazeclient.api.system.hud.HudBackgroundGeometryRenderer.solidRounded(context, x, y, width, height, color, radius);
     }
 
     /**
@@ -4166,25 +4118,8 @@ public class InGameHudMixin {
             return;
         }
 
-        int stripCount = 96;
-        for (int strip = 0; strip < stripCount; strip++) {
-            float progress = (strip + 0.5F) / stripCount;
-            float stripLeft = MathHelper.lerp(strip / (float) stripCount, left, right);
-            float stripRight = MathHelper.lerp((strip + 1.0F) / stripCount, left, right);
-
-            if ("Diagonal Down".equals(selectedDirection) || "Diagonal Up".equals(selectedDirection)) {
-                boolean down = "Diagonal Down".equals(selectedDirection);
-                float topCoordinate = down ? progress * 0.5F : 0.5F + progress * 0.5F;
-                float bottomCoordinate = down ? 0.5F + progress * 0.5F : progress * 0.5F;
-                int topColor = movingGradientColor(startColor, endColor, topCoordinate - animationOffset);
-                int bottomColor = movingGradientColor(startColor, endColor, bottomCoordinate - animationOffset);
-                drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, topColor, bottomColor);
-            } else {
-                float directionSign = "Right to Left".equals(selectedDirection) ? 1.0F : -1.0F;
-                int color = movingGradientColor(startColor, endColor, progress + directionSign * animationOffset);
-                drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, color, color);
-            }
-        }
+        vorga.phazeclient.api.system.hud.HudBackgroundGeometryRenderer.movingDiagonal(context, left, top, right, bottom,
+                startColor, endColor, selectedDirection, animationOffset);
     }
 
     private static void renderRoundedGradient(
@@ -4200,118 +4135,8 @@ public class InGameHudMixin {
             boolean animated,
             float radius
     ) {
-        float width = right - left;
-        float height = bottom - top;
-        MinecraftClient client = MinecraftClient.getInstance();
-        float windowScale = client == null || client.getWindow() == null
-                ? 1.0F
-                : Math.max(1.0F, (float) client.getWindow().getScaleFactor());
-        float matrixScaleX = Math.abs(context.getMatrices().peek().getPositionMatrix().m00());
-        float matrixScaleY = Math.abs(context.getMatrices().peek().getPositionMatrix().m11());
-        float physicalScaleX = Math.max(0.01F, matrixScaleX * windowScale);
-        float physicalScaleY = Math.max(0.01F, matrixScaleY * windowScale);
-        // Roughly 1.5 samples per physical pixel prevents the cap from
-        // turning into visible stairs when the HUD is enlarged. Small HUDs
-        // stay cheap; the cap only protects pathological scales/resolutions.
-        int stripCount = MathHelper.clamp((int) Math.ceil(width * physicalScaleX * 1.5F), 48, 512);
-        float antialiasSize = Math.min(radius, 1.0F / physicalScaleY);
-
-        for (int strip = 0; strip < stripCount; strip++) {
-            float x0Progress = strip / (float) stripCount;
-            float x1Progress = (strip + 1.0F) / stripCount;
-            float xProgress = (x0Progress + x1Progress) * 0.5F;
-            float stripLeft = MathHelper.lerp(x0Progress, left, right);
-            float stripRight = MathHelper.lerp(x1Progress, left, right);
-            float edgeDistance = Math.min(xProgress * width, (1.0F - xProgress) * width);
-            float inset = 0.0F;
-            boolean roundedCap = edgeDistance < radius;
-            if (roundedCap) {
-                float dx = radius - edgeDistance;
-                inset = radius - (float) Math.sqrt(Math.max(0.0F, radius * radius - dx * dx));
-            }
-
-            float exactTop = top + inset;
-            float exactBottom = bottom - inset;
-            float solidTop = Math.min(exactBottom, exactTop + antialiasSize * 0.5F);
-            float solidBottom = Math.max(exactTop, exactBottom - antialiasSize * 0.5F);
-            if (exactBottom <= exactTop) {
-                continue;
-            }
-            float topProgress = (solidTop - top) / height;
-            float bottomProgress = (solidBottom - top) / height;
-            int topColor = sampleHudGradientColor(startColor, endColor, direction,
-                    xProgress, topProgress, animationOffset, animated);
-            int bottomColor = sampleHudGradientColor(startColor, endColor, direction,
-                    xProgress, bottomProgress, animationOffset, animated);
-            drawVerticalGradient(context, stripLeft, solidTop, stripRight - stripLeft,
-                    solidBottom - solidTop, topColor, bottomColor);
-
-            if (roundedCap && antialiasSize > 0.001F) {
-                int exactTopColor = sampleHudGradientColor(startColor, endColor, direction,
-                        xProgress, inset / height, animationOffset, animated);
-                int exactBottomColor = sampleHudGradientColor(startColor, endColor, direction,
-                        xProgress, 1.0F - inset / height, animationOffset, animated);
-                drawVerticalGradient(context, stripLeft, exactTop - antialiasSize * 0.5F,
-                        stripRight - stripLeft, antialiasSize,
-                        multiplyColorAlpha(exactTopColor, 0.0F), exactTopColor);
-                drawVerticalGradient(context, stripLeft, exactBottom - antialiasSize * 0.5F,
-                        stripRight - stripLeft, antialiasSize,
-                        exactBottomColor, multiplyColorAlpha(exactBottomColor, 0.0F));
-            }
-        }
-    }
-
-    private static int multiplyColorAlpha(int color, float multiplier) {
-        int alpha = MathHelper.clamp(Math.round(((color >>> 24) & 0xFF) * multiplier), 0, 255);
-        return (alpha << 24) | (color & 0x00FFFFFF);
-    }
-
-    private static int sampleHudGradientColor(
-            int startColor,
-            int endColor,
-            String direction,
-            float xProgress,
-            float yProgress,
-            float animationOffset,
-            boolean animated
-    ) {
-        if ("Pulse".equals(direction)) {
-            return animated
-                    ? movingGradientColor(startColor, endColor, animationOffset)
-                    : startColor;
-        }
-
-        float coordinate;
-        float phase;
-        switch (direction) {
-            case "Right to Left" -> {
-                coordinate = 1.0F - xProgress;
-                phase = animationOffset;
-            }
-            case "Top to Bottom" -> {
-                coordinate = yProgress;
-                phase = -animationOffset;
-            }
-            case "Bottom to Top" -> {
-                coordinate = 1.0F - yProgress;
-                phase = animationOffset;
-            }
-            case "Diagonal Down" -> {
-                coordinate = (xProgress + yProgress) * 0.5F;
-                phase = -animationOffset;
-            }
-            case "Diagonal Up" -> {
-                coordinate = (xProgress + 1.0F - yProgress) * 0.5F;
-                phase = -animationOffset;
-            }
-            default -> {
-                coordinate = xProgress;
-                phase = -animationOffset;
-            }
-        }
-        return animated
-                ? movingGradientColor(startColor, endColor, coordinate + phase)
-                : lerpGradientColor(startColor, endColor, MathHelper.clamp(coordinate, 0.0F, 1.0F));
+        vorga.phazeclient.api.system.hud.HudBackgroundGeometryRenderer.roundedGradient(context, left, top, right, bottom,
+                startColor, endColor, direction, animationOffset, animated, radius);
     }
 
     private static void renderStaticGradient(
@@ -4324,44 +4149,8 @@ public class InGameHudMixin {
             int endColor,
             String direction
     ) {
-        if ("Top to Bottom".equals(direction)) {
-            drawVerticalGradient(context, left, top, right - left, bottom - top, startColor, endColor);
-            return;
-        }
-        if ("Bottom to Top".equals(direction)) {
-            drawVerticalGradient(context, left, top, right - left, bottom - top, endColor, startColor);
-            return;
-        }
-        if ("Pulse".equals(direction)) {
-            context.fill(left, top, right, bottom, startColor);
-            return;
-        }
-
-        if ("Left to Right".equals(direction) || "Right to Left".equals(direction)) {
-            boolean reversed = "Right to Left".equals(direction);
-            drawHorizontalGradient(context, left, top, right - left, bottom - top,
-                    reversed ? endColor : startColor, reversed ? startColor : endColor);
-            return;
-        }
-
-        int stripCount = 96;
-        for (int strip = 0; strip < stripCount; strip++) {
-            float progress = (strip + 0.5F) / stripCount;
-            float stripLeft = MathHelper.lerp(strip / (float) stripCount, left, right);
-            float stripRight = MathHelper.lerp((strip + 1.0F) / stripCount, left, right);
-            if ("Diagonal Down".equals(direction) || "Diagonal Up".equals(direction)) {
-                boolean down = "Diagonal Down".equals(direction);
-                float topProgress = down ? progress * 0.5F : 0.5F + progress * 0.5F;
-                float bottomProgress = down ? 0.5F + progress * 0.5F : progress * 0.5F;
-                drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top,
-                        lerpGradientColor(startColor, endColor, topProgress),
-                        lerpGradientColor(startColor, endColor, bottomProgress));
-            } else {
-                float colorProgress = "Right to Left".equals(direction) ? 1.0F - progress : progress;
-                int color = lerpGradientColor(startColor, endColor, colorProgress);
-                drawVerticalGradient(context, stripLeft, top, stripRight - stripLeft, bottom - top, color, color);
-            }
-        }
+        vorga.phazeclient.api.system.hud.HudBackgroundGeometryRenderer.staticGradient(context, left, top, right, bottom,
+                startColor, endColor, direction);
     }
 
     /**
@@ -4413,11 +4202,8 @@ public class InGameHudMixin {
         if (width <= 0.0F || height <= 0.0F) {
             return;
         }
-        context.getMatrices().push();
-        context.getMatrices().translate(x, y, 0.0F);
-        context.getMatrices().scale(width, height, 1.0F);
-        context.fillGradient(0, 0, 1, 1, startColor, endColor);
-        context.getMatrices().pop();
+        vorga.phazeclient.api.system.hud.HudBackgroundGeometryRenderer.quad(context, x, y, x + width, y + height,
+                startColor, endColor, endColor, startColor);
     }
 
     private static void drawHorizontalGradient(
@@ -4432,19 +4218,13 @@ public class InGameHudMixin {
         if (width <= 0.0F || height <= 0.0F) {
             return;
         }
-        context.getMatrices().push();
-        context.getMatrices().translate(x, y, 0.0F);
-        context.getMatrices().scale(width, height, 1.0F);
-        context.getMatrices().multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(-90.0F));
-        context.fillGradient(-1, 0, 0, 1, startColor, endColor);
-        context.getMatrices().pop();
+        vorga.phazeclient.api.system.hud.HudBackgroundGeometryRenderer.quad(context, x, y, x + width, y + height,
+                startColor, startColor, endColor, endColor);
     }
 
     /** Continuous start -> end -> start wave; shifting its phase moves it. */
     private static int movingGradientColor(int startColor, int endColor, float coordinate) {
-        float wrapped = coordinate - (float) Math.floor(coordinate);
-        float blend = 0.5F - 0.5F * (float) Math.cos(wrapped * Math.PI * 2.0D);
-        return lerpGradientColor(startColor, endColor, blend);
+        return vorga.phazeclient.api.system.hud.HudBackgroundGeometryGradients.moving(startColor, endColor, coordinate);
     }
 
     private static int movingLinearGradientColor(int startColor, int endColor, float coordinate) {
@@ -4454,12 +4234,7 @@ public class InGameHudMixin {
     }
 
     private static int lerpGradientColor(int first, int second, float progress) {
-        float t = MathHelper.clamp(progress, 0.0F, 1.0F);
-        int a = Math.round(((first >>> 24) & 0xFF) + (((second >>> 24) & 0xFF) - ((first >>> 24) & 0xFF)) * t);
-        int r = Math.round(((first >>> 16) & 0xFF) + (((second >>> 16) & 0xFF) - ((first >>> 16) & 0xFF)) * t);
-        int g = Math.round(((first >>> 8) & 0xFF) + (((second >>> 8) & 0xFF) - ((first >>> 8) & 0xFF)) * t);
-        int b = Math.round((first & 0xFF) + ((second & 0xFF) - (first & 0xFF)) * t);
-        return (a << 24) | (r << 16) | (g << 8) | b;
+        return vorga.phazeclient.api.system.hud.HudBackgroundGeometryGradients.lerp(first, second, progress);
     }
 
     private static float directionEdgeFade(float x, float width) {
@@ -5080,22 +4855,11 @@ public class InGameHudMixin {
 
     // ---------- HotbarSlide state ----------
     @Unique private static final int PHAZE_HOTBAR_SLOT_PX = 20;
-    @Unique private static final int PHAZE_HOTBAR_SLOTS = 9;
-    @Unique private static final int PHAZE_HOTBAR_PIXEL_W = PHAZE_HOTBAR_SLOT_PX * PHAZE_HOTBAR_SLOTS;
     @Unique private static final int PHAZE_HOTBAR_BG_W = 182;
     @Unique private static final int PHAZE_HOTBAR_BG_H = 22;
-    @Unique private float phaze$hotbarCurrentSlotX = 0.0F;
-    @Unique private int phaze$hotbarLastSelected = -1;
-    @Unique private long phaze$hotbarLastFrameNanos = 0L;
-    @Unique private boolean phaze$hotbarShouldDrawMirror = false;
-    @Unique private int phaze$hotbarMirrorOffsetX = 0;
-    @Unique private int phaze$hotbarLastDrawX;
-    @Unique private int phaze$hotbarLastDrawY;
-    @Unique private int phaze$hotbarLastWidth;
-    @Unique private int phaze$hotbarLastHeight;
-    @Unique private Identifier phaze$hotbarLastTexture;
-    @Unique private Function<Identifier, ?> phaze$hotbarLastSpriteFn;
-    @Unique private boolean phaze$hotbarScissorOn = false;
+    @Unique private final HotbarSlideAnimation phaze$hotbarSlide = new HotbarSlideAnimation();
+    @Unique private static final java.util.function.DoubleUnaryOperator PHAZE_HOTBAR_SMOOTHNESS =
+            speed -> Animations.getInstance().smoothnessForSpeed((float) speed);
 
     // ---------- TabSlide state ----------
     @Unique private boolean phaze$tabWasOpenedThisCycle = false;
@@ -5333,27 +5097,20 @@ public class InGameHudMixin {
     }
 
     // ====================================================================
-    // 3) HotbarSlide: renderHotbar HEAD + scissor + ModifyArgs + after
+    // 3) HotbarSlide: one selector hook, no extra batch flush for ordinary sprites
     // ====================================================================
-
-    @Inject(method = "renderHotbar", at = @At("HEAD"))
-    private void phaze$prepareHotbarSlideDraw(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        phaze$hotbarScissorOn = false;
-    }
 
     @Unique
     private void phaze$advanceHotbarSlide() {
-        phaze$hotbarShouldDrawMirror = false;
-        phaze$hotbarMirrorOffsetX = 0;
         Animations module = Animations.getInstance();
         if (module == null || !module.isHotbarSlideEnabled()) {
-            phaze$hotbarLastSelected = -1;
-            phaze$hotbarLastFrameNanos = 0L;
+            phaze$hotbarSlide.resetTracking();
             ExordiumAnimationBridge.updateHotbarAnimation(0.0F, 0.0F, false, 0);
             return;
         }
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null) {
+            phaze$hotbarSlide.resetTracking();
             ExordiumAnimationBridge.updateHotbarAnimation(0.0F, 0.0F, false, 0);
             return;
         }
@@ -5361,136 +5118,52 @@ public class InGameHudMixin {
         int selected = mc.player.getInventory().selectedSlot;
         float target = selected * PHAZE_HOTBAR_SLOT_PX;
 
-        if (module.isHotbarRolloverEnabled() && phaze$hotbarLastSelected >= 0) {
-            int slotDelta = selected - phaze$hotbarLastSelected;
-            if (slotDelta >= 5) phaze$hotbarCurrentSlotX += PHAZE_HOTBAR_PIXEL_W;
-            else if (slotDelta <= -5) phaze$hotbarCurrentSlotX -= PHAZE_HOTBAR_PIXEL_W;
-        }
-        phaze$hotbarLastSelected = selected;
-
-        long now = System.nanoTime();
-        float dt;
-        if (phaze$hotbarLastFrameNanos == 0L) dt = 1.0F / 60.0F;
-        else {
-            dt = (now - phaze$hotbarLastFrameNanos) / 1_000_000_000.0F;
-            if (dt > 0.25F) dt = 0.25F;
-        }
-        phaze$hotbarLastFrameNanos = now;
-
-        float smoothness = module.smoothnessForSpeed(module.hotbarSpeed.getValue());
-        float decay = (float) Math.pow(smoothness, dt);
-        phaze$hotbarCurrentSlotX = (phaze$hotbarCurrentSlotX - target) * decay + target;
-        if (Math.abs(phaze$hotbarCurrentSlotX - target) < 0.4F) phaze$hotbarCurrentSlotX = target;
-
-        if (module.isHotbarRolloverEnabled()) {
-            float maxNormalX = (PHAZE_HOTBAR_SLOTS - 1) * PHAZE_HOTBAR_SLOT_PX;
-            if (phaze$hotbarCurrentSlotX < 0.0F) {
-                phaze$hotbarShouldDrawMirror = true;
-                phaze$hotbarMirrorOffsetX = PHAZE_HOTBAR_PIXEL_W;
-            } else if (phaze$hotbarCurrentSlotX > maxNormalX) {
-                phaze$hotbarShouldDrawMirror = true;
-                phaze$hotbarMirrorOffsetX = -PHAZE_HOTBAR_PIXEL_W;
-            }
-        }
+        phaze$hotbarSlide.advance(selected, module.isHotbarRolloverEnabled(), module.hotbarSpeed.getValue(),
+                System.nanoTime(), PHAZE_HOTBAR_SMOOTHNESS);
         ExordiumAnimationBridge.updateHotbarAnimation(
-                phaze$hotbarCurrentSlotX,
+                phaze$hotbarSlide.currentX(),
                 target,
-                phaze$hotbarShouldDrawMirror,
-                phaze$hotbarMirrorOffsetX
+                phaze$hotbarSlide.mirrorOffset() != 0,
+                phaze$hotbarSlide.mirrorOffset()
         );
     }
 
-    @Inject(
+    @WrapOperation(
             method = "renderHotbar",
             at = @At(value = "INVOKE",
                     target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
-                    ordinal = 1, shift = At.Shift.BEFORE)
+                    ordinal = 1), require = 1
     )
-    private void phaze$openMirrorScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        if (ExordiumAnimationBridge.isCapturingHotbar()) return;
-        if (!phaze$hotbarShouldDrawMirror) return;
-        context.draw();
-        int hotbarLeft = context.getScaledWindowWidth() / 2 - PHAZE_HOTBAR_BG_W / 2;
-        int hotbarTop = context.getScaledWindowHeight() - PHAZE_HOTBAR_BG_H;
-        context.enableScissor(hotbarLeft, hotbarTop, hotbarLeft + PHAZE_HOTBAR_BG_W, hotbarTop + PHAZE_HOTBAR_BG_H);
-        phaze$hotbarScissorOn = true;
-    }
-
-    @ModifyArgs(
-            method = "renderHotbar",
-            at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
-                    ordinal = 1)
-    )
-    private void phaze$slideSelectionX(Args args) {
+    private void phaze$slideSelection(DrawContext context, Function<Identifier, RenderLayer> layerFactory,
+                                      Identifier texture, int x, int y, int width, int height, Operation<Void> original) {
         Animations module = Animations.getInstance();
-        if (module == null || !module.isHotbarSlideEnabled()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.player == null) return;
+        if (module == null || !module.isHotbarSlideEnabled() || mc == null || mc.player == null) {
+            original.call(context, layerFactory, texture, x, y, width, height);
+            return;
+        }
 
         if (ExordiumAnimationBridge.isCapturingHotbar()) {
-            @SuppressWarnings("unchecked")
-            Function<Identifier, RenderLayer> layerFactory =
-                    (Function<Identifier, RenderLayer>) args.<Function<Identifier, ?>>get(0);
-            ExordiumAnimationBridge.recordHotbarSelection(
-                    layerFactory,
-                    args.<Identifier>get(1),
-                    args.<Integer>get(2),
-                    args.<Integer>get(3),
-                    args.<Integer>get(4),
-                    args.<Integer>get(5)
-            );
+            ExordiumAnimationBridge.recordHotbarSelection(layerFactory, texture, x, y, width, height);
             // The cached layer deliberately contains the expensive hotbar
             // background/items but not the selection frame. The frame is one
             // cheap live sprite, so it can move at display FPS over the cache.
-            args.set(2, -10_000);
-            phaze$hotbarShouldDrawMirror = false;
             return;
         }
 
         int selectedSlot = mc.player.getInventory().selectedSlot;
-        int origX = args.<Integer>get(2);
-        int baseX = origX - selectedSlot * PHAZE_HOTBAR_SLOT_PX;
-        int newX = baseX + Math.round(phaze$hotbarCurrentSlotX);
-        args.set(2, newX);
-
-        if (phaze$hotbarShouldDrawMirror) {
-            phaze$hotbarLastDrawX = newX;
-            phaze$hotbarLastDrawY = args.<Integer>get(3);
-            phaze$hotbarLastWidth = args.<Integer>get(4);
-            phaze$hotbarLastHeight = args.<Integer>get(5);
-            phaze$hotbarLastTexture = args.<Identifier>get(1);
-            phaze$hotbarLastSpriteFn = args.<Function<Identifier, ?>>get(0);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    @Inject(
-            method = "renderHotbar",
-            at = @At(value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Ljava/util/function/Function;Lnet/minecraft/util/Identifier;IIII)V",
-                    ordinal = 1, shift = At.Shift.AFTER)
-    )
-    private void phaze$drawMirrorAndCloseScissor(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        if (!phaze$hotbarShouldDrawMirror || phaze$hotbarLastTexture == null || phaze$hotbarLastSpriteFn == null) {
-            if (phaze$hotbarScissorOn) {
-                context.draw();
-                context.disableScissor();
-                phaze$hotbarScissorOn = false;
-            }
+        int newX = x - selectedSlot * PHAZE_HOTBAR_SLOT_PX + Math.round(phaze$hotbarSlide.currentX());
+        int mirrorOffset = phaze$hotbarSlide.mirrorOffset();
+        if (mirrorOffset == 0) {
+            original.call(context, layerFactory, texture, newX, y, width, height);
             return;
         }
-        int mirrorX = phaze$hotbarLastDrawX + phaze$hotbarMirrorOffsetX;
-        context.drawGuiTexture(
-                (Function<Identifier, RenderLayer>) phaze$hotbarLastSpriteFn,
-                phaze$hotbarLastTexture, mirrorX, phaze$hotbarLastDrawY,
-                phaze$hotbarLastWidth, phaze$hotbarLastHeight);
-        context.draw();
-        if (phaze$hotbarScissorOn) {
-            context.disableScissor();
-            phaze$hotbarScissorOn = false;
-        }
-        phaze$hotbarShouldDrawMirror = false;
+        int left = context.getScaledWindowWidth() / 2 - PHAZE_HOTBAR_BG_W / 2;
+        int top = context.getScaledWindowHeight() - PHAZE_HOTBAR_BG_H;
+        HotbarSelectionRenderer.drawClipped(context, layerFactory, texture, newX, y, width, height,
+                left, top, left + PHAZE_HOTBAR_BG_W, top + PHAZE_HOTBAR_BG_H);
+        HotbarSelectionRenderer.drawClipped(context, layerFactory, texture, newX + mirrorOffset, y, width, height,
+                left, top, left + PHAZE_HOTBAR_BG_W, top + PHAZE_HOTBAR_BG_H);
     }
 
     // ====================================================================
@@ -5708,6 +5381,7 @@ public class InGameHudMixin {
 
         float panelX = MathHelper.clamp(module.getHudX(), 0.0F, maxX);
         float panelY = MathHelper.clamp(module.getHudY(), 0.0F, maxY);
+        module.setHudLayoutSize(panelW, panelH);
         module.setHudX(panelX);
         module.setHudY(panelY);
 
@@ -5968,13 +5642,10 @@ public class InGameHudMixin {
         int currentScreenHeight = Math.round(screenHeight);
         float panelX = module.getHudX();
         float panelY = module.getHudY();
+        module.setHudLayoutSize(hudWidth, hudHeight);
         boolean resized = RECT_LAYOUT_INITIALIZED[hudIndex]
                 && (RECT_LAST_SCREEN_WIDTH[hudIndex] != currentScreenWidth
                 || RECT_LAST_SCREEN_HEIGHT[hudIndex] != currentScreenHeight);
-        if (resized && !RECT_DRAGGING[hudIndex] && !RECT_RESIZING[hudIndex]) {
-            panelX = maxX <= 0.0F ? 0.0F : RECT_POSITION_RATIO_X[hudIndex] * maxX;
-            panelY = maxY <= 0.0F ? 0.0F : RECT_POSITION_RATIO_Y[hudIndex] * maxY;
-        }
 
         panelX = MathHelper.clamp(panelX, 0.0F, maxX);
         panelY = MathHelper.clamp(panelY, 0.0F, maxY);

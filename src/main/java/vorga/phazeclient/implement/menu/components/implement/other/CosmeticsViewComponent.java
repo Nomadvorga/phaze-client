@@ -407,6 +407,7 @@ public final class CosmeticsViewComponent extends AbstractComponent {
                 + CosmeticsState.typeOf(selection).ordinal();
         if (!snapshot.populated || snapshot.hash != visualHash) {
             boolean rendered = false;
+            boolean captureCompleted = false;
             CardSnapshotCache.beginCapture(snapshot, previewW, previewH);
             try {
                 // Use a genuinely card-local DrawContext. Mutating the
@@ -423,8 +424,9 @@ public final class CosmeticsViewComponent extends AbstractComponent {
                         1.0F
                 );
                 captureContext.draw();
+                captureCompleted = true;
             } finally {
-                CardSnapshotCache.endCapture();
+                CardSnapshotCache.endCapture(captureCompleted && rendered);
             }
             // A model may still be loading/invalid on the first catalog
             // frame. Do not permanently cache that transparent attempt.

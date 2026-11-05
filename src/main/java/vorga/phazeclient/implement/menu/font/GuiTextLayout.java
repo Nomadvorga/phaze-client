@@ -1,12 +1,14 @@
 package vorga.phazeclient.implement.menu.font;
 
+import vorga.phazeclient.api.system.font.msdf.MsdfTextMetrics;
+
 import java.util.ArrayList;
 import java.util.List;
 
 /** Shared layout for drawing, hit testing and clipping, independent of Minecraft/GL. */
 final class GuiTextLayout {
     // MsdfRenderer's default thickness adds .05 * .5 * size to every glyph advance.
-    static final float GLYPH_SPACING = 0.025F;
+    static final float GLYPH_SPACING = MsdfTextMetrics.DEFAULT_GLYPH_SPACING;
     private static final int[] COLORS = {
             0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
             0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF

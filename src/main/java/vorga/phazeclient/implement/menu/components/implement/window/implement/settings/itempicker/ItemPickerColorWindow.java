@@ -12,7 +12,6 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.feature.module.setting.implement.ItemPickerSetting;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
@@ -259,9 +258,6 @@ public final class ItemPickerColorWindow extends AbstractWindow {
         RenderSystem.defaultBlendFunc();
         RenderSystem.setShaderTexture(0, HUE_TEXTURE);
         RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);

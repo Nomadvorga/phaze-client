@@ -8,6 +8,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
@@ -41,6 +42,8 @@ public final class GuiInteractionChecks {
         disableAndReenable();
         scrollAndScreenReset();
         readoutContracts();
+        messengerContracts();
+        messengerCardBounds();
         System.out.println("GUI interaction checks passed: " + checks);
     }
 
@@ -200,6 +203,200 @@ public final class GuiInteractionChecks {
             }
         }
         check(renderCalls == 1, "the chat scale readout is drawn exactly once outside the GUI");
+    }
+
+    private static void messengerContracts() throws Exception {
+        String owner = "vorga/phazeclient/implement/menu/components/implement/other/MessengerViewComponent";
+        ClassNode messenger = readClass(owner);
+        for (String name : List.of("renderNavigation", "renderCompactFriend", "renderConversationHeader",
+                "renderFriendCard", "renderConversationCard", "renderFriendRequestCard", "renderSelectableUser",
+                "renderMessage", "renderInput", "renderActionButton", "renderCompactActionButton")) {
+            check(calls(method(messenger, name)).stream().anyMatch(call -> call.owner.equals(owner)
+                            && call.name.equals("animatedHover")),
+                    "messenger interactive control has an independent smooth hover: " + name);
+        }
+        check(constant(messenger, "HOVER_MS") == 170.0F,
+                "messenger hover uses the same 170 ms duration as module-setting rows");
+        check(calls(method(messenger, "animatedHover")).stream().anyMatch(call -> call.name.equals("getOutputFloat")),
+                "messenger samples hover without allocating boxed animation output");
+        check(messenger.methods.stream().filter(method -> method.name.startsWith("lambda$animatedHover"))
+                        .flatMap(method -> calls(method).stream()).anyMatch(call -> call.name.equals("setDirectionAndFinish")),
+                "new hover states start at a finished idle state instead of flashing on first render");
+
+        MethodNode conversationHeader = method(messenger, "renderConversationHeader");
+        MethodNode moduleHeader = method(readClass(
+                "vorga/phazeclient/implement/menu/components/implement/other/ModuleDetailComponent"), "renderHeader");
+        String backTexture = "textures/back_arrow.png";
+        for (MethodNode header : List.of(conversationHeader, moduleHeader)) {
+            boolean usesBackTexture = false;
+            boolean usesMissingGlyph = false;
+            for (AbstractInsnNode instruction : header.instructions) {
+                if (!(instruction instanceof LdcInsnNode literal)) continue;
+                usesBackTexture |= backTexture.equals(literal.cst);
+                usesMissingGlyph |= "‹".equals(literal.cst);
+            }
+            check(usesBackTexture && !usesMissingGlyph,
+                    "conversation and module headers use the same back-arrow texture, not a missing font glyph");
+        }
+        String image = "vorga/phazeclient/api/system/shape/implement/Image";
+        for (String operation : List.of("setTexture", "render")) {
+            check(calls(conversationHeader).stream().anyMatch(call -> call.owner.equals(image)
+                            && call.name.equals(operation)),
+                    "conversation back arrow uses the shared image renderer and its raster fallback: " + operation);
+        }
+        try (InputStream texture = GuiInteractionChecks.class.getClassLoader()
+                .getResourceAsStream("assets/minecraft/" + backTexture)) {
+            check(texture != null, "the conversation back-arrow texture is included in the client resources");
+        }
+
+        String style = "vorga/phazeclient/implement/menu/MenuStyle";
+        for (String paletteMethod : List.of("settingSurface", "settingOutline")) {
+            check(messenger.methods.stream().filter(method -> method.name.equals("drawChatCard"))
+                            .flatMap(method -> calls(method).stream()).anyMatch(call -> call.owner.equals(style)
+                                    && call.name.equals(paletteMethod)),
+                    "messenger cards reuse the shared setting palette: " + paletteMethod);
+        }
+        check(calls(method(messenger, "drawStatus")).stream().noneMatch(call -> call.owner.endsWith("/ShapeProperties")),
+                "online and offline labels no longer draw status dots");
+        check(calls(method(messenger, "drawStatus")).stream().anyMatch(call -> call.name.equals("drawText")),
+                "removing status dots retains the localized status text");
+        boolean dotSpacing = false;
+        for (AbstractInsnNode instruction : method(messenger, "drawCenteredStatus").instructions) {
+            if (instruction instanceof LdcInsnNode constant && Float.valueOf(7.0F).equals(constant.cst)) {
+                dotSpacing = true;
+            }
+        }
+        check(!dotSpacing, "centered status labels do not reserve the removed dot's horizontal space");
+        for (String name : List.of("renderCenter", "mouseClicked")) {
+            check(calls(method(messenger, name)).stream().anyMatch(call -> call.owner.equals(owner)
+                            && call.name.equals("listBottom")),
+                    "rendering and clicks share the same list viewport: " + name);
+        }
+        MethodNode center = method(messenger, "renderCenter");
+        int onlineReads = 0;
+        for (AbstractInsnNode instruction : center.instructions) {
+            if (!(instruction instanceof MethodInsnNode call) || !call.name.equals("getOnlineCount")) continue;
+            onlineReads++;
+            int readIndex = center.instructions.indexOf(instruction);
+            boolean globalGuard = false;
+            for (AbstractInsnNode guard : center.instructions) {
+                if (center.instructions.indexOf(guard) >= readIndex) break;
+                if (!(guard instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETSTATIC
+                        || !field.owner.equals(owner + "$Section") || !field.name.equals("GLOBAL")) continue;
+                AbstractInsnNode branch = guard.getNext();
+                while (branch != null && branch.getOpcode() < 0) branch = branch.getNext();
+                globalGuard |= branch instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.IF_ACMPNE
+                        && center.instructions.indexOf(jump.label) > readIndex;
+            }
+            check(globalGuard, "the header online counter is guarded by the Global Chat section");
+        }
+        check(onlineReads > 0, "Global Chat retains its online counter");
+    }
+
+    private static void messengerCardBounds() throws Exception {
+        ClassNode messenger = readClass("vorga/phazeclient/implement/menu/components/implement/other/MessengerViewComponent");
+        check(constant(messenger, "DIRECT_CARD_HEIGHT") == constant(messenger, "FRIEND_CARD_HEIGHT")
+                        && constant(messenger, "DIRECT_CARD_HEIGHT") < 44.0F,
+                "direct-message cards are compact and match friend-card height");
+        float cardHeight = constant(messenger, "FRIEND_CARD_HEIGHT");
+        check(cardHeight == AbstractSettingComponent.ROW_HEIGHT,
+                "friend and direct-message cards match the module-setting row height");
+        float avatarSize = constant(messenger, "CARD_AVATAR_SIZE");
+        float avatarInset = constant(messenger, "CARD_AVATAR_INSET");
+        check(avatarSize > 0.0F && avatarSize < cardHeight,
+                "compact friend-card avatars fit inside the setting-height row");
+        check(Math.abs(avatarInset - (cardHeight - avatarInset - avatarSize)) < 0.0001F,
+                "friend-card avatars have equal top, bottom and left padding");
+        check(constant(messenger, "CARD_TEXT_INSET") > avatarInset + avatarSize,
+                "compact friend-card text remains separated from the avatar");
+        float lineStep = constant(messenger, "CARD_TEXT_LINE_STEP");
+        check(lineStep == 10.0F, "friend-card names and statuses retain their existing line spacing");
+        for (float[] textLayout : new float[][]{
+                {constant(messenger, "FRIEND_CARD_NAME_OFFSET"), 4.8F},
+                {constant(messenger, "DIRECT_CARD_NAME_OFFSET"), 5.2F}
+        }) {
+            float textTop = textLayout[0];
+            float textBottom = textTop + lineStep + textLayout[1];
+            check(textTop > 0.0F && textBottom < cardHeight,
+                    "both lines fit inside compact friend and direct-message cards");
+            check(Math.abs(textTop - (cardHeight - textBottom)) < 0.0001F,
+                    "friend-card names and their second line remain vertically centered");
+        }
+        float nameOffset = constant(messenger, "COMPACT_FRIEND_NAME_OFFSET");
+        float statusOffset = constant(messenger, "COMPACT_FRIEND_STATUS_OFFSET");
+        check(Math.abs(statusOffset - nameOffset - 7.0F) < 0.0001F,
+                "sidebar friend names and statuses retain their existing line spacing");
+        check(Math.abs(nameOffset - (18.0F - statusOffset - 4.8F)) < 0.0001F,
+                "sidebar friend text has equal top and bottom card padding");
+        check(nameOffset > 1.0F && statusOffset > 8.0F,
+                "sidebar friend names and statuses move down together");
+        float backWidth = constant(messenger, "DIRECT_BACK_WIDTH");
+        float backHeight = constant(messenger, "DIRECT_HEADER_HEIGHT");
+        float backIconSize = constant(messenger, "DIRECT_BACK_ICON_SIZE");
+        float backIconX = constant(messenger, "DIRECT_BACK_ICON_X_INSET");
+        float backIconY = constant(messenger, "DIRECT_BACK_ICON_Y_INSET");
+        check(backWidth == 25.0F && backHeight == 27.0F,
+                "replacing the back icon preserves the conversation back-button hit area");
+        check(backIconSize == 10.0F && backIconSize > 7.5F,
+                "the conversation back arrow is slightly larger than the module-settings arrow");
+        check(backIconX >= 3.0F && backIconY >= 3.0F,
+                "the enlarged back arrow stays within its inset hover surface");
+        check(Math.abs(backIconX - (backWidth - backIconX - backIconSize)) < 0.0001F
+                        && Math.abs(backIconY - (backHeight - backIconY - backIconSize)) < 0.0001F,
+                "the conversation back arrow is centered horizontally and vertically");
+        float[][] layouts = {
+                {constant(messenger, "FRIEND_CARD_HEIGHT"), constant(messenger, "FRIEND_ROW_STEP")},
+                {constant(messenger, "DIRECT_CARD_HEIGHT"), constant(messenger, "DIRECT_ROW_STEP")},
+                {constant(messenger, "REQUEST_CARD_HEIGHT"), constant(messenger, "REQUEST_ROW_STEP")}
+        };
+        float headerInset = constant(messenger, "HEADER_TEXT_INSET");
+        // Isolate only the actual pure layout methods: no Minecraft window, avatar service or user configuration.
+        messenger.superName = "java/lang/Object";
+        messenger.fields.clear();
+        messenger.methods.removeIf(method -> !List.of("inside", "cardIndex", "listBottom", "headerRightTextX").contains(method.name));
+        Class<?> bounds = new OfflineClasses().define(messenger);
+        Method card = bounds.getDeclaredMethod("cardIndex", double.class, double.class,
+                float.class, float.class, float.class, float.class, float.class, float.class, int.class);
+        Method bottom = bounds.getDeclaredMethod("listBottom", float.class, float.class, boolean.class);
+        Method headerRight = bounds.getDeclaredMethod("headerRightTextX", float.class, float.class, float.class);
+        card.setAccessible(true);
+        bottom.setAccessible(true);
+        headerRight.setAccessible(true);
+        for (float width : new float[]{120.0F, 240.0F, 360.0F}) {
+            float textWidth = 30.5F;
+            float textX = (float) headerRight.invoke(null, 100.0F, width, textWidth);
+            check(Math.abs(100.0F + width - textX - textWidth - headerInset) < 0.0001F,
+                    "header online text has the same right padding as the title's left padding");
+        }
+        check((float) bottom.invoke(null, 50.0F, 240.0F, false) == 288.0F,
+                "lists without a composer use the full content height");
+        check((float) bottom.invoke(null, 50.0F, 240.0F, true) == 267.0F,
+                "message lists leave the same composer height and gap in rendering and hit tests");
+        for (float[] layout : layouts) {
+            float height = layout[0];
+            float step = layout[1];
+            float listBottom = 50.0F + step * 2.0F + height;
+            for (int index = 0; index < 3; index++) {
+                double rowY = 50.0F + index * step;
+                check((int) card.invoke(null, 110.0D, rowY + height / 2.0F,
+                                100.0F, 50.0F, 240.0F, height, step, listBottom, 3) == index,
+                        "each compact card selects its own row");
+                check((int) card.invoke(null, 110.0D, rowY + height + 2.0F,
+                                100.0F, 50.0F, 240.0F, height, step, listBottom, 3) == -1,
+                        "card gaps are not clickable");
+            }
+            check((int) card.invoke(null, 110.0D, 50.0D + step * 2.0F + height / 2.0F,
+                            100.0F, 50.0F, 240.0F, height, step, listBottom - 1.0F, 3) == -1,
+                    "a last card that cannot be rendered fully cannot be clicked invisibly");
+            check((int) card.invoke(null, 99.0D, 51.0D,
+                            100.0F, 50.0F, 240.0F, height, step, listBottom, 3) == -1,
+                    "clicking outside the card's horizontal bounds does not select it");
+        }
+    }
+
+    private static float constant(ClassNode node, String name) {
+        return ((Number) node.fields.stream().filter(field -> field.name.equals(name))
+                .findFirst().orElseThrow().value).floatValue();
     }
 
     /** Native-call replacements used only by the isolated compiled CursorManager. */

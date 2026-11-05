@@ -345,6 +345,11 @@ public final class RemoteRulesService {
      * Idempotent. Safe to call from the mod initializer; subsequent
      * calls are no-ops.
      */
+    /** Final client shutdown only; the service is not restarted after this boundary. */
+    public void stop() {
+        scheduler.shutdownNow();
+    }
+
     public void start() {
         if (!enabled) {
             return;

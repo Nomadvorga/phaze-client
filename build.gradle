@@ -106,6 +106,28 @@ tasks.named('processResources') {
 
 sourceSets.test.java.srcDir('scripts')
 
+// Dedicated GL runs select their fixtures without changing the normal client suite.
+tasks.named('processTestResources') {
+    def blurOnly = project.hasProperty('hudBlurOnly')
+    def textureFilterOnly = project.hasProperty('textureFilterOnly')
+    inputs.property 'hudBlurOnly', blurOnly
+    inputs.property 'textureFilterOnly', textureFilterOnly
+    if (blurOnly || textureFilterOnly) {
+        filesMatching('fabric.mod.json') {
+            filter { String line ->
+                if (line.contains('"vorga.')) {
+                    def selected = textureFilterOnly
+                            ? ['TextureFilteringClientTest', 'LoadingOverlayClientTest', 'RenderSafetyClientTest']
+                            : ['HudBlurClientTest', 'RenderSafetyClientTest']
+                    if (!selected.any { line.contains(it) }) return null
+                    if (textureFilterOnly && line.contains('RenderSafetyClientTest')) return line.replaceFirst(/,\s*$/, '')
+                }
+                return line
+            }
+        }
+    }
+}
+
 tasks.register('verifyPackPreviewAssets', JavaExec) {
     group = 'verification'
     description = 'Offline pack scanning, search, cycling, composition and asynchronous preview checks'
@@ -131,13 +153,21 @@ tasks.register('verifyMenuLocalization', JavaExec) {
     verifyPredictionBatch: 'vorga.phazeclient.implement.features.modules.other.PredictionBatchChecks',
     verifyProjectileQueries: 'vorga.phazeclient.implement.features.modules.other.ProjectileQueryChecks',
     verifyWorldOverlays: 'vorga.phazeclient.api.system.render.WorldOverlayChecks',
+    verifyChunkAnimation: 'vorga.phazeclient.implement.features.modules.other.ChunkAnimatorChecks',
     verifyHudCompatibility: 'vorga.phazeclient.implement.features.modules.hud.HudCompatibilityChecks',
     verifyBossBar: 'vorga.phazeclient.implement.features.modules.hud.BossBarChecks',
     verifyGuiInteractions: 'vorga.phazeclient.implement.menu.components.implement.settings.GuiInteractionChecks',
     verifyGlintTextureClock: 'vorga.phazeclient.base.util.render.GlintTextureClockChecks',
     verifyLowHealthSettings: 'vorga.phazeclient.implement.features.modules.other.LowHealthSettingsChecks',
     verifySettingLabels: 'vorga.phazeclient.implement.menu.components.implement.settings.SettingLabelChecks',
-    verifyGuiFonts: 'vorga.phazeclient.implement.menu.font.GuiFontChecks'
+    verifyGuiFonts: 'vorga.phazeclient.implement.menu.font.GuiFontChecks',
+    verifyTextureFiltering: 'vorga.phazeclient.implement.menu.TextureFilteringChecks',
+    verifyRenderLifecycle: 'vorga.phazeclient.api.system.render.RenderLifecycleChecks',
+    verifyConfigPersistence: 'vorga.phazeclient.implement.config.ConfigPersistenceChecks',
+    verifyHudRenderSafety: 'vorga.phazeclient.api.system.hud.HudRenderSafetyChecks',
+    verifyHudBlurOptimization: 'vorga.phazeclient.api.system.hud.HudBlurOptimizationChecks',
+    verifyHotbarPerformance: 'vorga.phazeclient.api.system.hud.HotbarPerformanceChecks',
+    verifyHitRangeGeometry: 'vorga.phazeclient.implement.hitrange.HitRangeGeometryChecks'
 ].each { taskName, testMain ->
     tasks.register(taskName, JavaExec) {
         group = 'verification'
@@ -154,6 +184,17 @@ tasks.named('verifyProjectileQueries', JavaExec) {
     args 'vorga.phazeclient.implement.features.modules.other.ProjectileQueryChecks'
 }
 
+tasks.named('verifyChunkAnimation', JavaExec) {
+    // ChunkPos initializes vanilla chunk-generation registries; use Fabric's package-access repair.
+    mainClass = 'vorga.phazeclient.test.HeadlessMinecraftChecks'
+    args 'vorga.phazeclient.implement.features.modules.other.ChunkAnimatorChecks'
+}
+
+tasks.named('verifyConfigPersistence', JavaExec) {
+    mainClass = 'vorga.phazeclient.test.HeadlessMinecraftChecks'
+    args 'vorga.phazeclient.implement.config.ConfigPersistenceChecks'
+}
+
 tasks.register('benchmarkPredictionCpu', JavaExec) {
     group = 'verification'
     description = 'Optional CPU-only prediction comparison; not an in-game FPS/GPU benchmark'
@@ -164,6 +205,14 @@ tasks.register('benchmarkPredictionCpu', JavaExec) {
     if (project.hasProperty('predictionBaseline')) {
         systemProperty 'phaze.prediction.baseline', project.property('predictionBaseline')
     }
+}
+
+tasks.register('benchmarkHitRangeCpu', JavaExec) {
+    group = 'verification'
+    description = 'Optional CPU-only Hit Range geometry comparison; no in-game FPS/GPU claim'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'vorga.phazeclient.implement.hitrange.HitRangePerformanceBench'
 }
 
 tasks.named('check') {
@@ -184,6 +233,21 @@ loom {
             source sourceSets.test
             runDir 'build/pack-preview-client-test'
             vmArg '-Dfabric.client.gametest'
+        }
+        hudBlurSmoke {
+            client()
+            source sourceSets.test
+            runDir 'build/hud-blur-client-test'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phaze_preview_tests'
+            if (project.hasProperty('hudBlurBenchmark')) vmArg '-Dphaze.hudBlur.benchmark=true'
+        }
+        textureFilterSmoke {
+            client()
+            source sourceSets.test
+            runDir 'build/texture-filter-client-test'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phaze_preview_tests'
         }
     }
 }

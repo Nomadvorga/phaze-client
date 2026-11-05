@@ -235,7 +235,8 @@ public final class HolyWorldHelperRenderer {
 
     private static void drawGeometry(MatrixStack matrices, Geometry geometry, float offsetX, float offsetY, float offsetZ,
                                      int color, float fillOpacity) {
-        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        MatrixStack.Entry entry = matrices.peek();
+        Matrix4f matrix = entry.getPositionMatrix();
         float alpha = ((color >>> 24) & 255) / 255.0F;
         float red = ((color >>> 16) & 255) / 255.0F;
         float green = ((color >>> 8) & 255) / 255.0F;
@@ -264,7 +265,7 @@ public final class HolyWorldHelperRenderer {
         RenderSystem.lineWidth(2.0F);
         BufferBuilder outline = Tessellator.getInstance().begin(VertexFormat.DrawMode.LINES, VertexFormats.LINES);
         for (Edge edge : geometry.edges) {
-            addLine(outline, matrix, edge, offsetX, offsetY, offsetZ, red, green, blue, alpha);
+            addLine(outline, entry, edge, offsetX, offsetY, offsetZ, red, green, blue, alpha);
         }
         BufferRenderer.drawWithGlobalProgram(outline.end());
 
@@ -330,13 +331,14 @@ public final class HolyWorldHelperRenderer {
         buffer.vertex(matrix, dx, dy, dz).color(r, g, b, a);
     }
 
-    private static void addLine(BufferBuilder buffer, Matrix4f matrix, Edge edge,
+    private static void addLine(BufferBuilder buffer, MatrixStack.Entry entry, Edge edge,
                                 float offsetX, float offsetY, float offsetZ,
                                 float r, float g, float b, float a) {
+        Matrix4f matrix = entry.getPositionMatrix();
         buffer.vertex(matrix, edge.startX + offsetX, edge.startY + offsetY, edge.startZ + offsetZ)
-                .color(r, g, b, a).normal(edge.normalX, edge.normalY, edge.normalZ);
+                .color(r, g, b, a).normal(entry, edge.normalX, edge.normalY, edge.normalZ);
         buffer.vertex(matrix, edge.endX + offsetX, edge.endY + offsetY, edge.endZ + offsetZ)
-                .color(r, g, b, a).normal(edge.normalX, edge.normalY, edge.normalZ);
+                .color(r, g, b, a).normal(entry, edge.normalX, edge.normalY, edge.normalZ);
     }
 
     private record Geometry(FaceBox[] faces, Edge[] edges) {

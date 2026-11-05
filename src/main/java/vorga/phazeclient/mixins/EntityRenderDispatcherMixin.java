@@ -1,10 +1,11 @@
 package vorga.phazeclient.mixins;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.OutlineVertexConsumerProvider;
-import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.VertexRendering;
 import net.minecraft.client.render.entity.EntityRenderDispatcher;
 import net.minecraft.client.render.entity.EntityRenderer;
@@ -21,12 +22,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.gen.Invoker;
 import vorga.phazeclient.api.system.nametag.NametagBlurStorage;
 import vorga.phazeclient.api.system.render.Render3DUtil;
-import vorga.phazeclient.implement.features.modules.other.HitboxCustomizer;
-import vorga.phazeclient.util.render.PhazeRenderLayers;
 import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
+import vorga.phazeclient.implement.features.modules.other.HitboxCustomizer;
 
 @Mixin(EntityRenderDispatcher.class)
 public class EntityRenderDispatcherMixin {
@@ -64,7 +61,7 @@ public class EntityRenderDispatcherMixin {
             EntityRenderer<? super E, ?> renderer
     ) {
         HitboxCustomizer module = HitboxCustomizer.getInstance();
-        if (!module.isEnabled()) {
+        if (!module.isEnabled() || !WorldOverlayRenderer.isRecording()) {
             phaze$invokeVanillaRenderHitbox(matrices, vertices, entity, tickDelta, red, green, blue);
             return;
         }
@@ -79,6 +76,8 @@ public class EntityRenderDispatcherMixin {
         float g = ((colorInt >>> 8) & 0xFF) / 255.0f;
         float b = (colorInt & 0xFF) / 255.0f;
 
+        // The dispatcher already translated by the interpolated camera-relative
+        // position. Keep this box entity-local; the late pass supplies the view.
         Box box = entity.getBoundingBox().offset(-entity.getX(), -entity.getY(), -entity.getZ());
 
         float thickness = Math.max(1.0f, module.outlineThickness.getValue());
@@ -101,16 +100,6 @@ public class EntityRenderDispatcherMixin {
                     -16776961
             );
         }
-    }
-
-    private static VertexConsumerProvider.Immediate phaze$getImmediate(VertexConsumerProvider provider) {
-        if (provider instanceof VertexConsumerProvider.Immediate immediate) {
-            return immediate;
-        }
-        if (provider instanceof OutlineVertexConsumerProvider outline) {
-            return ((OutlineVertexConsumerProviderAccessor) outline).phaze$getParent();
-        }
-        return null;
     }
 
     private static boolean phaze$isCrosshairTarget(Entity entity) {
