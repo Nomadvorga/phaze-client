@@ -93,7 +93,10 @@ public final class HotbarPerformanceChecks {
 
     private static void renderContracts() throws Exception {
         MethodNode hook = method(read("vorga/phazeclient/mixins/InGameHudMixin"), "phaze$slideSelection");
-        check(!calls(hook, "draw") && !calls(hook, "capture"), "selector hook neither flushes GUI batches nor snapshots GL state");
+        check(calls(hook, "renderSelection"), "selector hook delegates to the hotbar tweaks");
+        for (MethodNode selection : java.util.List.of(hook, method(read("vorga/phazeclient/implement/hud/vanilla/HotbarTweaks"), "renderSelection"))) {
+            check(!calls(selection, "draw") && !calls(selection, "capture"), "selector hook neither flushes GUI batches nor snapshots GL state");
+        }
         MethodNode selector = method(read("vorga/phazeclient/api/system/hud/ExordiumAnimationBridge"), "renderHotbarSelection");
         check(!calls(selector, "drawExordiumTexture") && !calls(selector, "baseModelViewMatrix"), "cached selector adds no full-screen texture/model draw");
         check(!calls(selector, "enableScissor") && !calls(selector, "draw"), "cached selector doesn't split the GUI batch");

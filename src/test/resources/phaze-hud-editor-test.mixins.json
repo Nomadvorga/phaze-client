@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "package": "vorga.phazeclient.mixins.test",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "HudEditorTestMixins$Batch",
+    "HudEditorTestMixins$Child",
+    "HudEditorTestMixins$Items",
+    "HudEditorTestMixins$Models",
+    "HudEditorTestMixins$Masks",
+    "HudEditorTestMixins$Chat"
+  ],
+  "injectors": { "defaultRequire": 1 }
+}

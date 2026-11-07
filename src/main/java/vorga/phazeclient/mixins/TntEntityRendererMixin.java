@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import vorga.phazeclient.api.system.render.IrisCompat;
 import vorga.phazeclient.implement.features.modules.other.TntCountdown;
 
 @Mixin(TntEntityRenderer.class)
@@ -27,7 +28,7 @@ public abstract class TntEntityRendererMixin extends EntityRenderer<TntEntity, T
     )
     private void phaze$renderTntCountdown(TntEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
         TntCountdown module = TntCountdown.getInstance();
-        if (module == null || !module.showText.isValue()) {
+        if (module == null || !module.showText.isValue() || IrisCompat.isShadowPass()) {
             return;
         }
         // TNT does not normally have a name label, so its render state leaves

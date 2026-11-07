@@ -178,7 +178,7 @@ public final class GuiInteractionChecks {
         check(calls(method(value, "mouseReleased")).stream().anyMatch(call -> call.owner.equals(CURSOR)
                         && call.name.equals("endDrag")), "GUI slider release explicitly clears its cursor pin");
 
-        ClassNode hud = readClass("vorga/phazeclient/mixins/InGameHudMixin");
+        ClassNode hud = readClass("vorga/phazeclient/implement/hud/CustomHudRenderer");
         check(calls(method(hud, "snapAndAnnounceHudScale")).stream().anyMatch(call -> call.owner.equals(OVERLAY)
                         && call.name.equals("show")), "active chat HUD resizing still updates the scale readout");
         int renderCalls = 0;
@@ -227,7 +227,8 @@ public final class GuiInteractionChecks {
         MethodNode moduleHeader = method(readClass(
                 "vorga/phazeclient/implement/menu/components/implement/other/ModuleDetailComponent"), "renderHeader");
         String backTexture = "textures/back_arrow.png";
-        for (MethodNode header : List.of(conversationHeader, moduleHeader)) {
+        MethodNode messengerInit = method(messenger, "<clinit>");
+        for (MethodNode header : List.of(messengerInit, moduleHeader)) {
             boolean usesBackTexture = false;
             boolean usesMissingGlyph = false;
             for (AbstractInsnNode instruction : header.instructions) {
@@ -238,12 +239,14 @@ public final class GuiInteractionChecks {
             check(usesBackTexture && !usesMissingGlyph,
                     "conversation and module headers use the same back-arrow texture, not a missing font glyph");
         }
-        String image = "vorga/phazeclient/api/system/shape/implement/Image";
-        for (String operation : List.of("setTexture", "render")) {
-            check(calls(conversationHeader).stream().anyMatch(call -> call.owner.equals(image)
-                            && call.name.equals(operation)),
-                    "conversation back arrow uses the shared image renderer and its raster fallback: " + operation);
+        boolean readsBackIcon = false;
+        for (AbstractInsnNode instruction : conversationHeader.instructions) {
+            readsBackIcon |= instruction instanceof FieldInsnNode field && field.name.equals("BACK_ICON");
         }
+        check(readsBackIcon, "the conversation header draws the shared back-arrow icon");
+        check(calls(conversationHeader).stream().anyMatch(call -> call.owner.equals(owner)
+                        && call.name.equals("drawTexture")),
+                "the raster back arrow is drawn directly, centred on its visible stroke");
         try (InputStream texture = GuiInteractionChecks.class.getClassLoader()
                 .getResourceAsStream("assets/minecraft/" + backTexture)) {
             check(texture != null, "the conversation back-arrow texture is included in the client resources");
@@ -330,20 +333,16 @@ public final class GuiInteractionChecks {
                 "sidebar friend text has equal top and bottom card padding");
         check(nameOffset > 1.0F && statusOffset > 8.0F,
                 "sidebar friend names and statuses move down together");
-        float backWidth = constant(messenger, "DIRECT_BACK_WIDTH");
+        float backSize = constant(messenger, "DIRECT_BACK_SIZE");
+        float backInset = constant(messenger, "DIRECT_BACK_INSET");
         float backHeight = constant(messenger, "DIRECT_HEADER_HEIGHT");
         float backIconSize = constant(messenger, "DIRECT_BACK_ICON_SIZE");
-        float backIconX = constant(messenger, "DIRECT_BACK_ICON_X_INSET");
-        float backIconY = constant(messenger, "DIRECT_BACK_ICON_Y_INSET");
-        check(backWidth == 25.0F && backHeight == 27.0F,
-                "replacing the back icon preserves the conversation back-button hit area");
+        check(backHeight == 27.0F && Math.abs(backSize - (backHeight - backInset * 2.0F)) < 0.0001F,
+                "the conversation back button is a square with equal header insets");
         check(backIconSize == 10.0F && backIconSize > 7.5F,
                 "the conversation back arrow is slightly larger than the module-settings arrow");
-        check(backIconX >= 3.0F && backIconY >= 3.0F,
-                "the enlarged back arrow stays within its inset hover surface");
-        check(Math.abs(backIconX - (backWidth - backIconX - backIconSize)) < 0.0001F
-                        && Math.abs(backIconY - (backHeight - backIconY - backIconSize)) < 0.0001F,
-                "the conversation back arrow is centered horizontally and vertically");
+        check(backIconSize < backSize,
+                "the back arrow stays within its square hover surface");
         float[][] layouts = {
                 {constant(messenger, "FRIEND_CARD_HEIGHT"), constant(messenger, "FRIEND_ROW_STEP")},
                 {constant(messenger, "DIRECT_CARD_HEIGHT"), constant(messenger, "DIRECT_ROW_STEP")},

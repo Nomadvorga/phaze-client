@@ -1,8 +1,16 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.render.VertexFormat;
+import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
+import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -12,18 +20,20 @@ import vorga.phazeclient.api.system.font.msdf.MsdfFont;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.util.MessengerService;
 import vorga.phazeclient.base.util.SkinAvatarService;
 import vorga.phazeclient.base.util.Lang;
-import vorga.phazeclient.base.util.render.Render2DUtil;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.MenuLayout;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabel;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.time.Instant;
@@ -51,7 +61,17 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final float NAV_TOP_OFFSET = PROFILE_HEIGHT + 9.0F;
     private static final float FRIEND_PREVIEW_TOP_OFFSET = NAV_TOP_OFFSET
             + Section.values().length * NAV_HEIGHT - NAV_GAP + 16.0F;
+    /** Height of a one-line message: name line, one text line and the gap to the next message. */
     private static final float MESSAGE_ROW = 22.0F;
+    private static final float MESSAGE_AVATAR_SIZE = 17.0F;
+    private static final float MESSAGE_TEXT_X = 22.0F;
+    private static final float MESSAGE_TEXT_TOP = 11.0F;
+    private static final float MESSAGE_TEXT_SIZE = 6.0F;
+    private static final float MESSAGE_LINE_STEP = 8.0F;
+    private static final float MESSAGE_ROW_GAP = MESSAGE_ROW - MESSAGE_TEXT_TOP - MESSAGE_LINE_STEP;
+    /** Wrapped text keeps this distance from the list's right (scissor) edge. */
+    private static final float MESSAGE_TEXT_RIGHT_INSET = 2.0F;
+    private static final int WRAP_CACHE_LIMIT = 512;
     private static final float COMPACT_FRIEND_NAME_OFFSET = (18.0F - (7.0F + 4.8F)) / 2.0F;
     private static final float COMPACT_FRIEND_STATUS_OFFSET = COMPACT_FRIEND_NAME_OFFSET + 7.0F;
     private static final float FRIEND_CARD_HEIGHT = AbstractSettingComponent.ROW_HEIGHT;
@@ -68,11 +88,15 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final float REQUEST_ROW_STEP = REQUEST_CARD_HEIGHT + 5.0F;
     private static final float CARD_RADIUS = 5.0F;
     private static final float DIRECT_HEADER_HEIGHT = 27.0F;
-    private static final float DIRECT_BACK_WIDTH = 25.0F;
+    private static final float DIRECT_BACK_INSET = 3.0F;
+    /** Square back button: as wide as it is tall inside the header. */
+    private static final float DIRECT_BACK_SIZE = DIRECT_HEADER_HEIGHT - DIRECT_BACK_INSET * 2.0F;
     private static final float DIRECT_BACK_ICON_SIZE = 10.0F;
-    private static final float DIRECT_BACK_ICON_X_INSET = (DIRECT_BACK_WIDTH - DIRECT_BACK_ICON_SIZE) / 2.0F;
-    private static final float DIRECT_BACK_ICON_Y_INSET = (DIRECT_HEADER_HEIGHT - DIRECT_BACK_ICON_SIZE) / 2.0F;
+    private static final Identifier BACK_ICON = Identifier.ofVanilla("textures/back_arrow.png");
+    /** Centre of the opaque stroke of the 24x24 back_arrow.png (pixels 9..15 x 5..19), as a fraction. */
+    private static final float BACK_ICON_INK_CENTER = 12.5F / 24.0F;
     private static final float INPUT_HEIGHT = 18.0F;
+    private static final float INPUT_ERROR_RESERVE = 9.0F;
     private static final float INPUT_TEXT_SIZE = 7.2F;
     private static final int HOVER_MS = 170;
     private static final int MAX_INPUT_CODEPOINTS = 255;
@@ -91,6 +115,14 @@ public final class MessengerViewComponent extends AbstractComponent {
     private boolean draggingSelection;
     private long nextSendAt;
     private double scroll;
+    private String scrollListKey;
+    private float scrollListHeight;
+    private final Map<Long, WrappedText> wrapCache = new LinkedHashMap<>(64, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Long, WrappedText> eldest) {
+            return size() > WRAP_CACHE_LIMIT;
+        }
+    };
     private volatile String selectedFriendId;
     private volatile String selectedProfileId;
     private volatile String selectedProfileUsername;
@@ -102,7 +134,6 @@ public final class MessengerViewComponent extends AbstractComponent {
     private boolean sendPending;
     private String pendingText;
     private volatile String actionError;
-    private long nextRequestsRefreshAt;
     private final Map<String, SettingLabel> marqueeLabels = new HashMap<>();
     private final Map<String, Animation> hoverAnimations = new HashMap<>();
     private final Set<String> renderedHoverKeys = new HashSet<>();
@@ -128,14 +159,15 @@ public final class MessengerViewComponent extends AbstractComponent {
     public void open() {
         if (!open) hoverAnimations.clear();
         open = true;
-        pageAnimation.setDirection(Direction.FORWARDS);
+        // Top-level pages switch instantly, like Mods/Settings/Configs.
+        pageAnimation.setDirectionAndFinish(Direction.FORWARDS);
         service.start();
         service.refreshRequestsAsync();
     }
 
     public void close() {
         open = false;
-        pageAnimation.setDirection(Direction.BACKWARDS);
+        pageAnimation.setDirectionAndFinish(Direction.BACKWARDS);
         input = "";
         cursor = 0;
         selectionAnchor = 0;
@@ -161,13 +193,6 @@ public final class MessengerViewComponent extends AbstractComponent {
         float inheritedAlpha = globalAlpha;
         globalAlpha *= pageAnimation.getOutputFloat();
         applyAsyncState();
-        if (section == Section.REQUESTS) {
-            long now = System.currentTimeMillis();
-            if (now >= nextRequestsRefreshAt) {
-                nextRequestsRefreshAt = now + 4_000L;
-                service.refreshRequestsAsync();
-            }
-        }
 
         renderedHoverKeys.clear();
         try {
@@ -207,12 +232,12 @@ public final class MessengerViewComponent extends AbstractComponent {
         drawSurface(context, panelX, panelY, panelW, PROFILE_HEIGHT, MenuStyle.CARD_INNER);
         String username = service.getCurrentUser() == null
                 ? "Player" : service.getCurrentUser().username();
-        renderAvatar(context, panelX + 6.0F, panelY + 8.0F, 25.0F, username, MenuStyle.CHIP_ACTIVE);
+        renderAvatar(context, panelX + 6.0F, panelY + 8.0F, 25.0F, null, username);
         drawMarqueeLabel(context, "profile", username, 6.2F, panelX + 36.0F, panelY + 9.0F,
                 panelX + panelW - 2.0F, panelY + 5.0F, 12.0F,
                 MenuStyle.TEXT_PRIMARY, true,
                 inside(mouseX, mouseY, panelX + 34.0F, panelY + 4.0F, panelW - 34.0F, 16.0F));
-        drawStatus(context, panelX + 36.0F, panelY + 18.0F, service.getStatus().equals("Online"));
+        drawStatus(context, panelX + 36.0F, panelY + 18.0F, service.isConnected());
     }
 
     private void renderNavigation(DrawContext context, float navX, float navY, float navW,
@@ -262,7 +287,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         boolean hovered = inside(mouseX, mouseY, rowX, rowY, rowW, 18.0F);
         float hover = animatedHover("compact:" + friend.id(), hovered);
         if (hover > 0.0F) drawChatCard(context, rowX, rowY, rowW, 18.0F, hover, hover);
-        renderAvatar(context, rowX, rowY, 15.0F, friend.username(), MenuStyle.CHIP_ACTIVE);
+        renderAvatar(context, rowX, rowY, 15.0F, friend.id(), friend.username());
         drawMarqueeLabel(context, "compact:" + friend.id(), friend.username(), 5.0F,
                 rowX + 20.0F, rowY + COMPACT_FRIEND_NAME_OFFSET, rowX + rowW, rowY, 12.0F,
                 MenuStyle.TEXT_PRIMARY, false,
@@ -292,7 +317,8 @@ public final class MessengerViewComponent extends AbstractComponent {
 
         float inputY = contentY + contentH - INPUT_HEIGHT;
         float listTop = contentY + (directConversationOpen ? DIRECT_HEADER_HEIGHT + 5.0F : 27.0F);
-        float listBottom = listBottom(contentY, contentH, directConversationOpen || section == Section.GLOBAL);
+        boolean hasInput = directConversationOpen || section == Section.GLOBAL;
+        float listBottom = listBottom(contentY, contentH, hasInput) - (hasInput ? inputErrorReserve() : 0.0F);
         context.enableScissor((int) contentX, (int) listTop, (int) (contentX + contentW), (int) listBottom);
         if (section == Section.GLOBAL) {
             renderGlobalMessages(context, contentX, listTop, contentW, listBottom, mouseX, mouseY);
@@ -310,26 +336,23 @@ public final class MessengerViewComponent extends AbstractComponent {
 
     private void renderConversationHeader(DrawContext context, MessengerService.Conversation conversation,
                                           float contentX, float contentY, float contentW, int mouseX, int mouseY) {
-        drawSurface(context, contentX, contentY, contentW, DIRECT_HEADER_HEIGHT,
-                MenuStyle.CARD_OPTIONS, MenuStyle.BORDER);
+        drawChatCard(context, contentX, contentY, contentW, DIRECT_HEADER_HEIGHT, 0.0F);
+        float backX = contentX + DIRECT_BACK_INSET;
+        float backY = contentY + DIRECT_BACK_INSET;
         float hover = animatedHover("conversation:back",
-                inside(mouseX, mouseY, contentX, contentY, DIRECT_BACK_WIDTH, DIRECT_HEADER_HEIGHT));
+                inside(mouseX, mouseY, backX, backY, DIRECT_BACK_SIZE, DIRECT_BACK_SIZE));
         if (hover > 0.0F) {
-            drawChatCard(context, contentX + 3.0F, contentY + 3.0F, DIRECT_BACK_WIDTH - 6.0F,
-                    DIRECT_HEADER_HEIGHT - 6.0F, hover, hover);
+            drawChatCard(context, backX, backY, DIRECT_BACK_SIZE, DIRECT_BACK_SIZE, hover, hover);
         }
-        float backIconX = contentX + DIRECT_BACK_ICON_X_INSET;
-        float backIconY = contentY + DIRECT_BACK_ICON_Y_INSET;
-        // Image shifts X by its width; compensate just as the module-settings arrow does.
-        image.setTexture("textures/back_arrow.png")
-                .render(ShapeProperties.create(context.getMatrices(),
-                                backIconX - DIRECT_BACK_ICON_SIZE, backIconY,
-                                DIRECT_BACK_ICON_SIZE, DIRECT_BACK_ICON_SIZE)
-                        .rotation(0)
-                        .color(applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, hover * 0.18F)))
-                        .build());
+        // back_arrow.png is a raster icon (excluded from the MSDF atlas); its visible stroke,
+        // not the padded image, is centred in the square.
+        float iconSize = DIRECT_BACK_ICON_SIZE;
+        drawTexture(context, BACK_ICON,
+                backX + DIRECT_BACK_SIZE / 2.0F - iconSize * BACK_ICON_INK_CENTER,
+                backY + DIRECT_BACK_SIZE / 2.0F - iconSize * BACK_ICON_INK_CENTER,
+                iconSize, applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, hover * 0.18F)));
         renderAvatar(context, contentX + 28.0F, contentY + 3.0F, 21.0F,
-                conversation.username(), MenuStyle.CHIP_ACTIVE);
+                conversation.participantId(), conversation.username());
         drawMarqueeLabel(context, "conversation:" + conversation.id(), conversation.username(), 6.0F,
                 contentX + 54.0F, contentY + 3.0F, contentX + contentW - 6.0F,
                 contentY + 2.0F, 12.0F, MenuStyle.TEXT_PRIMARY, true, false);
@@ -360,25 +383,92 @@ public final class MessengerViewComponent extends AbstractComponent {
         renderMessageList(context, list, contentX, listTop, contentW, listBottom, mouseX, mouseY);
     }
 
+    /**
+     * Messages are bottom-anchored. {@code scroll} is the distance scrolled up from the newest
+     * message: 0 shows the newest at the bottom, the maximum shows the oldest at the top, and
+     * nothing beyond either end is reachable.
+     */
     private void renderMessageList(DrawContext context, List<MessengerService.Message> list,
                                    float contentX, float listTop, float contentW, float listBottom,
                                    int mouseX, int mouseY) {
-        float available = listBottom - listTop;
-        float total = messageListHeight(list);
-        double maxUp = Math.max(0.0D, total - available);
-        scroll = Math.max(-maxUp, Math.min(0.0D, scroll));
+        float rowW = contentW - 6.0F;
+        float total = messageListHeight(list, rowW);
+        String key = section == Section.GLOBAL ? MessengerService.GLOBAL_CONVERSATION_ID : selectedConversationId;
+        // A new message must not drag a reader who scrolled up away from what they are reading.
+        if (key != null && key.equals(scrollListKey) && scroll > 0.0D && total > scrollListHeight) {
+            scroll += total - scrollListHeight;
+        }
+        scrollListKey = key;
+        scrollListHeight = total;
+        scroll = clampScroll(scroll, total, listBottom - listTop);
         float rowY = listBottom - total + (float) scroll;
         for (MessengerService.Message message : list) {
-            if (rowY + MESSAGE_ROW >= listTop && rowY <= listBottom) {
-                renderMessage(context, message, contentX + 3.0F, rowY, contentW - 6.0F, mouseX, mouseY);
+            float height = messageHeight(message, rowW);
+            if (rowY + height >= listTop && rowY <= listBottom) {
+                renderMessage(context, message, contentX + 3.0F, rowY, rowW, mouseX, mouseY);
             }
-            rowY += MESSAGE_ROW;
+            rowY += height;
         }
     }
 
-    private float messageListHeight(List<MessengerService.Message> list) {
-        return list.size() * MESSAGE_ROW;
+    private static double clampScroll(double value, float total, float available) {
+        return Math.max(0.0D, Math.min(Math.max(0.0D, total - available), value));
     }
+
+    private float messageListHeight(List<MessengerService.Message> list, float rowW) {
+        float total = 0.0F;
+        for (MessengerService.Message message : list) total += messageHeight(message, rowW);
+        return total;
+    }
+
+    private float messageHeight(MessengerService.Message message, float rowW) {
+        return MESSAGE_TEXT_TOP + wrappedLines(message, rowW).size() * MESSAGE_LINE_STEP + MESSAGE_ROW_GAP;
+    }
+
+    /** Word-wrapped once per message and width; rendering and hit-testing reuse the cached lines. */
+    private List<String> wrappedLines(MessengerService.Message message, float rowW) {
+        float width = Math.max(30.0F, rowW - MESSAGE_TEXT_X - MESSAGE_TEXT_RIGHT_INSET);
+        WrappedText cached = wrapCache.get(message.id());
+        if (cached != null && cached.width() == width && cached.text().equals(message.text())) return cached.lines();
+        List<String> lines = wrapText(message.text(), width, MESSAGE_TEXT_SIZE);
+        wrapCache.put(message.id(), new WrappedText(message.text(), width, lines));
+        return lines;
+    }
+
+    private static List<String> wrapText(String text, float width, float size) {
+        String value = text == null ? "" : text.replace('\r', ' ').replace('\n', ' ');
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : value.split(" ", -1)) {
+            String candidate = line.isEmpty() ? word : line + " " + word;
+            if (renderedTextWidth(candidate, size) <= width) {
+                line.setLength(0);
+                line.append(candidate);
+                continue;
+            }
+            if (!line.isEmpty()) {
+                lines.add(line.toString());
+                line.setLength(0);
+            }
+            String rest = word;
+            // A single word wider than the line is split at the last code point that still fits.
+            while (!rest.isEmpty() && renderedTextWidth(rest, size) > width) {
+                int end = rest.offsetByCodePoints(0, 1);
+                while (end < rest.length()) {
+                    int next = rest.offsetByCodePoints(end, 1);
+                    if (renderedTextWidth(rest.substring(0, next), size) > width) break;
+                    end = next;
+                }
+                lines.add(rest.substring(0, end));
+                rest = rest.substring(end);
+            }
+            line.append(rest);
+        }
+        if (!line.isEmpty() || lines.isEmpty()) lines.add(line.toString());
+        return List.copyOf(lines);
+    }
+
+    private record WrappedText(String text, float width, List<String> lines) {}
 
     private void renderSectionRows(DrawContext context, float contentX, float listTop, float contentW,
                                    float listBottom, int mouseX, int mouseY) {
@@ -421,7 +511,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         float hover = animatedHover("friend-card:" + friend.id(), hovered);
         drawChatCard(context, rowX, rowY, rowW, FRIEND_CARD_HEIGHT, hover);
         renderAvatar(context, rowX + CARD_AVATAR_INSET, rowY + CARD_AVATAR_INSET, CARD_AVATAR_SIZE,
-                friend.username(), MenuStyle.CHIP_ACTIVE);
+                friend.id(), friend.username());
         float textX = rowX + CARD_TEXT_INSET;
         float nameY = rowY + FRIEND_CARD_NAME_OFFSET;
         drawMarqueeLabel(context, "friend-card:" + friend.id(), friend.username(), 6.0F,
@@ -437,7 +527,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         float hover = animatedHover("conversation-card:" + conversation.id(), hovered);
         drawChatCard(context, rowX, rowY, rowW, DIRECT_CARD_HEIGHT, hover);
         renderAvatar(context, rowX + CARD_AVATAR_INSET, rowY + CARD_AVATAR_INSET, CARD_AVATAR_SIZE,
-                conversation.username(), MenuStyle.CHIP_ACTIVE);
+                conversation.participantId(), conversation.username());
         float textX = rowX + CARD_TEXT_INSET;
         float nameY = rowY + DIRECT_CARD_NAME_OFFSET;
 
@@ -463,7 +553,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         float hover = animatedHover("request:" + request.id(), hovered);
         drawChatCard(context, rowX, rowY, rowW, REQUEST_CARD_HEIGHT, hover);
         renderAvatar(context, rowX + 6.0F, rowY + 6.0F, 20.0F,
-                request.requesterUsername(), MenuStyle.CHIP_ACTIVE);
+                request.requesterId(), request.requesterUsername());
         drawMarqueeLabel(context, "request:" + request.id(), request.requesterUsername(), 5.8F,
                 rowX + 32.0F, rowY + 8.0F, rowX + rowW - 6.0F,
                 rowY + 5.0F, 12.0F, MenuStyle.TEXT_PRIMARY, true, hovered);
@@ -485,7 +575,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         drawButtonSurface(context, rowX, rowY, rowW, 25.0F,
                 selected ? MenuStyle.PANEL_ROW_ACTIVE : MenuStyle.mix(MenuStyle.PANEL_ROW, MenuStyle.CARD_INNER,
                         0.10F), selected ? MenuStyle.CHIP_ACTIVE : MenuStyle.BORDER, hover);
-        renderAvatar(context, rowX + 5.0F, rowY + 5.0F, 15.0F, username, MenuStyle.CHIP_ACTIVE);
+        renderAvatar(context, rowX + 5.0F, rowY + 5.0F, 15.0F, id, username);
         drawMarqueeLabel(context, "user:" + id, username, 5.8F, rowX + 26.0F, rowY + 5.0F,
                 rowX + rowW - (section == Section.BLOCKED ? 56.0F : 6.0F), rowY + 2.0F,
                 19.0F, MenuStyle.TEXT_PRIMARY, false, hovered);
@@ -503,23 +593,27 @@ public final class MessengerViewComponent extends AbstractComponent {
     private void renderMessage(DrawContext context, MessengerService.Message message, float rowX,
                                float rowY, float rowW, int mouseX, int mouseY) {
         float avatarHover = animatedHover("message-avatar:" + message.id(),
-                inside(mouseX, mouseY, rowX, rowY + 1.0F, 17.0F, 17.0F));
-        renderAvatar(context, rowX, rowY + 1.0F, 17.0F, message.senderUsername(), MenuStyle.CHIP_ACTIVE);
+                inside(mouseX, mouseY, rowX, rowY + 1.0F, MESSAGE_AVATAR_SIZE, MESSAGE_AVATAR_SIZE));
+        renderAvatar(context, rowX, rowY + 1.0F, MESSAGE_AVATAR_SIZE, message.senderId(), message.senderUsername());
         if (avatarHover > 0.0F) {
-            rectangle.render(ShapeProperties.create(context.getMatrices(), rowX, rowY + 1.0F, 17.0F, 17.0F)
-                    .round(2.0F)
+            rectangle.render(ShapeProperties.create(context.getMatrices(), rowX, rowY + 1.0F,
+                            MESSAGE_AVATAR_SIZE, MESSAGE_AVATAR_SIZE)
+                    .round(avatarRadius(MESSAGE_AVATAR_SIZE))
                     .color(applyGlobalAlpha(MenuStyle.withAlpha(0xFFFFFFFF, avatarHover * 0.08F))).build());
         }
         int senderColor = message.senderId().equals(service.getCurrentUser() == null
                 ? "" : service.getCurrentUser().id()) ? MenuStyle.CHIP_ACTIVE : MenuStyle.TEXT_PRIMARY;
         drawMarqueeLabel(context, "sender:" + message.senderId(), message.senderUsername(), 6.2F,
-                rowX + 22.0F, rowY + 1.0F, rowX + rowW - 30.0F,
+                rowX + MESSAGE_TEXT_X, rowY + 1.0F, rowX + rowW - 30.0F,
                 rowY, 10.0F, senderColor, true,
-                inside(mouseX, mouseY, rowX + 22.0F, rowY, Math.max(1.0F, rowW - 52.0F), MESSAGE_ROW));
+                inside(mouseX, mouseY, rowX + MESSAGE_TEXT_X, rowY, Math.max(1.0F, rowW - 52.0F), 10.0F));
         drawText(context, formatTime(message.createdAt()), rowX + rowW - 23.0F, rowY + 2.0F,
                 5.0F, MenuStyle.TEXT_MUTED, false);
-        String text = fitSingleLine(message.text(), Math.max(30.0F, rowW - 52.0F), 6.0F);
-        drawText(context, text, rowX + 22.0F, rowY + 11.0F, 6.0F, MenuStyle.TEXT_PRIMARY, false);
+        float lineY = rowY + MESSAGE_TEXT_TOP;
+        for (String line : wrappedLines(message, rowW)) {
+            drawText(context, line, rowX + MESSAGE_TEXT_X, lineY, MESSAGE_TEXT_SIZE, MenuStyle.TEXT_PRIMARY, false);
+            lineY += MESSAGE_LINE_STEP;
+        }
     }
 
     private void renderInput(DrawContext context, float inputX, float inputY, float inputW, int mouseX, int mouseY) {
@@ -584,7 +678,7 @@ public final class MessengerViewComponent extends AbstractComponent {
             return;
         }
         renderAvatar(context, panelX + (panelW - 34.0F) / 2.0F, panelY + 10.0F,
-                34.0F, selected.username(), MenuStyle.CHIP_ACTIVE);
+                34.0F, selected.id(), selected.username());
         drawCentered(context, clip(selected.username(), 16), panelX, panelY + 49.0F,
                 panelW, 12.0F, 6.4F, MenuStyle.TEXT_PRIMARY, true);
         drawCenteredStatus(context, panelX, panelY + 61.0F, panelW, service.isUserOnline(selected.id()));
@@ -682,15 +776,14 @@ public final class MessengerViewComponent extends AbstractComponent {
                                                      float contentW, float listBottom) {
         List<MessengerService.Message> list = section == Section.GLOBAL
                 ? service.getGlobalMessages() : service.getMessages(selectedConversationId);
-        float total = messageListHeight(list);
-        float available = listBottom - listTop;
-        double maxUp = Math.max(0.0D, total - available);
-        double effectiveScroll = Math.max(-maxUp, Math.min(0.0D, scroll));
-        float rowY = listBottom - total + (float) effectiveScroll;
+        float rowW = contentW - 6.0F;
+        float total = messageListHeight(list, rowW);
+        float rowY = listBottom - total + (float) clampScroll(scroll, total, listBottom - listTop);
         float rowX = contentX + 3.0F;
+        if (mouseY < listTop || mouseY > listBottom) return null;
         for (MessengerService.Message message : list) {
-            if (inside(mouseX, mouseY, rowX, rowY + 1.0F, 17.0F, 17.0F)) return message;
-            rowY += MESSAGE_ROW;
+            if (inside(mouseX, mouseY, rowX, rowY + 1.0F, MESSAGE_AVATAR_SIZE, MESSAGE_AVATAR_SIZE)) return message;
+            rowY += messageHeight(message, rowW);
         }
         return null;
     }
@@ -710,6 +803,7 @@ public final class MessengerViewComponent extends AbstractComponent {
             if (inside(mouseX, mouseY, leftX, rowY, navW, NAV_HEIGHT)) {
                 section = item;
                 scroll = 0.0D;
+                service.clearError();
                 inputFocused = false;
                 input = "";
                 cursor = selectionAnchor = 0;
@@ -721,10 +815,7 @@ public final class MessengerViewComponent extends AbstractComponent {
                     selectedProfileId = null;
                     selectedProfileUsername = null;
                 }
-                if (item == Section.REQUESTS) {
-                    service.refreshRequestsAsync();
-                    nextRequestsRefreshAt = System.currentTimeMillis() + 4_000L;
-                }
+                if (item == Section.REQUESTS) service.refreshRequestsAsync();
                 return true;
             }
         }
@@ -751,7 +842,8 @@ public final class MessengerViewComponent extends AbstractComponent {
         float inputX = contentX;
         float inputW = contentW - 42.0F - GAP;
         boolean directConversationOpen = section == Section.DIRECT && selectedConversation() != null;
-        if (directConversationOpen && inside(mouseX, mouseY, contentX, contentY, DIRECT_BACK_WIDTH, DIRECT_HEADER_HEIGHT)) {
+        if (directConversationOpen && inside(mouseX, mouseY, contentX + DIRECT_BACK_INSET,
+                contentY + DIRECT_BACK_INSET, DIRECT_BACK_SIZE, DIRECT_BACK_SIZE)) {
             conversationRequestGeneration++;
             selectedConversationId = null;
             selectedFriendId = null;
@@ -762,6 +854,7 @@ public final class MessengerViewComponent extends AbstractComponent {
             cursor = selectionAnchor = 0;
             scroll = 0.0D;
             actionError = null;
+            service.clearError();
             return true;
         }
         if ((section == Section.GLOBAL || directConversationOpen)
@@ -787,7 +880,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         if (section == Section.GLOBAL || directConversationOpen) {
             MessengerService.Message message = messageAtAvatar(mouseX, mouseY, contentX,
                     contentY + (section == Section.DIRECT ? DIRECT_HEADER_HEIGHT + 5.0F : 27.0F),
-                    contentW, inputY - 5.0F);
+                    contentW, listBottom(contentY, contentH, true) - inputErrorReserve());
             if (message != null) {
                 selectProfile(message.senderId(), message.senderUsername());
                 return true;
@@ -871,6 +964,8 @@ public final class MessengerViewComponent extends AbstractComponent {
                 inputFocused = false;
                 input = "";
                 cursor = selectionAnchor = 0;
+                scroll = 0.0D;
+                service.clearError();
                 service.selectConversation(selectedConversationId);
                 return true;
             }
@@ -937,7 +1032,8 @@ public final class MessengerViewComponent extends AbstractComponent {
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         if (!open || !(section == Section.GLOBAL
                 || (section == Section.DIRECT && selectedConversation() != null))) return false;
-        scroll += amount * MESSAGE_ROW;
+        // Wheel up (positive) moves towards older messages; render clamps the upper end.
+        scroll = Math.max(0.0D, scroll + amount * MESSAGE_ROW);
         return true;
     }
 
@@ -1036,9 +1132,18 @@ public final class MessengerViewComponent extends AbstractComponent {
 
     private void submit() {
         if (!canEditInput() || input.isEmpty() || sendPending || nextSendAt > System.currentTimeMillis()) return;
+        MessengerService.Conversation direct = section == Section.DIRECT ? selectedConversation() : null;
+        if (direct != null && service.isBlockedBy(direct.participantId())) {
+            service.reportBlocked(MessengerService.BLOCKED_BY_RECIPIENT);
+            return;
+        }
+        if (direct != null && isBlocked(direct.participantId())) {
+            service.reportBlocked(MessengerService.RECIPIENT_BLOCKED);
+            return;
+        }
         pendingText = input.toString();
         sendPending = true;
-        if (section == Section.DIRECT && selectedConversation() != null) {
+        if (direct != null) {
             service.send(selectedConversationId, pendingText, success -> {
                 sendResultSuccess = success;
                 sendResultReady = true;
@@ -1172,9 +1277,16 @@ public final class MessengerViewComponent extends AbstractComponent {
         return new int[]{start, Math.max(start, end)};
     }
 
+    /** The send error line sits above the input; the message list stops above it instead of under it. */
+    private float inputErrorReserve() {
+        return inputError() != null ? INPUT_ERROR_RESERVE : 0.0F;
+    }
+
     private String inputError() {
         String status = service.getStatus();
         if (status == null || status.equals("Online") || status.equals("Offline") || status.equals("Messenger reconnecting")) return null;
+        if (status.equals(MessengerService.BLOCKED_BY_RECIPIENT)) return Lang.t("messenger.error_blocked_by");
+        if (status.equals(MessengerService.RECIPIENT_BLOCKED)) return Lang.t("messenger.error_recipient_blocked");
         if (status.startsWith("Message blocked")) return Lang.t("messenger.error_blocked");
         if (status.equals("chat_slow_down")) return Lang.t("messenger.error_slowmode");
         if (status.equals("Chat server is outdated")) return Lang.t("messenger.error_server");
@@ -1297,14 +1409,36 @@ public final class MessengerViewComponent extends AbstractComponent {
         drawStatus(context, start, boxY, online);
     }
 
+    /**
+     * The head texture already carries its rounded corners, so an avatar is one textured quad
+     * at exact float coordinates. A user who blocked the local player is shown anonymised.
+     */
     private void renderAvatar(DrawContext context, float avatarX, float avatarY, float size,
-                              String name, int accent) {
-        Identifier skin = skins.get(name);
-        drawSurface(context, avatarX, avatarY, size, size, MenuStyle.mix(MenuStyle.CARD_INNER, accent, 0.12F), MenuStyle.BORDER);
-        Render2DUtil.drawHead(context,
-                skin == null ? Identifier.ofVanilla("textures/entity/player/wide/steve.png") : skin,
-                avatarX, avatarY, size, 2.0F, 0x00000000, applyGlobalAlpha(0xFFFFFFFF),
-                skin == null || skins.hasOverlay(name));
+                              String userId, String name) {
+        Identifier head = service.isBlockedBy(userId) ? skins.anonymousHead() : skins.head(name);
+        drawTexture(context, head, avatarX, avatarY, size, applyGlobalAlpha(0xFFFFFFFF));
+    }
+
+    /** One square textured quad at float coordinates, drawn above the pending batched rectangles. */
+    private static void drawTexture(DrawContext context, Identifier texture, float drawX, float drawY,
+                                    float size, int color) {
+        BatchedRectangle.flushIfBatching();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShaderTexture(0, texture);
+        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+        buffer.vertex(matrix, drawX, drawY, 0.0F).texture(0.0F, 0.0F).color(color);
+        buffer.vertex(matrix, drawX, drawY + size, 0.0F).texture(0.0F, 1.0F).color(color);
+        buffer.vertex(matrix, drawX + size, drawY + size, 0.0F).texture(1.0F, 1.0F).color(color);
+        buffer.vertex(matrix, drawX + size, drawY, 0.0F).texture(1.0F, 0.0F).color(color);
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        RenderSystem.disableBlend();
+    }
+
+    private static float avatarRadius(float size) {
+        return size * SkinAvatarService.HEAD_CORNER;
     }
 
     private void drawCentered(DrawContext context, String text, float boxX, float boxY, float boxW,

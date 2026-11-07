@@ -158,6 +158,46 @@ public final class MsdfFont {
         return getRenderedWidth(text, size, MsdfTextMetrics.DEFAULT_THICKNESS);
     }
 
+    /** Offset from the x given to {@link MsdfRenderer#renderText} to the first visible glyph edge. */
+    public float getInkLeft(String text, float size) {
+        if (text == null || text.isEmpty()) return 0.0F;
+        return glyphPadding() * size - MsdfTextMetrics.PEN_OFFSET_X;
+    }
+
+    /** Offset from the x given to {@link MsdfRenderer#renderText} to the last visible glyph edge. */
+    public float getInkRight(String text, float size) {
+        if (text == null || text.isEmpty()) return 0.0F;
+        float spacing = MsdfTextMetrics.DEFAULT_GLYPH_SPACING * size;
+        float pen = 0.0F;
+        float lastPen = 0.0F;
+        MsdfGlyph last = null;
+        int previousChar = -1;
+        for (int i = 0; i < text.length();) {
+            int c = text.codePointAt(i);
+            i += Character.charCount(c);
+            MsdfGlyph glyph = glyphs.get(c);
+            if (glyph == null) continue;
+            Int2FloatMap kerning = kernings.get(previousChar);
+            if (kerning != null) pen += kerning.getOrDefault(c, 0.0F) * size;
+            lastPen = pen;
+            last = glyph;
+            pen += glyph.getWidth(size) + spacing;
+            previousChar = c;
+        }
+        if (last == null) return 0.0F;
+        // Quads are placed at the pen without the plane-left bearing, so ink spans pen + padding .. pen + planeWidth - padding.
+        return lastPen + (last.getPlaneWidth() - glyphPadding()) * size - MsdfTextMetrics.PEN_OFFSET_X;
+    }
+
+    public float getInkWidth(String text, float size) {
+        return getInkRight(text, size) - getInkLeft(text, size);
+    }
+
+    /** Distance-field padding around every glyph in em; plane bounds are snapped outward by half a texel. */
+    private float glyphPadding() {
+        return atlas.size() > 0.0F ? (atlas.range() * 0.5F + 0.5F) / atlas.size() : 0.0F;
+    }
+
     public static Builder builder() {
         return new Builder();
     }

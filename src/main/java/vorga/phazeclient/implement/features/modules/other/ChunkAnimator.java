@@ -275,39 +275,6 @@ public final class ChunkAnimator extends Module {
             .visible(() -> !animationType.isSelected("Fade")
                     && !animationType.isSelected("Scale"));
 
-    /**
-     * Visual flavour for the {@code Fade} animation type. Two modes
-     * are compiled into the patched fragment shader simultaneously
-     * and selected at runtime via the {@code u_PhazeFadeStyle}
-     * uniform (shader recompile per pick would freeze the world for
-     * the duration of a glLink, which is several frames):
-     *
-     * <ul>
-     *   <li><b>Dither</b> (index 0) - per-fragment Bayer-4x4
-     *       threshold {@code discard} produces a hard-edged stippled
-     *       reveal, like a paper-grainy print materialising. Costs
-     *       one comparison + one LUT fetch per fragment per frame
-     *       only while the section is actually mid-fade; the
-     *       {@code v_PhazeChunkAnimFade < 1.0} short-circuit skips
-     *       it entirely once the section settles.</li>
-     *   <li><b>Fog Mix</b> (index 1) - {@code mix(fragColor, u_FogColor, 1.0 - fade)}
-     *       blends the fragment toward the current fog colour as
-     *       progress runs from 0 to 1. Visually the section
-     *       coalesces out of the distance haze instead of stippling
-     *       in. No discards, so the depth buffer fills normally
-     *       (which matters for translucent layers behind the
-     *       fading section).</li>
-     * </ul>
-     *
-     * <p>Hidden when the {@link #animationType} isn't {@code Fade} -
-     * the styling only matters under the dither/discard pipeline.
-     */
-    public final SelectSetting fadeStyle = new SelectSetting(
-            "Fade Style",
-            "Fog Mix: smooth blend toward fog-like distance colour. Applies only when Animation Type is Fade."
-    ).value("Fog Mix").selected("Fog Mix")
-            .visible(() -> animationType.isSelected("Fade"));
-
     private ChunkAnimator() {
         super("chunk_animator", "World Animator", ModuleCategory.OTHER);
         duration.setFullWidth(true);
@@ -315,14 +282,11 @@ public final class ChunkAnimator extends Module {
         animationType.setFullWidth(true);
         directionSide.setFullWidth(true);
         easing.setFullWidth(true);
-        fadeStyle.setFullWidth(true);
         // Order matches the requested UI layout: Animation Type and
         // its dependent Side picker sit between Distance and Easing
         // so the operator picks WHERE chunks enter from before
-        // tweaking HOW they ease in. Fade Style sits last because it
-        // only surfaces under the Fade type and is a "nice to have"
-        // tweak.
-        setup(generalSection, duration, distance, animationType, directionSide, easing, fadeStyle);
+        // tweaking HOW they ease in.
+        setup(generalSection, duration, distance, animationType, directionSide, easing);
 
         // Wire the per-column "fresh load" signal: Fabric fires
         // CHUNK_LOAD whenever Minecraft materializes a chunk that just
@@ -763,20 +727,9 @@ public final class ChunkAnimator extends Module {
     }
 
     /**
-     * Resolves {@link #fadeStyle} into the integer code the patched
-     * fragment shader expects in its {@code u_PhazeFadeStyle}
-     * uniform. The mapping is hard-coded to match the branches the
-     * patcher injects:
-     *
-     * <ul>
-     *   <li>{@code 0} - Dither (Bayer-discard, default)</li>
-     *   <li>{@code 1} - Fog Mix (linear blend toward {@code u_FogColor})</li>
-     * </ul>
-     *
-     * <p>Any unrecognised selection falls back to {@code 0} so a
-     * corrupted config can't drive the shader into an undefined
-     * branch (uninitialised int reads as 0 in GLSL too, so {@code 0}
-     * is the natural "do nothing weird" default).
+     * Code for the patched fragment shader's {@code u_PhazeFadeStyle} uniform.
+     * The Fade animation always uses Fog Mix ({@code 1}: linear blend toward
+     * {@code u_FogColor}); {@code 0} is the patcher's legacy dither branch.
      */
     public int getFadeStyleIndex() {
         return 1;

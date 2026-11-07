@@ -102,7 +102,7 @@ public class SearchComponent extends AbstractComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         MatrixStack matrix = context.getMatrices();
-        MsdfFont font = MsdfFonts.medium();
+        MsdfFont font = MsdfFonts.bold();
 
         // Drag-to-extend: while a press is held inside the search box
         // the cursor follows the mouse and the selection grows from
@@ -333,7 +333,7 @@ public class SearchComponent extends AbstractComponent {
     @Override
     public boolean charTyped(char chr, int modifiers) {
         float maxTextWidth = EXPANDED_WIDTH - ICON_SIZE - 17;
-        if (typing && MsdfFonts.medium().getWidth(text, SEARCH_TEXT_SIZE) < maxTextWidth) {
+        if (typing && MsdfFonts.bold().getWidth(text, SEARCH_TEXT_SIZE) < maxTextWidth) {
             if ((chr == '/' || chr == '.') && text.isEmpty()) {
                 return true;
             }
@@ -382,7 +382,7 @@ public class SearchComponent extends AbstractComponent {
                             deleteSelectedText();
                             float maxTextWidth = EXPANDED_WIDTH - ICON_SIZE - 17;
                             for (char c : clip.toCharArray()) {
-                                if (MsdfFonts.medium().getWidth(text, SEARCH_TEXT_SIZE) >= maxTextWidth) break;
+                                if (MsdfFonts.bold().getWidth(text, SEARCH_TEXT_SIZE) >= maxTextWidth) break;
                                 text = text.substring(0, cursorPosition) + c + text.substring(cursorPosition);
                                 cursorPosition++;
                             }
@@ -456,7 +456,7 @@ public class SearchComponent extends AbstractComponent {
 
     
     private int getCursorIndexAt(double mouseX) {
-        MsdfFont font = MsdfFonts.medium();
+        MsdfFont font = MsdfFonts.bold();
         float relativeX = (float) mouseX - x - INPUT_TEXT_X_OFFSET + xOffset;
         int position = 0;
         while (position < text.length()) {
@@ -485,7 +485,7 @@ public class SearchComponent extends AbstractComponent {
             return;
         }
         MsdfRenderer.renderText(
-                MsdfFonts.medium(),
+                MsdfFonts.bold(),
                 value,
                 SEARCH_TEXT_SIZE,
                 color,

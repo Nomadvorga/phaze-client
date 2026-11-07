@@ -21,6 +21,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.gen.Invoker;
 import vorga.phazeclient.api.system.nametag.NametagBlurStorage;
+import vorga.phazeclient.api.system.render.IrisCompat;
 import vorga.phazeclient.api.system.render.Render3DUtil;
 import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
 import vorga.phazeclient.implement.features.modules.other.HitboxCustomizer;
@@ -61,6 +62,7 @@ public class EntityRenderDispatcherMixin {
             EntityRenderer<? super E, ?> renderer
     ) {
         HitboxCustomizer module = HitboxCustomizer.getInstance();
+        if (module.isEnabled() && IrisCompat.isShadowPass()) return;
         if (!module.isEnabled() || !WorldOverlayRenderer.isRecording()) {
             phaze$invokeVanillaRenderHitbox(matrices, vertices, entity, tickDelta, red, green, blue);
             return;

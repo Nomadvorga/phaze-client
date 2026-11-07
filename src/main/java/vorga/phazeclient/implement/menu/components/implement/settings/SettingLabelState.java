@@ -7,7 +7,7 @@ public final class SettingLabelState {
     public static final long TRAVEL_NANOS = 900_000_000L;
     public static final long HOLD_NANOS = 650_000_000L;
     public static final long RETURN_NANOS = 900_000_000L;
-    public static final float FADE_WIDTH = 12.0F;
+    public static final float FADE_WIDTH = 18.0F;
 
     private String text = "";
     private float width, height, overflow;

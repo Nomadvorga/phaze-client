@@ -220,7 +220,7 @@ public abstract class WorldRendererMixin {
             Vec3d cameraPos = camera.getPos();
             matrices.translate(px - cameraPos.x, py - cameraPos.y, pz - cameraPos.z);
             HitRangeCircleRenderer.drawCircle(matrices, px, py, pz, player.getId(),
-                    player.getGameProfile().getName(), player.isSneaky());
+                    player.getGameProfile().getName(), 0.0F);
         } finally {
             matrices.pop();
         }

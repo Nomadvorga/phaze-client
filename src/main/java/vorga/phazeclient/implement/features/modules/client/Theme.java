@@ -23,6 +23,7 @@ public final class Theme extends Module {
 
     private ColorPalette currentPalette = new ThemeColorPalette(MenuPalettes.LUNAR_BLUE);
     private boolean guiScaleAdjustmentActive;
+    private boolean syncingGuiScale;
     private float pendingGuiScale = MenuUiSettings.DEFAULT_GUI_SCALE;
 
     public final SelectSetting menuTheme = new SelectSetting("Theme", "Menu & HUD theme preset")
@@ -162,7 +163,19 @@ public final class Theme extends Module {
         return 0xFF000000 | (hudTextColor.getColor() & 0x00FFFFFF);
     }
 
+    /** Mirrors a scale set outside this setting (main menu slider, config load) without re-applying it. */
+    public void syncGuiScale(float value) {
+        syncingGuiScale = true;
+        try {
+            guiScale.setValue(value);
+            pendingGuiScale = guiScale.getValue();
+        } finally {
+            syncingGuiScale = false;
+        }
+    }
+
     private void applyGuiScale(float value) {
+        if (syncingGuiScale) return;
         float clamped = Math.max(0.90F, Math.min(MenuUiSettings.MAX_GUI_SCALE, value));
         if (Float.compare(value, clamped) != 0) {
             // Old configs may still contain the former 0.50 minimum.

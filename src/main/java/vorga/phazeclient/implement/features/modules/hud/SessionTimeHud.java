@@ -5,6 +5,7 @@ import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 
 public final class SessionTimeHud extends RectHudModule {
     private static final SessionTimeHud INSTANCE = new SessionTimeHud();
+    private static final long SESSION_START_MS = System.currentTimeMillis();
 
     public final SectionSetting sessionSection = new SectionSetting("Session");
     public final SelectSetting displayOption = new SelectSetting("Display Option", "Session time format")
@@ -13,6 +14,10 @@ public final class SessionTimeHud extends RectHudModule {
 
     public static SessionTimeHud getInstance() {
         return INSTANCE;
+    }
+
+    public long getSessionStartMs() {
+        return SESSION_START_MS;
     }
 
     private SessionTimeHud() {

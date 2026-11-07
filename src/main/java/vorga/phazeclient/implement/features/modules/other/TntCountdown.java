@@ -1,8 +1,7 @@
 package vorga.phazeclient.implement.features.modules.other;
 
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.state.TntEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
@@ -10,7 +9,6 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
-import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
@@ -19,12 +17,9 @@ import vorga.phazeclient.api.feature.module.setting.implement.ValueSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 
 import java.util.Locale;
-import java.util.ArrayList;
-import java.util.List;
 
 public class TntCountdown extends Module {
     private static final TntCountdown INSTANCE = new TntCountdown();
-    private static final List<PendingTimer> PENDING_TIMERS = new ArrayList<>();
 
     public final BooleanSetting showText = new BooleanSetting("Show Text", "Show the countdown above primed TNT").setValue(true);
     public final BooleanSetting showBackground = new BooleanSetting("Text Background", "Show a dark background behind the countdown").setValue(true);
@@ -37,9 +32,6 @@ public class TntCountdown extends Module {
     private TntCountdown() {
         super("tnt_countdown", "TNT Countdown", ModuleCategory.OTHER);
         setup(showText, showBackground, timeFormat, dynamicColor, staticColor, scale);
-        // Entity renderers run before translucent terrain. Queue the label here
-        // and submit it after water/translucent terrain so the see-through
-        // background cannot be painted over by those passes.
     }
 
     public static TntCountdown getInstance() {
@@ -82,11 +74,9 @@ public class TntCountdown extends Module {
         TntCountdown module = getInstance();
         if (module == null || !module.showText.isValue()) return;
 
-        float seconds = Math.max(0.0f, fuse / 20.0f);
         int color = module.getDisplayColor(fuse);
-        String formatted = module.getDisplayText(fuse);
-        Text text = Text.literal(formatted);
-        int textWidth = textRenderer.getWidth(text);
+        Text text = Text.literal(module.getDisplayText(fuse));
+        float x = -textRenderer.getWidth(text) / 2.0f;
 
         matrices.push();
         // Match EntityRenderer's label transform. TNT normally has no name
@@ -99,62 +89,15 @@ public class TntCountdown extends Module {
         float s = 0.025f * module.scale.getValue();
         matrices.scale(s, -s, s);
 
-        Matrix4f posMatrix = matrices.peek().getPositionMatrix();
-        float x = -textWidth / 2.0f;
-
-        // Copy the fully transformed matrix before the renderer pops its
-        // entity matrix. The actual draw is deferred until after translucent
-        // terrain/water has finished rendering.
+        // Same two-layer submission as vanilla name labels: the see-through layer
+        // keeps the countdown readable behind blocks, the normal layer draws it crisp.
+        Matrix4f matrix = matrices.peek().getPositionMatrix();
         int background = module.showBackground.isValue() ? 0x90000000 : 0;
-        PENDING_TIMERS.add(new PendingTimer(
-                new Matrix4f(posMatrix), textRenderer, text, x, color, background
-        ));
+        textRenderer.draw(text, x, 0.0f, color, false, matrix, vertexConsumers,
+                TextRenderer.TextLayerType.SEE_THROUGH, background, LightmapTextureManager.MAX_LIGHT_COORDINATE);
+        textRenderer.draw(text, x, 0.0f, color, false, matrix, vertexConsumers,
+                TextRenderer.TextLayerType.NORMAL, 0, LightmapTextureManager.MAX_LIGHT_COORDINATE);
 
         matrices.pop();
     }
-
-    public static void renderPendingTimers() {
-        if (PENDING_TIMERS.isEmpty()) return;
-
-        VertexConsumerProvider consumers = WorldOverlayRenderer.CONSUMERS;
-
-        for (PendingTimer timer : PENDING_TIMERS) {
-            // Render after translucent water. SEE_THROUGH keeps the label
-            // readable through solid entities, while the late submission
-            // prevents water from covering its background.
-            timer.textRenderer.draw(
-                    timer.text,
-                    timer.x,
-                    0.0f,
-                    timer.color,
-                    false,
-                    timer.matrix,
-                    consumers,
-                    TextRenderer.TextLayerType.SEE_THROUGH,
-                    timer.backgroundColor,
-                    0xF000F0
-            );
-            timer.textRenderer.draw(
-                    timer.text,
-                    timer.x,
-                    0.0f,
-                    timer.color,
-                    false,
-                    timer.matrix,
-                    consumers,
-                    TextRenderer.TextLayerType.NORMAL,
-                    0,
-                    0xF000F0
-            );
-        }
-
-        PENDING_TIMERS.clear();
-    }
-
-    public static void clearPendingTimers() { PENDING_TIMERS.clear(); }
-
-    private record PendingTimer(Matrix4f matrix, TextRenderer textRenderer, Text text,
-                                float x, int color, int backgroundColor) {
-    }
-
 }

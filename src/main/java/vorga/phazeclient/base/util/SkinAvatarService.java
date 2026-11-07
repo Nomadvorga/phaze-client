@@ -23,17 +23,28 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Fetches official Mojang skins once and exposes render-thread-safe textures. */
+/**
+ * Fetches official Mojang skins once and exposes render-thread-safe head textures.
+ *
+ * <p>Each skin is reduced, once, to a 64x64 head: face plus hat layer, with
+ * anti-aliased rounded corners baked into the alpha channel. An avatar is then
+ * a single ordinary textured quad, at any size, with no masking at draw time.
+ */
 public final class SkinAvatarService {
     private static final Logger LOG = LoggerFactory.getLogger("PhazeMessengerSkins");
     private static final int TIMEOUT_MS = 3_000;
     private static final int MAX_IMAGE_BYTES = 1_048_576;
     private static final int MAX_TEXTURES = 256;
     private static final String TEXTURE_HOST = "textures.minecraft.net";
+    private static final int HEAD_SIZE = 64;
+    /** Corner radius as a fraction of the avatar edge: a small, size-independent rounding. */
+    public static final float HEAD_CORNER = 0.16F;
+    private static final Identifier STEVE_SKIN = Identifier.ofVanilla("textures/entity/player/wide/steve.png");
+    private static final Identifier ANONYMOUS_SKIN = Identifier.of("phaze", "textures/chat/anon_skin.png");
     private static final Set<String> REQUESTED = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<String, Identifier> TEXTURES = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Boolean> OVERLAY = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> FAILED = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Identifier, Identifier> BUNDLED_HEADS = new ConcurrentHashMap<>();
     private static final class Holder {
         private static final SkinAvatarService INSTANCE = new SkinAvatarService();
     }
@@ -48,14 +59,20 @@ public final class SkinAvatarService {
         return Holder.INSTANCE;
     }
 
-    /** Returns a loaded skin texture, or null while the background fetch is pending. */
-    public Identifier get(String username) {
+    /** Rounded head for {@code username}; the default Steve head while the fetch is pending. Render thread only. */
+    public Identifier head(String username) {
         String name = normalize(username);
-        if (name == null) return null;
-        Identifier texture = TEXTURES.get(name.toLowerCase());
-        if (texture != null) return texture;
-        request(name);
-        return null;
+        if (name != null) {
+            Identifier texture = TEXTURES.get(name.toLowerCase());
+            if (texture != null) return texture;
+            request(name);
+        }
+        return bundledHead(STEVE_SKIN);
+    }
+
+    /** Shown instead of the real face of a user who blocked the local player. Render thread only. */
+    public Identifier anonymousHead() {
+        return bundledHead(ANONYMOUS_SKIN);
     }
 
     public void preload(Iterable<String> usernames) {
@@ -63,9 +80,80 @@ public final class SkinAvatarService {
         for (String username : usernames) request(username);
     }
 
-    public boolean hasOverlay(String username) {
-        String name = normalize(username);
-        return name == null || OVERLAY.getOrDefault(name.toLowerCase(), Boolean.TRUE);
+    private static Identifier bundledHead(Identifier skin) {
+        Identifier cached = BUNDLED_HEADS.get(skin);
+        if (cached != null) return cached;
+        MinecraftClient client = MinecraftClient.getInstance();
+        Identifier id = Identifier.of("phaze", "dynamic/chat/head_" + skin.getPath().replaceAll("[^a-z0-9_]", "_"));
+        try (InputStream stream = client.getResourceManager().open(skin);
+             NativeImage image = NativeImage.read(NativeImage.Format.RGBA, stream)) {
+            registerHead(client, id, composeHead(image));
+        } catch (Throwable error) {
+            LOG.debug("Could not build bundled head {}", skin, error);
+            return id;
+        }
+        BUNDLED_HEADS.put(skin, id);
+        return id;
+    }
+
+    /** Takes ownership of {@code head}; must run on the render thread (GPU upload). */
+    private static void registerHead(MinecraftClient client, Identifier id, NativeImage head) {
+        NativeImageBackedTexture texture = new NativeImageBackedTexture(head);
+        texture.setFilter(true, false);
+        client.getTextureManager().registerTexture(id, texture);
+    }
+
+    /**
+     * Face (8,8) with the hat layer (40,8) on top, scaled to {@value #HEAD_SIZE}px. Legacy
+     * 64x32 skins often fill the hat area with opaque colour; like vanilla, a hat without any
+     * transparent pixel is ignored there.
+     */
+    static NativeImage composeHead(NativeImage skin) {
+        if (skin.getWidth() < 16 || skin.getHeight() < 16) throw new IllegalArgumentException("skin too small");
+        int scale = HEAD_SIZE / 8;
+        boolean hat = skin.getWidth() >= 48 && skin.getHeight() >= 16
+                && (skin.getHeight() >= 64 || hatHasTransparency(skin));
+        NativeImage head = new NativeImage(NativeImage.Format.RGBA, HEAD_SIZE, HEAD_SIZE, false);
+        float radius = HEAD_SIZE * HEAD_CORNER;
+        for (int y = 0; y < HEAD_SIZE; y++) {
+            for (int x = 0; x < HEAD_SIZE; x++) {
+                int sx = x / scale, sy = y / scale;
+                int argb = skin.getColorArgb(8 + sx, 8 + sy) | 0xFF000000;
+                if (hat) argb = over(skin.getColorArgb(40 + sx, 8 + sy), argb);
+                float coverage = cornerCoverage(x + 0.5F, y + 0.5F, radius);
+                int alpha = Math.round(255.0F * coverage);
+                head.setColorArgb(x, y, (alpha << 24) | (argb & 0x00FFFFFF));
+            }
+        }
+        return head;
+    }
+
+    private static boolean hatHasTransparency(NativeImage skin) {
+        for (int y = 8; y < 16; y++) {
+            for (int x = 40; x < 48; x++) {
+                if ((skin.getColorArgb(x, y) >>> 24) < 255) return true;
+            }
+        }
+        return false;
+    }
+
+    private static int over(int top, int bottom) {
+        int alpha = top >>> 24;
+        if (alpha == 0) return bottom;
+        if (alpha == 255) return top;
+        int r = (((top >> 16) & 0xFF) * alpha + ((bottom >> 16) & 0xFF) * (255 - alpha)) / 255;
+        int g = (((top >> 8) & 0xFF) * alpha + ((bottom >> 8) & 0xFF) * (255 - alpha)) / 255;
+        int b = ((top & 0xFF) * alpha + (bottom & 0xFF) * (255 - alpha)) / 255;
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    /** Fraction of the pixel centred at (x, y) inside a rounded square of the given radius. */
+    private static float cornerCoverage(float x, float y, float radius) {
+        float dx = Math.max(Math.max(radius - x, x - (HEAD_SIZE - radius)), 0.0F);
+        float dy = Math.max(Math.max(radius - y, y - (HEAD_SIZE - radius)), 0.0F);
+        if (dx <= 0.0F || dy <= 0.0F) return 1.0F;
+        float outside = (float) Math.sqrt(dx * dx + dy * dy) - radius;
+        return Math.max(0.0F, Math.min(1.0F, 0.5F - outside));
     }
 
     private void request(String username) {
@@ -85,15 +173,21 @@ public final class SkinAvatarService {
             byte[] bytes = readBytes(uri);
             MinecraftClient client = MinecraftClient.getInstance();
             if (client == null) throw new IllegalStateException("client unavailable");
+            NativeImage head;
+            try (NativeImage image = NativeImage.read(NativeImage.Format.RGBA, new ByteArrayInputStream(bytes))) {
+                head = composeHead(image);
+            }
             client.execute(() -> {
-                if (TEXTURES.size() >= MAX_TEXTURES) return;
+                if (TEXTURES.size() >= MAX_TEXTURES) {
+                    head.close();
+                    return;
+                }
                 try {
-                    NativeImage image = NativeImage.read(new ByteArrayInputStream(bytes));
                     Identifier id = Identifier.of("phaze", "dynamic/chat/avatar_" + Integer.toUnsignedString(username.toLowerCase().hashCode()));
-                    OVERLAY.put(username.toLowerCase(), image.getHeight() >= 64);
-                    client.getTextureManager().registerTexture(id, new NativeImageBackedTexture(image));
+                    registerHead(client, id, head);
                     TEXTURES.put(username.toLowerCase(), id);
                 } catch (Throwable error) {
+                    head.close();
                     FAILED.put(username.toLowerCase(), Boolean.TRUE);
                     LOG.debug("Could not upload skin for {}", username, error);
                 }

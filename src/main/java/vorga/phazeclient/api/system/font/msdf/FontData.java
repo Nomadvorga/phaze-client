@@ -30,11 +30,17 @@ public final class FontData {
     public static final class AtlasData {
         @SerializedName("distanceRange")
         private float range;
+        private float size;
         private float width;
         private float height;
 
         public float range() {
             return range;
+        }
+
+        /** Atlas pixels per em. */
+        public float size() {
+            return size;
         }
 
         public float width() {

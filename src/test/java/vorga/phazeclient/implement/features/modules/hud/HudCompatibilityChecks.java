@@ -108,12 +108,22 @@ public final class HudCompatibilityChecks {
         check(calls(draw).stream().noneMatch(call -> call.name.equals("loadIcon") || call.name.equals("setIconSize")
                         || call.name.equals("registerTexture") || call.owner.contains("NativeImage") || call.owner.startsWith("java/io/")),
                 "rendering neither decodes nor uploads nor refits the cached image");
-        List<MethodInsnNode> updateCalls = calls(method(module, "updatePackName"));
-        int release = callIndex(updateCalls, "releaseOwnedIcon");
-        int load = callIndex(updateCalls, "loadIcon");
-        check(release >= 0 && load > release, "changing packs releases the previous owned texture before loading a new one");
-        check(calls(method(module, "onResourcesReloaded")).stream().anyMatch(call -> call.name.equals("releaseOwnedIcon")),
-                "resource reload invalidates and releases the old dynamic texture");
+        check(calls(method(module, "updatePackName")).stream().noneMatch(call -> call.name.equals("loadIcon")
+                        || call.owner.contains("NativeImage") || call.name.equals("registerTexture")),
+                "the pack scan never decodes or uploads on the render thread");
+        List<MethodInsnNode> requestCalls = calls(method(module, "requestIcon"));
+        check(requestCalls.stream().anyMatch(call -> call.name.equals("supplyAsync"))
+                        && requestCalls.stream().anyMatch(call -> call.name.equals("thenAcceptAsync")),
+                "pack.png is decoded on a worker and handed back to the client thread");
+        check(calls(method(module, "loadIcon")).stream().noneMatch(call -> call.name.equals("registerTexture")
+                        || call.owner.endsWith("NativeImageBackedTexture")),
+                "the worker step never touches GL textures");
+        List<MethodInsnNode> applyCalls = calls(method(module, "applyIcon"));
+        check(applyCalls.stream().anyMatch(call -> call.name.equals("releaseOwnedIcon"))
+                        && applyCalls.stream().anyMatch(call -> call.name.equals("registerTexture")),
+                "a new icon replaces the single owned texture, and the fallback releases it");
+        check(calls(method(module, "onResourcesReloaded")).stream().noneMatch(call -> call.name.equals("releaseOwnedIcon")),
+                "resource reload keeps the current icon until its replacement is decoded");
     }
 
     private static void packIconFit() throws Exception {
@@ -153,7 +163,7 @@ public final class HudCompatibilityChecks {
 
     private static void packTextLayout() throws Exception {
         ClassNode moduleClass = readClass("vorga/phazeclient/implement/features/modules/hud/PackDisplayHud");
-        MethodNode render = method(readClass("vorga/phazeclient/mixins/InGameHudMixin"), "renderPackDisplayText");
+        MethodNode render = method(readClass("vorga/phazeclient/implement/hud/CustomHudRenderer"), "renderPackDisplayText");
         List<MethodInsnNode> renderCalls = calls(render);
         MethodInsnNode left = renderCalls.stream().filter(call -> call.name.equals("getTextStartX")).findFirst().orElseThrow();
         AbstractInsnNode store = left.getNext();
@@ -183,14 +193,13 @@ public final class HudCompatibilityChecks {
         PackDisplayHud module = PackDisplayHud.getInstance();
         Map<Field, Object> saved = new HashMap<>();
         for (String name : List.of("cachedIcon", "cachedTextWidth", "cachedDescriptionWidth", "cachedDescription",
-                "cachedDescriptionLines", "lastCheckTime")) {
+                "cachedDescriptionLines")) {
             Field field = field(PackDisplayHud.class, name);
             saved.put(field, field.get(module));
         }
         boolean iconEnabled = module.displayPackIcon.isValue();
         boolean descriptionEnabled = module.displayDescription.isValue();
         try {
-            field(PackDisplayHud.class, "lastCheckTime").setLong(module, Long.MAX_VALUE);
             field(PackDisplayHud.class, "cachedDescription").set(module, "Cached description");
             List<Text> lines = List.of(Text.literal("Cached description"));
             field(PackDisplayHud.class, "cachedDescriptionLines").set(module, lines);
@@ -201,8 +210,9 @@ public final class HudCompatibilityChecks {
                     field(PackDisplayHud.class, "cachedIcon").set(module, present ? Identifier.of("phaze", "test/pack_icon") : null);
                     for (boolean showIcon : new boolean[]{false, true}) {
                         module.displayPackIcon.setValue(showIcon);
-                        float leftEdge = present && showIcon ? PackDisplayHud.ICON_SIZE + 4 : 4;
-                        check(module.getTextStartX() == leftEdge, "text keeps a 4px inset beside the icon or panel edge");
+                        float leftEdge = showIcon ? PackDisplayHud.ICON_SIZE + 4 : 4;
+                        check(module.getTextStartX() == leftEdge,
+                                "text keeps a 4px inset beside the icon slot, reserved even while the icon decodes");
                         for (boolean showDescription : new boolean[]{false, true}) {
                             module.displayDescription.setValue(showDescription);
                             int width = showDescription ? Math.max(widths[0], widths[1]) : widths[0];
@@ -381,11 +391,6 @@ public final class HudCompatibilityChecks {
             if (instruction instanceof MethodInsnNode call) calls.add(call);
         }
         return calls;
-    }
-
-    private static int callIndex(List<MethodInsnNode> calls, String name) {
-        for (int i = 0; i < calls.size(); i++) if (calls.get(i).name.equals(name)) return i;
-        return -1;
     }
 
     private static AnnotationNode findInject(MethodNode method) {

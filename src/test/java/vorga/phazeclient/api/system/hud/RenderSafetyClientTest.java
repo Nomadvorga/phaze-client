@@ -30,6 +30,7 @@ public final class RenderSafetyClientTest implements FabricClientGameTest {
                 SimpleFramebuffer draw = new SimpleFramebuffer(48, 48, true);
                 SimpleFramebuffer read = new SimpleFramebuffer(32, 32, true);
                 HudBuffer nested = new HudBuffer();
+                HudBuffer grandchild = new HudBuffer();
                 try {
                     GlStateManager._glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, draw.fbo);
                     GlStateManager._glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, read.fbo);
@@ -49,6 +50,8 @@ public final class RenderSafetyClientTest implements FabricClientGameTest {
                     try (HudCapture capture = BatchedHudBuffer.INSTANCE.openCapture()) {
                         check(capture != null, "capture ready");
                         check(BatchedHudBuffer.INSTANCE.getActiveCaptureFramebuffer() != null, "batch redirect active");
+                        check(client.getFramebuffer() == HudBuffer.getActiveCaptureFramebuffer(), "client getter redirects to the batch");
+                        check(HudBuffer.getRealMainFramebuffer() != client.getFramebuffer(), "clean blur source is separate from capture pixels");
                         check(!GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST), "full clear ignores old scissor");
                         throw injected;
                     } catch (RuntimeException failure) {
@@ -62,16 +65,29 @@ public final class RenderSafetyClientTest implements FabricClientGameTest {
                     try (HudCapture batch = BatchedHudBuffer.INSTANCE.openCapture()) {
                         check(batch != null, "second capture ready after failure");
                         int parent = HudBuffer.activeCaptureTarget;
+                        var parentFramebuffer = client.getFramebuffer();
                         float parentHeight = BatchedRectangle.getRenderTargetFbHeight();
                         Snapshot parentState = Snapshot.read();
                         try (HudCapture child = nested.openCapture()) {
                             check(child != null, "nested capture ready");
                             check(HudBuffer.activeCaptureTarget != parent, "child owns its target");
                             check(BatchedHudBuffer.INSTANCE.getActiveCaptureFramebuffer() == null, "unrelated per-HUD target cannot redirect to global batch FBO");
+                            var childFramebuffer = client.getFramebuffer();
+                            check(childFramebuffer == HudBuffer.getActiveCaptureFramebuffer() && childFramebuffer != parentFramebuffer,
+                                    "client getter follows the child instead of rebinding main or batch");
+                            try (HudCapture inner = grandchild.openCapture()) {
+                                check(inner != null && client.getFramebuffer() != childFramebuffer, "third level redirects to the innermost target");
+                                throw injected;
+                            } catch (RuntimeException failure) {
+                                check(failure == injected, "nested capture preserves the original exception");
+                            }
+                            check(client.getFramebuffer() == childFramebuffer, "grandchild abort restores the child framebuffer reference");
+                            check(!grandchild.hasContent(), "failed grandchild is not published");
                             child.commit();
                         }
                         parentState.assertCurrent("nested close");
                         check(HudBuffer.activeCaptureTarget == parent, "nested close restores parent redirect");
+                        check(client.getFramebuffer() == parentFramebuffer, "nested close restores the parent client getter");
                         check(BatchedRectangle.getRenderTargetFbHeight() == parentHeight, "nested close restores parent height");
                         batch.commit();
                     }
@@ -96,12 +112,23 @@ public final class RenderSafetyClientTest implements FabricClientGameTest {
                     try (BuiltBuffer built = builder.end()) { check(built.getDrawParameters().vertexCount() == 4, "tessellator usable after capture failure"); }
 
                     HudRenderLifecycle.cleanup();
+                    // Shutdown/reload can interrupt an unfinished child. Disposal must unwind it first.
+                    try (HudCapture batch = BatchedHudBuffer.INSTANCE.openCapture();
+                         HudCapture child = nested.openCapture();
+                         HudCapture inner = grandchild.openCapture()) {
+                        check(batch != null && child != null && inner != null, "lifecycle interrupt has three live scopes");
+                        HudRenderLifecycle.cleanup();
+                        check(HudBuffer.getActiveCaptureFramebuffer() == null && HudBuffer.getRealMainFramebuffer() == null,
+                                "interrupted lifecycle clears every framebuffer reference");
+                        expected.assertCurrent("interrupted lifecycle");
+                    }
                     HudRenderLifecycle.cleanup();
                     check(HudBuffer.activeCaptureTarget == -1, "repeated lifecycle clears redirect");
                     check(BatchedRectangle.getRenderTargetFbHeight() == -1, "lifecycle clears height override");
                     check(!BatchedHudBuffer.INSTANCE.hasContent() && !nested.hasContent(), "lifecycle invalidates all HUD caches");
                 } finally {
                     nested.cleanup();
+                    grandchild.cleanup();
                     BatchedHudBuffer.INSTANCE.cleanup();
                     BatchedRectangle.restoreRenderTargetFbHeight(-1);
                     draw.delete();
@@ -112,7 +139,7 @@ public final class RenderSafetyClientTest implements FabricClientGameTest {
         System.out.println("HUD/2D GL render safety checks passed");
     }
 
-    private record Snapshot(int draw, int readTarget, int[] viewport, int[] scissorBox, boolean scissor,
+    record Snapshot(int draw, int readTarget, int[] viewport, int[] scissorBox, boolean scissor,
                             boolean depth, boolean depthMask, boolean cull, boolean blend,
                             int srcRgb, int dstRgb, int srcAlpha, int dstAlpha, int program,
                             byte[] colorMask, float[] color) {

@@ -37,7 +37,6 @@ public final class WorldOverlayRenderer {
     private WorldOverlayRenderer() {}
 
     public static void beginFrame(Matrix4f view, Matrix4f projection, Camera worldCamera, RenderTickCounter counter) {
-        TntCountdown.clearPendingTimers();
         for (var iterator = BATCHES.entrySet().iterator(); iterator.hasNext();) {
             Batch batch = iterator.next().getValue();
             batch.discard();
@@ -54,14 +53,13 @@ public final class WorldOverlayRenderer {
         recording = true;
     }
 
-    public static boolean isRecording() { return recording; }
+    public static boolean isRecording() { return recording && !IrisCompat.isShadowPass(); }
 
     /** Render-thread lifecycle boundary: release native buffers, not just their contents. */
     public static void clear() {
         recording = false;
         camera = null;
         tickCounter = null;
-        TntCountdown.clearPendingTimers();
         Throwable failure = null;
         try {
             for (Batch batch : BATCHES.values()) {
@@ -105,7 +103,7 @@ public final class WorldOverlayRenderer {
     };
 
     public static VertexConsumerProvider consumers(VertexConsumerProvider vanilla) {
-        return recording ? CONSUMERS : vanilla;
+        return isRecording() ? CONSUMERS : vanilla;
     }
 
     /** Same position as soup-visuals: after WorldRenderer returns, before the hand pass. */
@@ -154,7 +152,6 @@ public final class WorldOverlayRenderer {
             HolyWorldHelperRenderer.render(matrices, camera, tickCounter);
             PredictionsRenderer.render(matrices, camera, tickCounter);
             Waypoints.getInstance().renderOverlay(matrices, camera);
-            TntCountdown.renderPendingTimers();
             flush();
         } finally {
             recording = false;

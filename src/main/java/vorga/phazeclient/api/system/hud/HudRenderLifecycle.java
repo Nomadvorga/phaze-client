@@ -11,7 +11,6 @@ public final class HudRenderLifecycle {
     public static void cleanup() {
         RenderSystem.assertOnRenderThread();
         // Abort before snapshotting, so no deleted capture target is restored by the lifecycle boundary.
-        BatchedHudBuffer.INSTANCE.abortCapture();
         HudBuffer.abortAllCaptures();
         BatchedRectangle.cleanup();
         try (Render2DState state = Render2DState.capture()) {
@@ -27,7 +26,7 @@ public final class HudRenderLifecycle {
                         try {
                             BatchedRectangle.cleanup();
                         } finally {
-                            HudBuffer.activeCaptureTarget = -1;
+                            HudBuffer.resetCaptureTarget();
                             Render2DBuffers.cleanup();
                         }
                     }

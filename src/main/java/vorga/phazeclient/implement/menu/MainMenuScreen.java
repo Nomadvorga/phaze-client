@@ -15,16 +15,21 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import com.mojang.blaze3d.systems.RenderSystem;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
+import vorga.phazeclient.api.system.font.msdf.MsdfFont;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.api.system.shape.implement.Rectangle;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.RemoteRulesService;
 import vorga.phazeclient.base.util.render.Render2DUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabel;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -58,12 +63,42 @@ public class MainMenuScreen extends TitleScreen {
     private static final Identifier ICON_CROSS = Identifier.of("phaze", "textures/menu/cross.png");
     private static final Identifier ICON_DOWNLOAD = Identifier.of("phaze", "textures/menu/arrow_download.png");
     private static final Identifier ICON_RESET = Identifier.ofVanilla("textures/reset.png");
+    /** MSDF text sits on a baseline at y + 0.7 em and its caps/ascenders reach ~0.70 em above it. */
+    private static final float MSDF_CAP_HEIGHT = 0.70F;
+    /** One spacing unit for every edge and block gap inside the theme modals. */
+    private static final float THEME_MODAL_GAP = 12.0F;
+    /** Unscaled outline drawn by renderThemeModalPanel; gaps are measured from its inner edge. */
+    private static final float THEME_MODAL_BORDER = 1.0F;
+    private static final float THEME_TITLE_TEXT_SIZE = 14.0F;
+    private static final float THEME_SECTION_TEXT_SIZE = 9.4F;
+    private static final float THEME_HINT_TEXT_SIZE = 7.0F;
+    private static final float THEME_FOOTER_TEXT_SIZE = 13.8F / 1.2F;
+    private static final float THEME_RESET_ICON_SIZE = 11.0F * 1.6F;
+    private static final float THEME_RESET_ICON_GAP = 4.0F;
+    private static final float THEME_ACTION_SIZE = 18.0F;
+    private static final float THEME_SETTINGS_ICON_SIZE = 13.0F;
+    private static final float THEME_CLOSE_ICON_SIZE = (13.0F / (1.2F * 1.1F)) * (2.5F / 1.2F) / 1.15F;
+    private static final float THEME_CARD_NAME_OFFSET = 6.0F;
+    private static final float THEME_CARD_NAME_SIZE = 8.6F;
+    private static final float THEME_CARD_BADGE_SIZE = 11.0F;
+    private static final float THEME_CARD_INSET = 6.0F;
+    private static final float THEME_SLIDER_TITLE_SIZE = 9.8F;
+    private static final float THEME_SLIDER_VALUE_SIZE = 9.2F;
+    private static final float THEME_SLIDER_SUBTITLE_SIZE = 7.9F;
+    private static final float THEME_SLIDER_TRACK_HEIGHT = 7.0F;
+    private static final float THEME_SLIDER_INNER_GAP = 8.0F;
+    private static final float TOOLTIP_PADDING = 8.0F;
+    private static final float TOOLTIP_LINE_GAP = 7.0F;
+    private static final float TOOLTIP_TITLE_SIZE = 9.6F;
+    private static final float TOOLTIP_LINE_SIZE = 8.6F;
+    private static final float TOOLTIP_ICON_GAP = 4.0F;
     private static final int TOOLTIP_TEXT_COLOR = 0xFF9EA7BB;
     private static final int ICON_TINT_COLOR = 0xFF9EA7BB;
     private static final int ACCOUNT_SWITCHER_NAME_COLOR = 0xFFCC8888;
     private static final int THEME_MODAL_DIM_COLOR = 0x96000000;
-    private static final int THEME_SETTINGS_MODAL_DIM_COLOR = 0x42000000;
     private final Rectangle rectangle = new Rectangle();
+    private final Vector3f scissorMin = new Vector3f();
+    private final Vector3f scissorMax = new Vector3f();
     private MainMenuButtonWidget singleplayerButton;
     private MainMenuButtonWidget multiplayerButton;
     private MainMenuButtonWidget quitButton;
@@ -107,6 +142,30 @@ public class MainMenuScreen extends TitleScreen {
     private final Map<String, Float> themeCardDeleteHoverAnims = new HashMap<>();
     private final Map<String, Float> themeCardDownloadProgressAnims = new HashMap<>();
     private final Map<String, Float> themeSettingsPresetHoverAnims = new HashMap<>();
+    private final Map<String, SettingLabel> themeCardNameLabels = new HashMap<>();
+    private DrawContext themeCardClipContext;
+    private float themeCardClipX;
+    private float themeCardClipY;
+    private float themeCardClipW;
+    private float themeCardClipH;
+    /** Card names clip to their own box intersected with the scrolling card viewport. */
+    private final SettingLabel.Clip themeCardNameClip = new SettingLabel.Clip() {
+        @Override
+        public void push(Matrix4f matrix, float x, float y, float width, float height) {
+            if (themeCardClipContext == null) return;
+            float left = Math.max(x, themeCardClipX);
+            float top = Math.max(y, themeCardClipY);
+            float right = Math.min(x + width, themeCardClipX + themeCardClipW);
+            float bottom = Math.min(y + height, themeCardClipY + themeCardClipH);
+            enableOverlayScissor(themeCardClipContext, left, top, Math.max(0.0F, right - left), Math.max(0.0F, bottom - top));
+        }
+
+        @Override
+        public void pop() {
+            if (themeCardClipContext == null) return;
+            enableOverlayScissor(themeCardClipContext, themeCardClipX, themeCardClipY, themeCardClipW, themeCardClipH);
+        }
+    };
     private Boolean originalIasTitleTextEnabled;
     private Boolean originalIasTitleButtonEnabled;
     private boolean iasMainMenuOverrideApplied;
@@ -232,7 +291,7 @@ public class MainMenuScreen extends TitleScreen {
             addDrawableChild(modMenuButton);
         }
 
-        int topInset = Math.max(8, Math.round(10.0F * scale));
+        int topInset = screenMargin();
         vanillaMainMenuButton = new MainMenuButtonWidget(
                 overlayW - topInset,
                 topInset,
@@ -367,7 +426,7 @@ public class MainMenuScreen extends TitleScreen {
         setButtonLayout(modMenuButton, dockX, dockY, dockSize, dockSize);
 
         if (themeSelectorButton != null) {
-            int topInset = Math.max(8, Math.round(10.0F * scale));
+            int topInset = screenMargin();
             setButtonLayout(
                     themeSelectorButton,
                     overlayW - topInset - dockSize * 2 - gap,
@@ -437,10 +496,8 @@ public class MainMenuScreen extends TitleScreen {
                 ? "Phaze: connecting..."
                 : "Phaze: " + count + " online";
 
-        float scale = phaze$menuScale();
-        float textSize = 10.2F * scale;
-        float x = 10.0F;
-        float y = 8.0F;
+        float textSize = 10.2F * phaze$menuScale();
+        float margin = screenMargin();
 
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
@@ -448,8 +505,8 @@ public class MainMenuScreen extends TitleScreen {
                 textSize,
                 0xFFFFFFFF,
                 context.getMatrices().peek().getPositionMatrix(),
-                x,
-                y,
+                textXForInkLeft(MsdfFonts.medium(), text, textSize, margin),
+                margin,
                 0.0F
         );
     }
@@ -468,7 +525,7 @@ public class MainMenuScreen extends TitleScreen {
         float textSize = 10.0F * scale;
         String accountText = "Current Account: " + username;
         float y = quitButton.getY() + quitButton.getHeight() + 12.0F * scale;
-        float x = quitButton.getX() + (quitButton.getWidth() - MsdfFonts.medium().getWidth(accountText, textSize)) / 2.0F;
+        float x = textXForInkCenter(MsdfFonts.medium(), accountText, textSize, quitButton.getX() + quitButton.getWidth() / 2.0F);
 
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
@@ -566,83 +623,15 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderModMenuTooltip(DrawContext context, int mouseX, int mouseY) {
-        if (modMenuButton == null || !modMenuButton.isHovered()) {
-            return;
-        }
-        float scale = phaze$menuScale();
-        float w = 116.0F * scale;
-        float h = 40.0F * scale;
-        float x = modMenuButton.getX() + (modMenuButton.getWidth() - w) / 2.0F;
-        float y = modMenuButton.getY() - h - (6.0F * scale);
-
-        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, w, h)
-                .round(6.0F)
-                .softness(1.1F)
-                .thickness(1.4F)
-                .outlineColor(0xFF1E2740)
-                .color(0xFF0A1020)
-                .build());
-
-        String line1 = Lang.translate("Fabric Mod Menu");
-        String line2 = Lang.translate("External");
-        MsdfRenderer.renderText(
-                MsdfFonts.bold(), line1, 9.6F * scale, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
-                x + 8.0F * scale, y + 8.0F * scale, 0.0F
-        );
-        renderTooltipLine(context, ICON_EXTERNAL, line2, x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale, (12.5F / (1.3F * 1.15F)) * scale);
+        renderExternalIntegrationTooltip(context, modMenuButton, Lang.translate("Fabric Mod Menu"));
     }
 
     private void renderSettingsTooltip(DrawContext context) {
-        if (settingsButton == null || !settingsButton.isHovered()) {
-            return;
-        }
-        float scale = phaze$menuScale();
-        float w = 140.0F * scale;
-        float h = 40.0F * scale;
-        float x = settingsButton.getX() + (settingsButton.getWidth() - w) / 2.0F;
-        float y = settingsButton.getY() - h - (6.0F * scale);
-
-        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, w, h)
-                .round(6.0F)
-                .softness(1.1F)
-                .thickness(1.4F)
-                .outlineColor(0xFF1E2740)
-                .color(0xFF0A1020)
-                .build());
-
-        MsdfRenderer.renderText(
-                MsdfFonts.bold(), Lang.translate("Minecraft Settings"), 9.6F * scale, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
-                x + 8.0F * scale, y + 8.0F * scale, 0.0F
-        );
-        renderTooltipLine(context, ICON_CUBE, Lang.translate("Minecraft"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale);
+        renderTwoLineTooltip(context, settingsButton, Lang.translate("Minecraft Settings"), ICON_CUBE, 9.0F * phaze$menuScale(), Lang.translate("Minecraft"));
     }
 
     private void renderRealmsTooltip(DrawContext context) {
-        if (realmsButton == null || !realmsButton.isHovered()) {
-            return;
-        }
-        float scale = phaze$menuScale();
-        float w = 136.0F * scale;
-        float h = 40.0F * scale;
-        float x = realmsButton.getX() + (realmsButton.getWidth() - w) / 2.0F;
-        float y = realmsButton.getY() - h - (6.0F * scale);
-
-        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, w, h)
-                .round(6.0F)
-                .softness(1.1F)
-                .thickness(1.4F)
-                .outlineColor(0xFF1E2740)
-                .color(0xFF0A1020)
-                .build());
-
-        MsdfRenderer.renderText(
-                MsdfFonts.bold(), Lang.translate("Minecraft Realms"), 9.6F * scale, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
-                x + 8.0F * scale, y + 8.0F * scale, 0.0F
-        );
-        renderTooltipLine(context, ICON_CUBE, Lang.translate("Minecraft"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale);
+        renderTwoLineTooltip(context, realmsButton, Lang.translate("Minecraft Realms"), ICON_CUBE, 9.0F * phaze$menuScale(), Lang.translate("Minecraft"));
     }
 
     private void renderFlashbackTooltip(DrawContext context) {
@@ -658,35 +647,7 @@ public class MainMenuScreen extends TitleScreen {
     }
 
     private void renderExternalIntegrationTooltip(DrawContext context, MainMenuButtonWidget button, String title) {
-        if (button == null || !button.isHovered()) {
-            return;
-        }
-        float scale = phaze$menuScale();
-        float titleSize = 9.6F * scale;
-        float externalSize = 8.6F * scale;
-        float contentWidth = Math.max(
-                MsdfFonts.bold().getWidth(title, titleSize),
-                MsdfFonts.medium().getWidth(Lang.translate("External"), externalSize) + 18.0F * scale
-        );
-        float w = Math.max(116.0F * scale, contentWidth + 20.0F * scale);
-        float h = 40.0F * scale;
-        float x = button.getX() + (button.getWidth() - w) / 2.0F;
-        float y = button.getY() - h - (6.0F * scale);
-
-        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, w, h)
-                .round(6.0F)
-                .softness(1.1F)
-                .thickness(1.4F)
-                .outlineColor(0xFF1E2740)
-                .color(0xFF0A1020)
-                .build());
-
-        MsdfRenderer.renderText(
-                MsdfFonts.bold(), title, titleSize, TOOLTIP_TEXT_COLOR,
-                context.getMatrices().peek().getPositionMatrix(),
-                x + 8.0F * scale, y + 8.0F * scale, 0.0F
-        );
-        renderTooltipLine(context, ICON_EXTERNAL, Lang.translate("External"), x + 8.0F * scale, y + 22.0F * scale, scale, -1.0F * scale, (12.5F / (1.3F * 1.15F)) * scale);
+        renderTwoLineTooltip(context, button, title, ICON_EXTERNAL, (12.5F / (1.3F * 1.15F)) * phaze$menuScale(), Lang.translate("External"));
     }
 
     private void renderThemeSelectorTooltip(DrawContext context) {
@@ -695,28 +656,23 @@ public class MainMenuScreen extends TitleScreen {
         }
         float scale = phaze$menuScale();
         String title = Lang.translate("Theme Selector");
-        float textSize = 9.6F * scale;
-        float h = 30.0F * scale;
-        float w = Math.max(84.0F * scale, MsdfFonts.bold().getWidth(title, textSize) + 18.0F * scale);
-        float x = Math.max(6.0F * scale, themeSelectorButton.getX() - w - (6.0F * scale));
-        float y = themeSelectorButton.getY() + (themeSelectorButton.getHeight() - h) / 2.0F;
+        float textSize = TOOLTIP_TITLE_SIZE * scale;
+        // Height matches the button it sits beside; the side padding copies the resulting vertical padding.
+        float h = themeSelectorButton.getHeight();
+        float pad = (h - capHeight(textSize)) / 2.0F;
+        float w = MsdfFonts.bold().getInkWidth(title, textSize) + pad * 2.0F;
+        float x = Math.max(screenMargin(), themeSelectorButton.getX() - w - 6.0F * scale);
+        float y = themeSelectorButton.getY();
 
-        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, w, h)
-                .round(6.0F)
-                .softness(1.1F)
-                .thickness(1.4F)
-                .outlineColor(0xFF1E2740)
-                .color(0xFF0A1020)
-                .build());
-
+        renderTooltipBox(context, x, y, w, h);
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
                 title,
                 textSize,
                 TOOLTIP_TEXT_COLOR,
                 context.getMatrices().peek().getPositionMatrix(),
-                x + 9.0F * scale,
-                MenuStyle.centerMsdfTextY(textSize, y, h),
+                textXForInkLeft(MsdfFonts.bold(), title, textSize, x + pad),
+                y + pad,
                 0.0F
         );
     }
@@ -799,17 +755,18 @@ public class MainMenuScreen extends TitleScreen {
         context.getMatrices().push();
         context.getMatrices().translate(0.0F, modalYOffset, 140.0F);
 
-        renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10.0F, 0xFF11161F, 0xFF212838, modalAlpha);
+        renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, menuRadius(10.0F), 0xFF11161F, 0xFF212838, modalAlpha);
 
-        float titleTextSize = 14.0F * layout.scale;
+        float titleTextSize = THEME_TITLE_TEXT_SIZE * layout.scale;
+        String title = Lang.translate("Select Theme");
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                Lang.translate("Select Theme"),
+                title,
                 titleTextSize,
                 scaleColorAlpha(0xFFF6F8FE, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.panelX + 12.0F * layout.scale,
-                layout.panelY + 12.0F * layout.scale,
+                textXForInkLeft(MsdfFonts.bold(), title, titleTextSize, layout.contentX),
+                layout.titleY,
                 0.0F
         );
 
@@ -817,12 +774,13 @@ public class MainMenuScreen extends TitleScreen {
         boolean closeHovered = themeSelectorInteractive && isPointInside(mouseX, mouseY, layout.closeX, layout.closeY, layout.closeSize, layout.closeSize);
         themeSelectorSettingsHoverAnim = animateThemeUiValue(themeSelectorSettingsHoverAnim, settingsHovered ? 1.0F : 0.0F);
         themeSelectorCloseHoverAnim = animateThemeUiValue(themeSelectorCloseHoverAnim, closeHovered ? 1.0F : 0.0F);
-        renderThemeSelectorIconAction(context, ICON_SETTINGS, layout.settingsX, layout.settingsY, layout.settingsSize, themeSelectorSettingsHoverAnim, modalAlpha);
-        renderThemeSelectorCloseAction(context, layout.closeX, layout.closeY, layout.closeSize, themeSelectorCloseHoverAnim, modalAlpha);
+        renderIconInkCentered(context, ICON_SETTINGS, layout.settingsCenterX, layout.actionCenterY, THEME_SETTINGS_ICON_SIZE * layout.scale,
+                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, themeSelectorSettingsHoverAnim), modalAlpha));
+        renderThemeCloseIcon(context, layout.closeCenterX, layout.actionCenterY, layout.scale, themeSelectorCloseHoverAnim, modalAlpha);
 
         boolean searchHovered = themeSelectorInteractive && isPointInside(mouseX, mouseY, layout.searchX, layout.searchY, layout.searchW, layout.searchH);
         rectangle.render(ShapeProperties.create(context.getMatrices(), layout.searchX, layout.searchY, layout.searchW, layout.searchH)
-                .round(6.0F)
+                .round(menuRadius(6.0F))
                 .softness(1.0F)
                 .thickness(1.0F)
                 .outlineColor(scaleColorAlpha(themeSelectorSearchFocused ? 0xFF4D617F : (searchHovered ? 0xFF364256 : 0xFF2B3343), modalAlpha))
@@ -831,17 +789,19 @@ public class MainMenuScreen extends TitleScreen {
 
         renderThemeSelectorSearchText(context, layout, modalAlpha);
 
+        float sectionTextSize = THEME_SECTION_TEXT_SIZE * layout.scale;
+        String sectionLabel = Lang.translate("Themes") + " (" + visiblePresets.size() + ")";
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                Lang.translate("Themes") + " (" + visiblePresets.size() + ")",
-                9.4F * layout.scale,
+                sectionLabel,
+                sectionTextSize,
                 scaleColorAlpha(0xFFE5EAF7, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.panelX + 12.0F * layout.scale,
-                layout.sectionLabelY - 1.0F * layout.scale,
+                textXForInkLeft(MsdfFonts.bold(), sectionLabel, sectionTextSize, layout.contentX),
+                layout.sectionLabelY,
                 0.0F
         );
-        float importHintSize = 7.0F * layout.scale;
+        float importHintSize = THEME_HINT_TEXT_SIZE * layout.scale;
         String importHint = Lang.translate("Drop .zip or use Phaze/Panoramas");
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
@@ -849,8 +809,8 @@ public class MainMenuScreen extends TitleScreen {
                 importHintSize,
                 scaleColorAlpha(0xFF7E8799, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.panelX + layout.panelW - 15.0F * layout.scale - MsdfFonts.medium().getWidth(importHint, importHintSize),
-                layout.sectionLabelY + 0.1F * layout.scale,
+                textXForInkRight(MsdfFonts.medium(), importHint, importHintSize, layout.contentRight),
+                layout.sectionBaselineY - capHeight(importHintSize),
                 0.0F
         );
 
@@ -858,33 +818,25 @@ public class MainMenuScreen extends TitleScreen {
 
         boolean resetHovered = themeSelectorInteractive && isPointInside(mouseX, mouseY, layout.resetX, layout.resetY, layout.resetW, layout.resetH);
         themeSelectorResetHoverAnim = animateThemeUiValue(themeSelectorResetHoverAnim, resetHovered ? 1.0F : 0.0F);
-        float footerTextSize = (13.8F / 1.2F) * layout.scale;
-        float resetTextSize = (13.65F / 1.2F) * layout.scale;
-        float footerRowY = layout.footerY - 9.0F * layout.scale;
-        float footerTextY = MenuStyle.centerMsdfTextY(footerTextSize, footerRowY, 18.0F * layout.scale);
-        float resetTextY = MenuStyle.centerMsdfTextY(resetTextSize, footerRowY, 18.0F * layout.scale) + 1.5F;
-        float resetIconSize = 11.0F * 1.6F * layout.scale;
-        float resetTextShiftX = 17.0F * layout.scale;
-        float resetIconShiftX = 17.0F * layout.scale;
-        float resetIconY = MenuStyle.alignIconToMsdfTextY(resetTextY, resetTextSize, resetIconSize);
+        float footerTextSize = THEME_FOOTER_TEXT_SIZE * layout.scale;
+        String activeText = Lang.translate("Active") + ": " + activeThemeName;
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
-                Lang.translate("Active") + ": " + activeThemeName,
+                activeText,
                 footerTextSize,
                 scaleColorAlpha(0xFFE5EAF7, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.panelX + 12.0F * layout.scale,
-                footerTextY,
+                textXForInkLeft(MsdfFonts.medium(), activeText, footerTextSize, layout.contentX),
+                layout.footerY,
                 0.0F
         );
 
-        renderMenuIconPrecise(
+        renderIconInkCentered(
                 context,
                 ICON_RESET,
-                layout.resetX + resetIconShiftX,
-                resetIconY,
-                resetIconSize,
-                resetIconSize,
+                layout.resetIconCenterX,
+                layout.resetIconCenterY,
+                THEME_RESET_ICON_SIZE * layout.scale,
                 scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, themeSelectorResetHoverAnim), modalAlpha),
                 0.06F,
                 0.38F
@@ -892,17 +844,17 @@ public class MainMenuScreen extends TitleScreen {
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
                 Lang.translate("Reset to default"),
-                resetTextSize,
+                footerTextSize,
                 scaleColorAlpha(lerpArgb(0xFFCBD4E6, 0xFFFFFFFF, themeSelectorResetHoverAnim), modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.resetX + resetIconSize + 4.0F * layout.scale + resetTextShiftX,
-                resetTextY,
+                layout.resetTextX,
+                layout.footerY,
                 0.0F
         );
 
         context.getMatrices().pop();
         if (themeSelectorSettingsOpen) {
-            renderThemeSettingsBackdrop(context, layout, settingsModalProgress);
+            renderThemeSettingsBackdrop(context, settingsModalProgress);
             renderThemeSettingsModal(context, layout, mouseX, mouseY, settingsModalProgress);
         }
     }
@@ -920,8 +872,8 @@ public class MainMenuScreen extends TitleScreen {
                     textSize,
                     scaleColorAlpha(0xFF9099AD, alpha),
                     context.getMatrices().peek().getPositionMatrix(),
-                    layout.panelX + (layout.panelW - MsdfFonts.medium().getWidth(text, textSize)) / 2.0F,
-                    layout.cardsY + layout.cardPreviewH / 2.0F - textSize / 2.0F,
+                    textXForInkCenter(MsdfFonts.medium(), text, textSize, layout.panelX + layout.panelW / 2.0F),
+                    textYForCapCenter(textSize, layout.cardsViewportY + layout.cardsViewportH / 2.0F),
                     0.0F
             );
             return;
@@ -929,18 +881,18 @@ public class MainMenuScreen extends TitleScreen {
 
         int rowCount = (presets.size() + 3) / 4;
         float rowStep = layout.cardTotalHeight + layout.cardsGap;
-        float contentHeight = rowCount * layout.cardTotalHeight + Math.max(0, rowCount - 1) * layout.cardsGap;
+        // Scrolling ends where the last row's name/dot ends, so it rests one gap above the footer like the clip edge.
+        float contentHeight = (rowCount - 1) * rowStep + layout.cardContentHeight;
         themeSelectorCardMaxScroll = Math.max(0.0F, contentHeight - layout.cardsViewportH);
         themeSelectorCardScrollTarget = Math.max(0.0F, Math.min(themeSelectorCardMaxScroll, themeSelectorCardScrollTarget));
         themeSelectorCardScrollOffset = animateThemeUiValue(themeSelectorCardScrollOffset, themeSelectorCardScrollTarget);
 
-        enableOverlayScissor(
-                context,
-                layout.panelX + 8.0F * layout.scale,
-                layout.cardsViewportY,
-                layout.panelW - 16.0F * layout.scale,
-                layout.cardsViewportH
-        );
+        themeCardClipContext = context;
+        themeCardClipX = layout.panelX + 8.0F * layout.scale;
+        themeCardClipY = layout.cardsViewportY;
+        themeCardClipW = layout.panelW - 16.0F * layout.scale;
+        themeCardClipH = layout.cardsViewportH;
+        enableOverlayScissor(context, themeCardClipX, themeCardClipY, themeCardClipW, themeCardClipH);
 
         for (int row = 0; row < rowCount; row++) {
             int rowStart = row * 4;
@@ -958,7 +910,8 @@ public class MainMenuScreen extends TitleScreen {
             }
         }
 
-        context.disableScissor();
+        disableOverlayScissor(context);
+        themeCardClipContext = null;
         renderThemePreviewScrollbar(context, layout, contentHeight, alpha);
     }
 
@@ -978,21 +931,16 @@ public class MainMenuScreen extends TitleScreen {
         themeCardHoverAnims.put(preset.getId(), hoverAnim);
 
         int previewOutline = selected
-                ? lerpArgb(0xFF165A41, 0xFF1F7E5A, hoverAnim)
-                : lerpArgb(0xFF242A37, 0xFF343C4F, hoverAnim);
-        rectangle.render(ShapeProperties.create(context.getMatrices(), previewX, previewY, previewW, previewH)
-                .round(7.0F)
-                .softness(1.0F)
-                .thickness(1.3F)
-                .outlineColor(scaleColorAlpha(previewOutline, alpha))
-                .color(0x00000000)
-                .build());
-        renderPanoramaPresetPreview(context, preset, previewX + 1.0F, previewY + 1.0F, previewW - 2.0F, alpha);
+                ? lerpArgb(0xFF165A41, 0xFF2DB37F, hoverAnim)
+                : lerpArgb(0xFF242A37, 0xFF5C6A85, hoverAnim);
+        // Tint layers cover the whole thumbnail, edge included, and the outline goes on top of them,
+        // so the rim brightens and dims together with the rest of the card.
+        renderPanoramaPresetPreview(context, preset, previewX, previewY, previewW, previewOutline, alpha);
 
         if (preset.isRemote()) {
             // Remote cards stay visibly unavailable until their archive is installed.
-            rectangle.render(ShapeProperties.create(context.getMatrices(), previewX + 1.0F, previewY + 1.0F, previewW - 2.0F, previewH - 2.0F)
-                    .round(6.0F)
+            rectangle.render(ShapeProperties.create(context.getMatrices(), previewX, previewY, previewW, previewH)
+                    .round(menuRadius(7.0F))
                     .softness(1.0F)
                     .color(scaleColorAlpha(preset.isDownloading() ? 0x3A000000 : 0x64000000, alpha))
                     .build());
@@ -1003,10 +951,11 @@ public class MainMenuScreen extends TitleScreen {
             );
             themeCardDownloadProgressAnims.put(preset.getId(), progress);
             if (preset.isDownloading()) {
-                float barX = previewX + 8.0F * layout.scale;
-                float barY = previewY + previewH - 12.0F * layout.scale;
-                float barW = previewW - 16.0F * layout.scale;
+                float inset = 8.0F * layout.scale;
                 float barH = 3.0F * layout.scale;
+                float barX = previewX + inset;
+                float barY = previewY + previewH - inset - barH;
+                float barW = previewW - inset * 2.0F;
                 rectangle.render(ShapeProperties.create(context.getMatrices(), barX, barY, barW, barH)
                         .round(barH / 2.0F)
                         .softness(1.0F)
@@ -1020,23 +969,31 @@ public class MainMenuScreen extends TitleScreen {
                 String percent = Math.round(progress * 100.0F) + "%";
                 float textSize = 7.0F * layout.scale;
                 MsdfRenderer.renderText(MsdfFonts.bold(), percent, textSize, scaleColorAlpha(0xFFFFFFFF, alpha),
-                        context.getMatrices().peek().getPositionMatrix(), previewX + previewW - MsdfFonts.bold().getWidth(percent, textSize) - 7.0F * layout.scale,
-                        previewY + 7.0F * layout.scale, 0.0F);
+                        context.getMatrices().peek().getPositionMatrix(),
+                        textXForInkRight(MsdfFonts.bold(), percent, textSize, previewX + previewW - inset),
+                        previewY + inset, 0.0F);
             } else {
                 float iconSize = Math.min(previewW, previewH) * 0.42F;
-                renderMenuIconPrecise(context, ICON_DOWNLOAD, previewX + (previewW - iconSize) / 2.0F,
-                        previewY + (previewH - iconSize) / 2.0F, iconSize, iconSize, scaleColorAlpha(0xFFF2FAF5, alpha));
+                renderIconInkCentered(context, ICON_DOWNLOAD, previewX + previewW / 2.0F, previewY + previewH / 2.0F,
+                        iconSize, scaleColorAlpha(0xFFF2FAF5, alpha));
             }
         }
 
         int previewHoverAlpha = Math.round(hoverAnim * 28.0F * alpha);
         if (previewHoverAlpha > 0) {
-            rectangle.render(ShapeProperties.create(context.getMatrices(), previewX + 1.0F, previewY + 1.0F, previewW - 2.0F, previewH - 2.0F)
-                    .round(6.0F)
+            rectangle.render(ShapeProperties.create(context.getMatrices(), previewX, previewY, previewW, previewH)
+                    .round(menuRadius(7.0F))
                     .softness(1.0F)
                     .color((previewHoverAlpha << 24) | 0xFFFFFF)
                     .build());
         }
+        rectangle.render(ShapeProperties.create(context.getMatrices(), previewX, previewY, previewW, previewH)
+                .round(menuRadius(7.0F))
+                .softness(1.0F)
+                .thickness(1.3F)
+                .outlineColor(scaleColorAlpha(previewOutline, alpha))
+                .color(0x00000000)
+                .build());
 
         if (preset.isCustom()) {
             ThemeCardDeleteBadgeLayout customBadgeLayout = getThemeCardDeleteBadgeLayout(layout, previewX, previewY, previewW);
@@ -1058,10 +1015,9 @@ public class MainMenuScreen extends TitleScreen {
                     customBadgeLayout.badgeTextSize,
                     scaleColorAlpha(0xFFF2FAF5, alpha),
                     context.getMatrices().peek().getPositionMatrix(),
-                    MenuStyle.centerMsdfTextX(MsdfFonts.bold(), "ZIP", customBadgeLayout.badgeTextSize,
-                            customBadgeLayout.badgeX, customBadgeLayout.badgeW),
-                    MenuStyle.centerMsdfTextY(customBadgeLayout.badgeTextSize,
-                            customBadgeLayout.badgeY, customBadgeLayout.badgeH, 0.50F),
+                    textXForInkCenter(MsdfFonts.bold(), "ZIP", customBadgeLayout.badgeTextSize,
+                            customBadgeLayout.badgeX + customBadgeLayout.badgeW / 2.0F),
+                    textYForCapCenter(customBadgeLayout.badgeTextSize, customBadgeLayout.badgeY + customBadgeLayout.badgeH / 2.0F),
                     0.0F
             );
 
@@ -1078,12 +1034,11 @@ public class MainMenuScreen extends TitleScreen {
             // one arm noticeably softer than the other. Give the glyph
             // enough screen coverage and keep it exactly centered.
             float deleteIconSize = 7.4F * layout.scale;
-            renderMenuIconPrecise(
+            renderIconInkCentered(
                     context,
                     ICON_CROSS,
-                    customBadgeLayout.deleteX + (customBadgeLayout.deleteSize - deleteIconSize) / 2.0F,
-                    customBadgeLayout.deleteY + (customBadgeLayout.deleteSize - deleteIconSize) / 2.0F,
-                    deleteIconSize,
+                    customBadgeLayout.deleteX + customBadgeLayout.deleteSize / 2.0F,
+                    customBadgeLayout.deleteY + customBadgeLayout.deleteSize / 2.0F,
                     deleteIconSize,
                     scaleColorAlpha(lerpArgb(0xFFE8A9B0, 0xFFFFD6D9, deleteHoverAnim), alpha),
                     0.16F,
@@ -1091,23 +1046,29 @@ public class MainMenuScreen extends TitleScreen {
             );
         }
 
-        float nameTextSize = 8.6F * layout.scale;
-        float nameY = previewY + previewH + 6.0F * layout.scale;
-        MsdfRenderer.renderText(
-                MsdfFonts.bold(),
-                preset.displayName(),
-                nameTextSize,
-                scaleColorAlpha(0xFFF5F7FD, alpha),
-                context.getMatrices().peek().getPositionMatrix(),
-                previewX,
-                nameY,
-                0.0F
-        );
-
-        float badgeOuterSize = 11.0F * layout.scale;
+        float nameTextSize = THEME_CARD_NAME_SIZE * layout.scale;
+        float nameY = previewY + previewH + THEME_CARD_NAME_OFFSET * layout.scale;
+        String name = preset.displayName();
+        float badgeOuterSize = THEME_CARD_BADGE_SIZE * layout.scale;
         float badgeInnerSize = 7.0F * layout.scale;
         float badgeX = previewX + previewW - badgeOuterSize;
-        float badgeY = nameY - 1.0F * layout.scale;
+        float badgeY = nameY + (capHeight(nameTextSize) - badgeOuterSize) / 2.0F;
+
+        SettingLabel nameLabel = themeCardNameLabels.computeIfAbsent(preset.getId(),
+                ignored -> new SettingLabel().clip(themeCardNameClip));
+        nameLabel.updateHover(hovered);
+        nameLabel.renderMsdf(
+                context.getMatrices(),
+                name,
+                nameTextSize,
+                textXForInkLeft(MsdfFonts.bold(), name, nameTextSize, previewX),
+                nameY,
+                badgeX - 3.0F * layout.scale,
+                nameY - nameTextSize * 0.3F,
+                nameTextSize * 1.4F,
+                scaleColorAlpha(0xFFF5F7FD, alpha)
+        );
+
         rectangle.render(ShapeProperties.create(context.getMatrices(), badgeX, badgeY, badgeOuterSize, badgeOuterSize)
                 .round(badgeOuterSize / 2.0F)
                 .softness(1.0F)
@@ -1128,15 +1089,16 @@ public class MainMenuScreen extends TitleScreen {
         float badgeH = 11.0F * layout.scale;
         float deleteSize = 11.0F * layout.scale;
         float gap = 3.0F * layout.scale;
-        float rightInset = 6.0F * layout.scale;
+        float inset = THEME_CARD_INSET * layout.scale;
         float cornerRound = 3.3F * layout.scale;
-        float badgeY = previewY + 5.0F * layout.scale;
-        float deleteX = previewX + previewW - deleteSize - rightInset - 1.0F * layout.scale;
+        float badgeY = previewY + inset;
+        float deleteX = previewX + previewW - deleteSize - inset;
         float badgeX = deleteX - gap - badgeW;
         return new ThemeCardDeleteBadgeLayout(badgeTextSize, badgePaddingX, badgeW, badgeH, badgeX, badgeY, deleteSize, deleteX, badgeY, cornerRound);
     }
 
-    private void renderPanoramaPresetPreview(DrawContext context, MenuUiSettings.PanoramaDescriptor preset, float x, float y, float size, float alpha) {
+    /** The thumbnail's anti-aliased rim blends into {@code rimColor}, so it must follow the animated outline color. */
+    private void renderPanoramaPresetPreview(DrawContext context, MenuUiSettings.PanoramaDescriptor preset, float x, float y, float size, int rimColor, float alpha) {
         // A card only draws its thumbnail. Calling getRenderer() here used
         // to instantiate the full panorama and, for a custom ZIP, decode
         // and upload all six cube faces as soon as its row entered the
@@ -1146,7 +1108,7 @@ public class MainMenuScreen extends TitleScreen {
         Identifier preview = preset.previewTexture();
         if (!preset.hasPreviewTexture()) {
             rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, Math.max(1.0F, size), Math.max(1.0F, size))
-                    .round(6.0F)
+                    .round(menuRadius(7.0F))
                     .softness(1.0F)
                     .color(scaleColorAlpha(0xFF18202B, alpha))
                     .build());
@@ -1161,22 +1123,25 @@ public class MainMenuScreen extends TitleScreen {
                 x,
                 y,
                 Math.max(1.0F, size),
-                6.0F,
+                menuRadius(7.0F),
                 cropInset,
                 cropSize,
                 textureSize,
-                scaleColorAlpha(0xFF000000, alpha),
+                scaleColorAlpha(rimColor, alpha),
                 scaleColorAlpha(0xFFFFFFFF, alpha)
         );
     }
 
-    private void renderThemeSettingsBackdrop(DrawContext context, ThemeSelectorLayout layout, float alpha) {
+    /**
+     * Each modal level stacks the same full-screen dim: the selector gets exactly the dim the
+     * panorama got when the selector opened, and the panorama behind both gets it twice.
+     */
+    private void renderThemeSettingsBackdrop(DrawContext context, float alpha) {
         context.getMatrices().push();
         context.getMatrices().translate(0.0F, 0.0F, 180.0F);
-        rectangle.render(ShapeProperties.create(context.getMatrices(), layout.panelX, layout.panelY, layout.panelW, layout.panelH)
-                .round(10.0F)
+        rectangle.render(ShapeProperties.create(context.getMatrices(), 0.0F, 0.0F, getOverlayViewportWidth(), getOverlayViewportHeight())
                 .softness(1.0F)
-                .color(scaleColorAlpha(THEME_SETTINGS_MODAL_DIM_COLOR, alpha))
+                .color(scaleColorAlpha(THEME_MODAL_DIM_COLOR, alpha))
                 .build());
         context.getMatrices().pop();
     }
@@ -1187,7 +1152,7 @@ public class MainMenuScreen extends TitleScreen {
         }
 
         float trackW = 3.0F * layout.scale;
-        float trackX = layout.panelX + layout.panelW - 8.0F * layout.scale;
+        float trackX = layout.contentRight + (layout.gap - trackW) / 2.0F;
         float trackY = layout.cardsViewportY;
         float trackH = layout.cardsViewportH;
         float thumbH = Math.max(18.0F * layout.scale, trackH * (trackH / contentHeight));
@@ -1206,37 +1171,39 @@ public class MainMenuScreen extends TitleScreen {
                 .build());
     }
 
+    /**
+     * Clips to a rectangle in the current matrix space, rounded once in framebuffer pixels.
+     * DrawContext.enableScissor snaps to whole GUI pixels (2-4 screen pixels), which left the
+     * clipped cards a visibly different distance from the footer than the panel edge.
+     */
     private void enableOverlayScissor(DrawContext context, float x, float y, float width, float height) {
-        int left = Math.round(x * overlayRenderScale);
-        int top = Math.round(y * overlayRenderScale);
-        int right = Math.round((x + width) * overlayRenderScale);
-        int bottom = Math.round((y + height) * overlayRenderScale);
-        context.enableScissor(left, top, right, bottom);
+        BatchedRectangle.flushIfBatching();
+        context.draw();
+        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
+        matrix.transformPosition(x, y, 0.0F, scissorMin);
+        matrix.transformPosition(x + width, y + height, 0.0F, scissorMax);
+        Window window = MinecraftClient.getInstance().getWindow();
+        double scaleFactor = window.getScaleFactor();
+        int left = (int) Math.round(Math.min(scissorMin.x, scissorMax.x) * scaleFactor);
+        int right = (int) Math.round(Math.max(scissorMin.x, scissorMax.x) * scaleFactor);
+        int top = (int) Math.round(Math.min(scissorMin.y, scissorMax.y) * scaleFactor);
+        int bottom = (int) Math.round(Math.max(scissorMin.y, scissorMax.y) * scaleFactor);
+        RenderSystem.enableScissor(left, window.getFramebufferHeight() - bottom, Math.max(0, right - left), Math.max(0, bottom - top));
     }
 
-    private void renderThemeSelectorIconAction(DrawContext context, Identifier icon, float x, float y, float size, float hoverAnim, float alpha) {
-        float iconHeight = 13.0F * phaze$menuScale();
-        float iconWidth = iconHeight * getIconAspectRatio(icon);
-        renderMenuIcon(
-                context,
-                icon,
-                x + (size - iconWidth) / 2.0F,
-                y + (size - iconHeight) / 2.0F,
-                iconWidth,
-                iconHeight,
-                scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim), alpha)
-        );
+    private static void disableOverlayScissor(DrawContext context) {
+        BatchedRectangle.flushIfBatching();
+        context.draw();
+        RenderSystem.disableScissor();
     }
 
-    private void renderThemeSelectorCloseAction(DrawContext context, float x, float y, float size, float hoverAnim, float alpha) {
-        float iconSize = (13.0F / (1.2F * 1.1F)) * phaze$menuScale() * (2.5F / 1.2F) / 1.15F;
-        renderMenuIconPrecise(
+    private static void renderThemeCloseIcon(DrawContext context, float centerX, float centerY, float scale, float hoverAnim, float alpha) {
+        renderIconInkCentered(
                 context,
                 ICON_CROSS,
-                x + (size - iconSize) / 2.0F,
-                y + (size - iconSize) / 2.0F,
-                iconSize,
-                iconSize,
+                centerX,
+                centerY,
+                THEME_CLOSE_ICON_SIZE * scale,
                 scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim), alpha),
                 0.04F,
                 0.38F
@@ -1250,23 +1217,24 @@ public class MainMenuScreen extends TitleScreen {
         context.getMatrices().push();
         context.getMatrices().translate(0.0F, modalYOffset, 200.0F);
 
-        renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10.0F, 0xFF121720, 0xFF222A39, modalAlpha);
+        renderThemeModalPanel(context, layout.panelX, layout.panelY, layout.panelW, layout.panelH, menuRadius(10.0F), 0xFF121720, 0xFF222A39, modalAlpha);
 
-        float titleSize = 14.0F * layout.scale;
+        float titleSize = THEME_TITLE_TEXT_SIZE * layout.scale;
+        String title = Lang.translate("Settings");
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
-                Lang.translate("Settings"),
+                title,
                 titleSize,
                 scaleColorAlpha(0xFFF6F8FE, modalAlpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.panelX + 13.0F * layout.scale,
-                layout.panelY + 12.0F * layout.scale,
+                textXForInkLeft(MsdfFonts.bold(), title, titleSize, layout.contentX),
+                layout.titleY,
                 0.0F
         );
 
         boolean closeHovered = isPointInside(mouseX, mouseY, layout.closeX, layout.closeY, layout.closeSize, layout.closeSize);
         themeSettingsCloseHoverAnim = animateThemeUiValue(themeSettingsCloseHoverAnim, closeHovered ? 1.0F : 0.0F);
-        renderThemeSelectorCloseAction(context, layout.closeX, layout.closeY, layout.closeSize, themeSettingsCloseHoverAnim, modalAlpha);
+        renderThemeCloseIcon(context, layout.closeCenterX, layout.closeCenterY, layout.scale, themeSettingsCloseHoverAnim, modalAlpha);
 
         panoramaSliderVisualProgress = animateThemeUiValue(
                 panoramaSliderVisualProgress,
@@ -1295,7 +1263,6 @@ public class MainMenuScreen extends TitleScreen {
                 mouseX,
                 mouseY,
                 activeThemeSettingsSlider == ThemeSettingsSlider.PANORAMA_SPEED,
-                layout.panoramaValueX,
                 layout.panoramaLabelY,
                 modalAlpha
         );
@@ -1306,7 +1273,7 @@ public class MainMenuScreen extends TitleScreen {
                 layout.scaleTrackX, layout.scaleTrackY, layout.trackWidth, layout.trackHeight,
                 guiScaleSliderVisualProgress, mouseX, mouseY,
                 activeThemeSettingsSlider == ThemeSettingsSlider.GUI_SCALE,
-                layout.scaleValueX, layout.scaleLabelY, modalAlpha);
+                layout.scaleLabelY, modalAlpha);
 
         renderThemeSettingsSlider(
                 context,
@@ -1322,7 +1289,6 @@ public class MainMenuScreen extends TitleScreen {
                 mouseX,
                 mouseY,
                 activeThemeSettingsSlider == ThemeSettingsSlider.GUI_FPS_LIMIT,
-                layout.fpsValueX,
                 layout.fpsLabelY,
                 modalAlpha
         );
@@ -1365,14 +1331,13 @@ public class MainMenuScreen extends TitleScreen {
             int mouseX,
             int mouseY,
             boolean dragging,
-            float valueX,
             float labelY,
             float alpha
     ) {
         float clampedProgress = Math.max(0.0F, Math.min(1.0F, progress));
-        float titleSize = 9.8F * layout.scale;
-        float valueSize = 9.2F * layout.scale;
-        float subtitleSize = 7.9F * layout.scale;
+        float titleSize = THEME_SLIDER_TITLE_SIZE * layout.scale;
+        float valueSize = THEME_SLIDER_VALUE_SIZE * layout.scale;
+        float subtitleSize = THEME_SLIDER_SUBTITLE_SIZE * layout.scale;
 
         MsdfRenderer.renderText(
                 MsdfFonts.bold(),
@@ -1380,19 +1345,20 @@ public class MainMenuScreen extends TitleScreen {
                 titleSize,
                 scaleColorAlpha(0xFFF0F4FE, alpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.contentX,
+                textXForInkLeft(MsdfFonts.bold(), title, titleSize, layout.contentX),
                 labelY,
                 0.0F
         );
 
+        // Right-aligned to the content edge and sharing the title's baseline.
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
                 valueLabel,
                 valueSize,
                 scaleColorAlpha(0xFFCAD5EC, alpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                valueX,
-                labelY + 1.0F * layout.scale,
+                textXForInkRight(MsdfFonts.medium(), valueLabel, valueSize, layout.contentRight),
+                labelY + capHeight(titleSize) - capHeight(valueSize),
                 0.0F
         );
 
@@ -1429,38 +1395,71 @@ public class MainMenuScreen extends TitleScreen {
                 subtitleSize,
                 scaleColorAlpha(0xFF8E99AF, alpha),
                 context.getMatrices().peek().getPositionMatrix(),
-                layout.contentX,
-                trackY + trackHeight + 8.0F * layout.scale,
+                textXForInkLeft(MsdfFonts.medium(), subtitle, subtitleSize, layout.contentX),
+                trackY + trackHeight + THEME_SLIDER_INNER_GAP * layout.scale,
                 0.0F
         );
     }
 
-    private void renderTooltipLine(DrawContext context, Identifier icon, String text, float x, float y, float scale) {
-        renderTooltipLine(context, icon, text, x, y, scale, 0.0F);
-    }
+    /**
+     * Two-line tooltip above a button. The box is sized from the visible content so the padding is the same on
+     * all four sides: title cap top, line-two bottom, leftmost and rightmost ink.
+     */
+    private void renderTwoLineTooltip(DrawContext context, MainMenuButtonWidget button, String title, Identifier icon, float iconHeight, String line) {
+        if (button == null || !button.isHovered()) {
+            return;
+        }
+        float scale = phaze$menuScale();
+        float pad = TOOLTIP_PADDING * scale;
+        float titleSize = TOOLTIP_TITLE_SIZE * scale;
+        float lineSize = TOOLTIP_LINE_SIZE * scale;
+        float iconGap = TOOLTIP_ICON_GAP * scale;
+        float iconInkW = iconInkWidth(icon, iconHeight);
+        float lineHeight = Math.max(capHeight(lineSize), iconInkHeight(icon, iconHeight));
+        float contentW = Math.max(MsdfFonts.bold().getInkWidth(title, titleSize),
+                iconInkW + iconGap + MsdfFonts.medium().getInkWidth(line, lineSize));
+        float w = contentW + pad * 2.0F;
+        float h = pad + capHeight(titleSize) + TOOLTIP_LINE_GAP * scale + lineHeight + pad;
+        float x = button.getX() + (button.getWidth() - w) / 2.0F;
+        float y = button.getY() - h - 6.0F * scale;
 
-    private void renderTooltipLine(DrawContext context, Identifier icon, String text, float x, float y, float scale, float iconYOffset) {
-        renderTooltipLine(context, icon, text, x, y, scale, iconYOffset, 9.0F * scale);
-    }
-
-    private void renderTooltipLine(DrawContext context, Identifier icon, String text, float x, float y, float scale, float iconYOffset, float iconSize) {
-        renderMenuIcon(context, icon, x, y + iconYOffset, iconSize, iconSize);
+        renderTooltipBox(context, x, y, w, h);
+        float contentX = x + pad;
         MsdfRenderer.renderText(
-                MsdfFonts.medium(), text, 8.6F * scale, TOOLTIP_TEXT_COLOR,
+                MsdfFonts.bold(), title, titleSize, TOOLTIP_TEXT_COLOR,
                 context.getMatrices().peek().getPositionMatrix(),
-                x + iconSize + 4.0F * scale, y, 0.0F
+                textXForInkLeft(MsdfFonts.bold(), title, titleSize, contentX), y + pad, 0.0F
         );
+        float lineCenterY = y + h - pad - lineHeight / 2.0F;
+        renderIconInkCentered(context, icon, contentX + iconInkW / 2.0F, lineCenterY, iconHeight, ICON_TINT_COLOR);
+        MsdfRenderer.renderText(
+                MsdfFonts.medium(), line, lineSize, TOOLTIP_TEXT_COLOR,
+                context.getMatrices().peek().getPositionMatrix(),
+                textXForInkLeft(MsdfFonts.medium(), line, lineSize, contentX + iconInkW + iconGap),
+                textYForCapCenter(lineSize, lineCenterY), 0.0F
+        );
+    }
+
+    private void renderTooltipBox(DrawContext context, float x, float y, float w, float h) {
+        rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, w, h)
+                .round(menuRadius(6.0F))
+                .softness(1.1F)
+                .thickness(1.4F)
+                .outlineColor(0xFF1E2740)
+                .color(0xFF0A1020)
+                .build());
+    }
+
+    /** Distance from every screen edge to the nearest visible element of the main menu chrome. */
+    private int screenMargin() {
+        return Math.max(8, Math.round(10.0F * phaze$menuScale()));
     }
 
     private void renderFooterTexts(DrawContext context, float overlayWidth, float overlayHeight) {
         float scale = phaze$menuScale();
         float footerSize = 12.0F * scale;
-        float footerMarginX = 10.0F;
-        float footerRowHeight = 16.0F * scale;
-        float footerBottomMargin = 10.0F;
-        float rightFooterExtraOffset = 10.0F;
-        float footerRowY = overlayHeight - footerBottomMargin - footerRowHeight;
-        float footerTextY = MenuStyle.centerMsdfTextY(footerSize, footerRowY, footerRowHeight);
+        float margin = screenMargin();
+        float footerTextY = overlayHeight - margin - capHeight(footerSize);
         int footerColor = MenuStyle.withAlpha(TOOLTIP_TEXT_COLOR, 0.65F);
 
         MsdfRenderer.renderText(
@@ -1469,21 +1468,19 @@ public class MainMenuScreen extends TitleScreen {
                 footerSize,
                 footerColor,
                 context.getMatrices().peek().getPositionMatrix(),
-                footerMarginX,
+                textXForInkLeft(MsdfFonts.medium(), FOOTER_LEFT_TEXT, footerSize, margin),
                 footerTextY,
                 0.0F
         );
 
         String rightFooterText = Lang.translate(FOOTER_RIGHT_TEXT);
-        float rightFooterWidth = MsdfFonts.medium().getWidth(rightFooterText, footerSize);
-        float rightFooterX = Math.max(footerMarginX, overlayWidth - footerMarginX - rightFooterExtraOffset - rightFooterWidth);
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
                 rightFooterText,
                 footerSize,
                 footerColor,
                 context.getMatrices().peek().getPositionMatrix(),
-                rightFooterX,
+                Math.max(margin, textXForInkRight(MsdfFonts.medium(), rightFooterText, footerSize, overlayWidth - margin)),
                 footerTextY,
                 0.0F
         );
@@ -1493,31 +1490,9 @@ public class MainMenuScreen extends TitleScreen {
         return (1.0F / 1.4F) * MenuUiSettings.getInstance().getGuiScale();
     }
 
-    private static void renderMenuIcon(DrawContext context, Identifier icon, float x, float y, float width, float height) {
-        renderMenuIcon(context, icon, x, y, width, height, ICON_TINT_COLOR);
-    }
-
-    private static void renderMenuIcon(DrawContext context, Identifier icon, float x, float y, float width, float height, int color) {
-        if (UiMsdfIconAtlas.renderIcon(context, icon, x, y, width, height, color, false)) {
-            return;
-        }
-        FittedIconRect fittedRect = fitIconRect(x, y, width, height, getIconAspectRatio(icon), false);
-        Render2DUtil.drawTexture(
-                context.getMatrices(),
-                icon,
-                Math.round(fittedRect.x()),
-                Math.round(fittedRect.y()),
-                Math.max(1, Math.round(fittedRect.width())),
-                Math.max(1, Math.round(fittedRect.height())),
-                getIconRegionX(icon),
-                getIconRegionY(icon),
-                getIconRegionWidth(icon),
-                getIconRegionHeight(icon),
-                getIconTextureWidth(icon),
-                getIconTextureHeight(icon),
-                color
-        );
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+    /** Radii are authored for the default GUI scale and follow the user's GUI scale. */
+    private static float menuRadius(float radius) {
+        return radius * MenuUiSettings.getInstance().getGuiScale() / MenuUiSettings.DEFAULT_GUI_SCALE;
     }
 
     private static void renderMenuIconPrecise(DrawContext context, Identifier icon, float x, float y, float width, float height, int color) {
@@ -1627,29 +1602,6 @@ public class MainMenuScreen extends TitleScreen {
         return UiMsdfIconAtlas.resolveAspectRatio(icon);
     }
 
-    private static void renderCenteredIconOnlyButtonIcon(
-            DrawContext context,
-            Identifier icon,
-            float buttonX,
-            float buttonY,
-            float buttonWidth,
-            float buttonHeight,
-            float iconWidth,
-            float iconHeight
-    ) {
-        float centerX = buttonX + buttonWidth * 0.5F;
-        float centerY = buttonY + buttonHeight * 0.5F;
-        renderMenuIconPrecise(
-                context,
-                icon,
-                centerX - iconWidth * 0.5F,
-                centerY - iconHeight * 0.5F,
-                iconWidth,
-                iconHeight,
-                ICON_TINT_COLOR
-        );
-    }
-
     private static FittedIconRect fitIconRect(float x, float y, float width, float height, float aspectRatio, boolean precise) {
         float safeWidth = precise ? Math.max(1.0F, width) : Math.max(1.0F, Math.round(width));
         float safeHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
@@ -1672,6 +1624,48 @@ public class MainMenuScreen extends TitleScreen {
         }
 
         return new FittedIconRect(drawX, drawY, drawWidth, drawHeight);
+    }
+
+    private static float iconInkWidth(Identifier icon, float height) {
+        return height * getIconAspectRatio(icon) * UiMsdfIconAtlas.ink(icon).width();
+    }
+
+    private static float iconInkHeight(Identifier icon, float height) {
+        return height * UiMsdfIconAtlas.ink(icon).height();
+    }
+
+    /** Draws an icon whose visible shape, not its padded atlas cell, is centred on the given point. */
+    private static void renderIconInkCentered(DrawContext context, Identifier icon, float centerX, float centerY, float height,
+                                              int color, float msdfThickness, float msdfSmoothness) {
+        UiMsdfIconAtlas.IconInk ink = UiMsdfIconAtlas.ink(icon);
+        float width = height * getIconAspectRatio(icon);
+        renderMenuIconPrecise(context, icon, centerX - width * ink.centerX(), centerY - height * ink.centerY(),
+                width, height, color, msdfThickness, msdfSmoothness);
+    }
+
+    private static void renderIconInkCentered(DrawContext context, Identifier icon, float centerX, float centerY, float height, int color) {
+        renderIconInkCentered(context, icon, centerX, centerY, height, color, 0.0F, 0.42F);
+    }
+
+    private static float textXForInkLeft(MsdfFont font, String text, float size, float inkLeft) {
+        return inkLeft - font.getInkLeft(text, size);
+    }
+
+    private static float textXForInkRight(MsdfFont font, String text, float size, float inkRight) {
+        return inkRight - font.getInkRight(text, size);
+    }
+
+    private static float textXForInkCenter(MsdfFont font, String text, float size, float centerX) {
+        return centerX - (font.getInkLeft(text, size) + font.getInkRight(text, size)) * 0.5F;
+    }
+
+    /** MSDF y is the cap top, so this centres the cap height on a line. */
+    private static float textYForCapCenter(float size, float centerY) {
+        return centerY - MSDF_CAP_HEIGHT * size * 0.5F;
+    }
+
+    private static float capHeight(float size) {
+        return MSDF_CAP_HEIGHT * size;
     }
 
     private static int lerpArgb(int from, int to, float progress) {
@@ -1826,121 +1820,114 @@ public class MainMenuScreen extends TitleScreen {
         panelW = Math.min(panelW, overlayW - 12.0F * scale);
         panelH = Math.min(panelH, overlayH - 12.0F * scale);
 
-        float panelX = (overlayW - panelW) / 2.0F;
-        float panelY = (overlayH - panelH) / 2.0F;
-        float closeSize = 18.0F * scale;
-        float closeX = panelX + panelW - closeSize - 10.0F * scale;
-        float closeY = panelY + 9.0F * scale;
-        float settingsSize = closeSize;
-        float settingsX = closeX - settingsSize - 6.0F * scale;
-        float settingsY = closeY;
+        ThemeSelectorLayout l = new ThemeSelectorLayout();
+        l.scale = scale;
+        l.panelX = (overlayW - panelW) / 2.0F;
+        l.panelY = (overlayH - panelH) / 2.0F;
+        l.panelW = panelW;
+        l.panelH = panelH;
 
-        float searchX = panelX + 12.0F * scale;
-        float searchY = panelY + 34.0F * scale;
-        float searchW = panelW - 24.0F * scale;
-        float searchH = 22.0F * scale;
-        float sectionLabelY = searchY + searchH + 12.0F * scale;
+        // Every visible edge (border, clip edge, text cap/baseline, icon shape) keeps one gap to its neighbour.
+        float gap = THEME_MODAL_GAP * scale;
+        float inset = THEME_MODAL_BORDER + gap;
+        l.gap = gap;
+        l.contentX = l.panelX + inset;
+        l.contentRight = l.panelX + panelW - inset;
+        float contentW = l.contentRight - l.contentX;
 
-        float cardsGap = 9.0F * scale;
-        float cardsX = panelX + 12.0F * scale;
-        float cardsY = sectionLabelY + 13.0F * scale;
-        float availableCardWidth = panelW - 24.0F * scale - cardsGap * 3.0F;
-        float cardPreviewW = availableCardWidth / 4.0F;
-        float cardPreviewH = cardPreviewW;
-        float cardTotalHeight = cardPreviewH + 18.0F * scale;
-        float footerY = panelY + panelH - 16.0F * scale;
-        float cardsViewportH = Math.max(cardTotalHeight, footerY - cardsY - 12.0F * scale);
-        float resetTextSize = 13.65F * scale;
-        float resetIconSize = 11.0F * 1.6F * scale;
-        float resetTextShiftX = 17.0F * scale;
-        float resetContentW = resetIconSize + 4.0F * scale + MsdfFonts.medium().getWidth(Lang.translate("Reset to default"), resetTextSize);
-        float resetW = resetContentW + resetTextShiftX;
-        float resetH = 18.0F * scale;
-        float resetX = panelX + panelW - 12.0F * scale - resetContentW;
-        float resetY = footerY - 4.0F * scale + 1.5F;
+        l.titleY = l.panelY + inset;
+        float titleCapCenterY = l.titleY + capHeight(THEME_TITLE_TEXT_SIZE * scale) * 0.5F;
+        l.actionCenterY = titleCapCenterY;
+        l.actionSize = THEME_ACTION_SIZE * scale;
+        float closeInkW = iconInkWidth(ICON_CROSS, THEME_CLOSE_ICON_SIZE * scale);
+        float settingsInkW = iconInkWidth(ICON_SETTINGS, THEME_SETTINGS_ICON_SIZE * scale);
+        l.closeCenterX = l.contentRight - closeInkW * 0.5F;
+        l.settingsCenterX = l.closeCenterX - closeInkW * 0.5F - gap - settingsInkW * 0.5F;
+        l.closeX = l.closeCenterX - l.actionSize * 0.5F;
+        l.closeY = titleCapCenterY - l.actionSize * 0.5F;
+        l.closeSize = l.actionSize;
+        l.settingsX = l.settingsCenterX - l.actionSize * 0.5F;
+        l.settingsY = l.closeY;
+        l.settingsSize = l.actionSize;
 
-        return new ThemeSelectorLayout(
-                scale,
-                overlayW,
-                overlayH,
-                panelX,
-                panelY,
-                panelW,
-                panelH,
-                settingsX,
-                settingsY,
-                settingsSize,
-                closeX,
-                closeY,
-                closeSize,
-                searchX,
-                searchY,
-                searchW,
-                searchH,
-                sectionLabelY,
-                cardsX,
-                cardsY,
-                cardsGap,
-                cardPreviewW,
-                cardPreviewH,
-                cardTotalHeight,
-                cardsViewportH,
-                footerY,
-                resetX,
-                resetY,
-                resetW,
-                resetH
-        );
+        l.searchX = l.contentX;
+        l.searchY = l.titleY + capHeight(THEME_TITLE_TEXT_SIZE * scale) + gap;
+        l.searchW = contentW;
+        l.searchH = 22.0F * scale;
+        l.sectionLabelY = l.searchY + l.searchH + gap;
+        l.sectionBaselineY = l.sectionLabelY + capHeight(THEME_SECTION_TEXT_SIZE * scale);
+
+        l.cardsGap = 9.0F * scale;
+        l.cardsY = l.sectionBaselineY + gap;
+        l.cardPreviewW = (contentW - l.cardsGap * 3.0F) / 4.0F;
+        l.cardPreviewH = l.cardPreviewW;
+        l.cardTotalHeight = l.cardPreviewH + 18.0F * scale;
+        float nameCap = capHeight(THEME_CARD_NAME_SIZE * scale);
+        float badgeSize = THEME_CARD_BADGE_SIZE * scale;
+        // Last visible pixel of a card: the name baseline or the selection dot centred on the name, whichever is lower.
+        l.cardContentHeight = l.cardPreviewH + THEME_CARD_NAME_OFFSET * scale + Math.max(nameCap, (nameCap + badgeSize) * 0.5F);
+
+        float footerTextSize = THEME_FOOTER_TEXT_SIZE * scale;
+        l.footerY = l.panelY + panelH - inset - capHeight(footerTextSize);
+        l.cardsViewportY = l.cardsY;
+        l.cardsViewportH = Math.max(1.0F, l.footerY - gap - l.cardsY);
+
+        String resetText = Lang.translate("Reset to default");
+        l.resetTextX = textXForInkRight(MsdfFonts.medium(), resetText, footerTextSize, l.contentRight);
+        float resetIconSize = THEME_RESET_ICON_SIZE * scale;
+        float resetInkW = iconInkWidth(ICON_RESET, resetIconSize);
+        float resetIconInkRight = l.resetTextX + MsdfFonts.medium().getInkLeft(resetText, footerTextSize) - THEME_RESET_ICON_GAP * scale;
+        l.resetIconCenterX = resetIconInkRight - resetInkW * 0.5F;
+        l.resetIconCenterY = l.footerY + capHeight(footerTextSize) * 0.5F;
+        l.resetX = resetIconInkRight - resetInkW;
+        l.resetY = l.resetIconCenterY - resetIconSize * 0.5F;
+        l.resetW = l.contentRight - l.resetX;
+        l.resetH = resetIconSize;
+        return l;
     }
 
     private ThemeSettingsLayout getThemeSettingsLayout(ThemeSelectorLayout parentLayout) {
         float scale = parentLayout.scale;
-        float panelW = Math.min(parentLayout.panelW - 28.0F * scale, 282.0F * scale);
-        float panelH = Math.min(parentLayout.panelH - 18.0F * scale, 190.0F * scale);
-        float panelX = parentLayout.panelX + (parentLayout.panelW - panelW) / 2.0F;
-        float panelY = parentLayout.panelY + (parentLayout.panelH - panelH) / 2.0F;
-        float closeSize = 18.0F * scale;
-        float closeX = panelX + panelW - closeSize - 10.0F * scale;
-        float closeY = panelY + 10.0F * scale;
-        float contentX = panelX + 14.0F * scale;
-        float contentRight = panelX + panelW - 14.0F * scale;
-        float trackWidth = panelW - 28.0F * scale;
-        float trackHeight = 7.0F * scale;
-        float panoramaLabelY = panelY + 36.0F * scale;
-        float panoramaTrackX = contentX;
-        float panoramaTrackY = panoramaLabelY + 16.0F * scale;
-        float fpsLabelY = panoramaTrackY + 35.0F * scale;
-        float fpsTrackX = contentX;
-        float fpsTrackY = fpsLabelY + 16.0F * scale;
-        float scaleLabelY = fpsTrackY + 35.0F * scale;
-        float scaleTrackX = contentX;
-        float scaleTrackY = scaleLabelY + 16.0F * scale;
-        return new ThemeSettingsLayout(
-                scale,
-                panelX,
-                panelY,
-                panelW,
-                panelH,
-                closeX,
-                closeY,
-                closeSize,
-                contentX,
-                contentRight,
-                trackWidth,
-                trackHeight,
-                panoramaLabelY,
-                panoramaTrackX,
-                panoramaTrackY,
-                contentRight - MsdfFonts.medium().getWidth("100%", 9.2F * scale),
-                fpsLabelY,
-                fpsTrackX,
-                fpsTrackY,
-                contentRight - MsdfFonts.medium().getWidth(MenuUiSettings.MAX_GUI_FPS_LIMIT + " FPS", 9.2F * scale),
-                scaleLabelY,
-                scaleTrackX,
-                scaleTrackY,
-                contentRight - MsdfFonts.medium().getWidth("2.5x", 9.2F * scale)
-        );
+        float gap = THEME_MODAL_GAP * scale;
+        float inset = THEME_MODAL_BORDER + gap;
+        float innerGap = THEME_SLIDER_INNER_GAP * scale;
+        float titleCap = capHeight(THEME_TITLE_TEXT_SIZE * scale);
+        float labelCap = capHeight(THEME_SLIDER_TITLE_SIZE * scale);
+        float trackHeight = THEME_SLIDER_TRACK_HEIGHT * scale;
+        float sectionStep = labelCap + innerGap + trackHeight + innerGap + capHeight(THEME_SLIDER_SUBTITLE_SIZE * scale) + gap;
+        // Height follows the content so the last subtitle keeps the same gap to the bottom border as the title has to the top.
+        float contentH = titleCap + gap + sectionStep * 3.0F - gap;
+
+        ThemeSettingsLayout l = new ThemeSettingsLayout();
+        l.scale = scale;
+        l.panelW = Math.min(parentLayout.panelW - 28.0F * scale, 282.0F * scale);
+        l.panelH = Math.min(parentLayout.panelH - 18.0F * scale, contentH + inset * 2.0F);
+        l.panelX = parentLayout.panelX + (parentLayout.panelW - l.panelW) / 2.0F;
+        l.panelY = parentLayout.panelY + (parentLayout.panelH - l.panelH) / 2.0F;
+        l.contentX = l.panelX + inset;
+        l.contentRight = l.panelX + l.panelW - inset;
+        l.trackWidth = l.contentRight - l.contentX;
+        l.trackHeight = trackHeight;
+
+        l.titleY = l.panelY + inset;
+        l.closeSize = THEME_ACTION_SIZE * scale;
+        float closeInkW = iconInkWidth(ICON_CROSS, THEME_CLOSE_ICON_SIZE * scale);
+        l.closeCenterX = l.contentRight - closeInkW * 0.5F;
+        l.closeCenterY = l.titleY + titleCap * 0.5F;
+        l.closeX = l.closeCenterX - l.closeSize * 0.5F;
+        l.closeY = l.closeCenterY - l.closeSize * 0.5F;
+
+        l.panoramaLabelY = l.titleY + titleCap + gap;
+        l.fpsLabelY = l.panoramaLabelY + sectionStep;
+        l.scaleLabelY = l.fpsLabelY + sectionStep;
+        float labelToTrack = labelCap + innerGap;
+        l.panoramaTrackX = l.contentX;
+        l.fpsTrackX = l.contentX;
+        l.scaleTrackX = l.contentX;
+        l.panoramaTrackY = l.panoramaLabelY + labelToTrack;
+        l.fpsTrackY = l.fpsLabelY + labelToTrack;
+        l.scaleTrackY = l.scaleLabelY + labelToTrack;
+        return l;
     }
 
     private void updateThemeSettingsSlider(ThemeSettingsSlider slider, ThemeSettingsLayout layout, float mouseX) {
@@ -2284,8 +2271,10 @@ public class MainMenuScreen extends TitleScreen {
         String displayText = themeSelectorSearchQuery.isEmpty() && !themeSelectorSearchFocused ? Lang.translate("Search...") : themeSelectorSearchQuery;
         float textSize = 8.7F * layout.scale;
         int textColor = scaleColorAlpha(themeSelectorSearchQuery.isEmpty() && !themeSelectorSearchFocused ? 0xFF9099AD : 0xFFE6ECFA, alpha);
-        float textX = layout.searchX + 12.0F * layout.scale;
-        float textY = MenuStyle.centerMsdfTextY(textSize, layout.searchY, layout.searchH);
+        // Side padding equals the vertical space around the cap height.
+        float pad = (layout.searchH - capHeight(textSize)) / 2.0F;
+        float textX = textXForInkLeft(MsdfFonts.medium(), displayText, textSize, layout.searchX + pad);
+        float textY = layout.searchY + pad;
 
         MsdfRenderer.renderText(
                 MsdfFonts.medium(),
@@ -2299,11 +2288,13 @@ public class MainMenuScreen extends TitleScreen {
         );
 
         if (themeSelectorSearchFocused && (System.currentTimeMillis() / 500L) % 2L == 0L) {
-            float caretX = textX + MsdfFonts.medium().getWidth(themeSelectorSearchQuery, textSize) + 1.5F * layout.scale;
+            float caretX = themeSelectorSearchQuery.isEmpty()
+                    ? layout.searchX + pad
+                    : textX + MsdfFonts.medium().getInkRight(themeSelectorSearchQuery, textSize) + 1.5F * layout.scale;
             float caretY = layout.searchY + 6.0F * layout.scale;
             float caretH = layout.searchH - 12.0F * layout.scale;
             rectangle.render(ShapeProperties.create(context.getMatrices(), caretX, caretY, Math.max(1.0F, 1.1F * layout.scale), Math.max(5.0F, caretH))
-                    .round(1.0F)
+                    .round(menuRadius(1.0F))
                     .softness(1.0F)
                     .color(scaleColorAlpha(0xFFD8E2F8, alpha))
                     .build());
@@ -2417,7 +2408,7 @@ public class MainMenuScreen extends TitleScreen {
                                 this.width,
                                 this.height
                         )
-                        .round(7.0F / 1.3F)
+                        .round(menuRadius(7.0F / 1.3F))
                         .softness(1.2F)
                         .thickness(topBarIconStyle ? 1.0F : 1.8F)
                         .outlineColor(outline)
@@ -2431,7 +2422,7 @@ public class MainMenuScreen extends TitleScreen {
                                     this.width,
                                     this.height
                             )
-                            .round(7.0F / 1.3F)
+                            .round(menuRadius(7.0F / 1.3F))
                             .softness(1.0F)
                             .color(hoverOverlay)
                             .build());
@@ -2451,23 +2442,21 @@ public class MainMenuScreen extends TitleScreen {
             boolean compactIconButton = label.isEmpty();
             float size = ((compactIconButton ? 8.6F : 10.6F) / 1.3F) * contentScale;
             int textColor = lerpArgb(0xFFB8BCC8, 0xFFDCE1EC, hoverAnim);
-            float textX = MenuStyle.centerMsdfTextX(MsdfFonts.bold(), label, size, this.getX(), this.width);
+            // Icon and label are centred as one group by their visible ink, both on the button's centre line.
+            float centerX = this.getX() + this.width / 2.0F;
+            float centerY = this.getY() + this.height / 2.0F;
+            boolean hasLabel = !label.isEmpty();
+            float textX = textXForInkCenter(MsdfFonts.bold(), label, size, centerX);
             if (leftIcon != null) {
-                float iconSize = (compactIconButton ? 8.0F : 10.0F) * this.iconScaleMultiplier * contentScale;
-                float iconW = iconSize * getIconAspectRatio(leftIcon);
-                float iconH = iconSize;
-                boolean hasLabel = !label.isEmpty();
+                float iconH = (compactIconButton ? 8.0F : 10.0F) * this.iconScaleMultiplier * contentScale;
+                float iconInkW = iconInkWidth(leftIcon, iconH);
                 float gap = hasLabel ? 6.0F * contentScale : 0.0F;
-                float totalW = iconW + gap + (hasLabel ? MsdfFonts.bold().getWidth(label, size) : 0.0F);
-                float left = this.getX() + (this.width - totalW) / 2.0F;
-                if (hasLabel) {
-                    renderMenuIcon(context, leftIcon, left, this.getY() + (this.height - iconH) / 2.0F, iconW, iconH);
-                } else {
-                    renderCenteredIconOnlyButtonIcon(context, leftIcon, this.getX(), this.getY(), this.width, this.height, iconW, iconH);
-                }
-                textX = left + iconW + gap;
+                float totalW = iconInkW + gap + (hasLabel ? MsdfFonts.bold().getInkWidth(label, size) : 0.0F);
+                float left = centerX - totalW / 2.0F;
+                renderIconInkCentered(context, leftIcon, left + iconInkW / 2.0F, centerY, iconH, ICON_TINT_COLOR);
+                textX = textXForInkLeft(MsdfFonts.bold(), label, size, left + iconInkW + gap);
             }
-            if (!label.isEmpty()) {
+            if (hasLabel) {
                 MsdfRenderer.renderText(
                         MsdfFonts.bold(),
                         label,
@@ -2475,7 +2464,7 @@ public class MainMenuScreen extends TitleScreen {
                         textColor,
                         context.getMatrices().peek().getPositionMatrix(),
                         textX,
-                        MenuStyle.centerMsdfTextY(size, this.getY(), this.height) + 0.4F,
+                        textYForCapCenter(size, centerY),
                         0.0F
                 );
             }
@@ -2522,182 +2511,76 @@ public class MainMenuScreen extends TitleScreen {
     private record FittedIconRect(float x, float y, float width, float height) {
     }
 
-    private static class ThemeSelectorLayout {
-        private final float scale;
-        private final float overlayWidth;
-        private final float overlayHeight;
-        private final float panelX;
-        private final float panelY;
-        private final float panelW;
-        private final float panelH;
-        private final float settingsX;
-        private final float settingsY;
-        private final float settingsSize;
-        private final float closeX;
-        private final float closeY;
-        private final float closeSize;
-        private final float searchX;
-        private final float searchY;
-        private final float searchW;
-        private final float searchH;
-        private final float sectionLabelY;
-        private final float cardsX;
-        private final float cardsY;
-        private final float cardsGap;
-        private final float cardPreviewW;
-        private final float cardPreviewH;
-        private final float cardTotalHeight;
-        private final float cardsViewportY;
-        private final float cardsViewportH;
-        private final float footerY;
-        private final float resetX;
-        private final float resetY;
-        private final float resetW;
-        private final float resetH;
-
-        private ThemeSelectorLayout(
-                float scale,
-                float overlayWidth,
-                float overlayHeight,
-                float panelX,
-                float panelY,
-                float panelW,
-                float panelH,
-                float settingsX,
-                float settingsY,
-                float settingsSize,
-                float closeX,
-                float closeY,
-                float closeSize,
-                float searchX,
-                float searchY,
-                float searchW,
-                float searchH,
-                float sectionLabelY,
-                float cardsX,
-                float cardsY,
-                float cardsGap,
-                float cardPreviewW,
-                float cardPreviewH,
-                float cardTotalHeight,
-                float cardsViewportH,
-                float footerY,
-                float resetX,
-                float resetY,
-                float resetW,
-                float resetH
-        ) {
-            this.scale = scale;
-            this.overlayWidth = overlayWidth;
-            this.overlayHeight = overlayHeight;
-            this.panelX = panelX;
-            this.panelY = panelY;
-            this.panelW = panelW;
-            this.panelH = panelH;
-            this.settingsX = settingsX;
-            this.settingsY = settingsY;
-            this.settingsSize = settingsSize;
-            this.closeX = closeX;
-            this.closeY = closeY;
-            this.closeSize = closeSize;
-            this.searchX = searchX;
-            this.searchY = searchY;
-            this.searchW = searchW;
-            this.searchH = searchH;
-            this.sectionLabelY = sectionLabelY;
-            this.cardsX = cardsX;
-            this.cardsY = cardsY;
-            this.cardsGap = cardsGap;
-            this.cardPreviewW = cardPreviewW;
-            this.cardPreviewH = cardPreviewH;
-            this.cardTotalHeight = cardTotalHeight;
-            this.cardsViewportY = cardsY;
-            this.cardsViewportH = cardsViewportH;
-            this.footerY = footerY;
-            this.resetX = resetX;
-            this.resetY = resetY;
-            this.resetW = resetW;
-            this.resetH = resetH;
-        }
+    /** Filled once per frame by getThemeSelectorLayout. Text y values are cap tops. */
+    private static final class ThemeSelectorLayout {
+        private float scale;
+        private float gap;
+        private float panelX;
+        private float panelY;
+        private float panelW;
+        private float panelH;
+        private float contentX;
+        private float contentRight;
+        private float titleY;
+        private float actionSize;
+        private float actionCenterY;
+        private float settingsCenterX;
+        private float closeCenterX;
+        private float settingsX;
+        private float settingsY;
+        private float settingsSize;
+        private float closeX;
+        private float closeY;
+        private float closeSize;
+        private float searchX;
+        private float searchY;
+        private float searchW;
+        private float searchH;
+        private float sectionLabelY;
+        private float sectionBaselineY;
+        private float cardsY;
+        private float cardsGap;
+        private float cardPreviewW;
+        private float cardPreviewH;
+        private float cardTotalHeight;
+        private float cardContentHeight;
+        private float cardsViewportY;
+        private float cardsViewportH;
+        private float footerY;
+        private float resetTextX;
+        private float resetIconCenterX;
+        private float resetIconCenterY;
+        private float resetX;
+        private float resetY;
+        private float resetW;
+        private float resetH;
     }
 
-    private static class ThemeSettingsLayout {
-        private final float scale;
-        private final float panelX;
-        private final float panelY;
-        private final float panelW;
-        private final float panelH;
-        private final float closeX;
-        private final float closeY;
-        private final float closeSize;
-        private final float contentX;
-        private final float contentRight;
-        private final float trackWidth;
-        private final float trackHeight;
-        private final float panoramaLabelY;
-        private final float panoramaTrackX;
-        private final float panoramaTrackY;
-        private final float panoramaValueX;
-        private final float fpsLabelY;
-        private final float fpsTrackX;
-        private final float fpsTrackY;
-        private final float fpsValueX;
-        private final float scaleLabelY;
-        private final float scaleTrackX;
-        private final float scaleTrackY;
-        private final float scaleValueX;
-
-        private ThemeSettingsLayout(
-                float scale,
-                float panelX,
-                float panelY,
-                float panelW,
-                float panelH,
-                float closeX,
-                float closeY,
-                float closeSize,
-                float contentX,
-                float contentRight,
-                float trackWidth,
-                float trackHeight,
-                float panoramaLabelY,
-                float panoramaTrackX,
-                float panoramaTrackY,
-                float panoramaValueX,
-                float fpsLabelY,
-                float fpsTrackX,
-                float fpsTrackY,
-                float fpsValueX,
-                float scaleLabelY,
-                float scaleTrackX,
-                float scaleTrackY,
-                float scaleValueX
-        ) {
-            this.scale = scale;
-            this.panelX = panelX;
-            this.panelY = panelY;
-            this.panelW = panelW;
-            this.panelH = panelH;
-            this.closeX = closeX;
-            this.closeY = closeY;
-            this.closeSize = closeSize;
-            this.contentX = contentX;
-            this.contentRight = contentRight;
-            this.trackWidth = trackWidth;
-            this.trackHeight = trackHeight;
-            this.panoramaLabelY = panoramaLabelY;
-            this.panoramaTrackX = panoramaTrackX;
-            this.panoramaTrackY = panoramaTrackY;
-            this.panoramaValueX = panoramaValueX;
-            this.fpsLabelY = fpsLabelY;
-            this.fpsTrackX = fpsTrackX;
-            this.fpsTrackY = fpsTrackY;
-            this.fpsValueX = fpsValueX;
-            this.scaleLabelY = scaleLabelY;
-            this.scaleTrackX = scaleTrackX;
-            this.scaleTrackY = scaleTrackY;
-            this.scaleValueX = scaleValueX;
-        }
+    private static final class ThemeSettingsLayout {
+        private float scale;
+        private float panelX;
+        private float panelY;
+        private float panelW;
+        private float panelH;
+        private float titleY;
+        private float closeCenterX;
+        private float closeCenterY;
+        private float closeX;
+        private float closeY;
+        private float closeSize;
+        private float contentX;
+        private float contentRight;
+        private float trackWidth;
+        private float trackHeight;
+        private float panoramaLabelY;
+        private float panoramaTrackX;
+        private float panoramaTrackY;
+        private float fpsLabelY;
+        private float fpsTrackX;
+        private float fpsTrackY;
+        private float scaleLabelY;
+        private float scaleTrackX;
+        private float scaleTrackY;
     }
 
     private enum ThemeSettingsSlider {

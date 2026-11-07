@@ -1186,7 +1186,7 @@ public class Blur implements Shape {
         // to the HUD FBO by MinecraftClientFramebufferMixin. We need the REAL
         // main framebuffer here to read the world content for the blur backdrop.
         Framebuffer framebuffer = HudBuffer.activeCaptureTarget >= 0
-                ? vorga.phazeclient.api.system.hud.BatchedHudBuffer.INSTANCE.getRealMainFramebuffer()
+                ? HudBuffer.getRealMainFramebuffer()
                 : client.getFramebuffer();
         if (framebuffer == null) {
             framebuffer = client.getFramebuffer();

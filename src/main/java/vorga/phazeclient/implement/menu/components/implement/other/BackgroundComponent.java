@@ -31,6 +31,7 @@ import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.MenuLayout;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
+import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabel;
 import vorga.phazeclient.implement.config.ConfigManager;
 import vorga.phazeclient.core.Main;
 
@@ -63,6 +64,7 @@ public class BackgroundComponent extends AbstractComponent {
     private final Animation editHudHoverAnimation = new DecelerateAnimation().setMs(180).setValue(1);
     private final Map<String, Animation> configHoverAnimations = new HashMap<>();
     private final Map<String, Animation> configDeleteHoverAnimations = new HashMap<>();
+    private final Map<String, SettingLabel> configLabels = new HashMap<>();
     private final Map<String, Animation> topTabHoverAnimations = new HashMap<>();
     private SearchComponent searchComponent;
 
@@ -335,15 +337,19 @@ public class BackgroundComponent extends AbstractComponent {
             rectangle.render(ShapeProperties.create(matrix, rowX, rowY, rowWidth, CONFIG_ROW_HEIGHT)
                     .round(1.5F).thickness(2.0F).outlineColor(applyGlobalAlpha(outlineColor)).color(applyGlobalAlpha(rowColor)).build());
 
-            MsdfRenderer.renderText(
-                    MsdfFonts.bold(),
+            float labelRight = deleteSectionX(rowX, rowWidth) + (CONFIG_DELETE_WIDTH - CONFIG_DELETE_ICON_SIZE) / 2.0F - 3.0F;
+            SettingLabel configLabel = configLabels.computeIfAbsent(config, ignored -> new SettingLabel());
+            configLabel.updateHover(rowHovered && mouseY >= viewportY && mouseY < viewportY + viewportHeight);
+            configLabel.renderMsdf(
+                    matrix,
                     config,
                     CONFIG_TEXT_SIZE,
-                    applyGlobalAlpha(MenuStyle.TEXT_PRIMARY),
-                    context.getMatrices().peek().getPositionMatrix(),
                     rowX + CONFIG_TEXT_PADDING,
                     MenuStyle.centerMsdfTextY(CONFIG_TEXT_SIZE, rowY, CONFIG_ROW_HEIGHT),
-                    0.0F
+                    labelRight,
+                    rowY,
+                    CONFIG_ROW_HEIGHT,
+                    applyGlobalAlpha(MenuStyle.TEXT_PRIMARY)
             );
 
             // Always show the delete icon - even on "default" and on

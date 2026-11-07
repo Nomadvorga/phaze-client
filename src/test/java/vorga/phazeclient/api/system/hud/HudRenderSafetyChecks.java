@@ -9,12 +9,14 @@ import net.minecraft.client.render.VertexFormats;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 /** Offline exception/state-boundary checks; real framebuffer checks live in RenderSafetyClientTest. */
 public final class HudRenderSafetyChecks {
     private static int checks;
     private static final String HUD = "vorga/phazeclient/api/system/hud/";
     private static final String SHAPE = "vorga/phazeclient/api/system/shape/";
+    private static final String RENDERER = "vorga/phazeclient/implement/hud/CustomHudRenderer";
 
     public static void main(String[] args) throws Exception {
         passModes();
@@ -63,11 +65,14 @@ public final class HudRenderSafetyChecks {
 
     private static void boundaries() throws Exception {
         ClassNode mixin = read("vorga/phazeclient/mixins/InGameHudMixin");
-        MethodNode fallback = method(mixin, "renderCustomHudFallback");
+        check(calls(method(mixin, "renderCustomHudFallback")).stream().anyMatch(c -> c.owner.equals(RENDERER) && c.name.equals("renderFrame")),
+                "vanilla TAIL hook delegates to the HUD frame");
+        ClassNode renderer = read(RENDERER);
+        MethodNode fallback = method(renderer, "renderFrame");
         check(index(fallback, "draw") < index(fallback, "capture"), "flush vanilla before HUD state boundary");
         check(hasFinally(fallback), "fallback always unwinds state and cached blur flags");
         check(calls(fallback).stream().anyMatch(c -> c.name.equals("endCachedFrame")), "cached blur frame ends even on render failure");
-        check(mixin.fields.stream().noneMatch(f -> List.of("inBatchPass", "inGradientPass", "batchIncludesBlur", "inLogicOnlyPass").contains(f.name)), "no unscoped global pass booleans");
+        check(Stream.of(mixin, renderer).flatMap(c -> c.fields.stream()).noneMatch(f -> List.of("inBatchPass", "inGradientPass", "batchIncludesBlur", "inLogicOnlyPass").contains(f.name)), "no unscoped global pass booleans");
         MethodNode state = method(read(HUD + "Render2DState"), "join");
         check(calls(state).stream().noneMatch(c -> c.name.startsWith("glGet")), "joining a managed pass never queries GL");
         for (String name : List.of(SHAPE + "implement/Rectangle", SHAPE + "batched/BatchedRectangle")) {

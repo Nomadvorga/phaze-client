@@ -4,6 +4,10 @@ package vorga.phazeclient.api.system.font.msdf;
 public final class MsdfTextMetrics {
     public static final float DEFAULT_THICKNESS = 0.05F;
     public static final float DEFAULT_GLYPH_SPACING = DEFAULT_THICKNESS * 0.5F;
+    /** The renderer starts the pen this far left of the requested x. */
+    public static final float PEN_OFFSET_X = 0.75F;
+    /** Baseline sits this many em below the requested y, which puts the cap top at y. */
+    public static final float BASELINE_EM = 0.7F;
 
     private MsdfTextMetrics() {
     }

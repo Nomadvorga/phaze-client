@@ -8,24 +8,35 @@ import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.resource.InputSupplier;
 import net.minecraft.resource.ResourcePack;
 import net.minecraft.resource.ResourcePackProfile;
+import net.minecraft.resource.ResourcePackSource;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
+import vorga.phazeclient.api.system.hud.BatchedHudBuffer;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 public class PackDisplayHud extends RectHudModule {
     private static final PackDisplayHud INSTANCE = new PackDisplayHud();
     public static final int ICON_SIZE = 28;
+    private static final Identifier UNKNOWN_PACK_ICON = Identifier.ofVanilla("textures/misc/unknown_pack.png");
+    private static final int UNKNOWN_PACK_ICON_SIZE = 128;
+    /** Larger pack.png files are downscaled before upload so a huge icon cannot pin megabytes of VRAM. */
+    private static final int MAX_ICON_SIZE = 256;
+    private static final Identifier PACK_ICON_TEXTURE = Identifier.of("phaze", "dynamic/pack_display_icon");
+    private static final ResourcePackSource FABRIC_MOD_SOURCE = resolveFabricModSource();
     private static final float TEXT_PADDING = 4.0F;
 
     private String cachedPackName = "Default";
@@ -44,7 +55,12 @@ public class PackDisplayHud extends RectHudModule {
     private int cachedIconHeight = 16;
     private int cachedDrawIconWidth = ICON_SIZE;
     private int cachedDrawIconHeight = ICON_SIZE;
-    private long lastCheckTime = 0;
+    private Collection<ResourcePackProfile> observedProfiles;
+    private boolean observedFirst;
+    private boolean observedIgnoreServer;
+    private boolean textStale = true;
+    private boolean iconStale = true;
+    private int iconGeneration;
     public final BooleanSetting displayPackIcon = new BooleanSetting("Показывать иконку пака", "Показывать иконку resource pack слева").setValue(true);
     public final BooleanSetting displayDescription = new BooleanSetting("Показывать описание", "Показывать описание resource pack").setValue(true);
     public final BooleanSetting ignoreServerPack = new BooleanSetting("Игнорировать серверный пак", "Не учитывать серверный resource pack").setValue(false);
@@ -71,26 +87,34 @@ public class PackDisplayHud extends RectHudModule {
         return "item_scroller.png";
     }
 
+    /**
+     * ResourcePackManager replaces its enabled list on every change, so an identity
+     * check detects a new pack on the next frame without rescanning profiles.
+     */
     private void updatePackName(MinecraftClient client) {
-        long now = System.currentTimeMillis();
-        if (now - lastCheckTime < 2000) return;
-        lastCheckTime = now;
-
-        if (client.getResourcePackManager() == null) return;
+        if (client == null || client.getResourcePackManager() == null) return;
         Collection<ResourcePackProfile> profiles = client.getResourcePackManager().getEnabledProfiles();
+        boolean first = "Первый".equals(packOrder.getSelected());
+        boolean ignoreServer = ignoreServerPack.isValue();
+        if (profiles == observedProfiles && first == observedFirst && ignoreServer == observedIgnoreServer) return;
+        observedProfiles = profiles;
+        observedFirst = first;
+        observedIgnoreServer = ignoreServer;
+
         String topCustomPack = "Default";
         String topDescription = "";
         Text topNameText = Text.literal("Default");
         Text topDescriptionText = Text.empty();
         ResourcePackProfile selectedProfile = null;
         ResourcePackProfile defaultProfile = null;
-        boolean first = "Первый".equals(packOrder.getSelected());
         for (ResourcePackProfile profile : profiles) {
             String name = profile.getId();
             if (name.equalsIgnoreCase("vanilla")) {
                 defaultProfile = profile;
             } else {
-                if (ignoreServerPack.isValue() && name.toLowerCase().contains("server")) continue;
+                if (isModPack(profile)) continue;
+                if (ignoreServer && (profile.getSource() == ResourcePackSource.SERVER
+                        || name.toLowerCase(Locale.ROOT).contains("server"))) continue;
                 topCustomPack = profile.getDisplayName().getString();
                 topDescription = profile.getDescription().getString();
                 topNameText = profile.getDisplayName();
@@ -101,9 +125,14 @@ public class PackDisplayHud extends RectHudModule {
         }
         if (selectedProfile == null) selectedProfile = defaultProfile;
         String profileId = selectedProfile == null ? null : selectedProfile.getId();
-        if (!cachedPackName.equals(topCustomPack) || !Objects.equals(cachedProfileId, profileId) || cachedIcon == null) {
-            cachedPackName = topCustomPack;
+        if (iconStale || !Objects.equals(cachedProfileId, profileId)) {
             cachedProfileId = profileId;
+            iconStale = false;
+            requestIcon(client, selectedProfile);
+        }
+        if (textStale || !cachedPackName.equals(topCustomPack) || !cachedDescription.equals(topDescription)) {
+            textStale = false;
+            cachedPackName = topCustomPack;
             cachedText = cachedPackName;
             cachedDescription = topDescription;
             cachedTextWithDescription = cachedText + "\n" + cachedDescription;
@@ -115,9 +144,31 @@ public class PackDisplayHud extends RectHudModule {
             for (Text line : cachedDescriptionLines) {
                 cachedDescriptionWidth = Math.max(cachedDescriptionWidth, client.textRenderer.getWidth(line));
             }
-            releaseOwnedIcon(client);
-            cachedIcon = loadIcon(client, selectedProfile);
+            invalidateHud();
         }
+    }
+
+    /** Built-in packs that Fabric mods contribute ("Fabric Mods", "Fabric Mod "X"") are not user resource packs. */
+    private static boolean isModPack(ResourcePackProfile profile) {
+        if ("fabric".equals(profile.getId())) return true;
+        ResourcePackSource source = profile.getSource();
+        if (source == null) return false;
+        return source == FABRIC_MOD_SOURCE || source.getClass().getName().startsWith("net.fabricmc.");
+    }
+
+    private static ResourcePackSource resolveFabricModSource() {
+        try {
+            Object source = Class.forName("net.fabricmc.fabric.impl.resource.loader.ModResourcePackCreator")
+                    .getField("RESOURCE_PACK_SOURCE").get(null);
+            return source instanceof ResourcePackSource packSource ? packSource : null;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return null;
+        }
+    }
+
+    private void invalidateHud() {
+        getHudBuffer().invalidate();
+        BatchedHudBuffer.INSTANCE.invalidate();
     }
 
     public String getDisplayText(MinecraftClient client) {
@@ -152,8 +203,9 @@ public class PackDisplayHud extends RectHudModule {
         return cachedDescriptionLines;
     }
 
+    /** The icon slot is reserved while the first icon decodes, so the panel never changes width when it arrives. */
     public float getTextStartX() {
-        return (cachedIcon != null && displayPackIcon.isValue() ? ICON_SIZE : 0) + TEXT_PADDING;
+        return (displayPackIcon.isValue() ? ICON_SIZE : 0) + TEXT_PADDING;
     }
 
     /** Name and description share the same left edge, with padding beside the icon. */
@@ -193,12 +245,12 @@ public class PackDisplayHud extends RectHudModule {
         cachedDrawIconHeight = Math.max(1, Math.round((float) ICON_SIZE * cachedIconHeight / longestSide));
     }
 
+    /** The current icon stays on screen until its replacement is decoded, so a reload never blanks the widget. */
     public void onResourcesReloaded(MinecraftClient client) {
-        releaseOwnedIcon(client);
-        cachedIcon = null;
-        cachedProfileId = null;
-        lastCheckTime = 0;
-        getHudBuffer().invalidate();
+        observedProfiles = null;
+        textStale = true;
+        iconStale = true;
+        invalidateHud();
     }
 
     private void releaseOwnedIcon(MinecraftClient client) {
@@ -208,40 +260,76 @@ public class PackDisplayHud extends RectHudModule {
         }
     }
 
-    private Identifier loadIcon(MinecraftClient client, ResourcePackProfile profile) {
-        if (profile == null) return fallbackIcon();
-        if (profile.getId().equalsIgnoreCase("vanilla")) {
-            return fallbackIcon();
+    /**
+     * Zip access and PNG decoding run on the IO worker; only the GPU upload returns to the
+     * render thread. A newer request bumps the generation, so a stale result is closed unused.
+     */
+    private void requestIcon(MinecraftClient client, ResourcePackProfile profile) {
+        int generation = ++iconGeneration;
+        if (profile == null) {
+            applyIcon(client, generation, null);
+            return;
         }
-        ResourcePack pack = null;
-        try {
-            pack = profile.createResourcePack();
+        CompletableFuture.supplyAsync(() -> loadIcon(profile), Util.getIoWorkerExecutor())
+                .thenAcceptAsync(image -> applyIcon(client, generation, image), client);
+    }
+
+    private void applyIcon(MinecraftClient client, int generation, NativeImage image) {
+        if (generation != iconGeneration) {
+            if (image != null) image.close();
+            return;
+        }
+        if (image == null) {
+            releaseOwnedIcon(client);
+            cachedIcon = fallbackIcon();
+        } else {
+            setIconSize(image.getWidth(), image.getHeight());
+            client.getTextureManager().registerTexture(PACK_ICON_TEXTURE, new NativeImageBackedTexture(image));
+            ownedIcon = PACK_ICON_TEXTURE;
+            cachedIcon = PACK_ICON_TEXTURE;
+        }
+        invalidateHud();
+    }
+
+    /** Same icon resolution as the vanilla pack screen: the pack's own pack.png, else null for the unknown-pack icon. */
+    private static NativeImage loadIcon(ResourcePackProfile profile) {
+        try (ResourcePack pack = profile.createResourcePack()) {
             InputSupplier<InputStream> supplier = pack.openRoot("pack.png");
-            if (supplier == null) return fallbackIcon();
+            if (supplier == null) return null;
+            NativeImage image;
             try (InputStream stream = supplier.get()) {
-                NativeImage image = NativeImage.read(stream);
-                if (isMissingTextureImage(image)) {
-                    image.close();
-                    return fallbackIcon();
-                }
-                setIconSize(image.getWidth(), image.getHeight());
-                NativeImageBackedTexture texture = new NativeImageBackedTexture(image);
-                Identifier id = Identifier.of("phaze", "dynamic/pack_display_" + Math.abs(profile.getId().hashCode())
-                        + "_" + Math.abs(cachedPackName.hashCode()));
-                client.getTextureManager().registerTexture(id, texture);
-                ownedIcon = id;
-                return id;
+                image = NativeImage.read(NativeImage.Format.RGBA, stream);
             }
+            if (isMissingTextureImage(image)) {
+                image.close();
+                return null;
+            }
+            return fitIcon(image);
         } catch (IOException | RuntimeException ignored) {
-            return fallbackIcon();
+            return null;
+        }
+    }
+
+    private static NativeImage fitIcon(NativeImage image) {
+        int longestSide = Math.max(image.getWidth(), image.getHeight());
+        if (longestSide <= MAX_ICON_SIZE) return image;
+        int width = Math.max(1, Math.round((float) image.getWidth() * MAX_ICON_SIZE / longestSide));
+        int height = Math.max(1, Math.round((float) image.getHeight() * MAX_ICON_SIZE / longestSide));
+        NativeImage scaled = new NativeImage(image.getFormat(), width, height, false);
+        try {
+            image.resizeSubRectTo(0, 0, image.getWidth(), image.getHeight(), scaled);
+            return scaled;
+        } catch (RuntimeException exception) {
+            scaled.close();
+            throw exception;
         } finally {
-            if (pack != null) pack.close();
+            image.close();
         }
     }
 
     private Identifier fallbackIcon() {
-        setIconSize(16, 16);
-        return Identifier.of("minecraft", "textures/item/grass_block.png");
+        setIconSize(UNKNOWN_PACK_ICON_SIZE, UNKNOWN_PACK_ICON_SIZE);
+        return UNKNOWN_PACK_ICON;
     }
 
     private static boolean isMissingTextureImage(NativeImage image) {

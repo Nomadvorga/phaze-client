@@ -4,6 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Identifier;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.implement.config.ConfigManager;
+import vorga.phazeclient.implement.features.modules.client.Theme;
 
 public final class MenuUiSettings {
     public static final int PANORAMA_SPEED_SCALE_VERSION = 3;
@@ -67,6 +68,7 @@ public final class MenuUiSettings {
 
     public void setGuiScale(float guiScale) {
         this.guiScale = quantizeGuiScale(guiScale);
+        Theme.getInstance().syncGuiScale(this.guiScale);
         ConfigManager.getInstance().markDirty();
     }
 
@@ -91,6 +93,7 @@ public final class MenuUiSettings {
         setPanoramaSpeedInternal(panoramaSpeed, false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
         this.guiScale = quantizeGuiScale(guiScale);
+        Theme.getInstance().syncGuiScale(this.guiScale);
         setCustomMainMenuEnabledInternal(customMainMenuEnabled, false);
     }
 

@@ -110,17 +110,23 @@ sourceSets.test.java.srcDir('scripts')
 tasks.named('processTestResources') {
     def blurOnly = project.hasProperty('hudBlurOnly')
     def textureFilterOnly = project.hasProperty('textureFilterOnly')
+    def hudEditorOnly = project.hasProperty('hudEditorOnly')
+    def bossBarOnly = project.hasProperty('bossBarOnly')
     inputs.property 'hudBlurOnly', blurOnly
     inputs.property 'textureFilterOnly', textureFilterOnly
-    if (blurOnly || textureFilterOnly) {
+    inputs.property 'hudEditorOnly', hudEditorOnly
+    inputs.property 'bossBarOnly', bossBarOnly
+    if (blurOnly || textureFilterOnly || hudEditorOnly || bossBarOnly) {
+        def selected = hudEditorOnly
+                ? ['HudEditorClientTest', 'HudCachedReplayClientTest', 'RenderSafetyClientTest']
+                : bossBarOnly ? ['BossBarClientTest']
+                : textureFilterOnly ? ['TextureFilteringClientTest', 'LoadingOverlayClientTest', 'RenderSafetyClientTest']
+                : ['HudCachedReplayClientTest', 'RenderSafetyClientTest', 'HudBlurClientTest']
         filesMatching('fabric.mod.json') {
             filter { String line ->
                 if (line.contains('"vorga.')) {
-                    def selected = textureFilterOnly
-                            ? ['TextureFilteringClientTest', 'LoadingOverlayClientTest', 'RenderSafetyClientTest']
-                            : ['HudBlurClientTest', 'RenderSafetyClientTest']
                     if (!selected.any { line.contains(it) }) return null
-                    if (textureFilterOnly && line.contains('RenderSafetyClientTest')) return line.replaceFirst(/,\s*$/, '')
+                    if (line.contains(selected.last())) return line.replaceFirst(/,\s*$/, '')
                 }
                 return line
             }
@@ -166,6 +172,7 @@ tasks.register('verifyMenuLocalization', JavaExec) {
     verifyConfigPersistence: 'vorga.phazeclient.implement.config.ConfigPersistenceChecks',
     verifyHudRenderSafety: 'vorga.phazeclient.api.system.hud.HudRenderSafetyChecks',
     verifyHudBlurOptimization: 'vorga.phazeclient.api.system.hud.HudBlurOptimizationChecks',
+    verifyHudEditorCache: 'vorga.phazeclient.api.system.hud.HudEditorCacheChecks',
     verifyHotbarPerformance: 'vorga.phazeclient.api.system.hud.HotbarPerformanceChecks',
     verifyHitRangeGeometry: 'vorga.phazeclient.implement.hitrange.HitRangeGeometryChecks'
 ].each { taskName, testMain ->
@@ -246,6 +253,20 @@ loom {
             client()
             source sourceSets.test
             runDir 'build/texture-filter-client-test'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phaze_preview_tests'
+        }
+        hudEditorSmoke {
+            client()
+            source sourceSets.test
+            runDir 'build/hud-editor-client-test'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phaze_preview_tests'
+        }
+        bossBarSmoke {
+            client()
+            source sourceSets.test
+            runDir 'build/boss-bar-client-test'
             vmArg '-Dfabric.client.gametest'
             vmArg '-Dfabric.client.gametest.modid=phaze_preview_tests'
         }

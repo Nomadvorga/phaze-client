@@ -78,13 +78,17 @@ public final class HitRangeCircleRenderer {
      * The renderer only walks the cached angle list
      * and lays down vertices at {@code (dx, dy, dz)}.
      */
-    public static void drawCircle(MatrixStack matrices, PlayerEntityRenderState state) {
-        drawCircle(matrices, state.x, state.y, state.z, state.id, state.name, state.sneaking);
+    public static void drawCircle(MatrixStack matrices, PlayerEntityRenderState state, float modelOffsetY) {
+        drawCircle(matrices, state.x, state.y, state.z, state.id, state.name, modelOffsetY);
     }
 
-    /** Self rendering doesn't need to rebuild vanilla's full player/item/armor render state. */
+    /**
+     * {@code modelOffsetY} is the renderer position offset already baked into {@code matrices}
+     * (vanilla lowers a sneaking player's model); it is cancelled so the ring stays at the hitbox feet.
+     * Self rendering doesn't need to rebuild vanilla's full player/item/armor render state.
+     */
     public static void drawCircle(MatrixStack matrices, double x, double y, double z,
-                                  int id, String name, boolean sneaking) {
+                                  int id, String name, float modelOffsetY) {
         if (!WorldOverlayRenderer.isRecording()) return;
         HitRange config = HitRange.getInstance();
         ClientPlayerEntity player = MinecraftClient.getInstance().player;
@@ -105,10 +109,7 @@ public final class HitRangeCircleRenderer {
             color = config.inRangeColor.getColor();
         }
 
-        // Sneaking lifts the visual model by 1/8 block; mirror that here
-        // so the ring stays anchored to the visible feet, not the
-        // hitbox feet, when the target is sneaking.
-        float dy = (sneaking ? 0.125f : 0.0f) + config.height.getValue();
+        float dy = config.height.getValue() - modelOffsetY;
 
         HitRange.Mode mode = config.mode();
         switch (mode) {

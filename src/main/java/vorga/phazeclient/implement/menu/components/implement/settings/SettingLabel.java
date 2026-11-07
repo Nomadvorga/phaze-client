@@ -18,13 +18,26 @@ import vorga.phazeclient.implement.menu.font.MsdfGuiFontRenderer;
  * No repeated text draws, per-label texture or offscreen framebuffer is needed.
  */
 public final class SettingLabel {
+    /** Screens that clip outside {@link ScissorManager} must intersect with their own active clip. */
+    public interface Clip {
+        void push(Matrix4f matrix, float x, float y, float width, float height);
+
+        void pop();
+    }
+
     private final SettingLabelState state = new SettingLabelState();
     private String source;
     private String line = "";
     private float animatedTextInset;
+    private Clip clip;
 
     public void setAnimatedTextInset(float inset) {
         animatedTextInset = inset;
+    }
+
+    public SettingLabel clip(Clip clip) {
+        this.clip = clip;
+        return this;
     }
 
     public String singleLine(String text) {
@@ -76,12 +89,14 @@ public final class SettingLabel {
         float fade = state.fadeWidth();
         float leftStrength = Math.max(0, Math.min(1, offset / fade));
         float rightStrength = Math.max(0, Math.min(1, (state.getOverflow() - offset) / fade));
-        ScissorManager scissor = Main.getInstance().getScissorManager();
+        Clip activeClip = clip;
+        ScissorManager scissor = activeClip == null ? Main.getInstance().getScissorManager() : null;
         // MsdfRenderer's emergency vanilla fallback queues entity vertices.
         // Drain any earlier fallback while the parent clip is still active.
         if (MsdfRenderer.isUsingFallback()) flushFallback();
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        scissor.push(matrix, textX, top, width, height);
+        if (activeClip != null) activeClip.push(matrix, textX, top, width, height);
+        else scissor.push(matrix, textX, top, width, height);
         try {
             float scale = Math.abs(matrix.m00());
             float left = matrix.m00() * textX + matrix.m30();
@@ -89,7 +104,8 @@ public final class SettingLabel {
                     left, left + width * scale, fade * scale, leftStrength, rightStrength);
             if (MsdfRenderer.isUsingFallback()) flushFallback();
         } finally {
-            scissor.pop();
+            if (activeClip != null) activeClip.pop();
+            else scissor.pop();
         }
     }
 

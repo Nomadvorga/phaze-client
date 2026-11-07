@@ -181,7 +181,9 @@ public abstract class LivingEntityRendererMixin<
             return;
         }
 
-        HitRangeCircleRenderer.drawCircle(matrices, playerState);
+        @SuppressWarnings("unchecked")
+        LivingEntityRenderer<T, S, M> renderer = (LivingEntityRenderer<T, S, M>) (Object) this;
+        HitRangeCircleRenderer.drawCircle(matrices, playerState, (float) renderer.getPositionOffset(state).y);
     }
 
     /**

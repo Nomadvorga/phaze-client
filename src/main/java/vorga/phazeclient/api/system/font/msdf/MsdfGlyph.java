@@ -52,4 +52,9 @@ public final class MsdfGlyph {
     public float getWidth(float size) {
         return this.advance * size;
     }
+
+    /** Width of the drawn quad in em, including the atlas distance-field padding on both sides. */
+    float getPlaneWidth() {
+        return this.width;
+    }
 }

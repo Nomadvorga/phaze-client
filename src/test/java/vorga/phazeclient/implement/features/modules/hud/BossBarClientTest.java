@@ -9,7 +9,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.ClientBossBar;
-import net.minecraft.client.gui.hud.InGameHud;
+import vorga.phazeclient.implement.hud.CustomHudRenderer;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.world.WorldCreator;
@@ -880,7 +880,7 @@ public final class BossBarClientTest implements FabricClientGameTest {
     }
 
     private static boolean interaction(String field) {
-        return ((boolean[]) BossBarProbe.field(InGameHud.class, field, null))[HUD_INDEX];
+        return ((boolean[]) BossBarProbe.field(CustomHudRenderer.class, field, null))[HUD_INDEX];
     }
 
     private static AbstractSettingComponent row(Setting setting) {

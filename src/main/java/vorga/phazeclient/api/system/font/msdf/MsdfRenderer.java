@@ -152,7 +152,7 @@ public final class MsdfRenderer {
         if (glyphAllocator == null) glyphAllocator = new BufferAllocator(4096);
         try {
             BufferBuilder builder = new BufferBuilder(glyphAllocator, VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-            font.applyGlyphs(matrix, builder, text, size, thickness * 0.5F * size, 0.0F, x - 0.75F, y + (size * 0.7F), z, color);
+            font.applyGlyphs(matrix, builder, text, size, thickness * 0.5F * size, 0.0F, x - MsdfTextMetrics.PEN_OFFSET_X, y + size * MsdfTextMetrics.BASELINE_EM, z, color);
             try (BuiltBuffer builtBuffer = builder.endNullable()) {
                 if (builtBuffer != null) BufferRenderer.drawWithGlobalProgram(builtBuffer);
             }

@@ -222,7 +222,7 @@ public final class UiMsdfIconAtlas {
                         float aspectRatio = iconDefinition.contentAspectRatio > 0.0F
                                 ? iconDefinition.contentAspectRatio
                                 : iconWidth / iconHeight;
-                        ATLAS_ICONS.put(identifier, new AtlasIcon(minU, minV, maxU, maxV, aspectRatio));
+                        ATLAS_ICONS.put(identifier, new AtlasIcon(minU, minV, maxU, maxV, aspectRatio, resolveInk(bounds, iconDefinition.inkBounds)));
                         if (!RASTER_FALLBACK_ICONS.contains(identifier)) {
                             ASPECT_RATIO_CACHE.put(identifier, aspectRatio);
                         }
@@ -258,6 +258,29 @@ public final class UiMsdfIconAtlas {
             MISSING_ICONS.add(icon);
         }
         return atlasIcon;
+    }
+
+    /** Visible shape of an icon as fractions of the quad it is drawn into; the full quad when unknown. */
+    public static synchronized IconInk ink(Identifier icon) {
+        AtlasIcon atlasIcon = ensureIconReady(icon);
+        return atlasIcon == null ? IconInk.FULL : atlasIcon.ink;
+    }
+
+    private static IconInk resolveInk(AtlasBounds cell, AtlasBounds ink) {
+        if (ink == null) {
+            return IconInk.FULL;
+        }
+        // The quad samples the cell inset by UV_INSET texels on each side.
+        float left = cell.left + UV_INSET;
+        float top = cell.top + UV_INSET;
+        float width = Math.max(1.0F, cell.right - cell.left - UV_INSET * 2.0F);
+        float height = Math.max(1.0F, cell.bottom - cell.top - UV_INSET * 2.0F);
+        return new IconInk(
+                (ink.left - left) / width,
+                (ink.top - top) / height,
+                (ink.right - left) / width,
+                (ink.bottom - top) / height
+        );
     }
 
     public static float resolveAspectRatio(Identifier icon) {
@@ -406,6 +429,7 @@ public final class UiMsdfIconAtlas {
         private String id;
         private float contentAspectRatio;
         private AtlasBounds atlasBounds;
+        private AtlasBounds inkBounds;
     }
 
     private static final class AtlasBounds {
@@ -415,7 +439,27 @@ public final class UiMsdfIconAtlas {
         private float bottom;
     }
 
-    private record AtlasIcon(float minU, float minV, float maxU, float maxV, float aspectRatio) {
+    private record AtlasIcon(float minU, float minV, float maxU, float maxV, float aspectRatio, IconInk ink) {
+    }
+
+    public record IconInk(float left, float top, float right, float bottom) {
+        public static final IconInk FULL = new IconInk(0.0F, 0.0F, 1.0F, 1.0F);
+
+        public float width() {
+            return right - left;
+        }
+
+        public float height() {
+            return bottom - top;
+        }
+
+        public float centerX() {
+            return (left + right) * 0.5F;
+        }
+
+        public float centerY() {
+            return (top + bottom) * 0.5F;
+        }
     }
 
     private record FittedRect(float left, float top, float right, float bottom) {

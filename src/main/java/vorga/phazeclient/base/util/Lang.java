@@ -205,6 +205,8 @@ public final class Lang {
         en("messenger.error_slowmode", "Slowmode: wait before sending again.");
         en("messenger.error_server", "Send error! Chat server is unavailable.");
         en("messenger.error_blocked_user", "This user is blocked.");
+        en("messenger.error_blocked_by", "Message not sent: this user has blocked you.");
+        en("messenger.error_recipient_blocked", "Message not sent: you blocked this user.");
         en("messenger.error_user_not_found", "User not found.");
         en("messenger.error_already_friend", "Friend request already exists.");
         en("messenger.error_action", "Action failed. Please try again.");
@@ -328,6 +330,8 @@ public final class Lang {
         ru("messenger.error_slowmode", "Подожди перед следующей отправкой.");
         ru("messenger.error_server", "Ошибка отправки! Сервер чата недоступен.");
         ru("messenger.error_blocked_user", "Этот пользователь заблокирован.");
+        ru("messenger.error_blocked_by", "Сообщение не отправлено: этот пользователь заблокировал вас.");
+        ru("messenger.error_recipient_blocked", "Сообщение не отправлено: вы заблокировали этого пользователя.");
         ru("messenger.error_user_not_found", "Пользователь не найден.");
         ru("messenger.error_already_friend", "Заявка уже существует.");
         ru("messenger.error_action", "Не удалось выполнить действие. Попробуй ещё раз.");
@@ -558,7 +562,6 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("F5 Animation Speed", "Скорость анимации F5");
         SETTING_TRANSLATIONS.put("F5 Interpolation", "Интерполяция F5");
         SETTING_TRANSLATIONS.put("Fade Distance", "Дистанция затухания");
-        SETTING_TRANSLATIONS.put("Fade Style", "Стиль затухания");
         SETTING_TRANSLATIONS.put("Fake FPS", "Фейк FPS");
         SETTING_TRANSLATIONS.put("Fast Exp", "Быстрый опыт");
         SETTING_TRANSLATIONS.put("Fast Swap", "Быстрая смена");

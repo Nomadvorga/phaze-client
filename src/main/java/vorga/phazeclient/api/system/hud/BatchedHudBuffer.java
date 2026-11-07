@@ -77,7 +77,11 @@ public final class BatchedHudBuffer {
     }
 
     public boolean shouldRefresh(boolean force) {
-        if (force || dirty || !hasContent) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        boolean resized = client != null && client.getWindow() != null
+                && (lastWidth != client.getWindow().getFramebufferWidth()
+                || lastHeight != client.getWindow().getFramebufferHeight());
+        if (force || dirty || !hasContent || resized) {
             return true;
         }
         return refreshClock.due(System.nanoTime());
@@ -212,7 +216,7 @@ public final class BatchedHudBuffer {
         fbo.beginWrite(false);
         RenderSystem.viewport(0, 0, fbo.textureWidth, fbo.textureHeight);
         BatchedRectangle.setRenderTargetFbHeight(fbo.textureHeight);
-        HudBuffer.activeCaptureTarget = fbo.fbo;
+        HudBuffer.activateCaptureTarget(fbo);
     }
 
     public void endCapture() {
@@ -222,7 +226,7 @@ public final class BatchedHudBuffer {
     }
 
     public void abortCapture() {
-        if (capture != null) capture.close();
+        if (capture != null) capture.abort();
     }
 
     /**

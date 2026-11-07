@@ -93,7 +93,8 @@ public final class CosmeticsViewComponent extends AbstractComponent {
 
     public void open() {
         open = true;
-        pageAnimation.setDirection(Direction.FORWARDS);
+        // Top-level pages switch instantly, like Mods/Settings/Configs.
+        pageAnimation.setDirectionAndFinish(Direction.FORWARDS);
         CosmeticsState.getInstance().refreshCatalog();
         catalogScroll = 0.0D;
         smoothedCatalogScroll = 0.0D;
@@ -108,7 +109,7 @@ public final class CosmeticsViewComponent extends AbstractComponent {
 
     public void close() {
         open = false;
-        pageAnimation.setDirection(Direction.BACKWARDS);
+        pageAnimation.setDirectionAndFinish(Direction.BACKWARDS);
         draggingPreview = false;
         draggingMotion = false;
         draggingPetFollow = false;

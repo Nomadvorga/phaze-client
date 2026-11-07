@@ -52,10 +52,15 @@ public class MenuScreen extends Screen implements QuickImports {
     private static final int MIN_HEIGHT = 248;
     private static final int SCREEN_MARGIN = 24;
     private static final float CATEGORY_START_X = MenuLayout.SIDEBAR_WIDTH + MenuLayout.CONTENT_INSET;
+    /** Visible gap between the content pane edge and the category/search row; the 1 px sidebar separator is not part of it. */
+    private static final float CONTENT_EDGE_GAP = MenuLayout.CONTENT_INSET - 1.0F;
+    /** BackgroundComponent's 34 px header plus its 1 px bottom separator. */
+    private static final float CONTENT_TOP = 35.0F;
     private static final float SEARCH_WIDTH = 82.0F;
-    private static final float SEARCH_RIGHT_MARGIN = 10.0F;
+    /** The 1 px panel border plus the same gap the categories keep from the sidebar. */
+    private static final float SEARCH_RIGHT_MARGIN = 1.0F + CONTENT_EDGE_GAP;
     private static final float CATEGORY_SEARCH_GAP = MenuLayout.PANEL_GAP + 4.0F;
-    private static final float CATEGORY_ROW_Y = 39.0F;
+    private static final float CATEGORY_ROW_Y = CONTENT_TOP + CONTENT_EDGE_GAP;
     private static final int HEADER_DRAG_HEIGHT = 34;
     private static final int TOP_TAB_TRANSITION_MS = 145;
 

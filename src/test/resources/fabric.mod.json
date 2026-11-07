@@ -21,9 +21,11 @@
       "vorga.phazeclient.implement.features.modules.hud.HudScaleClientTest",
       "vorga.phazeclient.implement.features.modules.hud.BossBarClientTest",
       "vorga.phazeclient.api.system.font.msdf.MsdfTextClientTest",
+      "vorga.phazeclient.implement.features.modules.hud.HudEditorClientTest",
+      "vorga.phazeclient.api.system.hud.HudCachedReplayClientTest",
       "vorga.phazeclient.api.system.hud.RenderSafetyClientTest",
       "vorga.phazeclient.api.system.hud.HudBlurClientTest"
     ]
   },
-  "mixins": ["phaze-overlay-test.mixins.json", "phaze-boss-bar-test.mixins.json"]
+  "mixins": ["phaze-overlay-test.mixins.json", "phaze-boss-bar-test.mixins.json", "phaze-hud-editor-test.mixins.json"]
 }
