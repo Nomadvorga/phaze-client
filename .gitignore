@@ -24,3 +24,7 @@ build/
 .gradle/
 *.class
 *.log
+*.jar
+!/gradle/wrapper/gradle-wrapper.jar
+*.zip
+*.rar
