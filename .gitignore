@@ -1,85 +1,26 @@
-.gradle/
+# Only sources, Gradle build files, licenses and this file are versioned.
+/*
+!/.gitignore
+!/src/
+!/gradle/
+!/gradlew
+!/gradlew.bat
+!/build.gradle
+!/settings.gradle
+!/gradle.properties
+!/LICENSE
+!/THIRD_PARTY_LICENSES.md
+
+# build.gradle reads these: signed module manifest verification and a test source.
+!/scripts/
+/scripts/*
+!/scripts/module-manifest.mjs
+!/scripts/PackPreviewAssetLogicTest.java
+!/security/
+/security/*
+!/security/manifest-ed25519-public.pem
+
 build/
-out/
-
-*.log
-*.err.log
-*.out.log
-gradle-thread-dump.txt
-
-jdk21.zip
-jdk-*/
-
+.gradle/
 *.class
-*.jar
-!gradle/wrapper/gradle-wrapper.jar
-!libs/arboard-1.1.2.jar
-!libs/native-utils-1.0.0.jar
-
-.idea/
-*.iml
-
-.claude/
-claude_launcher.exe
-run/
-config.json
-*.zip
-*.rar
-
-# Iris (and other) compile-only jars - large, version-specific, not committed
-libs-compileonly/
-!libs-compileonly/
-!libs-compileonly/iris-fabric-1.8.8+mc1.21.4.jar
-!libs-compileonly/reeses-sodium-options-fabric-1.8.3+mc1.21.4.jar
-
-# Workspace-local staging directories used by build scripts that
-# can't write directly into sibling project paths. Never committed -
-# their contents get copied into D:\projects\phaze-rules-admin and
-# the staged copies are discarded.
-__server_staging/
-.sehl-staging/
-
-# Temporary one-off helper scripts and logs created during build /
-# deploy sessions. They are recreated on demand so committing them
-# would just churn diffs.
-.codex_tmp/
-.scripts/
-.phaze-signing/
-.sodium-tmp/
-tmp/
-tmp_mc_src/
-net/
-libs/
-libs-compileonly/
-tools/
-Phaze Client.code-workspace
-build_and_copy_v2.ps1
-build_mod.bat
-__*.cjs
-__*.js
-__*.log
-__settings_dump.txt
-build_log.txt
-build_log*.txt
-abs.txt
-mc.txt
-mcbody.txt
-dh.txt
-last-crash.txt
-
-# Editor / utility scratch
-.vscode/
-fix_user_folder.ps1
-find_sodium.ps1
-inspect_sodium.ps1
-_tmp_world_colors_ref/
-bin/
-clean-build-output/
-CODEX_CONTEXT.md
-ARCHITECTURE.md
-build-desktop-codex.bat
-run_free_codex_desktop.bat
-pretty_json.py
-read.md
-LICENSE
-
+*.log

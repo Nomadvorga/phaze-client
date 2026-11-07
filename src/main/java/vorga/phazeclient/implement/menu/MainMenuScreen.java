@@ -1371,14 +1371,17 @@ public class MainMenuScreen extends TitleScreen {
                 .color(scaleColorAlpha(0xFF1A212D, alpha))
                 .build());
 
-        float fillWidth = Math.max(trackHeight, trackWidth * clampedProgress);
-        rectangle.render(ShapeProperties.create(context.getMatrices(), trackX, trackY, fillWidth, trackHeight)
-                .round(trackHeight / 2.0F)
-                .softness(1.0F)
-                .color(scaleColorAlpha(0xFF4F9CFF, alpha))
-                .build());
-
         float knobSize = trackHeight + 5.0F * layout.scale;
+        // The fill ends at the knob centre; while the knob covers all of it, its anti-aliased rim would still show.
+        float fillWidth = trackWidth * clampedProgress;
+        if (fillWidth > knobSize / 2.0F) {
+            rectangle.render(ShapeProperties.create(context.getMatrices(), trackX, trackY, fillWidth, trackHeight)
+                    .round(Math.min(trackHeight, fillWidth) / 2.0F)
+                    .softness(1.0F)
+                    .color(scaleColorAlpha(0xFF4F9CFF, alpha))
+                    .build());
+        }
+
         float knobX = trackX + trackWidth * clampedProgress - knobSize / 2.0F;
         float knobY = trackY - (knobSize - trackHeight) / 2.0F;
         rectangle.render(ShapeProperties.create(context.getMatrices(), knobX, knobY, knobSize, knobSize)
