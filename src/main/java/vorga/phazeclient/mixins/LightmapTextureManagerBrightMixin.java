@@ -36,7 +36,7 @@ public class LightmapTextureManagerBrightMixin {
     )
     private Object phaze$injectFullBright(Object original) {
         Bright bright = Bright.getInstance();
-        if (bright == null || !bright.isState()) {
+        if (bright == null || !bright.isEnabled()) {
             return original;
         }
         if (!(original instanceof Double vanilla)) {

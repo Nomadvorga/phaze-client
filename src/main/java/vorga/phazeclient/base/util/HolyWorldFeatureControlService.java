@@ -40,7 +40,9 @@ public final class HolyWorldFeatureControlService {
     private static final long REQUEST_COOLDOWN_MS = 10_000L;
     private static final String FIXED_CLIENT_ID = "phaze-client";
     private static final long RETRY_INTERVAL_MS = 10_000L;
-    private static final int MAX_RETRIES = 5;
+    private static final long RETRY_MAX_INTERVAL_MS = 60_000L;
+    /** Retries at the 10s server limit before backing off towards one a minute. */
+    private static final int FAST_RETRIES = 5;
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Set<String> disabledFeatures = ConcurrentHashMap.newKeySet();
@@ -56,6 +58,7 @@ public final class HolyWorldFeatureControlService {
         return thread;
     });
     private ScheduledFuture<?> retryFuture = null;
+    private int retryGeneration = 0;
 
     private HolyWorldFeatureControlService() {
     }
@@ -129,30 +132,47 @@ public final class HolyWorldFeatureControlService {
             initialDelay = RETRY_INTERVAL_MS;
         }
 
-        retryFuture = scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                if (!isHolyWorldServer() || receivedInitialResponse.get()) {
-                    stopRetryTask();
+        scheduleRetry(initialDelay, retryGeneration);
+    }
+
+    private synchronized void scheduleRetry(long delayMs, int generation) {
+        retryFuture = scheduler.schedule(() -> retry(generation), delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void retry(int generation) {
+        try {
+            synchronized (this) {
+                if (generation != retryGeneration) {
                     return;
                 }
-                if (retryCount.incrementAndGet() > MAX_RETRIES) {
-                    stopRetryTask();
-                    return;
-                }
-                MinecraftClient mc = MinecraftClient.getInstance();
-                if (mc != null) {
-                    mc.execute(() -> {
-                        if (isHolyWorldServer() && !receivedInitialResponse.get()) {
-                            requestServerRules("");
-                        }
-                    });
-                }
-            } catch (Throwable ignored) {
             }
-        }, initialDelay, RETRY_INTERVAL_MS, TimeUnit.MILLISECONDS);
+            if (!isHolyWorldServer() || receivedInitialResponse.get()) {
+                stopRetryTask();
+                return;
+            }
+            int attempt = retryCount.incrementAndGet();
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc != null) {
+                mc.execute(() -> {
+                    if (isHolyWorldServer() && !receivedInitialResponse.get()) {
+                        requestServerRules("");
+                    }
+                });
+            }
+            long next = attempt < FAST_RETRIES
+                    ? RETRY_INTERVAL_MS
+                    : Math.min(RETRY_MAX_INTERVAL_MS, RETRY_INTERVAL_MS << Math.min(3, attempt - FAST_RETRIES + 1));
+            synchronized (this) {
+                if (generation == retryGeneration) {
+                    scheduleRetry(next, generation);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     private synchronized void stopRetryTask() {
+        retryGeneration++;
         if (retryFuture != null) {
             retryFuture.cancel(false);
             retryFuture = null;
@@ -297,13 +317,8 @@ public final class HolyWorldFeatureControlService {
         }
 
         for (Module module : main.getModuleProvider().getModules()) {
-            if (module != null && module.isServerLocked()) {
-                if (module.state) {
-                    module.setState(false);
-                }
-                if (module.isEnabled()) {
-                    module.deactivate();
-                }
+            if (module != null) {
+                module.syncServerLock();
             }
         }
 

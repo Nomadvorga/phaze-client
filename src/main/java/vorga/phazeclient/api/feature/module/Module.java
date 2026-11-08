@@ -102,6 +102,12 @@ public class Module extends SettingRepository implements QuickImports {
     @NonFinal
     public boolean expanded = false;
 
+    /** True while a server lock keeps this module inactive; {@link #state} stays the player's choice. */
+    @NonFinal
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    boolean serverSuppressed;
+
     @Setter
     private static Consumer<Module> globalStateChangeListener;
 
@@ -148,9 +154,60 @@ public class Module extends SettingRepository implements QuickImports {
         }
     }
 
+    /**
+     * Applies a saved on/off choice from a config or profile. While the server
+     * locks the module the choice is only remembered: the module stays inactive
+     * and hidden until the lock lifts, but the next save does not lose it.
+     */
+    public void restoreState(boolean state) {
+        restoreState(state, false);
+    }
+
+    public void restoreStateSilent(boolean state) {
+        restoreState(state, true);
+    }
+
+    private void restoreState(boolean state, boolean silent) {
+        if (state && isServerLocked()) {
+            syncServerLock();
+            this.state = true;
+            return;
+        }
+        if (silent) {
+            setStateSilent(state);
+        } else {
+            setState(state);
+        }
+    }
+
+    /**
+     * Called every client tick. Runs the module's deactivate/activate hooks when a
+     * server lock starts or ends without rewriting {@link #state}, so a lock never
+     * turns modules off in the player's saved config.
+     */
+    public void syncServerLock() {
+        boolean locked = isServerLocked();
+        if (locked == serverSuppressed) {
+            return;
+        }
+        serverSuppressed = locked;
+        if (!showEnable || !state) {
+            return;
+        }
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.player == null || mc.world == null) {
+            return;
+        }
+        if (locked) {
+            deactivate();
+        } else {
+            activate();
+        }
+    }
+
     private void handleStateChange() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player != null && mc.world != null) {
+        if (mc.player != null && mc.world != null && !serverSuppressed) {
             if (state) {
                 activate();
             } else {
