@@ -9,6 +9,7 @@ import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.texture.AbstractTexture;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
+import vorga.phazeclient.api.system.shape.batched.GuiBatch;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -30,6 +31,10 @@ public final class MsdfFont {
      */
     private final Int2ObjectMap<MsdfGlyph> glyphs;
     private final Int2ObjectMap<Int2FloatMap> kernings;
+    /** Latin and Cyrillic (code points below {@link #DIRECT_LIMIT}) skip the hash lookups. */
+    private static final int DIRECT_LIMIT = 0x500;
+    private final MsdfGlyph[] directGlyphs = new MsdfGlyph[DIRECT_LIMIT];
+    private final Int2FloatMap[] directKernings = new Int2FloatMap[DIRECT_LIMIT];
 
     /**
      * Per-(text, size) cache for {@link #getWidth(String, float)}. The
@@ -57,11 +62,39 @@ public final class MsdfFont {
      */
     private boolean filterApplied = false;
 
-    private MsdfFont(AbstractTexture texture, FontData.AtlasData atlas, Int2ObjectMap<MsdfGlyph> glyphs, Int2ObjectMap<Int2FloatMap> kernings) {
+    /** Highest quad top and lowest quad bottom of any glyph, in em above the baseline. */
+    private final float planeTop;
+    private final float planeBottom;
+
+    private MsdfFont(AbstractTexture texture, FontData.AtlasData atlas, Int2ObjectMap<MsdfGlyph> glyphs,
+                     Int2ObjectMap<Int2FloatMap> kernings, float planeTop, float planeBottom) {
         this.texture = texture;
         this.atlas = atlas;
         this.glyphs = glyphs;
         this.kernings = kernings;
+        this.planeTop = planeTop;
+        this.planeBottom = planeBottom;
+        for (int c = 0; c < DIRECT_LIMIT; c++) {
+            directGlyphs[c] = glyphs.get(c);
+            directKernings[c] = kernings.get(c);
+        }
+    }
+
+    private MsdfGlyph glyph(int c) {
+        MsdfGlyph glyph = c >= 0 && c < DIRECT_LIMIT ? directGlyphs[c] : null;
+        return glyph != null ? glyph : glyphs.get(c);
+    }
+
+    private Int2FloatMap kerning(int previousChar) {
+        return previousChar >= 0 && previousChar < DIRECT_LIMIT ? directKernings[previousChar] : kernings.get(previousChar);
+    }
+
+    float planeTop() {
+        return planeTop;
+    }
+
+    float planeBottom() {
+        return planeBottom;
     }
 
     public FontData.AtlasData getAtlas() {
@@ -78,6 +111,16 @@ public final class MsdfFont {
     }
 
     public void applyGlyphs(Matrix4f matrix, VertexConsumer consumer, String text, float size, float thickness, float spacing, float x, float y, float z, int color) {
+        applyGlyphs(matrix, consumer, null, text, size, thickness, spacing, x, y, z, color);
+    }
+
+    /** Appends one quad per visible glyph to a {@link GuiBatch} run. */
+    public void applyGlyphs(Matrix4f matrix, GuiBatch.Run run, String text, float size, float thickness, float spacing, float x, float y, float z, int color) {
+        applyGlyphs(matrix, null, run, text, size, thickness, spacing, x, y, z, color);
+    }
+
+    private void applyGlyphs(Matrix4f matrix, VertexConsumer consumer, GuiBatch.Run run, String text, float size,
+                             float thickness, float spacing, float x, float y, float z, int color) {
         if (!filterApplied) {
             texture.setFilter(true, false);
             filterApplied = true;
@@ -87,17 +130,20 @@ public final class MsdfFont {
         for (int i = 0; i < text.length();) {
             int c = text.codePointAt(i);
             i += Character.charCount(c);
-            MsdfGlyph glyph = glyphs.get(c);
+            MsdfGlyph glyph = glyph(c);
             if (glyph == null) {
                 continue;
             }
 
-            Int2FloatMap kerning = kernings.get(previousChar);
+            Int2FloatMap kerning = kerning(previousChar);
             if (kerning != null) {
                 x += kerning.getOrDefault(c, 0.0F) * size;
             }
 
-            x += glyph.apply(matrix, consumer, size, x, y, z, color) + thickness + spacing;
+            float advance = run != null
+                    ? glyph.emit(matrix, run, size, x, y, z, color)
+                    : glyph.apply(matrix, consumer, size, x, y, z, color);
+            x += advance + thickness + spacing;
             previousChar = c;
         }
     }
@@ -121,12 +167,12 @@ public final class MsdfFont {
         for (int i = 0; i < text.length();) {
             int c = text.codePointAt(i);
             i += Character.charCount(c);
-            MsdfGlyph glyph = glyphs.get(c);
+            MsdfGlyph glyph = glyph(c);
             if (glyph == null) {
                 continue;
             }
 
-            Int2FloatMap kerning = kernings.get(previousChar);
+            Int2FloatMap kerning = kerning(previousChar);
             if (kerning != null) {
                 width += kerning.getOrDefault(c, 0.0F) * size;
             }
@@ -175,9 +221,9 @@ public final class MsdfFont {
         for (int i = 0; i < text.length();) {
             int c = text.codePointAt(i);
             i += Character.charCount(c);
-            MsdfGlyph glyph = glyphs.get(c);
+            MsdfGlyph glyph = glyph(c);
             if (glyph == null) continue;
-            Int2FloatMap kerning = kernings.get(previousChar);
+            Int2FloatMap kerning = kerning(previousChar);
             if (kerning != null) pen += kerning.getOrDefault(c, 0.0F) * size;
             lastPen = pen;
             last = glyph;
@@ -223,8 +269,14 @@ public final class MsdfFont {
             float atlasWidth = data.atlas().width();
             float atlasHeight = data.atlas().height();
             Int2ObjectMap<MsdfGlyph> glyphs = new Int2ObjectOpenHashMap<>();
+            float planeTop = 0.0F;
+            float planeBottom = 0.0F;
             for (var glyphData : data.glyphs()) {
                 glyphs.put(glyphData.unicode(), new MsdfGlyph(glyphData, atlasWidth, atlasHeight));
+                if (glyphData.planeBounds() != null) {
+                    planeTop = Math.max(planeTop, glyphData.planeBounds().top());
+                    planeBottom = Math.min(planeBottom, glyphData.planeBounds().bottom());
+                }
             }
 
             Int2ObjectMap<Int2FloatMap> kernings = new Int2ObjectOpenHashMap<>();
@@ -237,7 +289,7 @@ public final class MsdfFont {
                 map.put(kerning.rightChar(), kerning.advance());
             }
 
-            return new MsdfFont(texture, data.atlas(), glyphs, kernings);
+            return new MsdfFont(texture, data.atlas(), glyphs, kernings, planeTop, planeBottom);
         }
     }
 }

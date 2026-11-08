@@ -27,6 +27,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -118,6 +119,10 @@ public final class RemoteRulesService {
     private static final long LOCKDOWN_AFTER_MS = 20L * 60L * 1000L;
     private static final long STARTUP_GRACE_MS = 45_000L;
 
+    /** Failed polls retry on this backoff instead of waiting a whole heartbeat period. */
+    private static final long RETRY_MIN_MS = 3_000L;
+    private static final long RETRY_MAX_MS = 60_000L;
+
     /**
      * Per-request timeouts as plain integers because
      * {@link HttpURLConnection} only takes int millis. Generous enough
@@ -166,6 +171,8 @@ public final class RemoteRulesService {
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
+    private final AtomicBoolean retryScheduled = new AtomicBoolean(false);
+    private volatile long retryDelayMs = RETRY_MIN_MS;
 
     /**
      * Set after the manifest has been pushed once for this JVM. The
@@ -531,16 +538,29 @@ public final class RemoteRulesService {
             try {
                 fetch(host, bypassCache);
             } catch (Throwable t) {
-                LOG.warn("fetch failed for host='{}': {}", host, t.toString());
-                // Force the next heartbeat (in HEARTBEAT_SECONDS) to
-                // retry immediately instead of waiting the full
-                // REFRESH_INTERVAL. Otherwise a single slow first hit
-                // would keep the player on "empty rules" for a minute.
+                LOG.warn("rules fetch from {} failed (minecraft server='{}'): {}", apiBase, host, t.toString());
                 lastRefreshMs = 0L;
+                scheduleRetry();
             } finally {
                 refreshInFlight.set(false);
             }
         });
+    }
+
+    private void scheduleRetry() {
+        if (!retryScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        long delay = retryDelayMs;
+        retryDelayMs = Math.min(RETRY_MAX_MS, delay * 2L);
+        try {
+            scheduler.schedule(() -> {
+                retryScheduled.set(false);
+                heartbeat();
+            }, delay, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException shutDown) {
+            retryScheduled.set(false);
+        }
     }
 
     private void fetch(String host, boolean bypassCache) throws Exception {
@@ -588,8 +608,8 @@ public final class RemoteRulesService {
 
             status = conn.getResponseCode();
             if (status != 200) {
-                LOG.warn("fetch '{}' returned status {}", uri, status);
-                return; // fail-open: no change to current snapshot
+                // Fail-open: the current snapshot stays, the retry backoff takes over.
+                throw new IOException("HTTP " + status);
             }
 
             InputStream in = conn.getInputStream();
@@ -603,6 +623,7 @@ public final class RemoteRulesService {
         } finally {
             conn.disconnect();
         }
+        retryDelayMs = RETRY_MIN_MS;
 
         JsonElement parsed = JsonParser.parseString(body);
         if (!parsed.isJsonObject()) return;
@@ -656,6 +677,9 @@ public final class RemoteRulesService {
         if (manifestUploaded.compareAndSet(false, true)) {
             try {
                 pushManifest();
+            } catch (ManifestRejectedException rejected) {
+                // A 4xx means this exact bundled manifest will never be accepted.
+                LOG.warn("manifest upload rejected: {}", rejected.getMessage());
             } catch (Throwable t) {
                 // Roll back the flag so a future heartbeat retries.
                 manifestUploaded.set(false);
@@ -715,14 +739,22 @@ public final class RemoteRulesService {
             }
 
             int status = conn.getResponseCode();
+            if (status >= 400 && status < 500 && status != 408 && status != 429) {
+                throw new ManifestRejectedException("manifest POST returned " + status);
+            }
             if (status != 204 && status != 200) {
                 // Throw so the once-flag rolls back and a future
-                // heartbeat retries (route returned 4xx/5xx, which
-                // can be transient on cold worker boots).
+                // heartbeat retries (5xx / timeouts are transient).
                 throw new IOException("manifest POST returned " + status);
             }
         } finally {
             conn.disconnect();
+        }
+    }
+
+    private static final class ManifestRejectedException extends IOException {
+        ManifestRejectedException(String message) {
+            super(message);
         }
     }
 

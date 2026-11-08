@@ -107,8 +107,17 @@ public final class SettingLabelChecks {
             float beforeLeave = state.offset(start + travel / 2);
             state.updateHover(false, start + travel / 2);
             near(state.offset(start + travel / 2), beforeLeave, "leaving during travel never jumps");
-            near(state.offset(start + travel), 100, "cycle finishes even after leaving");
-            near(state.offset(start + cycle), 0, "left card still returns to idle");
+            long leave = start + travel / 2;
+            long halfReturn = SettingLabelState.RETURN_NANOS / 2;
+            float previous = beforeLeave;
+            for (int i = 1; i <= 100; i++) {
+                float offset = state.offset(leave + halfReturn * i / 100);
+                check(offset <= previous && offset >= 0, "leaving scrolls back monotonically");
+                if (i == 50) near(offset, 25, "return starts from the offset reached before leaving");
+                previous = offset;
+            }
+            near(previous, 0, "half the distance returns in half the return time");
+            near(state.offset(start + cycle), 0, "left card stays idle");
 
             state = overflowing();
             state.updateHover(true, start);
@@ -325,8 +334,8 @@ public final class SettingLabelChecks {
         check(state.isOverflowing(), "text still overflows intermediate width");
         near(state.offset(start + SettingLabelState.TRAVEL_NANOS / 2), 2.5F,
                 "marquee distance uses animated overflow while preserving phase");
-        near(state.alphaAt(175, 0), 1 - 5 / SettingLabelState.FADE_WIDTH,
-                "right-edge fade strength follows the five pixels of animated overflow");
+        near(state.alphaAt(175, 0), 1 - Math.min(1, 5 / SettingLabelState.FULL_FADE_DISTANCE),
+                "five pixels of animated overflow already give a full-strength right-edge fade");
         near(state.alphaAt(176, 0), 0, "area beyond animated edge remains clipped");
         near(state.alphaAt(100, 0), 1, "old viewport edge no longer fades after growth");
         widthAt(state, 200, resize + duration * 3 / 4);

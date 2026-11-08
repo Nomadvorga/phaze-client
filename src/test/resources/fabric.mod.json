@@ -22,8 +22,11 @@
       "vorga.phazeclient.implement.features.modules.hud.BossBarClientTest",
       "vorga.phazeclient.api.system.font.msdf.MsdfTextClientTest",
       "vorga.phazeclient.implement.features.modules.hud.HudEditorClientTest",
+      "vorga.phazeclient.implement.features.modules.hud.PaperDollClientTest",
       "vorga.phazeclient.api.system.hud.HudCachedReplayClientTest",
       "vorga.phazeclient.api.system.hud.RenderSafetyClientTest",
+      "vorga.phazeclient.implement.menu.GuiRenderBenchmarkClientTest",
+      "vorga.phazeclient.implement.menu.GuiWorldBenchmarkClientTest",
       "vorga.phazeclient.api.system.hud.HudBlurClientTest"
     ]
   },

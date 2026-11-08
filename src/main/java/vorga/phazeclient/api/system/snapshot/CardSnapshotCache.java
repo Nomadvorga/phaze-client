@@ -328,9 +328,9 @@ public final class CardSnapshotCache {
             snapshot.fbo.beginWrite(true);
             RenderSystem.viewport(0, 0, snapshot.fbWidth, snapshot.fbHeight);
 
-            // Preserve the established card-local projection and GUI Z range.
+            // Same depth range as the GUI projection; the model-view stack
+            // already carries vanilla's -11000 GUI z shift.
             Matrix4f cardProj = new Matrix4f().setOrtho(0.0F, widthGui, heightGui, 0.0F, 1000.0F, 21000.0F);
-            cardProj.translate(0.0F, 0.0F, -11000.0F);
             RenderSystem.setProjectionMatrix(cardProj, ProjectionType.ORTHOGRAPHIC);
             BatchedRectangle.setRenderTargetFbHeight(snapshot.fbHeight);
         } catch (RuntimeException | Error failure) {
@@ -389,6 +389,12 @@ public final class CardSnapshotCache {
      * still lands in the active transparent snapshot instead of the main
      * framebuffer.
      */
+    /** Render layers bind {@code getFramebuffer()}; during a capture that must be the snapshot. */
+    public static Framebuffer getActiveCaptureFramebuffer() {
+        CaptureState capture = active;
+        return capture == null || capture.snapshot == null ? null : capture.snapshot.fbo;
+    }
+
     public static void rebindActiveCaptureTarget() {
         if (active == null || active.snapshot == null
                 || active.snapshot.fbo == null) {
@@ -488,6 +494,37 @@ public final class CardSnapshotCache {
         RenderSystem.disableBlend();
     }
 
+    /**
+     * For captures of translucent world-style layers: their separate alpha
+     * blend leaves premultiplied color in the cleared target, so compositing
+     * with (ONE, ONE_MINUS_SRC_ALPHA) matches drawing them directly.
+     */
+    public static void blitPremultiplied(DrawContext context, Snapshot snapshot, float x, float y,
+                                         float widthGui, float heightGui, float alpha) {
+        if (snapshot == null || snapshot.fbo == null || !snapshot.populated) {
+            return;
+        }
+        BatchedRectangle.flushIfBatching();
+        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
+        int channel = Math.max(0, Math.min(255, Math.round(alpha * 255.0F)));
+        int color = channel << 24 | channel << 16 | channel << 8 | channel;
+
+        RenderSystem.enableBlend();
+        RenderSystem.blendFunc(GlStateManager.SrcFactor.ONE, GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA);
+        RenderSystem.setShaderTexture(0, snapshot.fbo.getColorAttachment());
+        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+
+        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
+        buffer.vertex(matrix, x, y, 0.0F).texture(0.0F, 1.0F).color(color);
+        buffer.vertex(matrix, x, y + heightGui, 0.0F).texture(0.0F, 0.0F).color(color);
+        buffer.vertex(matrix, x + widthGui, y + heightGui, 0.0F).texture(1.0F, 0.0F).color(color);
+        buffer.vertex(matrix, x + widthGui, y, 0.0F).texture(1.0F, 1.0F).color(color);
+
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableBlend();
+    }
+
     public static void blitRounded(
             DrawContext context,
             Snapshot snapshot,
@@ -508,6 +545,8 @@ public final class CardSnapshotCache {
                 .round(round)
                 .color(backgroundColor)
                 .build());
+        // The DST_ALPHA blend samples that background, so it must be drawn first.
+        BatchedRectangle.flushIfBatching();
 
         Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
         int alphaByte = Math.max(0, Math.min(255, Math.round(alpha * 255.0F)));

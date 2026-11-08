@@ -131,6 +131,10 @@ public final class MsdfTextClientTest implements FabricClientGameTest {
             }
         };
         glyphField.set(font, injected);
+        // Latin and Cyrillic glyphs are served from a direct array; empty it so lookups reach the map.
+        MsdfGlyph[] direct = (MsdfGlyph[]) field(MsdfFont.class, "directGlyphs").get(font);
+        MsdfGlyph[] directOriginal = direct.clone();
+        java.util.Arrays.fill(direct, null);
         try {
             seed(font, true, true);
             State before = State.capture();
@@ -142,6 +146,7 @@ public final class MsdfTextClientTest implements FabricClientGameTest {
             check(field(BufferAllocator.class, "refCount").getInt(allocator) == 0, "no BuiltBuffer references leaked");
         } finally {
             glyphField.set(font, original);
+            System.arraycopy(directOriginal, 0, direct, 0, direct.length);
             MsdfFonts.onResourcesReloaded();
         }
         check(field(MsdfRenderer.class, "glyphAllocator").get(null) == null, "reload releases owned allocator");

@@ -112,12 +112,20 @@ tasks.named('processTestResources') {
     def textureFilterOnly = project.hasProperty('textureFilterOnly')
     def hudEditorOnly = project.hasProperty('hudEditorOnly')
     def bossBarOnly = project.hasProperty('bossBarOnly')
+    def guiBenchOnly = project.hasProperty('guiBenchOnly')
+    def guiBenchWorld = project.hasProperty('guiBenchWorld')
+    def paperDollOnly = project.hasProperty('paperDollOnly')
+    inputs.property 'guiBenchWorld', guiBenchWorld
+    inputs.property 'paperDollOnly', paperDollOnly
     inputs.property 'hudBlurOnly', blurOnly
     inputs.property 'textureFilterOnly', textureFilterOnly
     inputs.property 'hudEditorOnly', hudEditorOnly
     inputs.property 'bossBarOnly', bossBarOnly
-    if (blurOnly || textureFilterOnly || hudEditorOnly || bossBarOnly) {
-        def selected = hudEditorOnly
+    inputs.property 'guiBenchOnly', guiBenchOnly
+    if (blurOnly || textureFilterOnly || hudEditorOnly || bossBarOnly || guiBenchOnly || paperDollOnly) {
+        def selected = guiBenchOnly ? [guiBenchWorld ? 'GuiWorldBenchmarkClientTest' : 'GuiRenderBenchmarkClientTest']
+                : paperDollOnly ? ['PaperDollClientTest']
+                : hudEditorOnly
                 ? ['HudEditorClientTest', 'HudCachedReplayClientTest', 'RenderSafetyClientTest']
                 : bossBarOnly ? ['BossBarClientTest']
                 : textureFilterOnly ? ['TextureFilteringClientTest', 'LoadingOverlayClientTest', 'RenderSafetyClientTest']
@@ -130,6 +138,11 @@ tasks.named('processTestResources') {
                 }
                 return line
             }
+        }
+    } else {
+        // Benchmarks only run through -PguiBenchOnly; they are listed before the last entry.
+        filesMatching('fabric.mod.json') {
+            filter { String line -> line.contains('BenchmarkClientTest') ? null : line }
         }
     }
 }
@@ -269,6 +282,18 @@ loom {
             runDir 'build/boss-bar-client-test'
             vmArg '-Dfabric.client.gametest'
             vmArg '-Dfabric.client.gametest.modid=phaze_preview_tests'
+        }
+        guiBench {
+            client()
+            source sourceSets.test
+            runDir 'build/gui-bench-client-test'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phaze_preview_tests'
+            if (project.hasProperty('guiBenchProfile')) {
+                vmArg '-Dphaze.guiBench.profile=true'
+                if (project.hasProperty('guiBenchCosmetics')) vmArg '-Dphaze.guiBench.cosmetics=true'
+                vmArg "-XX:StartFlightRecording=filename=gui-bench.jfr,settings=${project.findProperty('guiBenchJfc') ?: 'profile'}"
+            }
         }
     }
 }

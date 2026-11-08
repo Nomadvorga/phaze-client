@@ -10,6 +10,7 @@ import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.config.ConfigManager;
@@ -242,6 +243,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         // GL scissor so any row that runs past the visible window is
         // clipped to it. Without this the bottom row would visibly
         // poke under the menu's rounded bottom border.
+        BatchedRectangle.flushIfBatching();
         context.enableScissor((int) listX, (int) listY,
                 (int) (listX + listW), (int) listBottom);
 
@@ -254,6 +256,7 @@ public class ConfigsViewComponent extends AbstractComponent {
             rowY += ROW_HEIGHT + ROW_GAP;
         }
 
+        BatchedRectangle.flushIfBatching();
         context.disableScissor();
     }
 

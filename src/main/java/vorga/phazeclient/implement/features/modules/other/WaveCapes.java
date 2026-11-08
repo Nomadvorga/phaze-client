@@ -28,7 +28,7 @@ public class WaveCapes extends Module {
 
     @Override
     public String getDescription() {
-        return "1:1 Smooth continuous 16-segment cloth physics for capes (WaveyCapes model)";
+        return "Capes wave and flutter smoothly as you move";
     }
 
     @Override

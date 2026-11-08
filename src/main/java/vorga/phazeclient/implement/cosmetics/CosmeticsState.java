@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.Util;
 import vorga.phazeclient.base.util.Lang;
 
 import java.io.InputStream;
@@ -91,6 +92,9 @@ public final class CosmeticsState {
     private float wingMotion = 5.5F;
     private float petFollowIntensity = 0.75F;
     private List<CosmeticEntry> catalog = List.of();
+    private static final long FILE_EXISTS_RECHECK_MS = 1000L;
+    private final java.util.Map<Path, Boolean> fileExists = new java.util.HashMap<>();
+    private long fileExistsCheckedMs = Long.MIN_VALUE / 2;
 
     private CosmeticsState() {
         installBundledModels();
@@ -254,6 +258,7 @@ public final class CosmeticsState {
                 .comparingInt((CosmeticEntry entry) -> catalogPriority(entry.name()))
                 .thenComparing(CosmeticEntry::name, String.CASE_INSENSITIVE_ORDER));
         catalog = List.copyOf(discovered);
+        fileExists.clear();
     }
 
     public synchronized Path resolveModelPath(String cosmetic) {
@@ -264,11 +269,21 @@ public final class CosmeticsState {
     public synchronized CosmeticEntry resolveEntry(String cosmetic) {
         if (cosmetic == null) return null;
         for (CosmeticEntry entry : catalog) {
-            if (entry.name().equalsIgnoreCase(cosmetic) && Files.isRegularFile(entry.file())) {
+            if (entry.name().equalsIgnoreCase(cosmetic) && fileExists(entry.file())) {
                 return entry;
             }
         }
         return null;
+    }
+
+    /** Rendering asks per card and per frame; one disk stat per file per second is enough. */
+    private boolean fileExists(Path file) {
+        long now = Util.getMeasuringTimeMs();
+        if (now - fileExistsCheckedMs >= FILE_EXISTS_RECHECK_MS) {
+            fileExists.clear();
+            fileExistsCheckedMs = now;
+        }
+        return fileExists.computeIfAbsent(file, Files::isRegularFile);
     }
 
     public Path cosmeticsDirectory() {

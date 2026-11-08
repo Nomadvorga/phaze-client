@@ -1,9 +1,7 @@
 package vorga.phazeclient.api.system.colorcorrection;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import org.lwjgl.opengl.GL20;
-
-import java.util.HashMap;
-import java.util.Map;
 
 public final class WorldColorShaderHelper {
     public static final String BLOCK_COLOR_UNIFORM = "PhazeBlockColor";
@@ -21,19 +19,33 @@ public final class WorldColorShaderHelper {
             WorldColorCorrectionController.Target.PLAYERS,
             WorldColorCorrectionController.Target.ENTITIES
     };
-    private static final Map<Integer, ProgramState> PROGRAM_STATES = new HashMap<>();
+    private static final Int2ObjectOpenHashMap<ProgramState> PROGRAM_STATES = new Int2ObjectOpenHashMap<>();
 
     private WorldColorShaderHelper() {
     }
 
     public static void uploadTerrainUniformsToCurrentGlProgram() {
         try {
-            int program = GL20.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            uploadTerrainUniforms(GL20.glGetInteger(GL20.GL_CURRENT_PROGRAM));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** For a bound program whose id is already known; runs on every bind, so it must not query GL. */
+    public static void uploadTerrainUniforms(int program) {
+        try {
             if (program <= 0) {
                 return;
             }
 
-            ProgramState state = PROGRAM_STATES.computeIfAbsent(program, ProgramState::new);
+            ProgramState state = PROGRAM_STATES.get(program);
+            if (state == null) {
+                state = new ProgramState(program);
+                PROGRAM_STATES.put(program, state);
+            }
+            if (!state.locations.any()) {
+                return;
+            }
             long signature = computeStateSignature();
             if (state.lastSignature == signature) {
                 return;
@@ -50,7 +62,11 @@ public final class WorldColorShaderHelper {
     }
 
     public static void registerCurrentProgramInstance() {
-        int program = GL20.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        registerProgramInstance(GL20.glGetInteger(GL20.GL_CURRENT_PROGRAM));
+    }
+
+    /** A new program object may reuse a deleted program's id; drop that id's cached locations. */
+    public static void registerProgramInstance(int program) {
         if (program > 0) {
             PROGRAM_STATES.remove(program);
         }
@@ -119,6 +135,11 @@ public final class WorldColorShaderHelper {
             int entityColor,
             int entityParams
     ) {
+        boolean any() {
+            return blockColor >= 0 || blockParams >= 0 || fluidColor >= 0 || fluidParams >= 0
+                    || playerColor >= 0 || playerParams >= 0 || entityColor >= 0 || entityParams >= 0;
+        }
+
         private ProgramLocations(int program) {
             this(
                     GL20.glGetUniformLocation(program, BLOCK_COLOR_UNIFORM),

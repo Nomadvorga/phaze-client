@@ -26,6 +26,7 @@ import vorga.phazeclient.base.util.SkinAvatarService;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.MenuLayout;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabel;
@@ -92,9 +93,6 @@ public final class MessengerViewComponent extends AbstractComponent {
     /** Square back button: as wide as it is tall inside the header. */
     private static final float DIRECT_BACK_SIZE = DIRECT_HEADER_HEIGHT - DIRECT_BACK_INSET * 2.0F;
     private static final float DIRECT_BACK_ICON_SIZE = 10.0F;
-    private static final Identifier BACK_ICON = Identifier.ofVanilla("textures/back_arrow.png");
-    /** Centre of the opaque stroke of the 24x24 back_arrow.png (pixels 9..15 x 5..19), as a fraction. */
-    private static final float BACK_ICON_INK_CENTER = 12.5F / 24.0F;
     private static final float INPUT_HEIGHT = 18.0F;
     private static final float INPUT_ERROR_RESERVE = 9.0F;
     private static final float INPUT_TEXT_SIZE = 7.2F;
@@ -319,6 +317,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         float listTop = contentY + (directConversationOpen ? DIRECT_HEADER_HEIGHT + 5.0F : 27.0F);
         boolean hasInput = directConversationOpen || section == Section.GLOBAL;
         float listBottom = listBottom(contentY, contentH, hasInput) - (hasInput ? inputErrorReserve() : 0.0F);
+        BatchedRectangle.flushIfBatching();
         context.enableScissor((int) contentX, (int) listTop, (int) (contentX + contentW), (int) listBottom);
         if (section == Section.GLOBAL) {
             renderGlobalMessages(context, contentX, listTop, contentW, listBottom, mouseX, mouseY);
@@ -327,6 +326,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         } else {
             renderSectionRows(context, contentX, listTop, contentW, listBottom, mouseX, mouseY);
         }
+        BatchedRectangle.flushIfBatching();
         context.disableScissor();
 
         if (section == Section.GLOBAL || directConversationOpen) {
@@ -344,13 +344,9 @@ public final class MessengerViewComponent extends AbstractComponent {
         if (hover > 0.0F) {
             drawChatCard(context, backX, backY, DIRECT_BACK_SIZE, DIRECT_BACK_SIZE, hover, hover);
         }
-        // back_arrow.png is a raster icon (excluded from the MSDF atlas); its visible stroke,
-        // not the padded image, is centred in the square.
-        float iconSize = DIRECT_BACK_ICON_SIZE;
-        drawTexture(context, BACK_ICON,
-                backX + DIRECT_BACK_SIZE / 2.0F - iconSize * BACK_ICON_INK_CENTER,
-                backY + DIRECT_BACK_SIZE / 2.0F - iconSize * BACK_ICON_INK_CENTER,
-                iconSize, applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, hover * 0.18F)));
+        UiMsdfIconAtlas.renderBackArrow(context,
+                backX + DIRECT_BACK_SIZE / 2.0F, backY + DIRECT_BACK_SIZE / 2.0F, DIRECT_BACK_ICON_SIZE,
+                applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, hover * 0.18F)));
         renderAvatar(context, contentX + 28.0F, contentY + 3.0F, 21.0F,
                 conversation.participantId(), conversation.username());
         drawMarqueeLabel(context, "conversation:" + conversation.id(), conversation.username(), 6.0F,

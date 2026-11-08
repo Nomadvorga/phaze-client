@@ -25,11 +25,13 @@ import vorga.phazeclient.implement.features.modules.hud.BossBarHud;
 import vorga.phazeclient.implement.features.modules.hud.RectHudModule;
 import vorga.phazeclient.implement.menu.MenuUiSettings;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Reader;
+import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -213,7 +215,8 @@ public final class ConfigManager {
 
         try {
             // 1. write to temp
-            try (FileWriter writer = new FileWriter(tmp.toFile())) {
+            // Gson emits many tiny writes; unbuffered, each one is a syscall the AV scanner inspects.
+            try (Writer writer = new BufferedWriter(new FileWriter(tmp.toFile()), 64 * 1024)) {
                 GSON.toJson(config, writer);
             }
             // 2. retain previous-good in .bak (best-effort). Copy, rather
@@ -235,6 +238,7 @@ public final class ConfigManager {
                 // overwriting the original in place.
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
             }
+            invalidateConfigList();
             return true;
         } catch (IOException e) {
             e.printStackTrace();
@@ -1095,7 +1099,37 @@ public final class ConfigManager {
      *   <li>Everything else, case-insensitive alphabetical.</li>
      * </ol>
      */
-    public synchronized String[] getConfigList() {
+    public String[] getConfigList() {
+        // Called several times per menu frame; listing the directory each time cost ~0.1 ms.
+        ConfigListSnapshot snapshot = configListSnapshot;
+        long now = System.nanoTime();
+        if (snapshot != null && now - snapshot.checkedNs() < CONFIG_LIST_RECHECK_NS) {
+            return snapshot.names().clone();
+        }
+        long generation = configListGeneration.get();
+        // Creating, deleting or renaming an entry updates the directory's own timestamp.
+        long stamp = configsDir.lastModified();
+        String[] names = snapshot != null && stamp != 0L && stamp == snapshot.directoryStamp()
+                ? snapshot.names()
+                : listConfigNames();
+        if (configListGeneration.get() == generation) {
+            configListSnapshot = new ConfigListSnapshot(names, stamp, now);
+        }
+        return names.clone();
+    }
+
+    private record ConfigListSnapshot(String[] names, long directoryStamp, long checkedNs) {}
+
+    private static final long CONFIG_LIST_RECHECK_NS = 250_000_000L;
+    private volatile ConfigListSnapshot configListSnapshot;
+    private final java.util.concurrent.atomic.AtomicLong configListGeneration = new java.util.concurrent.atomic.AtomicLong();
+
+    private void invalidateConfigList() {
+        configListGeneration.incrementAndGet();
+        configListSnapshot = null;
+    }
+
+    private String[] listConfigNames() {
         File[] files = configsDir.listFiles((dir, name) -> name.endsWith(".Phaze"));
 
         Set<String> uniqueNames = new LinkedHashSet<>();
@@ -1202,6 +1236,7 @@ public final class ConfigManager {
             System.err.println("[Phaze] Failed to delete .bak '"
                     + backupFile.getAbsolutePath() + "': " + e.getMessage());
         }
+        invalidateConfigList();
 
         // If we deleted what we were actively saving to, fall back to
         // a real config so subsequent setting changes have a stable
@@ -1230,6 +1265,7 @@ public final class ConfigManager {
         File newFile = getConfigFile(newName);
         if (oldFile.exists()) {
             oldFile.renameTo(newFile);
+            invalidateConfigList();
         }
     }
 

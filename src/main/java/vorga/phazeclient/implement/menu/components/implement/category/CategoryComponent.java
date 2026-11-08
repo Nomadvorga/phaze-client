@@ -64,6 +64,9 @@ public class CategoryComponent extends AbstractComponent {
     private String lastSearchText = "";
     private boolean visibleCacheDirty = true;
     private boolean isInitialized = false;
+    private static final long VISIBLE_REFRESH_INTERVAL_NS = 200_000_000L;
+    private long lastVisibleRefreshNs;
+    private final List<ModuleComponent> scratchVisible = new ArrayList<>();
 
     private int mouseX = 0;
     private int mouseY = 0;
@@ -104,7 +107,13 @@ public class CategoryComponent extends AbstractComponent {
         }
 
         String currentSearchText = menuScreen.getSearchComponent().getText().toLowerCase();
-        refreshVisibleCache(currentCategory, currentSearchText);
+        // Visibility also follows server rules; those changes may show up a few frames late.
+        long now = System.nanoTime();
+        if (!isInitialized || !currentCategory.equals(lastCategory) || !currentSearchText.equals(lastSearchText)
+                || now - lastVisibleRefreshNs >= VISIBLE_REFRESH_INTERVAL_NS) {
+            refreshVisibleCache(currentCategory, currentSearchText);
+            lastVisibleRefreshNs = now;
+        }
 
         if (!isInitialized && currentCategory == category) {
             isInitialized = true;
@@ -347,12 +356,9 @@ public class CategoryComponent extends AbstractComponent {
         return Math.max(0, maxScroll);
     }
 
-    private boolean shouldRenderComponent(ModuleComponent component) {
-        MenuScreen menuScreen = MenuScreen.INSTANCE;
+    private boolean shouldRenderComponent(ModuleComponent component, ModuleCategory currentCategory, String searchText) {
         ModuleCategory moduleCategory = component.getModule().getCategory();
         ModuleCategory secondaryCategory = component.getModule().getSecondaryCategory();
-        ModuleCategory currentCategory = menuScreen.getCategory();
-        String searchText = menuScreen.getSearchComponent().getText().toLowerCase();
 
         if (!component.getModule().isVisible()) {
             return false;
@@ -382,9 +388,10 @@ public class CategoryComponent extends AbstractComponent {
     }
 
     private void refreshVisibleCache(ModuleCategory currentCategory, String currentSearchText) {
-        List<ModuleComponent> nextVisible = new ArrayList<>();
+        List<ModuleComponent> nextVisible = scratchVisible;
+        nextVisible.clear();
         for (ModuleComponent moduleComponent : moduleComponents) {
-            if (shouldRenderComponent(moduleComponent)) {
+            if (shouldRenderComponent(moduleComponent, currentCategory, currentSearchText)) {
                 nextVisible.add(moduleComponent);
             }
         }

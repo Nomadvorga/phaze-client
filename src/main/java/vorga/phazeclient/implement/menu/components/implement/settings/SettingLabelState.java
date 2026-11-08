@@ -7,7 +7,9 @@ public final class SettingLabelState {
     public static final long TRAVEL_NANOS = 900_000_000L;
     public static final long HOLD_NANOS = 650_000_000L;
     public static final long RETURN_NANOS = 900_000_000L;
-    public static final float FADE_WIDTH = 18.0F;
+    public static final float FADE_WIDTH = 10.0F;
+    /** Hidden text that already gives a full-strength edge fade, so a few clipped pixels still read as faded. */
+    public static final float FULL_FADE_DISTANCE = 2.0F;
 
     private String text = "";
     private float width, height, overflow;
@@ -16,6 +18,7 @@ public final class SettingLabelState {
     private boolean widthInitialized;
     private long started;
     private boolean running;
+    private boolean returning;
     private boolean hovered;
     private float startFraction;
 
@@ -49,12 +52,16 @@ public final class SettingLabelState {
         // entry. Width changes preserve the phase, including reset-icon motion.
         if (!this.text.equals(text)) {
             running = false;
+            returning = false;
         }
         this.text = text;
         this.width = Math.max(0.0F, currentWidth - animatedInset);
         this.height = Math.max(0.0F, height);
         this.overflow = Math.max(0.0F, textWidth - this.width);
-        if (!isOverflowing()) running = false;
+        if (!isOverflowing()) {
+            running = false;
+            returning = false;
+        }
     }
 
     private float sampleWidth(long now) {
@@ -77,24 +84,43 @@ public final class SettingLabelState {
 
     /**
      * Starts one cycle on a card-entry edge, never on subsequent hovered frames.
-     * Leaving lets the cycle finish. A fresh entry during motion starts a new
-     * cycle from its current position, so neither leaving nor re-entry jumps.
-     * Fitting/changed labels require a new entry before they can animate.
+     * Leaving scrolls back to the start from the current position. A fresh entry
+     * during motion starts a new cycle from its current position, so neither
+     * leaving nor re-entry jumps. Fitting/changed labels require a new entry
+     * before they can animate.
      */
     public void updateHover(boolean hovered, long now) {
         float currentOffset = offset(now);
         boolean entered = hovered && !this.hovered;
+        boolean left = !hovered && this.hovered;
         this.hovered = hovered;
         if (entered && isOverflowing()) {
             startFraction = currentOffset / overflow;
             started = now;
             running = true;
+            returning = false;
+        } else if (left && running) {
+            // Reuses startFraction as the fraction the return starts from.
+            startFraction = currentOffset / overflow;
+            started = now;
+            returning = true;
+            running = startFraction > 0.0F;
         }
     }
 
     public float offset(long now) {
         if (!running || !isOverflowing()) return 0.0F;
         long elapsed = Math.max(0L, now - started);
+        if (returning) {
+            // Shorter remaining distance returns proportionally faster.
+            long duration = (long) (RETURN_NANOS * startFraction);
+            if (elapsed < duration) {
+                return overflow * startFraction * (1.0F - ease((float) elapsed / duration));
+            }
+            running = false;
+            returning = false;
+            return 0.0F;
+        }
         if (elapsed < TRAVEL_NANOS) {
             return overflow * (startFraction + (1.0F - startFraction) * ease((float) elapsed / TRAVEL_NANOS));
         }
@@ -110,13 +136,18 @@ public final class SettingLabelState {
         return Math.min(FADE_WIDTH, width * 0.5F);
     }
 
+    /** Edge fade strength for the amount of text hidden past that edge. */
+    public float edgeStrength(float hidden) {
+        return clamp(hidden / FULL_FADE_DISTANCE);
+    }
+
     /** Alpha multiplier at a viewport-local x. Only hidden text activates an edge fade. */
     public float alphaAt(float localX, float offset) {
         if (!isOverflowing()) return 1.0F;
         if (localX < 0.0F || localX > width) return 0.0F;
         float fade = fadeWidth();
-        float left = clamp(offset / fade);
-        float right = clamp((overflow - offset) / fade);
+        float left = edgeStrength(offset);
+        float right = edgeStrength(overflow - offset);
         return clamp((1.0F - left * (1.0F - ease(localX / fade)))
                 * (1.0F - right * (1.0F - ease((width - localX) / fade))));
     }

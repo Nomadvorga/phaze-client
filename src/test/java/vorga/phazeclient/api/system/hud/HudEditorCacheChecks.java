@@ -139,15 +139,15 @@ public final class HudEditorCacheChecks {
                         || call.name.equals("drawItem") || call.name.equals("openCapture") || call.name.equals("computeLayout")),
                 "mouse input neither renders content nor dirties caches");
         check(calls(input).stream().anyMatch(call -> call.name.equals("selectIsolatedHud")), "input only changes cache membership on selection/release");
-        for (String name : List.of("renderRectHud", "renderArmorHud", "renderConsumableHud", "renderInventoryHud", "renderPlayerModelHud")) {
+        for (String name : List.of("renderRectHud", "renderArmorHud", "renderConsumableHud", "renderInventoryHud", "renderPaperDollHud")) {
             check(hud.methods.stream().filter(m -> m.name.equals(name)).flatMap(m -> calls(m).stream())
                             .anyMatch(call -> call.name.equals("isBatchPass")), name + " keeps legacy input out of captures");
         }
-        check(hud.methods.stream().noneMatch(m -> m.name.equals("drawPlayerModel")), "Player Model has no unthrottled TAIL path");
-        check(read("vorga/phazeclient/mixins/InGameHudMixin").methods.stream().noneMatch(m -> m.name.contains("PlayerModel")),
-                "Player Model has no unthrottled vanilla hook");
-        check(hud.methods.stream().flatMap(m -> calls(m).stream()).anyMatch(call -> call.name.equals("renderPlayerModelHud")),
-                "Player Model participates in the common dispatcher");
+        check(hud.methods.stream().noneMatch(m -> m.name.equals("drawPaperDoll")), "PaperDoll has no unthrottled TAIL path");
+        check(read("vorga/phazeclient/mixins/InGameHudMixin").methods.stream().noneMatch(m -> m.name.contains("PaperDoll")),
+                "PaperDoll has no unthrottled vanilla hook");
+        check(hud.methods.stream().flatMap(m -> calls(m).stream()).anyMatch(call -> call.name.equals("renderPaperDollHud")),
+                "PaperDoll participates in the common dispatcher");
         check(calls(method(hud, "hasAnyHudEnabled")).stream().anyMatch(call -> call.owner.endsWith("/PackDisplayHud")),
                 "a standalone Pack Display does not get dropped by the guard");
         MethodNode child = method(hud, "renderBufferedHudInternal");

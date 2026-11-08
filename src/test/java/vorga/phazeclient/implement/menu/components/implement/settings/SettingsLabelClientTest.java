@@ -74,7 +74,7 @@ public final class SettingsLabelClientTest implements FabricClientGameTest {
             hoverCycle(context, fixture, fixture.bool, "boolean");
 
             // Returning to a card arms another cycle. Leaving mid-animation
-            // allows that cycle to finish, without requiring the cursor to stay.
+            // scrolls the label back to its start.
             hoverControl(context, fixture.value);
             context.waitFor(client -> component(fixture.value).label.state().offset(System.nanoTime()) > 1.0F);
             moveOutside(context);

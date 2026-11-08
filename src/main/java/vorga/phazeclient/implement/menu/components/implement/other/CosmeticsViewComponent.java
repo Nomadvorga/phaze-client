@@ -11,7 +11,6 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
-import org.lwjgl.opengl.GL11;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
 import vorga.phazeclient.api.system.animation.implement.DecelerateAnimation;
@@ -19,6 +18,7 @@ import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
+import vorga.phazeclient.api.system.shape.batched.GuiClipState;
 import vorga.phazeclient.api.system.snapshot.CardSnapshotCache;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
@@ -80,8 +80,14 @@ public final class CosmeticsViewComponent extends AbstractComponent {
     private final Map<String, CardAnimations> cardAnimations = new HashMap<>();
     private final Map<String, Object> catalogPreviewCacheKeys = new HashMap<>();
     private final Set<String> livePreviewFallback = new HashSet<>();
+    private static final long PLAYER_PREVIEW_REFRESH_NS = 1_000_000_000L / 60L;
+    private static final float PLAYER_PREVIEW_HALF_WIDTH = 170.0F;
+    private static final float PLAYER_PREVIEW_ABOVE = 150.0F;
+    private static final float PLAYER_PREVIEW_BELOW = 30.0F;
     private final Object playerPreviewCacheKey = new Object();
     private long lastPlayerPreviewCaptureNs;
+    private boolean playerPreviewValidated;
+    private boolean livePlayerPreview;
 
     public CosmeticsViewComponent() {
         pageAnimation.setDirectionAndFinish(Direction.BACKWARDS);
@@ -635,23 +641,87 @@ public final class CosmeticsViewComponent extends AbstractComponent {
             float bottomY,
             float alpha
     ) {
-        Quaternionf bodyRotation = new Quaternionf()
-                .rotateZ((float) Math.PI)
-                .rotateY((float) Math.toRadians(previewYaw));
-        // Keep the player at one size for every yaw. Wide cosmetics may extend
-        // outside the preview panel (the scissor is disabled below), so fitting
-        // their rotated bounds by shrinking the whole player is unnecessary.
-        float previewScale = 43.0F;
-        EntityPose previousPose = player.getPose();
-        boolean scissorEnabled = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
-        int[] scissor = scissorEnabled ? new int[4] : null;
+        BatchedRectangle.flushIfBatching();
+        boolean scissorEnabled = GuiClipState.isEnabled();
+        int scissorX = GuiClipState.boxX(), scissorY = GuiClipState.boxY();
+        int scissorWidth = GuiClipState.boxWidth(), scissorHeight = GuiClipState.boxHeight();
         if (scissorEnabled) {
-            GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, scissor);
             // Wide cosmetics are deliberately allowed to extend beyond the
             // preview panel. A parent GUI scissor otherwise hides them until
             // the animated page/card boundary happens to move past a wing.
             RenderSystem.disableScissor();
         }
+        try {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (livePlayerPreview || client.getWindow() == null) {
+                drawPlayerPreviewEntity(context, player, centerX, bottomY, alpha);
+                return;
+            }
+            // The player plus an imported cosmetic is the most expensive thing in
+            // the menu; it is redrawn into a transparent snapshot at a fixed rate
+            // (or at once on selection/rotation changes) and blitted otherwise.
+            float boxX = centerX - PLAYER_PREVIEW_HALF_WIDTH;
+            float boxY = bottomY - PLAYER_PREVIEW_ABOVE;
+            float boxW = PLAYER_PREVIEW_HALF_WIDTH * 2.0F;
+            float boxH = PLAYER_PREVIEW_ABOVE + PLAYER_PREVIEW_BELOW;
+            float framebufferScale = (float) client.getWindow().getScaleFactor();
+            CardSnapshotCache.Snapshot snapshot = CardSnapshotCache.getOrCreate(
+                    playerPreviewCacheKey,
+                    Math.max(1, Math.round(boxW * framebufferScale)),
+                    Math.max(1, Math.round(boxH * framebufferScale)),
+                    true
+            );
+            int hash = 31 * previewSelection.toLowerCase(Locale.ROOT).hashCode() + Float.floatToIntBits(previewYaw);
+            long now = System.nanoTime();
+            if (!snapshot.populated || snapshot.hash != hash
+                    || now - lastPlayerPreviewCaptureNs >= PLAYER_PREVIEW_REFRESH_NS) {
+                boolean captured = false;
+                CardSnapshotCache.beginCapture(snapshot, boxW, boxH);
+                try {
+                    DrawContext captureContext = new DrawContext(
+                            client, client.getBufferBuilders().getEntityVertexConsumers()
+                    );
+                    drawPlayerPreviewEntity(captureContext, player, centerX - boxX, bottomY - boxY, 1.0F);
+                    captureContext.draw();
+                    captured = true;
+                } finally {
+                    CardSnapshotCache.endCapture(captured);
+                }
+                snapshot.hash = hash;
+                lastPlayerPreviewCaptureNs = now;
+                if (!playerPreviewValidated) {
+                    playerPreviewValidated = true;
+                    if (!CardSnapshotCache.hasVisiblePixels(snapshot)) {
+                        // A shader pipeline redirected the capture; stay live.
+                        livePlayerPreview = true;
+                        drawPlayerPreviewEntity(context, player, centerX, bottomY, alpha);
+                        return;
+                    }
+                }
+            }
+            CardSnapshotCache.blitPremultiplied(context, snapshot, boxX, boxY, boxW, boxH, alpha);
+        } finally {
+            if (scissorEnabled) {
+                RenderSystem.enableScissor(scissorX, scissorY, scissorWidth, scissorHeight);
+            }
+        }
+    }
+
+    private void drawPlayerPreviewEntity(
+            DrawContext context,
+            ClientPlayerEntity player,
+            float centerX,
+            float bottomY,
+            float alpha
+    ) {
+        Quaternionf bodyRotation = new Quaternionf()
+                .rotateZ((float) Math.PI)
+                .rotateY((float) Math.toRadians(previewYaw));
+        // Keep the player at one size for every yaw. Wide cosmetics may extend
+        // outside the preview panel, so fitting their rotated bounds by
+        // shrinking the whole player is unnecessary.
+        float previewScale = 43.0F;
+        EntityPose previousPose = player.getPose();
         try {
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
             player.setPose(EntityPose.STANDING);
@@ -665,11 +735,6 @@ public final class CosmeticsViewComponent extends AbstractComponent {
         } finally {
             player.setPose(previousPose);
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-            if (scissorEnabled) {
-                RenderSystem.enableScissor(
-                        scissor[0], scissor[1], scissor[2], scissor[3]
-                );
-            }
         }
     }
 

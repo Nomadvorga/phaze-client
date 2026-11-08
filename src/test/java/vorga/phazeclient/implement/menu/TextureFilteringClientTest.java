@@ -120,7 +120,7 @@ public final class TextureFilteringClientTest implements FabricClientGameTest {
 
     private List<Draw> draws(MatrixStack matrices) {
         List<Draw> result = new ArrayList<>();
-        Image raw = new Image().setTexture("textures/back_arrow.png");
+        Image raw = new Image().setTexture("textures/color_picker/alpha.png");
         Image msdf = new Image().setTexture("textures/settings.png");
         var shape = ShapeProperties.create(matrices, 2, 2, 12, 12).build();
         result.add(new Draw("Image raster fallback", () -> raw.render(shape)));

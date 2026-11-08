@@ -38,8 +38,8 @@ public class Rectangle implements Shape, QuickImports {
         // batched path produces pixel-identical output - same SDF math,
         // same gradient bilinear, same outline blend - because
         // BatchedRectangle replicates Rectangle's per-rect math and
-        // the round_batched shader is a direct port of round.fsh with
-        // the uniforms reshaped as per-vertex attributes.
+        // the gui_batched shader's rect branch is a direct port of
+        // round.fsh with the uniforms reshaped as per-vertex attributes.
         if (BatchedRectangle.isBatching()) {
             BatchedRectangle.submit(shape);
             return;

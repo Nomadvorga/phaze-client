@@ -153,8 +153,8 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.InventoryHud.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.InventoryHud.getInstance());
         }
-        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.PlayerModelHud.class) == null) {
-            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.PlayerModelHud.getInstance());
+        if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.PaperDoll.class) == null) {
+            moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.PaperDoll.getInstance());
         }
         if (moduleProvider.get(vorga.phazeclient.implement.features.modules.hud.TpsHud.class) == null) {
             moduleProvider.getModules().add(vorga.phazeclient.implement.features.modules.hud.TpsHud.getInstance());
@@ -404,8 +404,6 @@ public class Main implements ModInitializer {
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
                 client -> configManager.flushIfDirty()
         );
-        vorga.phazeclient.implement.cosmetics.bridge.PhazePulsePetRenderer.register();
-        vorga.phazeclient.implement.cosmetics.bridge.PhazePulseGraffitiRenderer.register();
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
                 client -> vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
                         .getInstance()

@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
+import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.color.ColorUtil;
@@ -28,6 +29,7 @@ public class Render2DUtil implements QuickImports {
         MatrixStack matrix = context.getMatrices();
         Matrix4f matrix4f = matrix.peek().getPositionMatrix();
         if (!QUAD.isEmpty()) {
+            BatchedRectangle.flushIfBatching();
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
             RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
@@ -61,6 +63,8 @@ public class Render2DUtil implements QuickImports {
         rectangle.render(ShapeProperties.create(matrix, x, y, size, size).round(round).color(backgroundColor).build());
 
         if (id != null) {
+            // The blend function below must not be replaced by a deferred-batch flush inside the draw.
+            BatchedRectangle.flushIfBatching();
             matrix.push();
             matrix.translate(x, y, 0);
             matrix.scale(size, size, 1);
@@ -116,6 +120,7 @@ public class Render2DUtil implements QuickImports {
     }
 
     public void drawTexturedQuad(@NonNull MatrixStack matrix, @NonNull Identifier texture, float x1, float x2, float y1, float y2, float u1, float u2, float v1, float v2, int color) {
+        BatchedRectangle.flushIfBatching();
         RenderSystem.setShaderTexture(0, texture);
         RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
         BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);

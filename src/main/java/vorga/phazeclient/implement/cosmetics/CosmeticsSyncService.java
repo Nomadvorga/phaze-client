@@ -6,11 +6,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import vorga.phazeclient.base.util.PhazeEventService;
 import vorga.phazeclient.base.util.RemoteRulesService;
 
 import java.io.BufferedReader;
@@ -20,9 +18,10 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -30,23 +29,43 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Lightweight cross-server cosmetic presence.
  *
  * <p>The backend stores and pushes only a UUID, catalog id and enabled bit.
- * Models, textures, physics and rendering remain client-side. Initial state is
- * fetched once for the currently loaded player entities; later selection
- * changes arrive over the existing Phaze SSE connection.
+ * Models, textures, physics and rendering remain client-side.
+ *
+ * <h3>Traffic model</h3>
+ * Cosmetic state is global per player UUID, and every change is pushed over
+ * the Phaze SSE stream. So a UUID only has to be queried once: after that the
+ * stream keeps it current for as long as it stays connected. Players walking
+ * in and out of render distance therefore cost nothing; only never-seen UUIDs
+ * are queried, batched and rate-limited. A stream reconnect ({@code hello})
+ * invalidates the cache because events may have been missed while offline,
+ * and while the stream is down entries expire after {@link #OFFLINE_STALE_MS}.
  */
 public final class CosmeticsSyncService {
     private static final Logger LOG = LoggerFactory.getLogger("PhazeCosmeticsSync");
     private static final CosmeticsSyncService INSTANCE = new CosmeticsSyncService();
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int READ_TIMEOUT_MS = 15_000;
+    /** Server-side cap for {@code /api/cosmetics/query}. */
     private static final int MAX_QUERY_PLAYERS = 200;
-    private static final long FALLBACK_REFRESH_MS = 10L * 60L * 1000L;
+    private static final int MAX_CACHED_PLAYERS = 4096;
+    private static final long ROSTER_CHECK_MS = 500L;
+    /** Lets players that load in the same moment share one request. */
+    private static final long BATCH_WINDOW_MS = 400L;
+    /**
+     * The server allows 30 queries per minute per IP, and players behind one
+     * NAT share that budget, so a single client stays well below it.
+     */
+    private static final long MIN_QUERY_INTERVAL_MS = 5_000L;
+    private static final long OFFLINE_STALE_MS = 10L * 60L * 1000L;
+    private static final long FAILURE_BACKOFF_MIN_MS = 5_000L;
+    private static final long FAILURE_BACKOFF_MAX_MS = 2L * 60L * 1000L;
+    private static final long RATE_LIMITED_BACKOFF_MS = 65_000L;
     private static final String SLOT_SEPARATOR = "|";
 
     private final ScheduledExecutorService io =
@@ -56,23 +75,20 @@ public final class CosmeticsSyncService {
                 return thread;
             });
     private final Map<UUID, RemoteCosmetic> states = new ConcurrentHashMap<>();
-    private final Map<UUID, PulseRemoteCosmetic> pulseStates = new ConcurrentHashMap<>();
-    private final Map<String, PulseGraffiti> pulseGraffiti = new ConcurrentHashMap<>();
+    /** Local time a UUID's state was last confirmed, present or absent. */
+    private final Map<UUID, Long> confirmedAt = new ConcurrentHashMap<>();
+    /** Last payload the server accepted per local UUID during this launch. */
+    private final Map<UUID, String> publishedPayloads = new ConcurrentHashMap<>();
     private final AtomicBoolean queryInFlight = new AtomicBoolean(false);
-    private final AtomicBoolean graffitiQueryInFlight = new AtomicBoolean(false);
-    private final AtomicReference<GraffitiQuery> pendingGraffitiQuery = new AtomicReference<>();
+    private final AtomicInteger cacheEpoch = new AtomicInteger();
 
     private ScheduledFuture<?> pendingPublish;
     private UUID localPlayerUuid;
-    private String rosterFingerprint = "";
     private long lastRosterCheckMs;
-    private volatile long lastQueryMs;
+    private long pendingSinceMs;
+    private volatile long nextQueryAllowedMs;
+    private volatile long failureBackoffMs = FAILURE_BACKOFF_MIN_MS;
     private volatile boolean publishOnJoin = true;
-    private volatile boolean forceRefresh;
-    private volatile String graffitiContext = "";
-    private volatile long lastGraffitiQueryMs;
-    private volatile long lastPulseCosmeticRevision;
-    private volatile long lastPulseGraffitiRevision;
 
     private CosmeticsSyncService() {
     }
@@ -86,11 +102,7 @@ public final class CosmeticsSyncService {
         if (client == null || client.player == null || client.world == null
                 || client.getNetworkHandler() == null) {
             localPlayerUuid = null;
-            rosterFingerprint = "";
-            states.clear();
-            pulseStates.clear();
-            pulseGraffiti.clear();
-            graffitiContext = "";
+            pendingSinceMs = 0L;
             publishOnJoin = true;
             return;
         }
@@ -98,9 +110,7 @@ public final class CosmeticsSyncService {
         UUID currentUuid = client.player.getUuid();
         if (!currentUuid.equals(localPlayerUuid)) {
             localPlayerUuid = currentUuid;
-            rosterFingerprint = "";
             publishOnJoin = true;
-            forceRefresh = true;
         }
         if (publishOnJoin) {
             publishOnJoin = false;
@@ -108,31 +118,19 @@ public final class CosmeticsSyncService {
         }
 
         long now = System.currentTimeMillis();
-        if (!forceRefresh && now - lastRosterCheckMs < 2_000L) return;
+        if (now - lastRosterCheckMs < ROSTER_CHECK_MS) return;
         lastRosterCheckMs = now;
 
-        List<UUID> players = loadedPlayerUuids(client);
-        String fingerprint = players.toString();
-        boolean rosterChanged = !fingerprint.equals(rosterFingerprint);
-        boolean fallbackDue = now - lastQueryMs >= FALLBACK_REFRESH_MS;
-        if (forceRefresh || rosterChanged || fallbackDue) {
-            forceRefresh = false;
-            rosterFingerprint = fingerprint;
-            query(players);
-            if (rosterChanged) {
-                io.schedule(() -> forceRefresh = true, 2L, TimeUnit.SECONDS);
-            }
+        List<UUID> loaded = loadedPlayerUuids(client);
+        trimCache(loaded);
+        List<UUID> unknown = unconfirmed(loaded, now);
+        if (unknown.isEmpty()) {
+            pendingSinceMs = 0L;
+            return;
         }
-
-        String serverKey = vorga.phazeclient.implement.cosmetics.bridge.SharedWorldKey.get(client);
-        String dimension = vorga.phazeclient.implement.cosmetics.bridge.SharedWorldKey.dimension(client);
-        String context = String.valueOf(serverKey) + '|' + dimension;
-        if (serverKey != null && dimension != null
-                && (!context.equals(graffitiContext)
-                || now - lastGraffitiQueryMs >= FALLBACK_REFRESH_MS)) {
-            graffitiContext = context;
-            queryGraffiti(serverKey, dimension);
-        }
+        if (pendingSinceMs == 0L) pendingSinceMs = now;
+        if (now - pendingSinceMs < BATCH_WINDOW_MS || now < nextQueryAllowedMs) return;
+        if (query(unknown)) pendingSinceMs = 0L;
     }
 
     /**
@@ -144,121 +142,27 @@ public final class CosmeticsSyncService {
         pendingPublish = io.schedule(this::postLocalState, 120L, TimeUnit.MILLISECONDS);
     }
 
-    /** Used after SSE reconnect/hello to repair any event missed while offline. */
+    /** Called on SSE {@code hello}: anything may have changed while the stream was down. */
     public void requestRefresh() {
-        forceRefresh = true;
-        lastGraffitiQueryMs = 0L;
+        cacheEpoch.incrementAndGet();
+        confirmedAt.clear();
+        nextQueryAllowedMs = 0L;
     }
 
-    /** Applies an immediate cosmetic SSE event. */
+    /** Applies an immediate cosmetic SSE event; each one carries the player's full state. */
     public void acceptEvent(JsonObject event) {
         try {
             UUID uuid = UUID.fromString(event.get("playerUuid").getAsString());
-            String cosmetic = event.get("cosmetic").getAsString();
-            boolean equipped = event.get("equipped").getAsBoolean();
-            long updatedAt = event.get("updatedAt").getAsLong();
-            RemoteCosmetic decoded = decode(cosmetic, equipped, updatedAt);
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client == null) return;
-            client.execute(() -> {
-                if (!isLoadedPlayer(uuid)) return;
-                putIfNewer(uuid, decoded);
-            });
-        } catch (Throwable error) {
-            LOG.debug("invalid cosmetic event: {}", error.toString());
-        }
-    }
-
-    /** Applies Pulse Cosmetics' separate SSE namespace without affecting Phaze state. */
-    public void acceptPulseEvent(JsonObject event) {
-        try {
-            notePulseRevision(event, false);
-            UUID uuid = UUID.fromString(event.get("playerUuid").getAsString());
-            PulseRemoteCosmetic decoded = decodePulse(
+            RemoteCosmetic decoded = decode(
                     event.get("cosmetic").getAsString(),
                     event.get("equipped").getAsBoolean(),
                     event.get("updatedAt").getAsLong()
             );
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client == null) return;
-            client.execute(() -> {
-                if (!isLoadedPlayer(uuid)) return;
-                putPulseIfNewer(uuid, decoded);
-            });
+            putIfNewer(uuid, decoded);
+            confirmedAt.put(uuid, System.currentTimeMillis());
         } catch (Throwable error) {
-            LOG.debug("invalid pulse cosmetic event: {}", error.toString());
+            LOG.debug("invalid cosmetic event: {}", error.toString());
         }
-    }
-
-    public void acceptPulseGraffitiEvent(JsonObject event) {
-        notePulseRevision(event, true);
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) return;
-        client.execute(() -> {
-            try {
-                String serverKey = event.get("serverKey").getAsString();
-                String dimension = event.get("dimension").getAsString();
-                if (!(serverKey + '|' + dimension).equals(graffitiContext)) return;
-                BlockPos pos = new BlockPos(event.get("x").getAsInt(), event.get("y").getAsInt(), event.get("z").getAsInt());
-                Direction face = Direction.byName(event.get("face").getAsString());
-                if (face == null) return;
-                String key = graffitiKey(serverKey, dimension, pos, face);
-                if ("delete".equals(event.get("action").getAsString())) {
-                    pulseGraffiti.remove(key);
-                } else {
-                    int id = event.get("graffitiId").getAsInt();
-                    vorga.phazeclient.implement.cosmetics.bridge.CosmeticEntry entry = vorga.phazeclient.implement.cosmetics.bridge.CosmeticCatalog.byId(id);
-                    if (entry != null && entry.category() == vorga.phazeclient.implement.cosmetics.bridge.CosmeticCategory.GRAFFITI) {
-                        pulseGraffiti.put(key, new PulseGraffiti(serverKey, dimension, pos, face, id));
-                    }
-                }
-                if (graffitiQueryInFlight.get()) queryGraffiti(serverKey, dimension);
-            } catch (Throwable error) {
-                LOG.debug("invalid shared graffiti event: {}", error.toString());
-            }
-        });
-    }
-
-    public List<PulseGraffiti> pulseGraffiti() {
-        return List.copyOf(pulseGraffiti.values());
-    }
-
-    public void acceptPushCheckpoint(JsonObject payload) {
-        try {
-            JsonObject revisions = payload.getAsJsonObject("pulseRevisions");
-            if (revisions == null) return;
-            long cosmetic = revisions.get("cosmetic").getAsLong();
-            long graffiti = revisions.get("graffiti").getAsLong();
-            if (cosmetic > lastPulseCosmeticRevision) {
-                lastPulseCosmeticRevision = cosmetic;
-                forceRefresh = true;
-            }
-            if (graffiti > lastPulseGraffitiRevision) {
-                lastPulseGraffitiRevision = graffiti;
-                lastGraffitiQueryMs = 0L;
-            }
-        } catch (Throwable error) {
-            LOG.debug("invalid push checkpoint: {}", error.toString());
-        }
-    }
-
-    private void notePulseRevision(JsonObject event, boolean graffiti) {
-        if (!event.has("revision")) return;
-        long revision = event.get("revision").getAsLong();
-        if (graffiti) lastPulseGraffitiRevision = Math.max(lastPulseGraffitiRevision, revision);
-        else lastPulseCosmeticRevision = Math.max(lastPulseCosmeticRevision, revision);
-    }
-
-    public vorga.phazeclient.implement.cosmetics.bridge.CosmeticEntry pulseEntryFor(
-            UUID playerUuid,
-            vorga.phazeclient.implement.cosmetics.bridge.CosmeticCategory category
-    ) {
-        if (playerUuid == null) return null;
-        PulseRemoteCosmetic state = pulseStates.get(playerUuid);
-        if (state == null || !state.equipped) return null;
-        int id = state.id(category);
-        vorga.phazeclient.implement.cosmetics.bridge.CosmeticEntry entry = vorga.phazeclient.implement.cosmetics.bridge.CosmeticCatalog.byId(id);
-        return entry != null && entry.category() == category ? entry : null;
     }
 
     public String selectionFor(UUID playerUuid) {
@@ -267,51 +171,34 @@ public final class CosmeticsSyncService {
     }
 
     public String wingSelectionFor(UUID playerUuid) {
-        if (playerUuid == null) return null;
-        RemoteCosmetic state = states.get(playerUuid);
-        if (state == null || !state.equipped
-                || CosmeticsState.NONE.equalsIgnoreCase(state.wing)) {
-            return null;
-        }
-        return CosmeticsState.getInstance().isAvailable(state.wing)
-                ? state.wing
-                : null;
+        RemoteCosmetic state = equippedState(playerUuid);
+        return state == null ? null : available(state.wing);
     }
 
     public String capeSelectionFor(UUID playerUuid) {
-        if (playerUuid == null) return null;
-        RemoteCosmetic state = states.get(playerUuid);
-        if (state == null || !state.equipped
-                || CosmeticsState.NONE.equalsIgnoreCase(state.cape)) {
-            return null;
-        }
-        return CosmeticsState.getInstance().isAvailable(state.cape)
-                ? state.cape
-                : null;
+        RemoteCosmetic state = equippedState(playerUuid);
+        return state == null ? null : available(state.cape);
     }
 
     public String hatSelectionFor(UUID playerUuid) {
-        if (playerUuid == null) return null;
-        RemoteCosmetic state = states.get(playerUuid);
-        if (state == null || !state.equipped
-                || CosmeticsState.NONE.equalsIgnoreCase(state.hat)) {
-            return null;
-        }
-        return CosmeticsState.getInstance().isAvailable(state.hat)
-                ? state.hat
-                : null;
+        RemoteCosmetic state = equippedState(playerUuid);
+        return state == null ? null : available(state.hat);
     }
 
     public String petSelectionFor(UUID playerUuid) {
+        RemoteCosmetic state = equippedState(playerUuid);
+        return state == null ? null : available(state.pet);
+    }
+
+    private RemoteCosmetic equippedState(UUID playerUuid) {
         if (playerUuid == null) return null;
         RemoteCosmetic state = states.get(playerUuid);
-        if (state == null || !state.equipped
-                || CosmeticsState.NONE.equalsIgnoreCase(state.pet)) {
-            return null;
-        }
-        return CosmeticsState.getInstance().isAvailable(state.pet)
-                ? state.pet
-                : null;
+        return state != null && state.equipped ? state : null;
+    }
+
+    private static String available(String id) {
+        if (id == null || CosmeticsState.NONE.equalsIgnoreCase(id)) return null;
+        return CosmeticsState.getInstance().isAvailable(id) ? id : null;
     }
 
     private void postLocalState() {
@@ -324,31 +211,47 @@ public final class CosmeticsSyncService {
         if (rules.getApiBase() == null || rules.getApiBase().isBlank()) return;
 
         CosmeticsState local = CosmeticsState.getInstance();
-        JsonObject body = new JsonObject();
-        body.addProperty("clientId", rules.getClientId());
-        body.addProperty("playerUuid", client.player.getUuid().toString());
+        UUID playerUuid = client.player.getUuid();
         String wing = local.isWingEquipped() ? local.getSelectedWing() : CosmeticsState.NONE;
         String cape = local.isCapeEquipped() ? local.getSelectedCape() : CosmeticsState.NONE;
         String hat = local.isHatEquipped() ? local.getSelectedHat() : CosmeticsState.NONE;
         String pet = local.isPetEquipped() ? local.getSelectedPet() : CosmeticsState.NONE;
-        body.addProperty("cosmetic", String.join(SLOT_SEPARATOR, wing, cape, hat, pet));
-        body.addProperty("equipped", local.isEquipped());
+        String cosmetic = String.join(SLOT_SEPARATOR, wing, cape, hat, pet);
+        boolean equipped = local.isEquipped();
+        String payloadKey = cosmetic + "#" + equipped;
+        if (payloadKey.equals(publishedPayloads.get(playerUuid))) return;
+
+        JsonObject body = new JsonObject();
+        body.addProperty("clientId", rules.getClientId());
+        body.addProperty("playerUuid", playerUuid.toString());
+        body.addProperty("cosmetic", cosmetic);
+        body.addProperty("equipped", equipped);
         try {
             request("/api/cosmetics/state", body);
+            publishedPayloads.put(playerUuid, payloadKey);
+        } catch (HttpStatusException error) {
+            LOG.debug("state publish rejected: HTTP {}", error.status);
+            if (error.status == 429 || error.status >= 500) publishOnJoin = true;
         } catch (Throwable error) {
             LOG.debug("state publish failed: {}", error.toString());
             publishOnJoin = true;
         }
     }
 
-    private void query(List<UUID> playerUuids) {
-        if (playerUuids.isEmpty() || !queryInFlight.compareAndSet(false, true)) return;
+    /** Returns false when nothing was sent, so the caller keeps the batch pending. */
+    private boolean query(List<UUID> playerUuids) {
+        if (playerUuids.isEmpty() || !queryInFlight.compareAndSet(false, true)) return false;
         String apiBase = RemoteRulesService.getInstance().getApiBase();
         if (apiBase == null || apiBase.isBlank()) {
             queryInFlight.set(false);
-            return;
+            return false;
         }
-        List<UUID> requested = List.copyOf(playerUuids);
+        List<UUID> requested = List.copyOf(playerUuids.size() > MAX_QUERY_PLAYERS
+                ? playerUuids.subList(0, MAX_QUERY_PLAYERS)
+                : playerUuids);
+        long startedAt = System.currentTimeMillis();
+        int epoch = cacheEpoch.get();
+        nextQueryAllowedMs = startedAt + MIN_QUERY_INTERVAL_MS;
         io.execute(() -> {
             try {
                 JsonObject body = new JsonObject();
@@ -357,98 +260,61 @@ public final class CosmeticsSyncService {
                 body.add("playerUuids", ids);
                 JsonArray sources = new JsonArray();
                 sources.add("phaze");
-                sources.add("pulse");
                 body.add("sources", sources);
                 JsonObject response = request("/api/cosmetics/query", body);
                 JsonArray array = response.getAsJsonArray("states");
-                Map<UUID, Boolean> returned = new ConcurrentHashMap<>();
-                Map<UUID, Boolean> pulseReturned = new ConcurrentHashMap<>();
+                Set<UUID> returned = new HashSet<>();
                 if (array != null) {
                     for (JsonElement element : array) {
                         if (!element.isJsonObject()) continue;
                         JsonObject value = element.getAsJsonObject();
-                        UUID uuid = UUID.fromString(value.get("playerUuid").getAsString());
                         String source = value.has("source") ? value.get("source").getAsString() : "phaze";
-                        if ("pulse".equals(source)) {
-                            pulseReturned.put(uuid, Boolean.TRUE);
-                            putPulseIfNewer(uuid, decodePulse(
-                                    value.get("cosmetic").getAsString(),
-                                    value.get("equipped").getAsBoolean(),
-                                    value.get("updatedAt").getAsLong()
-                            ));
-                        } else {
-                            returned.put(uuid, Boolean.TRUE);
-                            putIfNewer(uuid, decode(
-                                    value.get("cosmetic").getAsString(),
-                                    value.get("equipped").getAsBoolean(),
-                                    value.get("updatedAt").getAsLong()
-                            ));
-                        }
+                        if (!"phaze".equals(source)) continue;
+                        UUID uuid = UUID.fromString(value.get("playerUuid").getAsString());
+                        returned.add(uuid);
+                        putIfNewer(uuid, decode(
+                                value.get("cosmetic").getAsString(),
+                                value.get("equipped").getAsBoolean(),
+                                value.get("updatedAt").getAsLong()
+                        ));
                     }
                 }
                 for (UUID uuid : requested) {
-                    if (!returned.containsKey(uuid)) states.remove(uuid);
-                    if (!pulseReturned.containsKey(uuid)) pulseStates.remove(uuid);
+                    if (!returned.contains(uuid)) {
+                        states.computeIfPresent(uuid, (ignored, current) ->
+                                current.receivedAt < startedAt ? null : current);
+                    }
                 }
-                lastQueryMs = System.currentTimeMillis();
+                if (cacheEpoch.get() == epoch) {
+                    long confirmed = System.currentTimeMillis();
+                    requested.forEach(uuid -> confirmedAt.put(uuid, confirmed));
+                }
+                failureBackoffMs = FAILURE_BACKOFF_MIN_MS;
+            } catch (HttpStatusException error) {
+                LOG.debug("roster query rejected: HTTP {}", error.status);
+                if (error.status == 429) {
+                    nextQueryAllowedMs = System.currentTimeMillis() + RATE_LIMITED_BACKOFF_MS;
+                } else if (error.status >= 400 && error.status < 500) {
+                    // The same body would be rejected again; don't ask about these players.
+                    long confirmed = System.currentTimeMillis();
+                    requested.forEach(uuid -> confirmedAt.put(uuid, confirmed));
+                } else {
+                    backOff();
+                }
             } catch (Throwable error) {
                 LOG.debug("roster query failed: {}", error.toString());
+                backOff();
             } finally {
                 queryInFlight.set(false);
             }
         });
+        return true;
     }
 
-    private void queryGraffiti(String serverKey, String dimension) {
-        pendingGraffitiQuery.set(new GraffitiQuery(serverKey, dimension));
-        startGraffitiQueryDrain();
-    }
-
-    private void startGraffitiQueryDrain() {
-        if (!graffitiQueryInFlight.compareAndSet(false, true)) return;
-        io.execute(() -> {
-            try {
-                GraffitiQuery query;
-                while ((query = pendingGraffitiQuery.getAndSet(null)) != null) {
-                    try {
-                        GraffitiQuery currentQuery = query;
-                        JsonObject body = new JsonObject();
-                        body.addProperty("serverKey", currentQuery.serverKey());
-                        body.addProperty("dimension", currentQuery.dimension());
-                        JsonArray array = request("/api/graffiti/query", body).getAsJsonArray("graffiti");
-                        Map<String, PulseGraffiti> next = new ConcurrentHashMap<>();
-                        if (array != null) for (JsonElement element : array) {
-                            JsonObject value = element.getAsJsonObject();
-                            int id = value.get("graffitiId").getAsInt();
-                            vorga.phazeclient.implement.cosmetics.bridge.CosmeticEntry entry = vorga.phazeclient.implement.cosmetics.bridge.CosmeticCatalog.byId(id);
-                            Direction face = Direction.byName(value.get("face").getAsString());
-                            if (entry == null || entry.category() != vorga.phazeclient.implement.cosmetics.bridge.CosmeticCategory.GRAFFITI || face == null) continue;
-                            BlockPos pos = new BlockPos(value.get("x").getAsInt(), value.get("y").getAsInt(), value.get("z").getAsInt());
-                            PulseGraffiti graffiti = new PulseGraffiti(currentQuery.serverKey(), currentQuery.dimension(), pos, face, id);
-                            next.put(graffitiKey(currentQuery.serverKey(), currentQuery.dimension(), pos, face), graffiti);
-                        }
-                        MinecraftClient client = MinecraftClient.getInstance();
-                        if (client != null) client.execute(() -> {
-                            pulseGraffiti.entrySet().removeIf(entry ->
-                                    entry.getValue().serverKey.equals(currentQuery.serverKey())
-                                            && entry.getValue().dimension.equals(currentQuery.dimension()));
-                            pulseGraffiti.putAll(next);
-                        });
-                        lastGraffitiQueryMs = System.currentTimeMillis();
-                    } catch (Throwable error) {
-                        LOG.debug("shared graffiti query failed: {}", error.toString());
-                    }
-                }
-            } finally {
-                graffitiQueryInFlight.set(false);
-                if (pendingGraffitiQuery.get() != null) startGraffitiQueryDrain();
-            }
-        });
-    }
-
-    private static String graffitiKey(String serverKey, String dimension, BlockPos pos, Direction face) {
-        return serverKey + '|' + dimension + '|' + pos.getX() + '|' + pos.getY()
-                + '|' + pos.getZ() + '|' + face.getName();
+    private void backOff() {
+        long delay = failureBackoffMs;
+        failureBackoffMs = Math.min(FAILURE_BACKOFF_MAX_MS, delay * 2L);
+        nextQueryAllowedMs = System.currentTimeMillis() + delay;
     }
 
     private JsonObject request(String path, JsonObject body) throws Exception {
@@ -472,7 +338,7 @@ public final class CosmeticsSyncService {
             }
             int status = connection.getResponseCode();
             if (status < 200 || status >= 300) {
-                throw new IllegalStateException("HTTP " + status);
+                throw new HttpStatusException(status);
             }
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     connection.getInputStream(), StandardCharsets.UTF_8))) {
@@ -482,6 +348,7 @@ public final class CosmeticsSyncService {
                 while ((count = reader.read(buffer)) >= 0) {
                     json.append(buffer, 0, count);
                 }
+                if (json.isEmpty()) return new JsonObject();
                 JsonElement parsed = JsonParser.parseString(json.toString());
                 return parsed.isJsonObject() ? parsed.getAsJsonObject() : new JsonObject();
             }
@@ -494,45 +361,40 @@ public final class CosmeticsSyncService {
         List<UUID> result = new ArrayList<>();
         for (AbstractClientPlayerEntity player : client.world.getPlayers()) {
             if (player == client.player) continue;
-            result.add(player.getUuid());
-            if (result.size() >= MAX_QUERY_PLAYERS) break;
+            UUID uuid = player.getUuid();
+            // Server-side NPC plugins mint version-2 UUIDs; real players are v3 (offline) or v4.
+            if (uuid.version() == 2) continue;
+            result.add(uuid);
         }
-        result.sort(Comparator.comparing(UUID::toString));
         return result;
     }
 
-    private boolean isLoadedPlayer(UUID uuid) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.world == null) return false;
-        for (PlayerEntity player : client.world.getPlayers()) {
-            if (uuid.equals(player.getUuid())) return true;
+    private List<UUID> unconfirmed(List<UUID> loaded, long now) {
+        boolean live = PhazeEventService.getInstance().isConnected();
+        List<UUID> result = new ArrayList<>();
+        for (UUID uuid : loaded) {
+            Long confirmed = confirmedAt.get(uuid);
+            if (confirmed == null || (!live && now - confirmed >= OFFLINE_STALE_MS)) {
+                result.add(uuid);
+            }
         }
-        return false;
+        return result;
+    }
+
+    private void trimCache(List<UUID> loaded) {
+        if (confirmedAt.size() <= MAX_CACHED_PLAYERS && states.size() <= MAX_CACHED_PLAYERS) return;
+        Set<UUID> keep = new HashSet<>(loaded);
+        confirmedAt.keySet().retainAll(keep);
+        states.keySet().retainAll(keep);
     }
 
     private void putIfNewer(UUID uuid, RemoteCosmetic next) {
-        if (states.size() > 512) states.clear();
         states.compute(uuid, (ignored, current) ->
                 current == null || next.updatedAt >= current.updatedAt ? next : current);
     }
 
-    private void putPulseIfNewer(UUID uuid, PulseRemoteCosmetic next) {
-        if (pulseStates.size() > 512) pulseStates.clear();
-        pulseStates.compute(uuid, (ignored, current) ->
-                current == null || next.updatedAt >= current.updatedAt ? next : current);
-    }
-
-    private static PulseRemoteCosmetic decodePulse(String value, boolean equipped, long updatedAt) {
-        String[] slots = value == null ? new String[0] : value.split("\\|", -1);
-        int[] ids = {-1, -1, -1, -1, -1};
-        for (int i = 0; i < Math.min(ids.length, slots.length); i++) {
-            try { ids[i] = Integer.parseInt(slots[i]); }
-            catch (NumberFormatException ignored) { }
-        }
-        return new PulseRemoteCosmetic(ids, equipped, updatedAt);
-    }
-
     private static RemoteCosmetic decode(String value, boolean equipped, long updatedAt) {
+        long receivedAt = System.currentTimeMillis();
         String raw = value == null ? CosmeticsState.NONE : value;
         String[] slots = raw.split("\\Q" + SLOT_SEPARATOR + "\\E", -1);
         if (slots.length >= 2) {
@@ -546,7 +408,8 @@ public final class CosmeticsSyncService {
                     hat.isBlank() ? CosmeticsState.NONE : hat,
                     pet.isBlank() ? CosmeticsState.NONE : pet,
                     equipped,
-                    updatedAt
+                    updatedAt,
+                    receivedAt
             );
         }
         // Backward compatibility with states written by 1.0 clients.
@@ -557,7 +420,8 @@ public final class CosmeticsSyncService {
                 CosmeticsState.NONE,
                 CosmeticsState.NONE,
                 equipped,
-                updatedAt
+                updatedAt,
+                receivedAt
         );
     }
 
@@ -567,31 +431,17 @@ public final class CosmeticsSyncService {
             String hat,
             String pet,
             boolean equipped,
-            long updatedAt
+            long updatedAt,
+            long receivedAt
     ) {
     }
 
-    private record PulseRemoteCosmetic(int[] ids, boolean equipped, long updatedAt) {
-        int id(vorga.phazeclient.implement.cosmetics.bridge.CosmeticCategory category) {
-            int index = switch (category) {
-                case WINGS -> 0;
-                case CAPE -> 1;
-                case HAT -> 2;
-                case BODYWEAR -> 3;
-                case PET -> 4;
-                default -> -1;
-            };
-            return index < 0 ? -1 : ids[index];
+    private static final class HttpStatusException extends Exception {
+        final int status;
+
+        HttpStatusException(int status) {
+            super("HTTP " + status, null, false, false);
+            this.status = status;
         }
     }
-
-    private record GraffitiQuery(String serverKey, String dimension) { }
-
-    public record PulseGraffiti(
-            String serverKey,
-            String dimension,
-            BlockPos pos,
-            Direction face,
-            int graffitiId
-    ) { }
 }

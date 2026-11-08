@@ -22,6 +22,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import vorga.phazeclient.api.system.hud.HudBuffer;
+import vorga.phazeclient.api.system.snapshot.CardSnapshotCache;
+import vorga.phazeclient.implement.hud.PaperDollRenderer;
 import vorga.phazeclient.implement.features.modules.hud.ReachHud;
 import vorga.phazeclient.implement.features.modules.other.FakeFps;
 import vorga.phazeclient.implement.features.modules.other.FastExp;
@@ -60,6 +62,11 @@ public abstract class MinecraftClientMixin {
             at = @At("HEAD"),
             cancellable = true)
     private void phaze$skipGlowOutline(Entity entity, CallbackInfoReturnable<Boolean> cir) {
+        // An outline layer drawn into GUI buffers paints a solid silhouette over the doll.
+        if (PaperDollRenderer.isDrawing()) {
+            cir.setReturnValue(false);
+            return;
+        }
         NoRender mod = NoRender.getInstance();
         if (mod == null || !mod.isEnabled()) {
             return;
@@ -167,6 +174,11 @@ public abstract class MinecraftClientMixin {
 
     @Inject(method = "getFramebuffer", at = @At("HEAD"), cancellable = true)
     private void phaze$redirectFramebufferToBatchCapture(CallbackInfoReturnable<Framebuffer> cir) {
+        Framebuffer snapshot = CardSnapshotCache.getActiveCaptureFramebuffer();
+        if (snapshot != null) {
+            cir.setReturnValue(snapshot);
+            return;
+        }
         if (HudBuffer.activeCaptureTarget < 0) {
             return;
         }

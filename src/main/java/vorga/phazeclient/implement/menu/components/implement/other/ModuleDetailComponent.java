@@ -21,6 +21,7 @@ import vorga.phazeclient.base.util.render.ScissorManager;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 
@@ -157,18 +158,9 @@ public class ModuleDetailComponent extends AbstractComponent {
                 .outlineColor(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, backBorder, anim), 0.96F * anim))
                 .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, backBg, anim), 0.92F * anim))
                 .build());
-        float backIconSize = 7.5F;
-        float backIconX = backButtonX() + (BACK_BUTTON_SIZE - backIconSize) / 2.0F;
-        float backIconY = backButtonY() + (BACK_BUTTON_SIZE - backIconSize) / 2.0F;
-        image.setTexture("textures/back_arrow.png")
-                .render(ShapeProperties.create(matrices,
-                                backIconX - backIconSize,
-                                backIconY,
-                                backIconSize,
-                                backIconSize)
-                        .rotation(0)
-                        .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, backHover * 0.18F), anim))
-                        .build());
+        UiMsdfIconAtlas.renderBackArrow(context,
+                backButtonX() + BACK_BUTTON_SIZE / 2.0F, backButtonY() + BACK_BUTTON_SIZE / 2.0F, 7.5F,
+                MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, backHover * 0.18F), anim));
 
         String title = module.getLocalizedName().toUpperCase(Locale.ROOT);
         float titleX = backButtonX() + BACK_BUTTON_SIZE + 8.0F;

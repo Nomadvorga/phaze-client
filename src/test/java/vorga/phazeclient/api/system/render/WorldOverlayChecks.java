@@ -565,8 +565,6 @@ public final class WorldOverlayChecks {
 
     private static void vanillaCosmetics() throws Exception {
         for (String name : new String[]{"implement/cosmetics/BlockbenchWingModel",
-                "implement/cosmetics/bridge/PhazePulseGraffitiRenderer",
-                "implement/cosmetics/bridge/pulserender/PulseGeoRenderer",
                 "implement/features/modules/other/WavyCapeRenderer", "implement/features/modules/other/ThreeDSkinsHelper"}) {
             ClassNode model = read("vorga/phazeclient/" + name);
             for (MethodNode method : model.methods) {

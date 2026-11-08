@@ -11,32 +11,23 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryStack;
+import vorga.phazeclient.api.system.hud.Render2DState;
+import vorga.phazeclient.api.system.shape.batched.GuiDrawStats;
 
 /** Restores both RenderSystem's cached state and the bindings touched by immediate text draws. */
 final class TextRenderState implements AutoCloseable {
-    private final boolean blend = GL11.glIsEnabled(GL11.GL_BLEND);
-    private final boolean cull = GL11.glIsEnabled(GL11.GL_CULL_FACE);
-    private final boolean depth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
-    private final boolean depthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
-    private final int depthFunction = GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
-    private final int sourceRgb = GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB);
-    private final int targetRgb = GL11.glGetInteger(GL14.GL_BLEND_DST_RGB);
-    private final int sourceAlpha = GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA);
-    private final int targetAlpha = GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA);
+    private final boolean joined;
+    private boolean blend, cull, depth, depthMask;
+    private int depthFunction, sourceRgb, targetRgb, sourceAlpha, targetAlpha;
     private final ShaderProgram shader = RenderSystem.getShader();
-    private final int program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+    private int program;
     private final float[] color = RenderSystem.getShaderColor().clone();
     private final int shaderTexture = RenderSystem.getShaderTexture(0);
-    private final int activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
-    private final int texture;
+    private int activeTexture, texture;
     private final boolean vanilla;
-    private final int shaderLightmapTexture;
-    private final int fallbackTexture1;
-    private final int fallbackTexture2;
-    private final int colorMask;
-    private final int vertexArray = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
-    private final int arrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
-    private final int elementBuffer = GL11.glGetInteger(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+    private int shaderLightmapTexture, fallbackTexture1, fallbackTexture2;
+    private int colorMask = 15;
+    private int vertexArray, arrayBuffer, elementBuffer;
 
     TextRenderState() {
         this(false);
@@ -44,6 +35,25 @@ final class TextRenderState implements AutoCloseable {
 
     TextRenderState(boolean vanilla) {
         this.vanilla = vanilla;
+        // An outer menu/HUD boundary restores the real GL state when it closes. Querying
+        // GL here stalls the driver once per string, so only RenderSystem's cache is kept.
+        joined = !vanilla && MsdfBatch.isEnabled() && Render2DState.isJoined();
+        if (joined) return;
+        GuiDrawStats.stateSnapshots++;
+        blend = GL11.glIsEnabled(GL11.GL_BLEND);
+        cull = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+        depth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+        depthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
+        depthFunction = GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
+        sourceRgb = GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB);
+        targetRgb = GL11.glGetInteger(GL14.GL_BLEND_DST_RGB);
+        sourceAlpha = GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA);
+        targetAlpha = GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA);
+        program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        vertexArray = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        arrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+        elementBuffer = GL11.glGetInteger(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
         GlStateManager._activeTexture(GL13.GL_TEXTURE0);
         texture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
         shaderLightmapTexture = vanilla ? RenderSystem.getShaderTexture(2) : 0;
@@ -59,16 +69,16 @@ final class TextRenderState implements AutoCloseable {
                 colorMask = (mask.get(0) != 0 ? 1 : 0) | (mask.get(1) != 0 ? 2 : 0)
                         | (mask.get(2) != 0 ? 4 : 0) | (mask.get(3) != 0 ? 8 : 0);
             }
-        } else {
-            fallbackTexture1 = 0;
-            fallbackTexture2 = 0;
-            colorMask = 15;
         }
         GlStateManager._activeTexture(activeTexture);
     }
 
     @Override
     public void close() {
+        if (joined) {
+            restoreJoined(shader, shaderTexture, color);
+            return;
+        }
         // BufferRenderer caches the VAO it last bound; invalidate that cache before restoring another VAO.
         BufferRenderer.resetCurrentVertexBuffer();
         GlStateManager._glBindVertexArray(vertexArray);
@@ -96,5 +106,14 @@ final class TextRenderState implements AutoCloseable {
         if (cull) RenderSystem.enableCull(); else RenderSystem.disableCull();
         RenderSystem.blendFuncSeparate(sourceRgb, targetRgb, sourceAlpha, targetAlpha);
         if (blend) RenderSystem.enableBlend(); else RenderSystem.disableBlend();
+    }
+
+    /** Same exit state as a joined rectangle flush: cached selections restored, cull on, blend off. */
+    static void restoreJoined(ShaderProgram shader, int shaderTexture, float[] color) {
+        RenderSystem.setShader(shader);
+        RenderSystem.setShaderTexture(0, shaderTexture);
+        RenderSystem.setShaderColor(color[0], color[1], color[2], color[3]);
+        RenderSystem.enableCull();
+        RenderSystem.disableBlend();
     }
 }

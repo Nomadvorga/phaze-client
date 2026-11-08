@@ -49,6 +49,10 @@ public class ModuleComponent extends AbstractComponent {
     private static final float BASE_HEIGHT_ENABLED = 86.0F;
     private static final float BASE_HEIGHT_SIMPLE = 62.0F;
     private static final float BASE_HEIGHT_OPTIONS_ONLY = BASE_HEIGHT_ENABLED - ENABLED_ROW_HEIGHT;
+    private static final Identifier OPTIONS_ICON = Identifier.of("phaze", "textures/menu/options_settings.png");
+    private String iconSource;
+    private String iconTexture;
+    private Identifier iconId;
 
     private final List<AbstractSettingComponent> components = new ArrayList<>();
     private final Module module;
@@ -349,9 +353,15 @@ public class ModuleComponent extends AbstractComponent {
         float iconSize = module.getIconSize();
         float iconX = x + (width - iconSize) / 2.0F;
         float iconY = y + 12.0F + module.getIconOffsetY();
-        String iconTexture = module.getIcon() != null ? "phaze:textures/modules/" + module.getIcon() : "phaze:textures/modules/hand.png";
+        String icon = module.getIcon();
+        if (iconTexture == null || !java.util.Objects.equals(icon, iconSource)) {
+            // Building and validating the identifier every frame showed up in profiles.
+            iconSource = icon;
+            iconTexture = icon != null ? "phaze:textures/modules/" + icon : "phaze:textures/modules/hand.png";
+            iconId = Identifier.of(iconTexture);
+        }
         int iconColor = applyGlobalAlpha(MenuStyle.TEXT_PRIMARY);
-        if (!UiMsdfIconAtlas.renderIcon(context, Identifier.of(iconTexture), iconX, iconY, iconSize, iconSize, iconColor, true)) {
+        if (!UiMsdfIconAtlas.renderIcon(context, iconId, iconX, iconY, iconSize, iconSize, iconColor, true)) {
             image.setTexture(iconTexture)
                     .render(ShapeProperties.create(context.getMatrices(), iconX, iconY, iconSize, iconSize)
                             .color(iconColor).build());
@@ -436,9 +446,7 @@ public class ModuleComponent extends AbstractComponent {
             float iconX = dividerX + (iconSectionWidth - 9.0F) / 2.0F;
             float iconY = optionsY + (OPTIONS_ROW_HEIGHT - 9.0F) / 2.0F;
             int iconColor = applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, rowHoverProgress * 0.10F));
-            if (!UiMsdfIconAtlas.renderIcon(context,
-                    Identifier.of("phaze", "textures/menu/options_settings.png"),
-                    iconX, iconY, 9.0F, 9.0F, iconColor, true)) {
+            if (!UiMsdfIconAtlas.renderIcon(context, OPTIONS_ICON, iconX, iconY, 9.0F, 9.0F, iconColor, true)) {
                 image.setTexture("textures/settings.png")
                         .render(ShapeProperties.create(context.getMatrices(), iconX, iconY, 9.0F, 9.0F)
                                 .color(iconColor).build());
@@ -906,6 +914,7 @@ public class ModuleComponent extends AbstractComponent {
 
     @Override
     public int hashCode() {
-        return Objects.hash(module);
+        // Looked up in per-frame maps; Objects.hash allocates its varargs array.
+        return module.hashCode();
     }
 }

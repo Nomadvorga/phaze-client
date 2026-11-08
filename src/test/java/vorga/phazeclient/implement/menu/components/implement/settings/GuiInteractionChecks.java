@@ -226,30 +226,20 @@ public final class GuiInteractionChecks {
         MethodNode conversationHeader = method(messenger, "renderConversationHeader");
         MethodNode moduleHeader = method(readClass(
                 "vorga/phazeclient/implement/menu/components/implement/other/ModuleDetailComponent"), "renderHeader");
-        String backTexture = "textures/back_arrow.png";
-        MethodNode messengerInit = method(messenger, "<clinit>");
-        for (MethodNode header : List.of(messengerInit, moduleHeader)) {
-            boolean usesBackTexture = false;
+        for (MethodNode header : List.of(conversationHeader, moduleHeader)) {
             boolean usesMissingGlyph = false;
             for (AbstractInsnNode instruction : header.instructions) {
-                if (!(instruction instanceof LdcInsnNode literal)) continue;
-                usesBackTexture |= backTexture.equals(literal.cst);
-                usesMissingGlyph |= "‹".equals(literal.cst);
+                usesMissingGlyph |= instruction instanceof LdcInsnNode literal && "‹".equals(literal.cst);
             }
-            check(usesBackTexture && !usesMissingGlyph,
-                    "conversation and module headers use the same back-arrow texture, not a missing font glyph");
+            check(!usesMissingGlyph && calls(header).stream().anyMatch(call -> call.owner.equals(
+                            "vorga/phazeclient/implement/menu/UiMsdfIconAtlas") && call.name.equals("renderBackArrow")),
+                    "conversation and module headers draw the same MSDF back arrow, not a missing font glyph");
         }
-        boolean readsBackIcon = false;
-        for (AbstractInsnNode instruction : conversationHeader.instructions) {
-            readsBackIcon |= instruction instanceof FieldInsnNode field && field.name.equals("BACK_ICON");
-        }
-        check(readsBackIcon, "the conversation header draws the shared back-arrow icon");
-        check(calls(conversationHeader).stream().anyMatch(call -> call.owner.equals(owner)
-                        && call.name.equals("drawTexture")),
-                "the raster back arrow is drawn directly, centred on its visible stroke");
-        try (InputStream texture = GuiInteractionChecks.class.getClassLoader()
-                .getResourceAsStream("assets/minecraft/" + backTexture)) {
-            check(texture != null, "the conversation back-arrow texture is included in the client resources");
+        try (InputStream manifest = GuiInteractionChecks.class.getClassLoader()
+                .getResourceAsStream("assets/phaze/msdf/ui_icons.json")) {
+            check(manifest != null && new String(manifest.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+                            .matches("(?s).*\"id\":\"minecraft:textures/back_arrow.png\"[^}]*\\}[^}]*\"inkBounds\".*"),
+                    "the back arrow is in the MSDF icon atlas with its visible stroke bounds");
         }
 
         String style = "vorga/phazeclient/implement/menu/MenuStyle";

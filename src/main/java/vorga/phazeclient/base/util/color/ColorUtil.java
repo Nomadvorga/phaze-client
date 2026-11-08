@@ -128,6 +128,13 @@ public class ColorUtil {
         return getColor(red(color), green(color), blue(color), Math.round(alpha(color) * percent01));
     }
 
+    /** {@code color} times the current {@code ColorModulator}, for quads that are drawn later with a neutral one. */
+    public int multShaderColor(int color) {
+        float[] shader = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
+        return getColor(Math.round(red(color) * shader[0]), Math.round(green(color) * shader[1]),
+                Math.round(blue(color) * shader[2]), Math.round(alpha(color) * shader[3]));
+    }
+
     public int multColor(int colorStart, int colorEnd, float progress) {
         return getColor(Math.round(red(colorStart) * (redf(colorEnd) * progress)), Math.round(green(colorStart) * (greenf(colorEnd) * progress)),
                 Math.round(blue(colorStart) * (bluef(colorEnd) * progress)), Math.round(alpha(colorStart) * (alphaf(colorEnd) * progress)));

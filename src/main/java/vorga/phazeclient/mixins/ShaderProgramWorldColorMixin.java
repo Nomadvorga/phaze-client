@@ -15,10 +15,11 @@ public abstract class ShaderProgramWorldColorMixin {
 
     @Inject(method = "bind", at = @At("TAIL"), require = 0)
     private void phaze$uploadTerrainUniformsOnBind(CallbackInfo ci) {
+        int program = ((ShaderProgram) (Object) this).getGlRef();
         if (!phaze$worldColorProgramRegistered) {
-            WorldColorShaderHelper.registerCurrentProgramInstance();
+            WorldColorShaderHelper.registerProgramInstance(program);
             phaze$worldColorProgramRegistered = true;
         }
-        WorldColorShaderHelper.uploadTerrainUniformsToCurrentGlProgram();
+        WorldColorShaderHelper.uploadTerrainUniforms(program);
     }
 }

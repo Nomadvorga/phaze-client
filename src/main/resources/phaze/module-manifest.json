@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 13,
+  "manifestVersion": 14,
   "clientVersion": "1.2",
   "modules": [
     {
@@ -359,6 +359,11 @@
       "category": "OTHER"
     },
     {
+      "id": "paper_doll",
+      "name": "PaperDoll",
+      "category": "HUD"
+    },
+    {
       "id": "pickaxe_notifier",
       "name": "Pickaxe Notifier",
       "category": "UTILITIES"
@@ -366,11 +371,6 @@
     {
       "id": "ping_hud",
       "name": "Ping",
-      "category": "HUD"
-    },
-    {
-      "id": "player_model_hud",
-      "name": "Player Model",
       "category": "HUD"
     },
     {

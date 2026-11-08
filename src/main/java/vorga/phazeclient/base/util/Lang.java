@@ -781,10 +781,33 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("1 Decimal", "1 знак");
         SETTING_TRANSLATIONS.put("2 Decimals", "2 знака");
         SETTING_TRANSLATIONS.put("3 Decimals", "3 знака");
-        // PlayerModelHud.mode
-        SETTING_TRANSLATIONS.put("Follow Mouse", "Следовать за мышью");
-        SETTING_TRANSLATIONS.put("Auto Rotate", "Авто-вращение");
-        SETTING_TRANSLATIONS.put("Static", "Статично");
+        // PaperDoll
+        SETTING_TRANSLATIONS.put("Doll", "Кукла");
+        SETTING_TRANSLATIONS.put("Doll Head Locked", "Голова куклы");
+        SETTING_TRANSLATIONS.put("How the doll's head reacts to your movement", "Как голова куклы реагирует на ваши движения");
+        SETTING_TRANSLATIONS.put("Floaty", "Плавающая");
+        SETTING_TRANSLATIONS.put("Locked", "Зафиксирована");
+        SETTING_TRANSLATIONS.put("Floaty Horizontal", "Плавающая (только по горизонтали)");
+        SETTING_TRANSLATIONS.put("Static Horizontal", "Статичная (только по горизонтали)");
+        SETTING_TRANSLATIONS.put("Looking Sides", "Поворот в стороны");
+        SETTING_TRANSLATIONS.put("How far the doll is turned to the left/right", "Насколько кукла повёрнута влево/вправо");
+        SETTING_TRANSLATIONS.put("Looking Up/Down", "Наклон вверх/вниз");
+        SETTING_TRANSLATIONS.put("How far the doll is tilted up/down", "Насколько кукла наклонена вверх/вниз");
+        SETTING_TRANSLATIONS.put("Behavior", "Поведение");
+        SETTING_TRANSLATIONS.put("Lock Elytra Rotation", "Фиксировать поворот на элитрах");
+        SETTING_TRANSLATIONS.put("Do not rotate the doll with your view while flying with an elytra", "Не поворачивать куклу за взглядом во время полёта на элитрах");
+        SETTING_TRANSLATIONS.put("Lock Spinning Rotation", "Фиксировать поворот при вращении");
+        SETTING_TRANSLATIONS.put("Do not rotate the doll with your view while riptide spinning", "Не поворачивать куклу за взглядом во время вращения с Тягуном");
+        SETTING_TRANSLATIONS.put("Visibility", "Видимость");
+        SETTING_TRANSLATIONS.put("Auto Hide", "Автоскрытие");
+        SETTING_TRANSLATIONS.put("Only show the doll while you are doing something", "Показывать куклу только когда вы что-то делаете");
+        SETTING_TRANSLATIONS.put("Hide In F5", "Скрывать в F5");
+        SETTING_TRANSLATIONS.put("Hide the doll in third person", "Скрывать куклу от третьего лица");
+        SETTING_TRANSLATIONS.put("Hide During F3", "Скрывать при F3");
+        SETTING_TRANSLATIONS.put("Hide the doll while the debug screen is open", "Скрывать куклу, пока открыт экран отладки");
+        SETTING_TRANSLATIONS.put("Hide During Screens", "Скрывать в меню");
+        SETTING_TRANSLATIONS.put("Hide the doll while any screen (inventory, menus) is open", "Скрывать куклу, пока открыт любой экран (инвентарь, меню)");
+        SETTING_TRANSLATIONS.put("Shows a small live preview of your player in a corner of the screen", "Показывает маленькую живую копию вашего игрока в углу экрана");
         // Saturation.mode
         SETTING_TRANSLATIONS.put("Yellow Bar", "Жёлтая полоса");
         SETTING_TRANSLATIONS.put("Second Hunger Bar", "Вторая полоса голода");
@@ -879,7 +902,6 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Mobs", "Мобы");
         SETTING_TRANSLATIONS.put("Mode", "Режим");
         SETTING_TRANSLATIONS.put("Mode Type", "Тип режима");
-        SETTING_TRANSLATIONS.put("Model Size", "Размер модели");
         SETTING_TRANSLATIONS.put("Modern", "Современный");
         SETTING_TRANSLATIONS.put("Modify vanilla scoreboard with blur, custom colors, position, and scale", "Меняет ваниль scoreboard: блюр, цвета, позиция и масштаб");
         SETTING_TRANSLATIONS.put("MOTD", "MOTD");
@@ -980,7 +1002,6 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Removes the right-click delay when throwing experience bottles", "Убирает задержку ПКМ при бросании бутылок опыта");
         SETTING_TRANSLATIONS.put("Render Mode", "Режим рендера");
         SETTING_TRANSLATIONS.put("Render-pipeline tweaks: hide glowing outlines, fire overlay, particles", "Твики рендера: скрыть свечение, оверлей огня, частицы");
-        SETTING_TRANSLATIONS.put("Renders a 3D mini-version of your skin in the corner", "Рендерит 3D-мини-версию вашего скина в углу");
         SETTING_TRANSLATIONS.put("Renders your 27 storage slots or last-seen ender chest on the HUD", "Рендерит 27 слотов инвентаря или последний эндер-сундук на HUD");
         SETTING_TRANSLATIONS.put("English", "Английский");
         SETTING_TRANSLATIONS.put("Russian", "Русский");
@@ -1437,7 +1458,8 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Extrude sleeve layers", "Делать слои рукавов объёмными");
         SETTING_TRANSLATIONS.put("3D Pants", "3D-штаны");
         SETTING_TRANSLATIONS.put("Extrude pants layers", "Делать слои штанов объёмными");
-        SETTING_TRANSLATIONS.put("Clean-room 3D skin layer voxelization with optimized neighbor face culling", "Независимая 3D-вокселизация слоя скина с оптимизированным отсечением соседних граней");
+        SETTING_TRANSLATIONS.put("Makes the outer skin layer 3D", "Делает внешний слой скина объёмным");
+        SETTING_TRANSLATIONS.put("Capes wave and flutter smoothly as you move", "Плащи плавно развеваются при движении");
 
         SETTING_TRANSLATIONS.put("Kill sound effect", "Звуковой эффект при убийстве");
         SETTING_TRANSLATIONS.put("Sound volume", "Громкость звука");

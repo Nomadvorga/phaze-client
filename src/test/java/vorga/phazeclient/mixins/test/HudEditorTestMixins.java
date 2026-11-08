@@ -2,7 +2,7 @@ package vorga.phazeclient.mixins.test;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.ChatHud;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
+import net.minecraft.client.render.entity.EntityRenderDispatcher;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -13,6 +13,7 @@ import vorga.phazeclient.api.system.hud.HudBuffer;
 import vorga.phazeclient.api.system.hud.HudCapture;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.features.modules.hud.HudEditorProbe;
+import vorga.phazeclient.implement.hud.PaperDollRenderer;
 
 public final class HudEditorTestMixins {
     private HudEditorTestMixins() {}
@@ -41,11 +42,13 @@ public final class HudEditorTestMixins {
         }
     }
 
-    @Mixin(InventoryScreen.class)
+    @Mixin(EntityRenderDispatcher.class)
     public abstract static class Models {
-        @Inject(method = "drawEntity(Lnet/minecraft/client/gui/DrawContext;FFFLorg/joml/Vector3f;Lorg/joml/Quaternionf;Lorg/joml/Quaternionf;Lnet/minecraft/entity/LivingEntity;)V",
+        @Inject(method = "render(Lnet/minecraft/entity/Entity;DDDFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
                 at = @At("HEAD"))
-        private static void model(CallbackInfo ci) { HudEditorProbe.model(); }
+        private void model(CallbackInfo ci) {
+            if (PaperDollRenderer.isDrawing()) HudEditorProbe.model();
+        }
     }
 
     @Mixin(value = Blur.class, remap = false)

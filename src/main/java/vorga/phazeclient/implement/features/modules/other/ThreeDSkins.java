@@ -39,7 +39,7 @@ public class ThreeDSkins extends Module {
 
     @Override
     public String getDescription() {
-        return "Clean-room 3D skin layer voxelization with optimized neighbor face culling";
+        return "Makes the outer skin layer 3D";
     }
 
     @Override

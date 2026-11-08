@@ -2,6 +2,7 @@ package vorga.phazeclient.api.system.hud;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
+import vorga.phazeclient.api.system.shape.batched.GuiBatch;
 import vorga.phazeclient.api.system.shape.implement.Blur;
 
 /** Unified reload/shutdown hook; call on the render thread before the GL context is destroyed. */
@@ -27,7 +28,11 @@ public final class HudRenderLifecycle {
                             BatchedRectangle.cleanup();
                         } finally {
                             HudBuffer.resetCaptureTarget();
-                            Render2DBuffers.cleanup();
+                            try {
+                                Render2DBuffers.cleanup();
+                            } finally {
+                                GuiBatch.close();
+                            }
                         }
                     }
                 }

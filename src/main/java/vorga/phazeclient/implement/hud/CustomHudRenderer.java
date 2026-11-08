@@ -13,7 +13,7 @@ import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffectCategory;
-import net.minecraft.entity.EntityPose;
+import net.minecraft.entity.Entity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.text.Text;
@@ -22,11 +22,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.scoreboard.ScoreboardDisplaySlot;
-import org.joml.Quaternionf;
-import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.api.system.shape.implement.Blur;
@@ -74,7 +70,7 @@ import vorga.phazeclient.implement.features.modules.other.HudOptimizer;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
 import vorga.phazeclient.implement.features.modules.other.TrapTimer;
 import vorga.phazeclient.implement.features.modules.hud.InventoryHud;
-import vorga.phazeclient.implement.features.modules.hud.PlayerModelHud;
+import vorga.phazeclient.implement.features.modules.hud.PaperDoll;
 import vorga.phazeclient.implement.features.modules.other.StreamerMode;
 import vorga.phazeclient.core.Main;
 import vorga.phazeclient.api.feature.module.Module;
@@ -122,7 +118,7 @@ public final class CustomHudRenderer {
     private static final int HUD_BATTLE_INFO = 21;
     private static final int HUD_CONSUMABLE = 22;
     private static final int HUD_TPS = 23;
-    private static final int HUD_PLAYER_MODEL = 24;
+    private static final int HUD_PAPER_DOLL = 24;
     private static final int HUD_TRAP_TIMER = 25;
     private static final int HUD_INVENTORY = 26;
     private static final int HUD_PACK_DISPLAY = 27;
@@ -177,7 +173,7 @@ public final class CustomHudRenderer {
             HUD_SPRINT, HUD_COORDINATES, HUD_PING, HUD_KEYSTROKES, HUD_POTION, HUD_DAY_COUNTER, HUD_TIME,
             HUD_SESSION, HUD_MEMORY, HUD_TPS, HUD_COMBO, HUD_SERVER_ADDRESS, HUD_TRAP_TIMER,
             HUD_MOVEMENT_SPEED, HUD_WAILA, HUD_HEALTH_INDICATOR, HUD_PACK_DISPLAY, HUD_CONSUMABLE,
-            HUD_SCOREBOARD, HUD_BOSS_BAR, HUD_PLAYER_MODEL};
+            HUD_SCOREBOARD, HUD_BOSS_BAR, HUD_PAPER_DOLL};
     private static final HudBuffer PHAZE_EDITED_HUD_BUFFER = new HudBuffer(org.lwjgl.opengl.GL11C.GL_LINEAR);
     private static int isolatedHudIndex = -1;
     private static HudCachedTransform editedHudTransform;
@@ -897,7 +893,7 @@ public final class CustomHudRenderer {
         }
 
         // The model uses GUI coordinates, but its expensive entity renderer belongs in the same throttled cache.
-        renderBufferedHud(context, PlayerModelHud.getInstance(), chatEditing, () -> renderPlayerModelHud(context));
+        renderBufferedHud(context, PaperDoll.getInstance(), chatEditing, () -> renderPaperDollHud(context));
 
         if (lastCallThisFrame) {
             if (chatEditing) {
@@ -1116,7 +1112,7 @@ public final class CustomHudRenderer {
 
     private static float hudPixelScale(Module owner, MinecraftClient client) {
         float scale = owner instanceof RectHudModule rect ? rect.getRenderHudScale() : ((ArmorHud) owner).getRenderHudScale();
-        return owner instanceof PlayerModelHud ? scale * (float) client.getWindow().getScaleFactor() : scale;
+        return owner instanceof PaperDoll ? scale * (float) client.getWindow().getScaleFactor() : scale;
     }
 
     private static void updateCachedHudInteractions(MinecraftClient client, boolean editing,
@@ -1130,7 +1126,7 @@ public final class CustomHudRenderer {
                 continue;
             }
             boolean armor = index == HUD_SNAP_ARMOR;
-            float coordinateScale = index == HUD_PLAYER_MODEL ? (float) client.getWindow().getScaleFactor() : 1;
+            float coordinateScale = index == HUD_PAPER_DOLL ? (float) client.getWindow().getScaleFactor() : 1;
             float pixelScale = hudPixelScale(owner, client);
             float width = HUD_LAYOUT_BASE_WIDTH[index] * pixelScale;
             float height = HUD_LAYOUT_BASE_HEIGHT[index] * pixelScale;
@@ -1152,7 +1148,7 @@ public final class CustomHudRenderer {
                 if (!HUD_SNAP_VALID[index] || owner == null || !owner.isEnabled()
                         || HUD_LAYOUT_BASE_WIDTH[index] <= 0 || HUD_LAYOUT_BASE_HEIGHT[index] <= 0) continue;
                 boolean armor = index == HUD_SNAP_ARMOR;
-                boolean model = index == HUD_PLAYER_MODEL;
+                boolean model = index == HUD_PAPER_DOLL;
                 float coordinateScale = model ? (float) client.getWindow().getScaleFactor() : 1;
                 float mx = (float) mouseX / coordinateScale, my = (float) mouseY / coordinateScale;
                 float scale = hudPixelScale(owner, client) / coordinateScale;
@@ -1216,7 +1212,7 @@ public final class CustomHudRenderer {
                     if (armor || model || index == HUD_CONSUMABLE) {
                         float start = armor ? armorResizeStartScale : RECT_RESIZE_START_WIDTH[index];
                         // Preserve each legacy resize sensitivity: Armor/Consumable use the fixed reference width.
-                        float reference = model ? PlayerModelHud.getInstance().getBaseModelSize() * 2 : BASE_WIDTH;
+                        float reference = model ? PaperDoll.BASE_WIDTH : BASE_WIDTH;
                         raw = (start + delta / reference) / 2;
                     } else {
                         float baseline = scale / ((RectHudModule) owner).getHudScale();
@@ -1255,7 +1251,7 @@ public final class CustomHudRenderer {
     private static HudCachedTransform captureEditedHudTransform(MinecraftClient client) {
         int index = isolatedHudIndex;
         float scale = hudPixelScale(HUD_SNAP_OWNER[index], client);
-        float padding = Math.max(4, scale * (index == HUD_PLAYER_MODEL ? 16 : 4));
+        float padding = Math.max(4, scale * (index == HUD_PAPER_DOLL ? 16 : 4));
         return HudCachedTransform.capture(HUD_SNAP_X[index], HUD_SNAP_Y[index], HUD_SNAP_WIDTH[index], HUD_SNAP_HEIGHT[index],
                 scale, padding, client.getWindow().getFramebufferWidth(), client.getWindow().getFramebufferHeight());
     }
@@ -1275,7 +1271,7 @@ public final class CustomHudRenderer {
             for (int index : HUD_INPUT_ORDER) {
                 Module owner = HUD_SNAP_OWNER[index];
                 if (!HUD_SNAP_VALID[index] || owner == null || !owner.isEnabled()) continue;
-                boolean armor = index == HUD_SNAP_ARMOR, model = index == HUD_PLAYER_MODEL;
+                boolean armor = index == HUD_SNAP_ARMOR, model = index == HUD_PAPER_DOLL;
                 float coordinateScale = model ? guiScale : 1;
                 float scale = hudPixelScale(owner, client) / coordinateScale;
                 float x = HUD_SNAP_X[index], y = HUD_SNAP_Y[index];
@@ -3600,7 +3596,7 @@ public final class CustomHudRenderer {
                 || HealthIndicator.getInstance().isEnabled()
                 || TrapTimer.getInstance().isEnabled()
                 || vorga.phazeclient.implement.features.modules.hud.Consumable.getInstance().isEnabled()
-                || PlayerModelHud.getInstance().isEnabled()
+                || PaperDoll.getInstance().isEnabled()
                 || InventoryHud.getInstance().isEnabled()
                 || PackDisplayHud.getInstance().isEnabled()
                 || ScoreboardHud.getInstance().isEnabled()
@@ -3685,7 +3681,7 @@ public final class CustomHudRenderer {
         HUD_LAYOUT_BASE_WIDTH[hudIndex] = width / pixelScale;
         HUD_LAYOUT_BASE_HEIGHT[hudIndex] = height / pixelScale;
         // Persist the final resized footprint, not the pre-resize size used at the start of rendering.
-        float coordinateScale = owner instanceof PlayerModelHud ? (float) client.getWindow().getScaleFactor() : 1;
+        float coordinateScale = owner instanceof PaperDoll ? (float) client.getWindow().getScaleFactor() : 1;
         if (owner instanceof RectHudModule rect) rect.setHudLayoutSize(width / coordinateScale, height / coordinateScale);
         else ((ArmorHud) owner).setHudLayoutSize(width, height);
     }
@@ -4102,7 +4098,7 @@ public final class CustomHudRenderer {
         context.drawText(client.textRenderer, Text.literal(displayText), (int)x, (int)y, 0xFFFFFFFF, true);
     }
 
-    // ---------- PlayerModel editor state ----------
+    // ---------- PaperDoll editor state ----------
     private static boolean pmWasMouseDown = false;
 
     // ---------- InventoryHud drag state ----------
@@ -4113,25 +4109,26 @@ public final class CustomHudRenderer {
     private static final Identifier PHAZE_INV_PANEL_SPRITE = Identifier.of("phaze", "shulker_box_tooltip");
 
     // ====================================================================
-    // 8) PlayerModel: shared throttled HUD dispatcher
+    // 8) PaperDoll: shared throttled HUD dispatcher
     // ====================================================================
 
-    private static void renderPlayerModelHud(DrawContext context) {
-        PlayerModelHud module = PlayerModelHud.getInstance();
+    private static void renderPaperDollHud(DrawContext context) {
+        PaperDoll module = PaperDoll.getInstance();
         if (module == null || !module.isEnabled()) return;
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.player == null || mc.options == null) return;
+        if (mc == null || mc.player == null || mc.world == null || mc.options == null) return;
         if (mc.options.hudHidden) return;
 
-        final int hudIndex = HUD_PLAYER_MODEL;
-        ClientPlayerEntity player = mc.player;
-        float baseSize = module.getBaseModelSize();
+        boolean chatEditing = mc.currentScreen instanceof ChatScreen;
+        Entity subject = PaperDollRenderer.subject(mc);
+        if (subject == null || !chatEditing && PaperDollRenderer.isHidden(mc, module, subject)) return;
+
+        final int hudIndex = HUD_PAPER_DOLL;
         module.setHudScale(MathHelper.clamp(module.getHudScale(), module.getMinHudScale(), module.getMaxHudScale()));
         float scale = module.getRenderHudScale();
-        float panelW = 2.0F * baseSize * scale;
-        float panelH = 2.0F * baseSize * scale;
+        float panelW = PaperDoll.BASE_WIDTH * scale;
+        float panelH = PaperDoll.BASE_HEIGHT * scale;
 
-        boolean chatEditing = mc.currentScreen instanceof ChatScreen;
         boolean mouseDown = chatEditing && GLFW.glfwGetMouseButton(
                 mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
         double scaleFactor = mc.getWindow().getScaleFactor();
@@ -4225,14 +4222,14 @@ public final class CustomHudRenderer {
                     float delta = (deltaX + deltaY) * 0.5F;
                     float newScale = (
                             RECT_RESIZE_START_WIDTH[hudIndex]
-                                    + (delta * 0.9F) / (baseSize * 2.0F)
+                                    + (delta * 0.9F) / PaperDoll.BASE_WIDTH
                     ) / 2.0F;
                     newScale = snapAndAnnounceHudScale(
                             module, newScale, module.getMinHudScale(), module.getMaxHudScale());
                     module.setHudScale(newScale);
                     scale = module.getRenderHudScale();
-                    panelW = 2.0F * baseSize * scale;
-                    panelH = 2.0F * baseSize * scale;
+                    panelW = PaperDoll.BASE_WIDTH * scale;
+                    panelH = PaperDoll.BASE_HEIGHT * scale;
                     maxX = Math.max(0.0F, scaledScreenW - panelW);
                     maxY = Math.max(0.0F, scaledScreenH - panelH);
                     panelX = MathHelper.clamp(module.getHudX(), 0.0F, maxX);
@@ -4285,40 +4282,9 @@ public final class CustomHudRenderer {
             }
         }
 
-        float centerX = panelX + panelW * 0.5F;
-        float centerY = panelY + panelH;
-
-        Vector3f translation = new Vector3f();
-        Quaternionf bodyRotation;
-        Quaternionf headRotation = null;
-
-        String mode = module.mode.getSelected();
-        if ("Follow Mouse".equalsIgnoreCase(mode) && !chatEditing) {
-            float mx = (float) (mc.mouse.getX() * mc.getWindow().getScaledWidth() / mc.getWindow().getWidth());
-            float my = (float) (mc.mouse.getY() * mc.getWindow().getScaledHeight() / mc.getWindow().getHeight());
-            float dx = (centerX - mx) / 45.0F;
-            float dy = ((panelY + panelH * 0.58F) - my) / 45.0F;
-            bodyRotation = new Quaternionf().rotateZ((float) Math.PI);
-            headRotation = new Quaternionf().rotateX(dy * 20.0F * (float) (Math.PI / 180.0));
-            bodyRotation.mul(new Quaternionf().rotateY(dx * 20.0F * (float) (Math.PI / 180.0)));
-        } else if ("Auto Rotate".equalsIgnoreCase(mode)) {
-            float speed = module.rotationSpeed.getValue();
-            float angleDeg = (System.nanoTime() / 1_000_000_000.0F) * speed;
-            bodyRotation = new Quaternionf().rotateZ((float) Math.PI).rotateY(angleDeg * (float) (Math.PI / 180.0));
-            headRotation = new Quaternionf();
-        } else {
-            bodyRotation = new Quaternionf().rotateZ((float) Math.PI);
-            headRotation = new Quaternionf();
-        }
-
-        EntityPose previousPose = player.getPose();
-        try {
-            player.setPose(EntityPose.STANDING);
-            InventoryScreen.drawEntity(context, centerX, centerY, baseSize * scale,
-                    translation, bodyRotation, headRotation, player);
-        } finally {
-            player.setPose(previousPose);
-        }
+        PaperDollRenderer.draw(context, module, subject,
+                panelX + PaperDoll.FEET_X * scale, panelY + PaperDoll.FEET_Y * scale,
+                PaperDoll.BASE_DOLL_SIZE * scale, mc.getRenderTickCounter().getTickDelta(true));
 
         if (chatEditing && handleInput && RECT_HOVER_PROGRESS[hudIndex] > 0.05F) {
             int outlineColor = withAlpha(0xFFFFFF, (int) (165.0F * RECT_HOVER_PROGRESS[hudIndex]));

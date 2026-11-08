@@ -6,6 +6,8 @@
   "plugin": "vorga.phazeclient.mixins.PhazeMixinPlugin",
   "mixins": [],
   "client": [
+    "BufferRendererGuiBatchMixin",
+    "GlStateManagerScissorMixin",
     "InGameHudMixin",
     "EntityRendererMixin",
     "EntityRenderDispatcherMixin",
@@ -63,6 +65,7 @@
     "ChatScreenDragSelectMixin",
     "PlayerInventoryPotionMixin",
     "ChatHudAccessor",
+    "AbstractClientPlayerEntityAccessor",
     "HandledScreenMixin",
     "WorldRendererChunkAnimatorMixin",
     "sodium.DefaultFluidRendererWorldColorMixin",

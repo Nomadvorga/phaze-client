@@ -2,6 +2,7 @@ package vorga.phazeclient.api.system.font.msdf;
 
 import net.minecraft.client.render.VertexConsumer;
 import org.joml.Matrix4f;
+import vorga.phazeclient.api.system.shape.batched.GuiBatch;
 
 public final class MsdfGlyph {
     private final float minU;
@@ -46,6 +47,15 @@ public final class MsdfGlyph {
         consumer.vertex(matrix, x + scaledWidth, y + scaledHeight, z).texture(this.maxU, this.maxV).color(color);
         consumer.vertex(matrix, x + scaledWidth, y, z).texture(this.maxU, this.minV).color(color);
 
+        return this.advance * size;
+    }
+
+    /** {@link #apply} for a batch run; glyphs without ink (spaces) emit nothing. */
+    float emit(Matrix4f matrix, GuiBatch.Run run, float size, float x, float y, float z, int color) {
+        if (this.width > 0.0F && this.height > 0.0F) {
+            run.quad(matrix, x, y - this.topPosition * size, this.width * size, this.height * size, z,
+                    this.minU, this.minV, this.maxU, this.maxV, color, 0);
+        }
         return this.advance * size;
     }
 

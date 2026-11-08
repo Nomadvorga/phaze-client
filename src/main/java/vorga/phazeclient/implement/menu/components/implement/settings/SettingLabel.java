@@ -18,6 +18,8 @@ import vorga.phazeclient.implement.menu.font.MsdfGuiFontRenderer;
  * No repeated text draws, per-label texture or offscreen framebuffer is needed.
  */
 public final class SettingLabel {
+    private static final float LEFT_CLIP_BLEED = 2.0F;
+
     /** Screens that clip outside {@link ScissorManager} must intersect with their own active clip. */
     public interface Clip {
         void push(Matrix4f matrix, float x, float y, float width, float height);
@@ -87,16 +89,20 @@ public final class SettingLabel {
         }
         float offset = state.offset(now);
         float fade = state.fadeWidth();
-        float leftStrength = Math.max(0, Math.min(1, offset / fade));
-        float rightStrength = Math.max(0, Math.min(1, (state.getOverflow() - offset) / fade));
+        float leftStrength = state.edgeStrength(offset);
+        float rightStrength = state.edgeStrength(state.getOverflow() - offset);
         Clip activeClip = clip;
         ScissorManager scissor = activeClip == null ? Main.getInstance().getScissorManager() : null;
         // MsdfRenderer's emergency vanilla fallback queues entity vertices.
         // Drain any earlier fallback while the parent clip is still active.
         if (MsdfRenderer.isUsingFallback()) flushFallback();
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        if (activeClip != null) activeClip.push(matrix, textX, top, width, height);
-        else scissor.push(matrix, textX, top, width, height);
+        // First-glyph ink sits slightly left of textX and the scissor rounds to whole pixels.
+        // The shader's left fade still hides scrolled text past textX.
+        float clipX = textX - LEFT_CLIP_BLEED;
+        float clipWidth = width + LEFT_CLIP_BLEED;
+        if (activeClip != null) activeClip.push(matrix, clipX, top, clipWidth, height);
+        else scissor.push(matrix, clipX, top, clipWidth, height);
         try {
             float scale = Math.abs(matrix.m00());
             float left = matrix.m00() * textX + matrix.m30();

@@ -45,7 +45,7 @@ public class MainMenuScreen extends TitleScreen {
     private static final double MIN_OVERLAY_SCALE = 1.0D;
     private static final int DEFAULT_OVERLAY_WIDTH = 462;
     private static final int DEFAULT_OVERLAY_HEIGHT = 300;
-    private static final String FOOTER_LEFT_TEXT = "Phaze Client 1.21.4 ()";
+    private static final String FOOTER_LEFT_TEXT = "Phaze Client 1.21.4 (v1.2)";
     private static final String FOOTER_RIGHT_TEXT = "Not affiliated with Mojang or Microsoft. Do not distribute!";
     private static final Identifier ICON_SINGLE = Identifier.of("phaze", "textures/menu/user.png");
     private static final Identifier ICON_MULTI = Identifier.of("phaze", "textures/menu/users.png");
@@ -331,6 +331,16 @@ public class MainMenuScreen extends TitleScreen {
         renderMainMenuBackground(context, delta);
         context.getMatrices().push();
         context.getMatrices().scale(overlayRenderScale, overlayRenderScale, 1.0F);
+        BatchedRectangle.beginScope();
+        try {
+            renderOverlay(context, mouseX, mouseY, delta);
+        } finally {
+            BatchedRectangle.endScope();
+            context.getMatrices().pop();
+        }
+    }
+
+    private void renderOverlay(DrawContext context, int mouseX, int mouseY, float delta) {
         int overlayMouseX = Math.round(toOverlayCoordinate(mouseX));
         int overlayMouseY = Math.round(toOverlayCoordinate(mouseY));
         float overlayW = getOverlayViewportWidth();
@@ -355,7 +365,6 @@ public class MainMenuScreen extends TitleScreen {
             renderModMenuTooltip(context, overlayMouseX, overlayMouseY);
             renderThemeSelectorTooltip(context);
         }
-        context.getMatrices().pop();
     }
 
     private void refreshLocalizedMainMenuTexts() {

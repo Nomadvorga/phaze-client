@@ -18,7 +18,10 @@ import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.font.msdf.ResourceProvider;
+import vorga.phazeclient.api.system.font.msdf.MsdfBatch;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
+import vorga.phazeclient.api.system.shape.batched.GuiBatch;
+import vorga.phazeclient.api.system.shape.batched.GuiDrawStats;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -39,14 +42,13 @@ public final class UiMsdfIconAtlas {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
     private static final Identifier ATLAS_TEXTURE_ID = Identifier.of("phaze", "msdf/ui_icons.png");
     private static final Identifier ATLAS_DATA_ID = Identifier.of("phaze", "msdf/ui_icons.json");
-    private static final Identifier BACK_ARROW_ICON_ID = Identifier.ofVanilla("textures/back_arrow.png");
+    public static final Identifier BACK_ARROW_ICON_ID = Identifier.ofVanilla("textures/back_arrow.png");
+    /** Visible chevron height in back_arrow.svg as a fraction of its 24-unit box, the PNG's size convention. */
+    private static final float BACK_ARROW_INK_HEIGHT = 14.7972F / 24.0F;
     private static final float DEFAULT_DISTANCE_RANGE = 12.0F;
     private static final float SMOOTHNESS = 0.42F;
     private static final float THICKNESS = 0.0F;
     private static final float UV_INSET = 1.0F;
-    private static final Set<Identifier> RASTER_FALLBACK_ICONS = Set.of(
-            BACK_ARROW_ICON_ID
-    );
 
     private static final Map<Identifier, AtlasIcon> ATLAS_ICONS = new HashMap<>();
     private static final Set<Identifier> MISSING_ICONS = new HashSet<>();
@@ -82,10 +84,19 @@ public final class UiMsdfIconAtlas {
     }
 
     public static synchronized void registerTexture(Identifier icon) {
-        if (icon == null || globalFailed || RASTER_FALLBACK_ICONS.contains(icon)) {
+        if (icon == null || globalFailed) {
             return;
         }
         ensureAtlasLoaded();
+    }
+
+    /** The back chevron, as large as the old 24px texture at {@code size} and centred on its visible stroke. */
+    public static boolean renderBackArrow(DrawContext context, float centerX, float centerY, float size, int color) {
+        IconInk ink = ink(BACK_ARROW_ICON_ID);
+        float drawSize = size * BACK_ARROW_INK_HEIGHT / Math.max(0.0001F, ink.height());
+        return renderIcon(context, BACK_ARROW_ICON_ID,
+                centerX - drawSize * ink.centerX(), centerY - drawSize * ink.centerY(),
+                drawSize, drawSize, color, true);
     }
 
     public static boolean renderIcon(
@@ -223,9 +234,7 @@ public final class UiMsdfIconAtlas {
                                 ? iconDefinition.contentAspectRatio
                                 : iconWidth / iconHeight;
                         ATLAS_ICONS.put(identifier, new AtlasIcon(minU, minV, maxU, maxV, aspectRatio, resolveInk(bounds, iconDefinition.inkBounds)));
-                        if (!RASTER_FALLBACK_ICONS.contains(identifier)) {
-                            ASPECT_RATIO_CACHE.put(identifier, aspectRatio);
-                        }
+                        ASPECT_RATIO_CACHE.put(identifier, aspectRatio);
                     } catch (Throwable ignored) {
                     }
                 }
@@ -243,7 +252,7 @@ public final class UiMsdfIconAtlas {
     }
 
     private static synchronized AtlasIcon ensureIconReady(Identifier icon) {
-        if (icon == null || globalFailed || MC == null || MC.getTextureManager() == null || RASTER_FALLBACK_ICONS.contains(icon)) {
+        if (icon == null || globalFailed || MC == null || MC.getTextureManager() == null) {
             return null;
         }
         if (!atlasLoaded && !ensureAtlasLoaded()) {
@@ -286,10 +295,6 @@ public final class UiMsdfIconAtlas {
     public static float resolveAspectRatio(Identifier icon) {
         if (icon == null) {
             return 1.0F;
-        }
-
-        if (RASTER_FALLBACK_ICONS.contains(icon)) {
-            return resolveResourceAspectRatio(icon);
         }
 
         Float cached = ASPECT_RATIO_CACHE.get(icon);
@@ -359,13 +364,26 @@ public final class UiMsdfIconAtlas {
             float thickness,
             float smoothness
     ) {
-        BatchedRectangle.flushIfBatching();
-
         if (!filterApplied && atlasTexture != null) {
             atlasTexture.setFilter(true, false);
             filterApplied = true;
         }
 
+        if (atlasTexture != null && MsdfBatch.canDefer()) {
+            GuiBatch.Run run = MsdfBatch.beginIcon(atlasTexture.getGlId(), distanceRange, thickness, smoothness);
+            // Same corner-to-UV mapping as emitQuad; the legacy orientation is a quarter turn.
+            if (legacyImageOrientation) {
+                run.quad(matrix, x1, y1, x2 - x1, y2 - y1, 0.0F,
+                        atlasIcon.maxU, atlasIcon.minV, atlasIcon.minU, atlasIcon.maxV, color, GuiBatch.UV_SWAP);
+            } else {
+                run.quad(matrix, x1, y1, x2 - x1, y2 - y1, 0.0F,
+                        atlasIcon.minU, atlasIcon.minV, atlasIcon.maxU, atlasIcon.maxV, color, 0);
+            }
+            return true;
+        }
+
+        BatchedRectangle.flushIfBatching();
+        GuiDrawStats.msdfDraws++;
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableCull();
@@ -390,17 +408,7 @@ public final class UiMsdfIconAtlas {
         }
 
         BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-        if (legacyImageOrientation) {
-            builder.vertex(matrix, x1, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.minV).color(color);
-            builder.vertex(matrix, x2, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.maxV).color(color);
-            builder.vertex(matrix, x2, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.maxV).color(color);
-            builder.vertex(matrix, x1, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.minV).color(color);
-        } else {
-            builder.vertex(matrix, x1, y1, 0.0F).texture(atlasIcon.minU, atlasIcon.minV).color(color);
-            builder.vertex(matrix, x1, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.maxV).color(color);
-            builder.vertex(matrix, x2, y2, 0.0F).texture(atlasIcon.maxU, atlasIcon.maxV).color(color);
-            builder.vertex(matrix, x2, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.minV).color(color);
-        }
+        emitQuad(builder, matrix, atlasIcon, x1, y1, x2, y2, color, legacyImageOrientation);
 
         BuiltBuffer builtBuffer = builder.endNullable();
         if (builtBuffer != null) {
@@ -412,6 +420,21 @@ public final class UiMsdfIconAtlas {
         RenderSystem.enableCull();
         RenderSystem.disableBlend();
         return true;
+    }
+
+    private static void emitQuad(BufferBuilder builder, Matrix4f matrix, AtlasIcon atlasIcon,
+                                 float x1, float y1, float x2, float y2, int color, boolean legacyImageOrientation) {
+        if (legacyImageOrientation) {
+            builder.vertex(matrix, x1, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.minV).color(color);
+            builder.vertex(matrix, x2, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.maxV).color(color);
+            builder.vertex(matrix, x2, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.maxV).color(color);
+            builder.vertex(matrix, x1, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.minV).color(color);
+        } else {
+            builder.vertex(matrix, x1, y1, 0.0F).texture(atlasIcon.minU, atlasIcon.minV).color(color);
+            builder.vertex(matrix, x1, y2, 0.0F).texture(atlasIcon.minU, atlasIcon.maxV).color(color);
+            builder.vertex(matrix, x2, y2, 0.0F).texture(atlasIcon.maxU, atlasIcon.maxV).color(color);
+            builder.vertex(matrix, x2, y1, 0.0F).texture(atlasIcon.maxU, atlasIcon.minV).color(color);
+        }
     }
 
     private static final class AtlasDefinition {

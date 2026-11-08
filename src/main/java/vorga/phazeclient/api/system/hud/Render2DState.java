@@ -35,6 +35,7 @@ public final class Render2DState implements AutoCloseable {
     private Render2DState(boolean snapshot) {
         if (!snapshot) return;
         RenderSystem.assertOnRenderThread();
+        vorga.phazeclient.api.system.shape.batched.GuiDrawStats.stateSnapshots++;
         blend = GL11C.glIsEnabled(GL11C.GL_BLEND);
         depthTest = GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST);
         cull = GL11C.glIsEnabled(GL11C.GL_CULL_FACE);
@@ -84,6 +85,9 @@ public final class Render2DState implements AutoCloseable {
 
     /** Snapshot only for a standalone draw; HUD/menu primitives share their outer boundary. */
     public static Render2DState join() { return depth > 0 ? JOINED : capture(); }
+
+    /** True inside an outer boundary that restores GL state when it closes. */
+    public static boolean isJoined() { return depth > 0; }
 
     @Override
     public void close() {

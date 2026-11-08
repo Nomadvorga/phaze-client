@@ -138,7 +138,10 @@ public final class PhazeEventService {
         RemoteRulesService rules = RemoteRulesService.getInstance();
         String url = rules.getApiBase()
                 + "/api/events?clientId="
-                + URLEncoder.encode(rules.getClientId(), StandardCharsets.UTF_8);
+                + URLEncoder.encode(rules.getClientId(), StandardCharsets.UTF_8)
+                // Without a source filter the server fans out every third-party
+                // cosmetic event to this socket too.
+                + "&eventProtocol=2&cosmeticSources=phaze";
 
         HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
         try {
@@ -228,33 +231,10 @@ public final class PhazeEventService {
                                 .acceptEvent(parsed.getAsJsonObject());
                     }
                 }
-                case "pulse_cosmetic" -> {
-                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
-                    if (parsed.isJsonObject()) {
-                        vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
-                                .getInstance()
-                                .acceptPulseEvent(parsed.getAsJsonObject());
-                    }
-                }
-                case "pulse_graffiti" -> {
-                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
-                    if (parsed.isJsonObject()) {
-                        vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
-                                .getInstance()
-                                .acceptPulseGraffitiEvent(parsed.getAsJsonObject());
-                    }
-                }
                 case "hello" -> vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
                         .getInstance()
                         .requestRefresh();
-                case "ping" -> {
-                    JsonElement parsed = JsonParser.parseString(data == null ? "{}" : data);
-                    if (parsed.isJsonObject()) {
-                        vorga.phazeclient.implement.cosmetics.CosmeticsSyncService
-                                .getInstance()
-                                .acceptPushCheckpoint(parsed.getAsJsonObject());
-                    }
-                }
+                case "ping" -> { }
                 default -> LOG.debug("unknown event '{}'", event);
             }
         } catch (Throwable t) {

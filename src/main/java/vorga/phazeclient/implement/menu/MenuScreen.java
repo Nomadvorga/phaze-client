@@ -176,7 +176,6 @@ public class MenuScreen extends Screen implements QuickImports {
         context.getMatrices().scale(overlayRenderScale, overlayRenderScale, 1.0F);
         float scaleAnimation = getScaleAnimation();
         float alphaAnimation = getAlphaAnimation();
-        MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> renderGuiRegionBlur(context));
 
         // Open a BatchedRectangle scope for the entire component +
         // window-manager render pass. While this scope is active,
@@ -194,6 +193,8 @@ public class MenuScreen extends Screen implements QuickImports {
         // matrix-pop into whatever renders next on the frame.
         vorga.phazeclient.api.system.shape.batched.BatchedRectangle.beginScope();
         try {
+            // Inside the scope, so the backdrop joins its GL state boundary instead of snapshotting its own.
+            MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> renderGuiRegionBlur(context));
             MathUtil.scale(context.getMatrices(), x + (float) width / 2, y + (float) height / 2, scaleAnimation, () -> {
                 boolean moduleDetailOpen = moduleDetailComponent.isOpen();
                 boolean configsViewOpen = configsView.isActive();
@@ -240,6 +241,7 @@ public class MenuScreen extends Screen implements QuickImports {
             vorga.phazeclient.api.system.shape.batched.BatchedRectangle.endScope();
         }
         context.getMatrices().pop();
+        renderCenterGuides(context, mouseX, mouseY);
     }
 
     private void renderGuiRegionBlur(DrawContext context) {
@@ -256,7 +258,7 @@ public class MenuScreen extends Screen implements QuickImports {
                 .build());
     }
 
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+    private void renderCenterGuides(DrawContext context, int mouseX, int mouseY) {
         Window currentWindow = MinecraftClient.getInstance().getWindow();
         int windowWidth = currentWindow != null ? currentWindow.getScaledWidth() : getOverlayViewportWidth();
         int windowHeight = currentWindow != null ? currentWindow.getScaledHeight() : getOverlayViewportHeight();
@@ -277,8 +279,14 @@ public class MenuScreen extends Screen implements QuickImports {
 
         float horizontalAlpha = horizontalGuideAnimation.getOutputFloat() * 0.5F;
         float verticalAlpha = verticalGuideAnimation.getOutputFloat() * 0.5F;
+        if (horizontalAlpha <= 0.0F && verticalAlpha <= 0.0F) {
+            return;
+        }
 
         RenderSystem.disableScissor();
+        context.getMatrices().push();
+        // Above item/entity depth used inside the menu, still inside the GUI clip range.
+        context.getMatrices().translate(0.0F, 0.0F, 5000.0F);
         if (horizontalAlpha > 0.0F) {
             drawGuideLine(context, windowWidth / 2, 0, 1, windowHeight, horizontalAlpha);
         }
@@ -286,8 +294,8 @@ public class MenuScreen extends Screen implements QuickImports {
         if (verticalAlpha > 0.0F) {
             drawGuideLine(context, 0, windowHeight / 2, windowWidth, 1, verticalAlpha);
         }
-
-        super.renderBackground(context, mouseX, mouseY, delta);
+        context.getMatrices().pop();
+        context.draw();
     }
 
     protected void renderDarkening(DrawContext context) {

@@ -102,7 +102,7 @@ public final class HudEditorClientTest implements FabricClientGameTest {
             });
             List<Target> targets = context.computeOnClient(client -> List.of(new Target(FpsHud.getInstance(), 0),
                     new Target(ArmorHud.getInstance(), 29), new Target(Consumable.getInstance(), 22),
-                    new Target(InventoryHud.getInstance(), 26), new Target(PlayerModelHud.getInstance(), 24)));
+                    new Target(InventoryHud.getInstance(), 26), new Target(PaperDoll.getInstance(), 24)));
             for (int guiScale : new int[]{1, 2, 3}) for (Target target : targets) dragAndResize(context, mouse, target, guiScale);
             idleBudgets(context, targets.getFirst());
             backgroundBudgets(context, mouse, targets.getFirst());
@@ -176,7 +176,8 @@ public final class HudEditorClientTest implements FabricClientGameTest {
             check((int) field(CursorManager.class, "lastAppliedShape", null) == CursorManager.SHAPE_HRESIZE, "cached resize preserves the resize cursor");
             return Frozen.capture();
         });
-        float reference = context.computeOnClient(client -> target.index() == 29 || target.index() == 22 || target.index() == 24
+        float reference = context.computeOnClient(client -> target.model() ? PaperDoll.BASE_WIDTH
+                : target.index() == 29 || target.index() == 22
                 ? 60 : ((float[]) hudField("HUD_LAYOUT_BASE_WIDTH"))[target.index()]);
         for (int step = 1; step <= 3; step++) {
             double delta = reference / 3.0 * step * (target.model() ? guiScale : 1);
@@ -286,7 +287,7 @@ public final class HudEditorClientTest implements FabricClientGameTest {
             render(client, 1);
             check(HudEditorProbe.childCaptures == frozen.counts().child() + 1 && transform() != frozen.transform(),
                     "blur flip immediately repairs a selected animated gradient despite unchanged 120 Hz policy");
-            check(HudEditorProbe.uncachedModels == 0, "Player Model has no separate unthrottled render path");
+            check(HudEditorProbe.uncachedModels == 0, "PaperDoll has no separate unthrottled render path");
         });
         release(context, mouse, target, false);
     }
@@ -385,7 +386,7 @@ public final class HudEditorClientTest implements FabricClientGameTest {
                 rect.setHudPosition(64 / coordinateScale, 64 / coordinateScale,
                         target.model() ? client.getWindow().getScaledWidth() : client.getWindow().getWidth(),
                         target.model() ? client.getWindow().getScaledHeight() : client.getWindow().getHeight());
-                if (target.model()) PlayerModelHud.getInstance().mode.setSelected("Static");
+                if (target.model()) PaperDoll.getInstance().headMode.setSelected(PaperDoll.HEAD_LOCKED);
             } else {
                 ArmorHud armor = (ArmorHud) target.module();
                 armor.background.setValue(true);

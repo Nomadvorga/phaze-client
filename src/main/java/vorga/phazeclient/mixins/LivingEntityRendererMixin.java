@@ -218,9 +218,6 @@ public abstract class LivingEntityRendererMixin<
                         matrices, vertexConsumers, playerState, light,
                         stableLightingEntry
                 );
-                vorga.phazeclient.implement.cosmetics.bridge.PhazePulseRenderer.renderBody(
-                        matrices, vertexConsumers, playerState, light
-                );
                 matrices.pop();
 
                 matrices.push();
@@ -228,9 +225,6 @@ public abstract class LivingEntityRendererMixin<
                 CosmeticsRenderer.renderHeadCosmetic(
                         matrices, vertexConsumers, playerState, light,
                         stableLightingEntry
-                );
-                vorga.phazeclient.implement.cosmetics.bridge.PhazePulseRenderer.renderHead(
-                        matrices, vertexConsumers, playerState, light
                 );
                 matrices.pop();
             } else {

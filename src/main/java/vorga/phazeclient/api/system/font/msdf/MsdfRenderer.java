@@ -21,6 +21,8 @@ import org.lwjgl.opengl.GL13;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
+import vorga.phazeclient.api.system.shape.batched.GuiBatch;
+import vorga.phazeclient.api.system.shape.batched.GuiDrawStats;
 
 public final class MsdfRenderer {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
@@ -103,8 +105,15 @@ public final class MsdfRenderer {
             return;
         }
 
+        if (MsdfBatch.canDefer()) {
+            defer(font, text, size, color, matrix, x, y, z, thickness, smoothness,
+                    left, right, fadeWidth, leftStrength, rightStrength);
+            return;
+        }
+
         // Text must paint over all previously submitted rectangles.
         BatchedRectangle.flushIfBatching();
+        GuiDrawStats.msdfDraws++;
 
         try (TextRenderState state = new TextRenderState()) {
             RenderSystem.enableBlend();
@@ -137,6 +146,24 @@ public final class MsdfRenderer {
             // State and buffer cleanup have already run before fallback starts.
             reportFailure(failure);
             fallback(font, text, size, thickness, color, matrix, x, y, z);
+        }
+    }
+
+    /** Appends the string to the shared GUI batch. */
+    private static void defer(MsdfFont font, String text, float size, int color, Matrix4f matrix,
+                              float x, float y, float z, float thickness, float smoothness,
+                              float left, float right, float fadeWidth, float leftStrength, float rightStrength) {
+        float penX = x - MsdfTextMetrics.PEN_OFFSET_X;
+        float baseline = y + size * MsdfTextMetrics.BASELINE_EM;
+        float spacing = thickness * 0.5F * size;
+        GuiBatch.Run run = MsdfBatch.begin(font.getTextureId(), font.getAtlas().range(), thickness, smoothness,
+                left, right, Math.max(0.0F, fadeWidth), leftStrength, rightStrength);
+        try {
+            font.applyGlyphs(matrix, run, text, size, spacing, 0.0F, penX, baseline, z, color);
+        } catch (RuntimeException | Error failure) {
+            // A partially written quad would corrupt every later quad of this batch.
+            BatchedRectangle.discardPending();
+            throw failure;
         }
     }
 
