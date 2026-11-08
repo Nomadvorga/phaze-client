@@ -131,7 +131,14 @@ public final class MessengerViewComponent extends AbstractComponent {
     private volatile boolean sendResultSuccess;
     private boolean sendPending;
     private String pendingText;
-    private volatile String actionError;
+    private volatile ActionMessage actionMessage;
+    private static final long MESSAGE_VISIBLE_MS = 5_000L;
+    /** Service statuses that report success or connection state, never a failed action. */
+    private static final Set<String> NON_ERROR_STATUSES = Set.of(
+            "Online", "Offline", "Messenger reconnecting", "Friend request sent", "Friend added",
+            "Friend removed", "Friend request declined", "User unblocked");
+
+    private record ActionMessage(String text, boolean error, long shownAt) {}
     private final Map<String, SettingLabel> marqueeLabels = new HashMap<>();
     private final Map<String, Animation> hoverAnimations = new HashMap<>();
     private final Set<String> renderedHoverKeys = new HashSet<>();
@@ -689,8 +696,10 @@ public final class MessengerViewComponent extends AbstractComponent {
                     panelX, buttonY + 22.0F, panelW, mouseX, mouseY, false, friend);
             renderActionButton(context, "details:block", Lang.t("messenger.block"), panelX, buttonY + 44.0F, panelW, mouseX, mouseY, false, false);
         }
-        if (actionError != null) {
-            drawText(context, actionError, panelX, buttonY + 68.0F, 3.8F, 0xFFE76868, false);
+        ActionMessage message = actionMessage;
+        if (message != null && System.currentTimeMillis() - message.shownAt() < MESSAGE_VISIBLE_MS) {
+            drawText(context, message.text(), panelX, buttonY + 68.0F, 3.8F,
+                    message.error() ? 0xFFE76868 : MenuStyle.ACCENT_GREEN, false);
         }
     }
 
@@ -849,7 +858,7 @@ public final class MessengerViewComponent extends AbstractComponent {
             input = "";
             cursor = selectionAnchor = 0;
             scroll = 0.0D;
-            actionError = null;
+            actionMessage = null;
             service.clearError();
             return true;
         }
@@ -896,14 +905,14 @@ public final class MessengerViewComponent extends AbstractComponent {
             float detailsW = RIGHT_WIDTH - PANEL_PAD * 2.0F;
             if (inside(mouseX, mouseY, detailsX, detailsY, detailsW, 18.0F)) {
                 if (isBlocked(detailsFriend.id())) {
-                    service.unblockUser(detailsFriend.id(), success -> actionError = success ? null : actionErrorFor(service.getStatus()));
+                    service.unblockUser(detailsFriend.id(), this::showActionResult);
                 } else {
                     selectedFriendId = detailsFriend.id();
                     long requestGeneration = ++conversationRequestGeneration;
                     service.openConversation(detailsFriend.id(), id -> {
                         if (requestGeneration != conversationRequestGeneration) return;
-                        if (id == null) actionError = actionErrorFor(service.getStatus());
-                        else actionError = null;
+                        if (id == null) showActionError(actionErrorFor(service.getStatus()));
+                        else actionMessage = null;
                         pendingConversationId = id;
                     });
                 }
@@ -917,13 +926,21 @@ public final class MessengerViewComponent extends AbstractComponent {
                             selectedFriendId = null;
                             selectedProfileId = null;
                             selectedProfileUsername = null;
-                            actionError = null;
+                            actionMessage = null;
                         } else {
-                            actionError = actionErrorFor(service.getStatus());
+                            showActionError(actionErrorFor(service.getStatus()));
                         }
                     });
                 } else {
-                    service.addFriendByUsername(detailsFriend.username(), success -> actionError = success ? null : actionErrorFor(service.getStatus()));
+                    service.sendFriendRequest(detailsFriend.id(), success -> {
+                        if (!success) {
+                            showActionError(actionErrorFor(service.getStatus()));
+                        } else {
+                            actionMessage = new ActionMessage("Friend added".equals(service.getStatus())
+                                    ? Lang.t("messenger.friend_added") : Lang.t("messenger.friend_request_sent"),
+                                    false, System.currentTimeMillis());
+                        }
+                    });
                 }
                 return true;
             }
@@ -979,7 +996,7 @@ public final class MessengerViewComponent extends AbstractComponent {
                     service.acceptFriendRequest(requestId);
                 } else if (inside(mouseX, mouseY, actionX + actionW + 4.0F, actionY, actionW, 13.0F)) {
                     service.declineFriendRequest(requestId, success -> {
-                        if (!success) actionError = actionErrorFor(service.getStatus());
+                        if (!success) showActionError(actionErrorFor(service.getStatus()));
                     });
                 }
                 return true;
@@ -992,7 +1009,7 @@ public final class MessengerViewComponent extends AbstractComponent {
                 MessengerService.Friend blocked = currentBlocked.get(index);
                 if (inside(mouseX, mouseY, contentX + contentW - 56.0F, listTop + index * 29.0F,
                         50.0F, 25.0F)) {
-                    service.unblockUser(blocked.id(), success -> actionError = success ? null : actionErrorFor(service.getStatus()));
+                    service.unblockUser(blocked.id(), this::showActionResult);
                 } else {
                     selectProfile(blocked.id(), blocked.username());
                 }
@@ -1278,9 +1295,23 @@ public final class MessengerViewComponent extends AbstractComponent {
         return inputError() != null ? INPUT_ERROR_RESERVE : 0.0F;
     }
 
+    private void showActionError(String text) {
+        actionMessage = new ActionMessage(text, true, System.currentTimeMillis());
+    }
+
+    private void showActionResult(boolean success) {
+        if (success) actionMessage = null;
+        else showActionError(actionErrorFor(service.getStatus()));
+    }
+
     private String inputError() {
-        String status = service.getStatus();
-        if (status == null || status.equals("Online") || status.equals("Offline") || status.equals("Messenger reconnecting")) return null;
+        return inputErrorFor(service.getStatus(), service.getStatusChangedAt(), System.currentTimeMillis());
+    }
+
+    /** The line above the input: only real failures, and each one for {@link #MESSAGE_VISIBLE_MS}. */
+    static String inputErrorFor(String status, long changedAt, long now) {
+        if (status == null || NON_ERROR_STATUSES.contains(status)) return null;
+        if (now - changedAt >= MESSAGE_VISIBLE_MS) return null;
         if (status.equals(MessengerService.BLOCKED_BY_RECIPIENT)) return Lang.t("messenger.error_blocked_by");
         if (status.equals(MessengerService.RECIPIENT_BLOCKED)) return Lang.t("messenger.error_recipient_blocked");
         if (status.startsWith("Message blocked")) return Lang.t("messenger.error_blocked");
@@ -1290,10 +1321,10 @@ public final class MessengerViewComponent extends AbstractComponent {
         return Lang.t("messenger.error_send");
     }
 
-    private String actionErrorFor(String status) {
-        if (status == null || status.equals("Online") || status.equals("Friend request sent")
-                || status.equals("User unblocked")) return Lang.t("messenger.error_send");
+    static String actionErrorFor(String status) {
+        if (status == null || NON_ERROR_STATUSES.contains(status)) return Lang.t("messenger.error_action");
         if (status.contains("conversation_forbidden")) return Lang.t("messenger.error_friend_required");
+        if (status.contains("friend_target_unavailable")) return Lang.t("messenger.error_friend_unavailable");
         if (status.contains("blocked") || status.contains("forbidden")) return Lang.t("messenger.error_blocked_user");
         if (status.contains("not_found") || status.contains("not found")) return Lang.t("messenger.error_user_not_found");
         if (status.contains("already_friends") || status.contains("pending")) return Lang.t("messenger.error_already_friend");

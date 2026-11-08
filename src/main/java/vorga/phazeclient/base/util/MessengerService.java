@@ -101,6 +101,7 @@ public final class MessengerService {
     private volatile String token;
     private volatile boolean streamConnected;
     private volatile String status = "Offline";
+    private volatile long statusChangedAt;
     private volatile String selectedConversation;
     private volatile ChatUser currentUser;
 
@@ -119,6 +120,16 @@ public final class MessengerService {
         return status;
     }
 
+    /** When {@link #getStatus()} was last written; a repeated identical error refreshes it. */
+    public long getStatusChangedAt() {
+        return statusChangedAt;
+    }
+
+    private void setStatus(String next) {
+        status = next;
+        statusChangedAt = System.currentTimeMillis();
+    }
+
     /** The local player's own presence: online exactly while the event stream is open. */
     public boolean isConnected() {
         return streamConnected;
@@ -126,12 +137,12 @@ public final class MessengerService {
 
     /** Drops a stale send/action error, e.g. when the user switches to another conversation. */
     public void clearError() {
-        if (token != null && !token.isBlank()) status = "Online";
+        if (token != null && !token.isBlank()) setStatus("Online");
     }
 
     /** Shows a block error the client already knows about without asking the server. */
     public void reportBlocked(String code) {
-        status = code;
+        setStatus(code);
     }
 
     public List<Conversation> getConversations() {
@@ -203,8 +214,8 @@ public final class MessengerService {
         if (text == null || text.isBlank()) return;
         MessengerTextFilter.Result filter = MessengerTextFilter.check(text);
         if (filter != MessengerTextFilter.Result.ALLOW) {
-            status = filter == MessengerTextFilter.Result.REPEATED_FLOOD
-                    ? "Message blocked: flood" : "Message blocked: abusive content";
+            setStatus(filter == MessengerTextFilter.Result.REPEATED_FLOOD
+                    ? "Message blocked: flood" : "Message blocked: abusive content");
             if (completion != null) completion.accept(false);
             return;
         }
@@ -220,10 +231,10 @@ public final class MessengerService {
             if (result.status == 201 || result.status == 200) {
                 JsonObject root = JsonParser.parseString(result.body).getAsJsonObject();
                 acceptGlobalMessage(root.getAsJsonObject("message"));
-                status = "Online";
+                setStatus("Online");
                 if (completion != null) completion.accept(true);
             } else {
-                status = parseError(result.body, "Send failed");
+                setStatus(parseError(result.body, "Send failed"));
                 if (completion != null) completion.accept(false);
             }
         });
@@ -248,9 +259,9 @@ public final class MessengerService {
         if (conversationId == null || text == null || text.isBlank()) return;
         MessengerTextFilter.Result filter = MessengerTextFilter.check(text);
         if (filter != MessengerTextFilter.Result.ALLOW) {
-            status = filter == MessengerTextFilter.Result.REPEATED_FLOOD
+            setStatus(filter == MessengerTextFilter.Result.REPEATED_FLOOD
                     ? "Message blocked: flood"
-                    : "Message blocked: abusive content";
+                    : "Message blocked: abusive content");
             if (completion != null) completion.accept(false);
             return;
         }
@@ -267,14 +278,14 @@ public final class MessengerService {
                     + conversationId + "/messages", body.toString(), true);
             if (result.status == 201 || result.status == 200) {
                 acceptMessage(conversationId, JsonParser.parseString(result.body).getAsJsonObject().getAsJsonObject("message"));
-                status = "Online";
+                setStatus("Online");
                 if (completion != null) completion.accept(true);
             } else if (result.status == 401) {
                 token = null;
-                status = "Session expired";
+                setStatus("Session expired");
                 if (completion != null) completion.accept(false);
             } else {
-                status = parseError(result.body, "Send failed");
+                setStatus(parseError(result.body, "Send failed"));
                 if (completion != null) completion.accept(false);
             }
         });
@@ -294,18 +305,52 @@ public final class MessengerService {
             HttpResult lookup = request("GET", "/api/chat/users/lookup?username="
                     + java.net.URLEncoder.encode(username.trim(), StandardCharsets.UTF_8), null, true);
             if (lookup.status != 200) {
-                status = parseError(lookup.body, "Player not found");
+                setStatus(parseError(lookup.body, "Player not found"));
                 if (completion != null) completion.accept(false);
                 return;
             }
             JsonObject user = JsonParser.parseString(lookup.body).getAsJsonObject().getAsJsonObject("user");
-            JsonObject body = new JsonObject();
-            body.addProperty("targetUserId", user.get("id").getAsString());
-            HttpResult result = request("POST", "/api/chat/friends/requests", body.toString(), true);
-            boolean success = result.status == 201 || result.status == 200;
-            status = success ? "Friend request sent" : parseError(result.body, "Friend request failed");
+            boolean success = requestFriendSync(user.get("id").getAsString());
             if (completion != null) completion.accept(success);
         });
+    }
+
+    /**
+     * Sends a friend request by chat user id. The server stores it, so a player who
+     * is offline finds it in their requests the next time the mod starts. If that
+     * player already asked us, their request is accepted instead of crossing it.
+     */
+    public void sendFriendRequest(String userId, Consumer<Boolean> completion) {
+        if (userId == null || userId.isBlank()) return;
+        io.execute(() -> {
+            boolean success = ensureSessionSync() && requestFriendSync(userId);
+            if (completion != null) completion.accept(success);
+        });
+    }
+
+    private boolean requestFriendSync(String userId) {
+        for (FriendRequest incoming : requests) {
+            if (incoming.requesterId().equals(userId)) return acceptFriendRequestSync(incoming.id());
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("targetUserId", userId);
+        HttpResult result = request("POST", "/api/chat/friends/requests", body.toString(), true);
+        if (result.status == 401) {
+            token = null;
+            if (!ensureSessionSync()) return false;
+            result = request("POST", "/api/chat/friends/requests", body.toString(), true);
+        }
+        if (result.status != 201 && result.status != 200) {
+            setStatus(parseError(result.body, "Friend request failed"));
+            return false;
+        }
+        if ("already_friends".equals(stringField(result.body, "status"))) {
+            refreshFriends();
+            setStatus("Friend added");
+        } else {
+            setStatus("Friend request sent");
+        }
+        return true;
     }
 
     public void openConversation(String participantId, Consumer<String> completion) {
@@ -325,7 +370,7 @@ public final class MessengerService {
                 selectConversation(conversationId);
                 if (completion != null) completion.accept(conversationId);
             } else {
-                status = parseError(result.body, "Conversation unavailable");
+                setStatus(parseError(result.body, "Conversation unavailable"));
                 if (completion != null) completion.accept(null);
             }
         });
@@ -339,11 +384,11 @@ public final class MessengerService {
             body.addProperty("targetUserId", userId);
             HttpResult result = request("POST", "/api/chat/friends/block", body.toString(), true);
             if (result.status == 200) {
-                status = "User blocked";
+                setStatus("User blocked");
                 removeFriendLocally(userId);
                 refreshBlocked();
             } else {
-                status = parseError(result.body, "Block failed");
+                setStatus(parseError(result.body, "Block failed"));
             }
         });
     }
@@ -359,7 +404,7 @@ public final class MessengerService {
             body.addProperty("targetUserId", userId);
             HttpResult result = request("POST", "/api/chat/friends/unblock", body.toString(), true);
             boolean success = result.status == 200;
-            status = success ? "User unblocked" : parseError(result.body, "Unblock failed");
+            setStatus(success ? "User unblocked" : parseError(result.body, "Unblock failed"));
             if (success) {
                 synchronized (listLock) {
                     blocked = without(blocked, friend -> friend.id().equals(userId));
@@ -371,21 +416,25 @@ public final class MessengerService {
 
     public void acceptFriendRequest(long requestId) {
         io.execute(() -> {
-            if (!ensureSessionSync()) return;
-            JsonObject body = new JsonObject();
-            body.addProperty("requestId", requestId);
-            HttpResult result = request("POST", "/api/chat/friends/accept", body.toString(), true);
-            if (result.status == 200) {
-                status = "Friend added";
-                JsonObject friend = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonObject("friend");
-                if (friend != null) addFriendLocally(friendOf(friend), onlineOf(friend));
-                synchronized (listLock) {
-                    requests = without(requests, request -> request.id() == requestId);
-                }
-            } else {
-                status = parseError(result.body, "Request failed");
-            }
+            if (ensureSessionSync()) acceptFriendRequestSync(requestId);
         });
+    }
+
+    private boolean acceptFriendRequestSync(long requestId) {
+        JsonObject body = new JsonObject();
+        body.addProperty("requestId", requestId);
+        HttpResult result = request("POST", "/api/chat/friends/accept", body.toString(), true);
+        if (result.status != 200) {
+            setStatus(parseError(result.body, "Request failed"));
+            return false;
+        }
+        setStatus("Friend added");
+        JsonObject friend = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonObject("friend");
+        if (friend != null) addFriendLocally(friendOf(friend), onlineOf(friend));
+        synchronized (listLock) {
+            requests = without(requests, request -> request.id() == requestId);
+        }
+        return true;
     }
 
     public void declineFriendRequest(long requestId, Consumer<Boolean> completion) {
@@ -398,7 +447,7 @@ public final class MessengerService {
             body.addProperty("requestId", requestId);
             HttpResult result = request("POST", "/api/chat/friends/decline", body.toString(), true);
             boolean success = result.status == 200;
-            status = success ? "Friend request declined" : parseError(result.body, "Request failed");
+            setStatus(success ? "Friend request declined" : parseError(result.body, "Request failed"));
             if (success) {
                 synchronized (listLock) {
                     requests = without(requests, request -> request.id() == requestId);
@@ -419,7 +468,7 @@ public final class MessengerService {
             body.addProperty("targetUserId", userId);
             HttpResult result = request("POST", "/api/chat/friends/remove", body.toString(), true);
             boolean success = result.status == 200;
-            status = success ? "Friend removed" : parseError(result.body, "Remove friend failed");
+            setStatus(success ? "Friend removed" : parseError(result.body, "Remove friend failed"));
             if (success) {
                 removeFriendLocally(userId);
                 refreshConversations();
@@ -494,7 +543,7 @@ public final class MessengerService {
                 blockedBy = Set.copyOf(nextBlockedBy);
                 conversations = List.copyOf(nextConversations);
             }
-            status = "Online";
+            setStatus("Online");
             return true;
         } catch (RuntimeException malformed) {
             LOG.debug("Messenger bootstrap could not be parsed", malformed);
@@ -575,7 +624,7 @@ public final class MessengerService {
         try {
             String base = RemoteRulesService.getInstance().getApiBase();
             if (base == null || base.isBlank()) {
-                status = "Messenger disabled";
+                setStatus("Messenger disabled");
                 return false;
             }
             String clientId = RemoteRulesService.getInstance().getClientId();
@@ -598,23 +647,23 @@ public final class MessengerService {
                     body.add("proof", proof);
                 } else if (challenge.status != 404) {
                     // 404 is a server without key logins; anything else is retried by the stream loop.
-                    status = parseError(challenge.body, "Session unavailable");
+                    setStatus(parseError(challenge.body, "Session unavailable"));
                     return false;
                 }
             }
             HttpResult result = request("POST", "/api/chat/session", body.toString(), false);
             if (result.status != 201) {
-                status = parseError(result.body, "Session unavailable");
+                setStatus(parseError(result.body, "Session unavailable"));
                 return false;
             }
             JsonObject root = JsonParser.parseString(result.body).getAsJsonObject();
             token = root.get("token").getAsString();
             JsonObject user = root.getAsJsonObject("user");
             currentUser = new ChatUser(user.get("id").getAsString(), usernameOf(user));
-            status = "Online";
+            setStatus("Online");
             return true;
         } catch (Throwable throwable) {
-            status = "Network unavailable";
+            setStatus("Network unavailable");
             LOG.debug("Messenger session failed", throwable);
             return false;
         } finally {
@@ -626,7 +675,7 @@ public final class MessengerService {
         HttpResult result = request("GET", "/api/chat/conversations", null, true);
         if (result.status != 200) {
             if (result.status == 401) token = null;
-            status = parseError(result.body, "Conversations unavailable");
+            setStatus(parseError(result.body, "Conversations unavailable"));
             return;
         }
         JsonArray array = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("conversations");
@@ -659,7 +708,7 @@ public final class MessengerService {
                     listenStream();
                     backoff = 5_000L;
                 } catch (Throwable throwable) {
-                    status = "Messenger reconnecting";
+                    setStatus("Messenger reconnecting");
                     LOG.debug("Messenger SSE ended", throwable);
                 }
                 resync = true;
@@ -690,7 +739,7 @@ public final class MessengerService {
             int code = connection.getResponseCode();
             if (code == 401) token = null;
             if (code != 200) throw new IllegalStateException("SSE " + code);
-            status = "Online";
+            setStatus("Online");
             streamConnected = true;
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     connection.getInputStream(), StandardCharsets.UTF_8))) {
@@ -937,6 +986,15 @@ public final class MessengerService {
     private static String usernameOf(JsonObject object) {
         return object != null && object.has("username") && !object.get("username").isJsonNull()
                 ? object.get("username").getAsString() : "Unknown";
+    }
+
+    private static String stringField(String body, String field) {
+        try {
+            JsonObject object = JsonParser.parseString(body).getAsJsonObject();
+            return object.has(field) && !object.get(field).isJsonNull() ? object.get(field).getAsString() : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static String parseError(String body, String fallback) {

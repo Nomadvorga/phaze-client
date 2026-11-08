@@ -163,6 +163,20 @@ tasks.register('verifyMenuLocalization', JavaExec) {
     mainClass = 'vorga.phazeclient.implement.features.modules.other.MenuLocalizationChecks'
 }
 
+tasks.register('verifyMessenger', JavaExec) {
+    group = 'verification'
+    description = 'Friend requests and chat error lines against a local fake chat API'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'vorga.phazeclient.implement.menu.components.implement.other.MessengerChecks'
+    // The device key and client id are written here, never into the player's real files.
+    def sandbox = layout.buildDirectory.dir('messenger-check').get().asFile
+    workingDir = sandbox
+    environment 'APPDATA', sandbox.absolutePath
+    doFirst { sandbox.mkdirs() }
+}
+tasks.named('check') { dependsOn 'verifyMessenger' }
+
 [
     verifyGlintSettings: 'vorga.phazeclient.implement.features.modules.other.GlintSettingsChecks',
     verifyHandAnimationTransforms: 'vorga.phazeclient.implement.features.modules.other.HandAnimationTransformChecks',

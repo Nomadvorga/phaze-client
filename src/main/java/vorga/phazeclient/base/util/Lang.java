@@ -211,6 +211,9 @@ public final class Lang {
         en("messenger.error_already_friend", "Friend request already exists.");
         en("messenger.error_action", "Action failed. Please try again.");
         en("messenger.error_friend_required", "Add this player as a friend first.");
+        en("messenger.error_friend_unavailable", "This player can't be added.");
+        en("messenger.friend_request_sent", "Friend request sent.");
+        en("messenger.friend_added", "Added to friends.");
 
         // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
@@ -336,6 +339,9 @@ public final class Lang {
         ru("messenger.error_already_friend", "Заявка уже существует.");
         ru("messenger.error_action", "Не удалось выполнить действие. Попробуй ещё раз.");
         ru("messenger.error_friend_required", "Сначала добавь этого игрока в друзья.");
+        ru("messenger.error_friend_unavailable", "Этого игрока нельзя добавить.");
+        ru("messenger.friend_request_sent", "Заявка отправлена.");
+        ru("messenger.friend_added", "Добавлен в друзья.");
     }
 
     private static final Map<String, String> SETTING_TRANSLATIONS = new HashMap<>();
