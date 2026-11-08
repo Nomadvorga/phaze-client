@@ -51,6 +51,22 @@ public final class MessengerChecks {
         check(MessengerViewComponent.inputErrorFor(service.getStatus(), service.getStatusChangedAt(),
                 System.currentTimeMillis()) == null, "a sent request is not shown as a send error");
 
+        check(service.hasSentFriendRequest("bob"), "the sent request is remembered");
+        int before = calls.size();
+        check(send(service, "bob"), "a repeated request is not a failure");
+        check(calls.size() == before, "a repeated request is answered locally, without traffic");
+        check("Friend request pending".equals(service.getStatus()), "a repeated request reports the pending one");
+        check(MessengerViewComponent.friendRequestNotice(service.getStatus(), 0L).text()
+                .equals(Lang.t("messenger.friend_request_already_sent")), "the player is told the request was already sent");
+
+        check(send(service, "dave"), "a request the server already holds is not a failure");
+        check("Friend request pending".equals(service.getStatus()), "the server's pending answer is reported as already sent");
+        check(service.hasSentFriendRequest("dave"), "the server's pending answer is remembered too");
+
+        check(!send(service, "spam"), "a rate-limited request fails");
+        check(MessengerViewComponent.actionErrorFor(service.getStatus())
+                .equals(Lang.t("messenger.error_friend_slowdown")), "the rate limit has its own message");
+
         check(send(service, "friend"), "a request to an existing friend is not a failure");
         check("Friend added".equals(service.getStatus()), "an existing friendship is reported as added");
 
@@ -72,7 +88,7 @@ public final class MessengerChecks {
     private static void errorLines() {
         long now = 1_000_000L;
         for (String ok : List.of("Online", "Offline", "Messenger reconnecting", "Friend request sent",
-                "Friend added", "Friend removed", "Friend request declined", "User unblocked")) {
+                "Friend request pending", "Friend added", "Friend removed", "Friend request declined", "User unblocked")) {
             check(MessengerViewComponent.inputErrorFor(ok, now, now) == null, "not an error: " + ok);
         }
         check(Lang.t("messenger.error_send").equals(MessengerViewComponent.inputErrorFor("Send failed", now, now)),
@@ -105,6 +121,8 @@ public final class MessengerChecks {
                 switch (argument) {
                     case "bob" -> reply(exchange, 201, "{\"status\":\"created\"}");
                     case "friend" -> reply(exchange, 200, "{\"status\":\"already_friends\"}");
+                    case "dave" -> reply(exchange, 200, "{\"status\":\"pending\"}");
+                    case "spam" -> reply(exchange, 429, "{\"error\":\"friend_request_slow_down\",\"retryAfterSec\":30}");
                     default -> reply(exchange, 404, "{\"error\":\"friend_target_unavailable\"}");
                 }
             }

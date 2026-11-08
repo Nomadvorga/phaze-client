@@ -135,10 +135,13 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final long MESSAGE_VISIBLE_MS = 5_000L;
     /** Service statuses that report success or connection state, never a failed action. */
     private static final Set<String> NON_ERROR_STATUSES = Set.of(
-            "Online", "Offline", "Messenger reconnecting", "Friend request sent", "Friend added",
-            "Friend removed", "Friend request declined", "User unblocked");
+            "Online", "Offline", "Messenger reconnecting", "Friend request sent", "Friend request pending",
+            "Friend added", "Friend removed", "Friend request declined", "User unblocked");
+    private static final float ACTION_MESSAGE_SIZE = 5.2F;
+    private static final int ERROR_COLOR = 0xFFE76868;
+    private static final int NOTICE_COLOR = 0xFFE8C468;
 
-    private record ActionMessage(String text, boolean error, long shownAt) {}
+    record ActionMessage(String text, int color, long shownAt) {}
     private final Map<String, SettingLabel> marqueeLabels = new HashMap<>();
     private final Map<String, Animation> hoverAnimations = new HashMap<>();
     private final Set<String> renderedHoverKeys = new HashSet<>();
@@ -692,15 +695,33 @@ public final class MessengerViewComponent extends AbstractComponent {
         renderActionButton(context, "details:message", blockedUser ? Lang.t("messenger.unblock") : Lang.t("messenger.message"), panelX, buttonY, panelW, mouseX, mouseY,
                  selectedFriendId != null && selectedFriendId.equals(selected.id()), false);
         if (!blockedUser) {
-            renderActionButton(context, "details:friend", friend ? Lang.t("messenger.remove_friend") : Lang.t("messenger.add_friend"),
+            String friendLabel = friend ? Lang.t("messenger.remove_friend")
+                    : service.hasSentFriendRequest(selected.id()) ? Lang.t("messenger.request_sent_button")
+                    : Lang.t("messenger.add_friend");
+            renderActionButton(context, "details:friend", friendLabel,
                     panelX, buttonY + 22.0F, panelW, mouseX, mouseY, false, friend);
             renderActionButton(context, "details:block", Lang.t("messenger.block"), panelX, buttonY + 44.0F, panelW, mouseX, mouseY, false, false);
         }
         ActionMessage message = actionMessage;
         if (message != null && System.currentTimeMillis() - message.shownAt() < MESSAGE_VISIBLE_MS) {
-            drawText(context, message.text(), panelX, buttonY + 68.0F, 3.8F,
-                    message.error() ? 0xFFE76868 : MenuStyle.ACCENT_GREEN, false);
+            List<String> lines = splitToWidth(message.text(), panelW, ACTION_MESSAGE_SIZE);
+            float lineH = ACTION_MESSAGE_SIZE + 2.5F;
+            for (int index = 0; index < lines.size(); index++) {
+                drawCentered(context, lines.get(index), panelX, buttonY + 67.0F + index * lineH, panelW, lineH,
+                        ACTION_MESSAGE_SIZE, message.color(), false);
+            }
         }
+    }
+
+    /** At most two centered lines; a message never runs past the details panel. */
+    private static List<String> splitToWidth(String text, float width, float size) {
+        if (renderedTextWidth(text, size) <= width) return List.of(text);
+        int split = -1;
+        for (int space = text.indexOf(' '); space > 0; space = text.indexOf(' ', space + 1)) {
+            if (renderedTextWidth(text.substring(0, space), size) > width) break;
+            split = space;
+        }
+        return split < 0 ? List.of(text) : List.of(text.substring(0, split), text.substring(split + 1));
     }
 
     private void renderActionButton(DrawContext context, String key, String label, float buttonX, float buttonY,
@@ -936,9 +957,7 @@ public final class MessengerViewComponent extends AbstractComponent {
                         if (!success) {
                             showActionError(actionErrorFor(service.getStatus()));
                         } else {
-                            actionMessage = new ActionMessage("Friend added".equals(service.getStatus())
-                                    ? Lang.t("messenger.friend_added") : Lang.t("messenger.friend_request_sent"),
-                                    false, System.currentTimeMillis());
+                            actionMessage = friendRequestNotice(service.getStatus(), System.currentTimeMillis());
                         }
                     });
                 }
@@ -1296,7 +1315,15 @@ public final class MessengerViewComponent extends AbstractComponent {
     }
 
     private void showActionError(String text) {
-        actionMessage = new ActionMessage(text, true, System.currentTimeMillis());
+        actionMessage = new ActionMessage(text, ERROR_COLOR, System.currentTimeMillis());
+    }
+
+    static ActionMessage friendRequestNotice(String status, long now) {
+        if ("Friend added".equals(status)) return new ActionMessage(Lang.t("messenger.friend_added"), MenuStyle.ACCENT_GREEN, now);
+        if ("Friend request pending".equals(status)) {
+            return new ActionMessage(Lang.t("messenger.friend_request_already_sent"), NOTICE_COLOR, now);
+        }
+        return new ActionMessage(Lang.t("messenger.friend_request_sent"), MenuStyle.ACCENT_GREEN, now);
     }
 
     private void showActionResult(boolean success) {
@@ -1325,6 +1352,8 @@ public final class MessengerViewComponent extends AbstractComponent {
         if (status == null || NON_ERROR_STATUSES.contains(status)) return Lang.t("messenger.error_action");
         if (status.contains("conversation_forbidden")) return Lang.t("messenger.error_friend_required");
         if (status.contains("friend_target_unavailable")) return Lang.t("messenger.error_friend_unavailable");
+        if (status.contains("friend_request_slow_down")) return Lang.t("messenger.error_friend_slowdown");
+        if (status.contains("too_many_pending_requests")) return Lang.t("messenger.error_too_many_requests");
         if (status.contains("blocked") || status.contains("forbidden")) return Lang.t("messenger.error_blocked_user");
         if (status.contains("not_found") || status.contains("not found")) return Lang.t("messenger.error_user_not_found");
         if (status.contains("already_friends") || status.contains("pending")) return Lang.t("messenger.error_already_friend");

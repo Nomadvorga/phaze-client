@@ -214,6 +214,10 @@ public final class Lang {
         en("messenger.error_friend_unavailable", "This player can't be added.");
         en("messenger.friend_request_sent", "Friend request sent.");
         en("messenger.friend_added", "Added to friends.");
+        en("messenger.friend_request_already_sent", "You already sent a friend request.");
+        en("messenger.request_sent_button", "Request sent");
+        en("messenger.error_friend_slowdown", "Too many requests. Try again later.");
+        en("messenger.error_too_many_requests", "Too many unanswered requests.");
 
         // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
@@ -342,6 +346,10 @@ public final class Lang {
         ru("messenger.error_friend_unavailable", "Этого игрока нельзя добавить.");
         ru("messenger.friend_request_sent", "Заявка отправлена.");
         ru("messenger.friend_added", "Добавлен в друзья.");
+        ru("messenger.friend_request_already_sent", "Вы уже отправили заявку в друзья.");
+        ru("messenger.request_sent_button", "Заявка отправлена");
+        ru("messenger.error_friend_slowdown", "Слишком много заявок. Попробуй позже.");
+        ru("messenger.error_too_many_requests", "Слишком много заявок без ответа.");
     }
 
     private static final Map<String, String> SETTING_TRANSLATIONS = new HashMap<>();

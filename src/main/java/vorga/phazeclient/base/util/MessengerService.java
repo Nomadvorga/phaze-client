@@ -96,6 +96,9 @@ public final class MessengerService {
     private volatile Set<String> blockedBy = Set.of();
     private final Map<String, CopyOnWriteArrayList<Message>> messages = new ConcurrentHashMap<>();
     private final Map<String, Boolean> presence = new ConcurrentHashMap<>();
+    /** Users this launch already asked; a repeat click is answered locally instead of by the server. */
+    private final Set<String> sentFriendRequests = ConcurrentHashMap.newKeySet();
+    private final Set<String> friendRequestsInFlight = ConcurrentHashMap.newKeySet();
     private volatile CopyOnWriteArrayList<Message> globalMessages = new CopyOnWriteArrayList<>();
 
     private volatile String token;
@@ -321,16 +324,29 @@ public final class MessengerService {
      * player already asked us, their request is accepted instead of crossing it.
      */
     public void sendFriendRequest(String userId, Consumer<Boolean> completion) {
-        if (userId == null || userId.isBlank()) return;
+        if (userId == null || userId.isBlank() || !friendRequestsInFlight.add(userId)) return;
         io.execute(() -> {
-            boolean success = ensureSessionSync() && requestFriendSync(userId);
-            if (completion != null) completion.accept(success);
+            try {
+                boolean success = ensureSessionSync() && requestFriendSync(userId);
+                if (completion != null) completion.accept(success);
+            } finally {
+                friendRequestsInFlight.remove(userId);
+            }
         });
+    }
+
+    /** True once this launch knows a request to {@code userId} is waiting for an answer. */
+    public boolean hasSentFriendRequest(String userId) {
+        return userId != null && sentFriendRequests.contains(userId);
     }
 
     private boolean requestFriendSync(String userId) {
         for (FriendRequest incoming : requests) {
             if (incoming.requesterId().equals(userId)) return acceptFriendRequestSync(incoming.id());
+        }
+        if (sentFriendRequests.contains(userId)) {
+            setStatus("Friend request pending");
+            return true;
         }
         JsonObject body = new JsonObject();
         body.addProperty("targetUserId", userId);
@@ -344,11 +360,13 @@ public final class MessengerService {
             setStatus(parseError(result.body, "Friend request failed"));
             return false;
         }
-        if ("already_friends".equals(stringField(result.body, "status"))) {
+        String outcome = stringField(result.body, "status");
+        if ("already_friends".equals(outcome)) {
             refreshFriends();
             setStatus("Friend added");
         } else {
-            setStatus("Friend request sent");
+            sentFriendRequests.add(userId);
+            setStatus("pending".equals(outcome) ? "Friend request pending" : "Friend request sent");
         }
         return true;
     }
@@ -790,7 +808,20 @@ public final class MessengerService {
                         removeFriendLocally(userId);
                     }
                 }
-                case "friend_request" -> io.execute(this::refreshRequests);
+                case "friend_request" -> {
+                    FriendRequest pushed = root.has("request") && root.get("request").isJsonObject()
+                            ? requestOf(root.getAsJsonObject("request")) : null;
+                    if (pushed == null) {
+                        io.execute(this::refreshRequests);
+                    } else {
+                        synchronized (listLock) {
+                            List<FriendRequest> next = new ArrayList<>(without(requests, request -> request.id() == pushed.id()));
+                            next.add(0, pushed);
+                            requests = List.copyOf(next);
+                        }
+                        SkinAvatarService.getInstance().preload(List.of(pushed.requesterUsername()));
+                    }
+                }
                 case "block" -> {
                     String userId = root.get("userId").getAsString();
                     boolean nowBlocked = root.get("blocked").getAsBoolean();
@@ -811,6 +842,7 @@ public final class MessengerService {
     }
 
     private void addFriendLocally(Friend friend, boolean online) {
+        sentFriendRequests.remove(friend.id());
         presence.put(friend.id(), online);
         synchronized (listLock) {
             List<Friend> next = new ArrayList<>(without(friends, existing -> existing.id().equals(friend.id())));
