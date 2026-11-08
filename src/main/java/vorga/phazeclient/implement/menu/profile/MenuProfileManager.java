@@ -283,7 +283,7 @@ public final class MenuProfileManager implements QuickImports {
 
             if (module.isShowEnable()) {
                 boolean enabled = hasModuleData && moduleData.has("enabled") && moduleData.get("enabled").getAsBoolean();
-                module.setStateSilent(enabled);
+                module.restoreStateSilent(enabled);
             }
 
             if (!hasModuleData) {

@@ -851,7 +851,7 @@ public final class ConfigManager {
             // Restore the module's declared initial state before applying the
             // target config. Explicit saved states are loaded afterwards.
             if (module.isState() != module.isEnabledByDefault()) {
-                module.setState(module.isEnabledByDefault());
+                module.restoreState(module.isEnabledByDefault());
             }
             module.setKey(0);
             // Use each setting's own reset() so the value snaps back
@@ -971,7 +971,7 @@ public final class ConfigManager {
             boolean enabled = hasModuleData && moduleData.has("enabled")
                     ? moduleData.get("enabled").getAsBoolean()
                     : module.isEnabledByDefault();
-            module.setState(enabled);
+            module.restoreState(enabled);
         }
 
         if (hasModuleData && moduleData.has("key")) {
