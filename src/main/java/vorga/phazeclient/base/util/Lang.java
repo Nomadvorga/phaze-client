@@ -218,6 +218,13 @@ public final class Lang {
         en("messenger.request_sent_button", "Request sent");
         en("messenger.error_friend_slowdown", "Too many requests. Try again later.");
         en("messenger.error_too_many_requests", "Too many unanswered requests.");
+        en("messenger.friend_request_self", "You can't send a friend request to yourself.");
+        en("messenger.mod_spam", "Spam and random letters are not allowed.");
+        en("messenger.mod_flood", "Flood is not allowed.");
+        en("messenger.mod_abuse", "Insults and swearing are not allowed.");
+        en("messenger.mod_politics", "Politics is not allowed in chat.");
+        en("messenger.mod_hate", "Nazism and racism are not allowed.");
+        en("messenger.mod_ads", "Advertising and invite links are not allowed.");
 
         // ---- RU translations -----------------------------------
         ru("modal.cloud.title", "Облачные конфиги");
@@ -350,6 +357,13 @@ public final class Lang {
         ru("messenger.request_sent_button", "Заявка отправлена");
         ru("messenger.error_friend_slowdown", "Слишком много заявок. Попробуй позже.");
         ru("messenger.error_too_many_requests", "Слишком много заявок без ответа.");
+        ru("messenger.friend_request_self", "Нельзя отправить заявку в друзья самому себе.");
+        ru("messenger.mod_spam", "Спам и бессмысленный набор букв запрещены.");
+        ru("messenger.mod_flood", "Флуд запрещён.");
+        ru("messenger.mod_abuse", "Оскорбления и мат запрещены.");
+        ru("messenger.mod_politics", "Политика в чате запрещена.");
+        ru("messenger.mod_hate", "Нацизм и расизм запрещены.");
+        ru("messenger.mod_ads", "Реклама и ссылки-приглашения запрещены.");
     }
 
     private static final Map<String, String> SETTING_TRANSLATIONS = new HashMap<>();

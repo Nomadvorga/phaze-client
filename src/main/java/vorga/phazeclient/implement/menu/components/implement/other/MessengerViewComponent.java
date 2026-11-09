@@ -663,7 +663,8 @@ public final class MessengerViewComponent extends AbstractComponent {
         }
         String error = inputError();
         if (error != null) {
-            drawText(context, error, inputX + 2.0F, inputY - 8.0F, 4.8F, 0xFFE76868, false);
+            int color = isModerationStatus(service.getStatus()) ? NOTICE_COLOR : ERROR_COLOR;
+            drawText(context, error, inputX + 2.0F, inputY - 8.0F, 4.8F, color, false);
         }
         float sendX = inputX + boxW + GAP;
         long remaining = Math.max(0L, nextSendAt - System.currentTimeMillis());
@@ -952,13 +953,13 @@ public final class MessengerViewComponent extends AbstractComponent {
                             showActionError(actionErrorFor(service.getStatus()));
                         }
                     });
+                } else if (service.isSelf(detailsFriend.id())) {
+                    actionMessage = friendRequestFailure(MessengerService.FRIEND_REQUEST_SELF, System.currentTimeMillis());
                 } else {
                     service.sendFriendRequest(detailsFriend.id(), success -> {
-                        if (!success) {
-                            showActionError(actionErrorFor(service.getStatus()));
-                        } else {
-                            actionMessage = friendRequestNotice(service.getStatus(), System.currentTimeMillis());
-                        }
+                        long now = System.currentTimeMillis();
+                        actionMessage = success ? friendRequestNotice(service.getStatus(), now)
+                                : friendRequestFailure(service.getStatus(), now);
                     });
                 }
                 return true;
@@ -1326,6 +1327,13 @@ public final class MessengerViewComponent extends AbstractComponent {
         return new ActionMessage(Lang.t("messenger.friend_request_sent"), MenuStyle.ACCENT_GREEN, now);
     }
 
+    static ActionMessage friendRequestFailure(String status, long now) {
+        if (MessengerService.FRIEND_REQUEST_SELF.equals(status)) {
+            return new ActionMessage(Lang.t("messenger.friend_request_self"), NOTICE_COLOR, now);
+        }
+        return new ActionMessage(actionErrorFor(status), ERROR_COLOR, now);
+    }
+
     private void showActionResult(boolean success) {
         if (success) actionMessage = null;
         else showActionError(actionErrorFor(service.getStatus()));
@@ -1337,15 +1345,41 @@ public final class MessengerViewComponent extends AbstractComponent {
 
     /** The line above the input: only real failures, and each one for {@link #MESSAGE_VISIBLE_MS}. */
     static String inputErrorFor(String status, long changedAt, long now) {
-        if (status == null || NON_ERROR_STATUSES.contains(status)) return null;
+        if (status == null || NON_ERROR_STATUSES.contains(status) || isFriendActionStatus(status)) return null;
         if (now - changedAt >= MESSAGE_VISIBLE_MS) return null;
         if (status.equals(MessengerService.BLOCKED_BY_RECIPIENT)) return Lang.t("messenger.error_blocked_by");
         if (status.equals(MessengerService.RECIPIENT_BLOCKED)) return Lang.t("messenger.error_recipient_blocked");
-        if (status.startsWith("Message blocked")) return Lang.t("messenger.error_blocked");
+        if (status.startsWith(MessengerService.MESSAGE_BLOCKED)) {
+            return moderationText(status.substring(MessengerService.MESSAGE_BLOCKED.length()));
+        }
         if (status.equals("chat_slow_down")) return Lang.t("messenger.error_slowmode");
         if (status.equals("Chat server is outdated")) return Lang.t("messenger.error_server");
         if (status.equals("User blocked")) return Lang.t("messenger.error_blocked_user");
         return Lang.t("messenger.error_send");
+    }
+
+    /** The reason code the server's moderation refused a message with. */
+    static String moderationText(String reason) {
+        return Lang.t(switch (reason) {
+            case "spam" -> "messenger.mod_spam";
+            case "repeated_flood" -> "messenger.mod_flood";
+            case "abusive_content" -> "messenger.mod_abuse";
+            case "politics" -> "messenger.mod_politics";
+            case "hate" -> "messenger.mod_hate";
+            case "advertising" -> "messenger.mod_ads";
+            default -> "messenger.error_blocked";
+        });
+    }
+
+    /** Moderation refusals are rule reminders, shown in amber rather than as failures. */
+    static boolean isModerationStatus(String status) {
+        return status != null && status.startsWith(MessengerService.MESSAGE_BLOCKED);
+    }
+
+    /** Friend actions report on the profile panel, never as a send error above the input. */
+    private static boolean isFriendActionStatus(String status) {
+        return status.startsWith("friend_") || status.equals("too_many_pending_requests")
+                || status.equals("Friend request failed") || status.equals("Request failed");
     }
 
     static String actionErrorFor(String status) {

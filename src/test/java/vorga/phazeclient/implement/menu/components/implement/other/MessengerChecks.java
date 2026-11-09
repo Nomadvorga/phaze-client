@@ -33,6 +33,7 @@ public final class MessengerChecks {
         try {
             friendRequests();
             errorLines();
+            serverModeration();
         } finally {
             server.stop(0);
             MessengerService.getInstance().stop();
@@ -83,6 +84,35 @@ public final class MessengerChecks {
                 "no second request is created");
         check(service.getRequests().isEmpty(), "the accepted request leaves the list");
         check(service.getFriends().stream().anyMatch(friend -> friend.id().equals("carol")), "the player becomes a friend");
+
+        calls.clear();
+        check(service.isSelf("me"), "the local player is recognised");
+        check(!send(service, "me"), "a request to yourself is refused");
+        check(calls.isEmpty(), "a request to yourself never reaches the server");
+        MessengerViewComponent.ActionMessage self = MessengerViewComponent.friendRequestFailure(service.getStatus(), 0L);
+        check(self.text().equals(Lang.t("messenger.friend_request_self")), "the player is told they can't add themselves");
+        check(self.color() == 0xFFE8C468, "the self request notice is amber");
+        check(MessengerViewComponent.inputErrorFor(service.getStatus(), System.currentTimeMillis(),
+                System.currentTimeMillis()) == null, "a refused friend request is not a send error");
+    }
+
+    private static void serverModeration() throws Exception {
+        MessengerService service = MessengerService.getInstance();
+        calls.clear();
+        CompletableFuture<Boolean> result = new CompletableFuture<>();
+        service.sendGlobal("сука", result::complete);
+        check(!result.get(10, TimeUnit.SECONDS), "the server's refusal fails the send");
+        check(calls.contains("POST /api/chat/global/messages"), "the client no longer filters: the server decides");
+        long now = System.currentTimeMillis();
+        check(Lang.t("messenger.mod_abuse").equals(MessengerViewComponent.inputErrorFor(service.getStatus(),
+                service.getStatusChangedAt(), now)), "the player is told why");
+        check(MessengerViewComponent.isModerationStatus(service.getStatus()), "a moderation refusal is shown in amber");
+        check(MessengerViewComponent.inputErrorFor(service.getStatus(), service.getStatusChangedAt(),
+                service.getStatusChangedAt() + 5_000L) == null, "the moderation notice disappears after 5 seconds");
+        for (String[] reason : new String[][] {{"hate", "messenger.mod_hate"}, {"politics", "messenger.mod_politics"},
+                {"advertising", "messenger.mod_ads"}, {"spam", "messenger.mod_spam"}, {"repeated_flood", "messenger.mod_flood"}}) {
+            check(Lang.t(reason[1]).equals(MessengerViewComponent.moderationText(reason[0])), "server reason " + reason[0]);
+        }
     }
 
     private static void errorLines() {
@@ -115,6 +145,8 @@ public final class MessengerChecks {
         calls.add((method + " " + path + " " + argument).trim());
         switch (method + " " + path) {
             case "POST /api/chat/challenge" -> reply(exchange, 404, "{\"error\":\"not_found\"}");
+            case "POST /api/chat/global/messages" -> reply(exchange, 422,
+                    "{\"error\":\"message_rejected\",\"reason\":\"abusive_content\"}");
             case "POST /api/chat/session" -> reply(exchange, 201,
                     "{\"token\":\"t\",\"user\":{\"id\":\"me\",\"username\":\"Tester\"}}");
             case "POST /api/chat/friends/requests" -> {

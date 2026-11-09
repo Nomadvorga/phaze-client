@@ -49,6 +49,9 @@ public final class MessengerService {
     /** Server error codes for a direct message refused because of a block. */
     public static final String BLOCKED_BY_RECIPIENT = "blocked_by_recipient";
     public static final String RECIPIENT_BLOCKED = "recipient_blocked";
+    /** Status prefix for a message the server's moderation refused; the rest is the reason code. */
+    public static final String MESSAGE_BLOCKED = "Message blocked: ";
+    public static final String FRIEND_REQUEST_SELF = "friend_request_self";
 
     private static final class Holder {
         private static final MessengerService INSTANCE = new MessengerService();
@@ -215,13 +218,6 @@ public final class MessengerService {
 
     public void sendGlobal(String text, Consumer<Boolean> completion) {
         if (text == null || text.isBlank()) return;
-        MessengerTextFilter.Result filter = MessengerTextFilter.check(text);
-        if (filter != MessengerTextFilter.Result.ALLOW) {
-            setStatus(filter == MessengerTextFilter.Result.REPEATED_FLOOD
-                    ? "Message blocked: flood" : "Message blocked: abusive content");
-            if (completion != null) completion.accept(false);
-            return;
-        }
         io.execute(() -> {
             if (!ensureSessionSync()) {
                 if (completion != null) completion.accept(false);
@@ -260,14 +256,6 @@ public final class MessengerService {
 
     public void send(String conversationId, String text, Consumer<Boolean> completion) {
         if (conversationId == null || text == null || text.isBlank()) return;
-        MessengerTextFilter.Result filter = MessengerTextFilter.check(text);
-        if (filter != MessengerTextFilter.Result.ALLOW) {
-            setStatus(filter == MessengerTextFilter.Result.REPEATED_FLOOD
-                    ? "Message blocked: flood"
-                    : "Message blocked: abusive content");
-            if (completion != null) completion.accept(false);
-            return;
-        }
         String trimmed = text.trim();
         io.execute(() -> {
             if (!ensureSessionSync()) {
@@ -340,7 +328,17 @@ public final class MessengerService {
         return userId != null && sentFriendRequests.contains(userId);
     }
 
+    /** True when {@code userId} is the local player, as far as this launch already knows. */
+    public boolean isSelf(String userId) {
+        ChatUser me = currentUser;
+        return userId != null && me != null && userId.equals(me.id());
+    }
+
     private boolean requestFriendSync(String userId) {
+        if (isSelf(userId)) {
+            setStatus(FRIEND_REQUEST_SELF);
+            return false;
+        }
         for (FriendRequest incoming : requests) {
             if (incoming.requesterId().equals(userId)) return acceptFriendRequestSync(incoming.id());
         }
@@ -1032,7 +1030,7 @@ public final class MessengerService {
     private static String parseError(String body, String fallback) {
         try {
             JsonObject object = JsonParser.parseString(body).getAsJsonObject();
-            if (object.has("reason")) return "Message blocked: " + object.get("reason").getAsString();
+            if (object.has("reason")) return MESSAGE_BLOCKED + object.get("reason").getAsString();
             if (object.has("error")) {
                 String error = object.get("error").getAsString();
                 return "not_found".equals(error) ? "Chat server is outdated" : error;
