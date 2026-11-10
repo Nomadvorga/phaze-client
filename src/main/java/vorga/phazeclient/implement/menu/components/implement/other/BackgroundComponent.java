@@ -119,7 +119,7 @@ public class BackgroundComponent extends AbstractComponent {
         } else {
             // Full-width content pane (no sidebar separator).
             rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT + 1.0F, width - 2.0F, height - HEADER_HEIGHT - 2.0F)
-                    .round(0, 0, 7, 7).color(applyGlobalAlpha(MenuStyle.PANEL_CONTENT)).build());
+                    .round(0, 7, 0, 7).color(applyGlobalAlpha(MenuStyle.PANEL_CONTENT)).build());
         }
         rectangle.render(ShapeProperties.create(matrix, x + 1.0F, y + HEADER_HEIGHT, width - 2.0F, 1.0F)
                 .color(applyGlobalAlpha(MenuStyle.BORDER)).build());
@@ -187,7 +187,7 @@ public class BackgroundComponent extends AbstractComponent {
 
         if (fullWidthPage) {
             rectangle.render(ShapeProperties.create(matrix, x + 1.0F, contentY, width - 2.0F, contentHeight)
-                    .round(0, 0, 7, 7)
+                    .round(0, 7, 0, 7)
                     .color(MenuStyle.withAlpha(MenuStyle.PANEL_CONTENT, alpha))
                     .build());
             return;

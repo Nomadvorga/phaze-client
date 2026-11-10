@@ -34,6 +34,7 @@ public final class MessengerChecks {
             friendRequests();
             errorLines();
             serverModeration();
+            socialFeatures();
         } finally {
             server.stop(0);
             MessengerService.getInstance().stop();
@@ -115,6 +116,56 @@ public final class MessengerChecks {
         }
     }
 
+    private static final String GROUP_ID = "abcdef0123456789abcdef0123456789";
+    private static final String JOINED_ID = "fedcba9876543210fedcba9876543210";
+
+    private static void socialFeatures() throws Exception {
+        MessengerService service = MessengerService.getInstance();
+        waitFor(() -> service.getOutgoingRequests().stream().anyMatch(request -> request.targetId().equals("erin")),
+                "outgoing requests load with the incoming ones");
+        check(service.hasSentFriendRequest("erin"), "an outgoing request from the server counts as sent");
+        CompletableFuture<Boolean> cancelled = new CompletableFuture<>();
+        service.cancelFriendRequest(9L, cancelled::complete);
+        check(cancelled.get(10, TimeUnit.SECONDS), "the requester can withdraw");
+        check(calls.contains("POST /api/chat/friends/cancel 9"), "cancel is sent by request id");
+        check(service.getOutgoingRequests().isEmpty() && !service.hasSentFriendRequest("erin"),
+                "the withdrawn request leaves the list");
+
+        CompletableFuture<String> created = new CompletableFuture<>();
+        service.createGroup("  Squad ", List.of("carol"), created::complete);
+        check(GROUP_ID.equals(created.get(10, TimeUnit.SECONDS)), "a created group reports its id");
+        check(lastBody.contains("\"name\":\"Squad\"") && lastBody.contains("carol"), "the name is trimmed, invites ride along");
+        MessengerService.Group group = service.getGroup(GROUP_ID);
+        check(group != null && group.member("me").isOwner(), "the creator is the owner");
+
+        CompletableFuture<String> joined = new CompletableFuture<>();
+        service.acceptGroupInvite(4L, joined::complete);
+        check(JOINED_ID.equals(joined.get(10, TimeUnit.SECONDS)), "accepting an invite joins its group");
+        waitFor(() -> !service.getMessages(JOINED_ID).isEmpty(), "the joined group's history loads");
+        MessengerService.Message card = service.getMessages(JOINED_ID).get(0);
+        check(card.attachment() != null && card.attachment().isPoint() && card.attachment().x() == 10,
+                "a waypoint card is parsed");
+        check(card.sequence() == 3L, "messages keep their sequence for read markers");
+        check(service.getMessages(JOINED_ID).get(1).attachment() == null, "an unknown card type is dropped, not guessed");
+
+        calls.clear();
+        service.selectConversation(JOINED_ID);
+        waitFor(() -> calls.contains("POST /api/chat/conversations/" + JOINED_ID + "/read"), "opening a conversation reads it");
+        check(lastBody.contains("\"sequence\":4"), "the read marker is the newest message");
+        int before = calls.size();
+        service.markRead(JOINED_ID);
+        Thread.sleep(100L);
+        check(calls.size() == before, "an already-read conversation costs no request");
+        service.selectConversation(null);
+
+        CompletableFuture<Boolean> privacy = new CompletableFuture<>();
+        service.setShareServer(true, privacy::complete);
+        check(privacy.get(10, TimeUnit.SECONDS) && service.isSharingServer(), "sharing the server is saved");
+
+        service.refreshTeammatesAsync();
+        waitFor(() -> service.getTeammates().contains("bob"), "teammates load lower-cased for name matching");
+    }
+
     private static void errorLines() {
         long now = 1_000_000L;
         for (String ok : List.of("Online", "Offline", "Messenger reconnecting", "Friend request sent",
@@ -142,7 +193,21 @@ public final class MessengerChecks {
         JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
         String argument = json.has("targetUserId") ? json.get("targetUserId").getAsString()
                 : json.has("requestId") ? json.get("requestId").getAsString() : "";
+        lastBody = body;
         calls.add((method + " " + path + " " + argument).trim());
+        if (path.startsWith("/api/chat/conversations/") && path.endsWith("/read")) {
+            reply(exchange, 200, "{\"sequence\":4}");
+            return;
+        }
+        if (method.equals("GET") && path.equals("/api/chat/conversations/" + JOINED_ID + "/messages")) {
+            reply(exchange, 200, "{\"messages\":["
+                    + "{\"id\":30,\"sequence\":3,\"senderId\":\"carol\",\"senderUsername\":\"Carol\",\"text\":\"База\","
+                    + "\"createdAt\":1,\"attachment\":{\"type\":\"waypoint\",\"serverKey\":\"" + "a".repeat(64) + "\","
+                    + "\"dimension\":\"minecraft:overworld\",\"x\":10,\"y\":64,\"z\":-5}},"
+                    + "{\"id\":31,\"sequence\":4,\"senderId\":\"carol\",\"senderUsername\":\"Carol\",\"text\":\"?\","
+                    + "\"createdAt\":2,\"attachment\":{\"type\":\"script\"}}]}");
+            return;
+        }
         switch (method + " " + path) {
             case "POST /api/chat/challenge" -> reply(exchange, 404, "{\"error\":\"not_found\"}");
             case "POST /api/chat/global/messages" -> reply(exchange, 422,
@@ -163,11 +228,26 @@ public final class MessengerChecks {
             case "GET /api/chat/friends/requests" -> reply(exchange, 200,
                     "{\"requests\":[{\"id\":7,\"status\":\"pending\",\"createdAt\":1,"
                             + "\"requester\":{\"id\":\"carol\",\"username\":\"Carol\"},"
-                            + "\"target\":{\"id\":\"me\",\"username\":\"Tester\"}}]}");
+                            + "\"target\":{\"id\":\"me\",\"username\":\"Tester\"}}],"
+                            + "\"outgoing\":[{\"id\":9,\"status\":\"pending\",\"createdAt\":1,"
+                            + "\"requester\":{\"id\":\"me\",\"username\":\"Tester\"},"
+                            + "\"target\":{\"id\":\"erin\",\"username\":\"Erin\"}}]}");
+            case "POST /api/chat/friends/cancel" -> reply(exchange, 200, "{\"cancelled\":true}");
+            case "POST /api/chat/groups" -> reply(exchange, 201, "{\"group\":" + group(GROUP_ID, "Squad") + ",\"invited\":[\"carol\"]}");
+            case "POST /api/chat/groups/invites/accept" -> reply(exchange, 200, "{\"group\":" + group(JOINED_ID, "Raid") + "}");
+            case "POST /api/chat/me/privacy" -> reply(exchange, 200, "{\"privacy\":{\"shareServer\":true}}");
+            case "GET /api/chat/teammates" -> reply(exchange, 200, "{\"usernames\":[\"Bob\"]}");
             case "POST /api/chat/friends/accept" -> reply(exchange, 200,
                     "{\"friend\":{\"id\":\"carol\",\"username\":\"Carol\",\"createdAt\":1,\"online\":true}}");
             default -> reply(exchange, 404, "{\"error\":\"not_found\"}");
         }
+    }
+
+    private static volatile String lastBody = "";
+
+    private static String group(String id, String name) {
+        return "{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"ownerId\":\"me\",\"createdAt\":1,\"updatedAt\":1,"
+                + "\"members\":[{\"id\":\"me\",\"username\":\"Tester\",\"role\":\"owner\",\"joinedAt\":1,\"online\":true,\"server\":null}]}";
     }
 
     private static void reply(HttpExchange exchange, int status, String body) throws IOException {

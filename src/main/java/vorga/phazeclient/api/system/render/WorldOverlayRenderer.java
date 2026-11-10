@@ -152,6 +152,7 @@ public final class WorldOverlayRenderer {
             HolyWorldHelperRenderer.render(matrices, camera, tickCounter);
             PredictionsRenderer.render(matrices, camera, tickCounter);
             Waypoints.getInstance().renderOverlay(matrices, camera);
+            vorga.phazeclient.implement.messenger.ChatWorld.render(matrices, camera);
             flush();
         } finally {
             recording = false;

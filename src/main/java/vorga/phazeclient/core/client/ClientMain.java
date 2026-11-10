@@ -30,6 +30,14 @@ public class ClientMain implements ClientModInitializer {
                     "category.phaze"
             )
     );
+    private static final KeyBinding GROUP_PING_KEY = KeyBindingHelper.registerKeyBinding(
+            new KeyBinding(
+                    "key.phaze.group_ping",
+                    InputUtil.Type.KEYSYM,
+                    GLFW.GLFW_KEY_G,
+                    "category.phaze"
+            )
+    );
 
     private int preloadTimer = 0;
     private boolean guiPreloaded = false;
@@ -38,6 +46,7 @@ public class ClientMain implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         MenuPanoramaRegistry.ensureDirectoryExists();
+        vorga.phazeclient.implement.messenger.MessengerToasts.install();
         ClientTickEvents.END_CLIENT_TICK.register(this::onClientTick);
         ClientLifecycleEvents.CLIENT_STOPPING.register(this::onClientStopping);
 
@@ -71,6 +80,7 @@ public class ClientMain implements ClientModInitializer {
                 MenuScreen.INSTANCE.openGui();
             }
         }
+        vorga.phazeclient.implement.messenger.ChatWorld.tick(client, GROUP_PING_KEY);
 
         if (!guiPreloaded) {
             preloadTimer++;

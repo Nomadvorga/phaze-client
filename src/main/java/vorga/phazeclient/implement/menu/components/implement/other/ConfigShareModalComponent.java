@@ -130,11 +130,16 @@ public class ConfigShareModalComponent extends AbstractComponent {
      * import succeeds so the configs view can refresh its list.
      */
     public void openImport(Runnable onImported) {
+        openImport(onImported, "");
+    }
+
+    /** Import with the key already filled in, e.g. from a config card in the messenger. */
+    public void openImport(Runnable onImported, String code) {
         this.open = true;
         this.openAnimation.setDirection(Direction.FORWARDS);
         this.mode = Mode.IMPORT;
         this.configName = null;
-        this.inputText = "";
+        this.inputText = code == null ? "" : code;
         this.inputFocused = true;
         this.statusMessage = "";
         this.statusError = false;

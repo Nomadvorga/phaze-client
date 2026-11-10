@@ -50,9 +50,17 @@ public class ModuleComponent extends AbstractComponent {
     private static final float BASE_HEIGHT_SIMPLE = 62.0F;
     private static final float BASE_HEIGHT_OPTIONS_ONLY = BASE_HEIGHT_ENABLED - ENABLED_ROW_HEIGHT;
     private static final Identifier OPTIONS_ICON = Identifier.of("phaze", "textures/menu/options_settings.png");
+    private static final float OPTIONS_ICON_INK_SIZE = 7.6F;
+    /** Every card icon's visible shape is centred here and has the same area, so no icon reads larger than another. */
+    private static final float ICON_CENTER_Y = 22.5F;
+    private static final float ICON_INK_SIZE = 14.5F;
+    /** Long thin icons would otherwise stretch far past the square ones. */
+    private static final float ICON_INK_MAX = 17.0F;
+    private static final float ICON_FALLBACK_SIZE = 16.0F;
     private String iconSource;
     private String iconTexture;
     private Identifier iconId;
+    private float iconQuadHeight;
 
     private final List<AbstractSettingComponent> components = new ArrayList<>();
     private final Module module;
@@ -350,20 +358,21 @@ public class ModuleComponent extends AbstractComponent {
         rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
                 .round(8).softness(1).thickness(0.0F).outlineColor(0x00000000).color(hoverFillColor).build());
 
-        float iconSize = module.getIconSize();
-        float iconX = x + (width - iconSize) / 2.0F;
-        float iconY = y + 12.0F + module.getIconOffsetY();
+        float iconCenterX = x + width / 2.0F;
+        float iconCenterY = y + ICON_CENTER_Y;
         String icon = module.getIcon();
         if (iconTexture == null || !java.util.Objects.equals(icon, iconSource)) {
             // Building and validating the identifier every frame showed up in profiles.
             iconSource = icon;
             iconTexture = icon != null ? "phaze:textures/modules/" + icon : "phaze:textures/modules/hand.png";
             iconId = Identifier.of(iconTexture);
+            iconQuadHeight = cardIconQuadHeight(iconId);
         }
         int iconColor = applyGlobalAlpha(MenuStyle.TEXT_PRIMARY);
-        if (!UiMsdfIconAtlas.renderIcon(context, iconId, iconX, iconY, iconSize, iconSize, iconColor, true)) {
+        if (!UiMsdfIconAtlas.renderIconInkScaled(context, iconId, iconCenterX, iconCenterY, iconQuadHeight, iconColor)) {
             image.setTexture(iconTexture)
-                    .render(ShapeProperties.create(context.getMatrices(), iconX, iconY, iconSize, iconSize)
+                    .render(ShapeProperties.create(context.getMatrices(), iconCenterX - ICON_FALLBACK_SIZE / 2.0F,
+                                    iconCenterY - ICON_FALLBACK_SIZE / 2.0F, ICON_FALLBACK_SIZE, ICON_FALLBACK_SIZE)
                             .color(iconColor).build());
         }
 
@@ -443,12 +452,14 @@ public class ModuleComponent extends AbstractComponent {
         );
 
         if (hasSettings) {
-            float iconX = dividerX + (iconSectionWidth - 9.0F) / 2.0F;
-            float iconY = optionsY + (OPTIONS_ROW_HEIGHT - 9.0F) / 2.0F;
+            float iconCenterX = dividerX + iconSectionWidth / 2.0F;
+            float iconCenterY = optionsY + OPTIONS_ROW_HEIGHT / 2.0F;
             int iconColor = applyGlobalAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, rowHoverProgress * 0.10F));
-            if (!UiMsdfIconAtlas.renderIcon(context, OPTIONS_ICON, iconX, iconY, 9.0F, 9.0F, iconColor, true)) {
+            if (!UiMsdfIconAtlas.renderIconInkFitted(context, OPTIONS_ICON, iconCenterX, iconCenterY,
+                    OPTIONS_ICON_INK_SIZE, OPTIONS_ICON_INK_SIZE, iconColor)) {
                 image.setTexture("textures/settings.png")
-                        .render(ShapeProperties.create(context.getMatrices(), iconX, iconY, 9.0F, 9.0F)
+                        .render(ShapeProperties.create(context.getMatrices(), iconCenterX - OPTIONS_ICON_INK_SIZE / 2.0F,
+                                        iconCenterY - OPTIONS_ICON_INK_SIZE / 2.0F, OPTIONS_ICON_INK_SIZE, OPTIONS_ICON_INK_SIZE)
                                 .color(iconColor).build());
             }
         }
@@ -551,6 +562,15 @@ public class ModuleComponent extends AbstractComponent {
 
     private boolean hasSettings() {
         return !components.isEmpty();
+    }
+
+    /** Quad height at which the icon's visible shape has the shared card-icon area, capped on its long side. */
+    private static float cardIconQuadHeight(Identifier icon) {
+        UiMsdfIconAtlas.IconInk ink = UiMsdfIconAtlas.ink(icon);
+        float inkWidth = Math.max(0.0001F, UiMsdfIconAtlas.resolveAspectRatio(icon) * ink.width());
+        float inkHeight = Math.max(0.0001F, ink.height());
+        float byArea = ICON_INK_SIZE / (float) Math.sqrt(inkWidth * inkHeight);
+        return Math.min(byArea, ICON_INK_MAX / Math.max(inkWidth, inkHeight));
     }
 
     private float getRowX(boolean standaloneRow) {

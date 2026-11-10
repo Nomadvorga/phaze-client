@@ -234,6 +234,17 @@ public class PlayerListHudMixin {
         cir.setReturnValue(styled);
     }
 
+    @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
+    private void phaze$colorTeammate(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
+        if (entry == null || vorga.phazeclient.base.util.MessengerService.getInstance().getTeammates().isEmpty()) return;
+        if (!vorga.phazeclient.implement.messenger.ChatWorld.isTeammate(entry.getProfile().getName())) return;
+        Text current = cir.getReturnValue();
+        if (current == null) return;
+        MutableText styled = current.copy();
+        styled.setStyle(styled.getStyle().withColor(vorga.phazeclient.implement.messenger.ChatWorld.TEAMMATE_COLOR));
+        cir.setReturnValue(styled);
+    }
+
     /**
      * Rewrite the tab list display name through {@link NickHider} so the
      * configured replacement string surfaces in the vanilla TAB overlay.

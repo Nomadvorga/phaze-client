@@ -63,6 +63,11 @@ public class InGameHudMixin {
         TabListSlide.renderClosing(this.client, this.playerListHud, context);
     }
 
+    @Inject(method = "render", at = @At("TAIL"))
+    private void phaze$messengerToasts(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        vorga.phazeclient.implement.messenger.MessengerToasts.render(context);
+    }
+
     /** The Phaze Potion HUD replaces the vanilla top-right effect icons instead of duplicating them. */
     @Inject(method = "renderStatusEffectOverlay", at = @At("HEAD"), cancellable = true)
     private void phaze$suppressVanillaStatusEffectOverlay(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {

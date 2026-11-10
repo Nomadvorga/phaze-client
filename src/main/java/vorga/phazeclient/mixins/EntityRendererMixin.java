@@ -246,6 +246,23 @@ public abstract class EntityRendererMixin {
         return styled;
     }
 
+    /** Group mates on this server get the teammate colour; ranks and suffixes with their own colour keep it. */
+    @ModifyVariable(
+            method = "renderLabelIfPresent(Lnet/minecraft/client/render/entity/state/EntityRenderState;Lnet/minecraft/text/Text;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+            at = @At("HEAD"),
+            argsOnly = true,
+            ordinal = 0
+    )
+    private Text phaze$colorTeammate(Text original) {
+        if (original == null || !((Object) this instanceof PlayerEntityRenderer)) return original;
+        if (vorga.phazeclient.base.util.MessengerService.getInstance().getTeammates().isEmpty()) return original;
+        String identity = PhazeBadgeUtil.extractNametagIdentity(original.getString());
+        if (!vorga.phazeclient.implement.messenger.ChatWorld.isTeammate(identity)) return original;
+        MutableText styled = original.copy();
+        styled.setStyle(styled.getStyle().withColor(vorga.phazeclient.implement.messenger.ChatWorld.TEAMMATE_COLOR));
+        return styled;
+    }
+
     /**
      * TotemTracker per-player loss suffix. Independent
      * {@code @ModifyVariable} on the same arg as

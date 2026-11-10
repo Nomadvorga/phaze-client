@@ -209,8 +209,8 @@ public final class GuiInteractionChecks {
         String owner = "vorga/phazeclient/implement/menu/components/implement/other/MessengerViewComponent";
         ClassNode messenger = readClass(owner);
         for (String name : List.of("renderNavigation", "renderCompactFriend", "renderConversationHeader",
-                "renderFriendCard", "renderConversationCard", "renderFriendRequestCard", "renderSelectableUser",
-                "renderMessage", "renderInput", "renderActionButton", "renderCompactActionButton")) {
+                "renderConversationCard", "renderFriendRequestCard", "renderSelectableUser",
+                "renderMessage", "renderInput", "renderActionButton", "renderRequestActionButton")) {
             check(calls(method(messenger, name)).stream().anyMatch(call -> call.owner.equals(owner)
                             && call.name.equals("animatedHover")),
                     "messenger interactive control has an independent smooth hover: " + name);
@@ -305,7 +305,6 @@ public final class GuiInteractionChecks {
         float lineStep = constant(messenger, "CARD_TEXT_LINE_STEP");
         check(lineStep == 10.0F, "friend-card names and statuses retain their existing line spacing");
         for (float[] textLayout : new float[][]{
-                {constant(messenger, "FRIEND_CARD_NAME_OFFSET"), 4.8F},
                 {constant(messenger, "DIRECT_CARD_NAME_OFFSET"), 5.2F}
         }) {
             float textTop = textLayout[0];
@@ -334,7 +333,7 @@ public final class GuiInteractionChecks {
         check(backIconSize < backSize,
                 "the back arrow stays within its square hover surface");
         float[][] layouts = {
-                {constant(messenger, "FRIEND_CARD_HEIGHT"), constant(messenger, "FRIEND_ROW_STEP")},
+                {constant(messenger, "BLOCKED_ROW_HEIGHT"), constant(messenger, "BLOCKED_ROW_STEP")},
                 {constant(messenger, "DIRECT_CARD_HEIGHT"), constant(messenger, "DIRECT_ROW_STEP")},
                 {constant(messenger, "REQUEST_CARD_HEIGHT"), constant(messenger, "REQUEST_ROW_STEP")}
         };

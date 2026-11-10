@@ -99,6 +99,25 @@ public final class UiMsdfIconAtlas {
                 drawSize, drawSize, color, true);
     }
 
+    /** Scales the icon until its visible shape fills {@code maxInkWidth} x {@code maxInkHeight} and centres that shape on the point. */
+    public static boolean renderIconInkFitted(DrawContext context, Identifier icon, float centerX, float centerY,
+                                              float maxInkWidth, float maxInkHeight, int color) {
+        IconInk ink = ink(icon);
+        float aspect = resolveAspectRatio(icon);
+        float scale = Math.min(maxInkWidth / Math.max(0.0001F, aspect * ink.width()),
+                maxInkHeight / Math.max(0.0001F, ink.height()));
+        return renderIconInkScaled(context, icon, centerX, centerY, scale, color);
+    }
+
+    /** Draws the icon's quad {@code quadHeight} tall with its visible shape, not its padded cell, centred on the point. */
+    public static boolean renderIconInkScaled(DrawContext context, Identifier icon, float centerX, float centerY,
+                                              float quadHeight, int color) {
+        IconInk ink = ink(icon);
+        float quadWidth = quadHeight * resolveAspectRatio(icon);
+        return renderIcon(context, icon, centerX - quadWidth * ink.centerX(), centerY - quadHeight * ink.centerY(),
+                quadWidth, quadHeight, color, true);
+    }
+
     public static boolean renderIcon(
             DrawContext context,
             Identifier icon,

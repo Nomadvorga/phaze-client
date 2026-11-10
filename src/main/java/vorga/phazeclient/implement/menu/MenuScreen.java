@@ -409,8 +409,12 @@ public class MenuScreen extends Screen implements QuickImports {
      * shows up without a manual reload.
      */
     public void openConfigImportModal() {
+        openConfigImportModal("");
+    }
+
+    public void openConfigImportModal(String code) {
         configShareModal.position(x, y).size(width, height);
-        configShareModal.openImport(configsView::refreshAfterImport);
+        configShareModal.openImport(configsView::refreshAfterImport, code);
     }
 
     public boolean isConfigShareModalOpen() {
