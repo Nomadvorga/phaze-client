@@ -209,6 +209,7 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final float ACTION_MESSAGE_SIZE = 5.2F;
     private static final int ERROR_COLOR = 0xFFE76868;
     private static final int NOTICE_COLOR = 0xFFE8C468;
+    private static final int ADMIN_NAME_COLOR = 0xFFFF4F4F;
 
     record ActionMessage(String text, int color, long shownAt) {}
     private record WrappedText(String text, float width, List<String> lines) {}
@@ -1065,7 +1066,8 @@ public final class MessengerViewComponent extends AbstractComponent {
                     .round(avatarRadius(MESSAGE_AVATAR_SIZE))
                     .color(applyGlobalAlpha(MenuStyle.withAlpha(0xFFFFFFFF, avatarHover * 0.08F))).build());
         }
-        int senderColor = isMe(message.senderId()) ? MenuStyle.CHIP_ACTIVE : MenuStyle.TEXT_PRIMARY;
+        int senderColor = MessengerService.isAdmin(message.senderId()) ? ADMIN_NAME_COLOR
+                : isMe(message.senderId()) ? MenuStyle.CHIP_ACTIVE : MenuStyle.TEXT_PRIMARY;
         drawMarqueeLabel(context, "sender:" + message.senderId(), message.senderUsername(), 6.2F,
                 rowX + MESSAGE_TEXT_X, rowY + 1.0F, rowX + rowW - 30.0F,
                 rowY, 10.0F, senderColor, true,
@@ -1245,7 +1247,9 @@ public final class MessengerViewComponent extends AbstractComponent {
 
     private void renderAttachMenu(DrawContext context, float contentX, float inputY, int mouseX, int mouseY) {
         float[] menu = attachMenuRect(contentX, inputY);
-        drawSurface(context, menu[0], menu[1], menu[2], menu[3], MenuStyle.CARD_INNER, MenuStyle.BORDER_LIGHT);
+        float innerAlpha = ((MenuStyle.CARD_INNER >>> 24) & 0xFF) / 255.0F;
+        int solid = 0xFF000000 | (MenuStyle.mix(MenuStyle.PANEL_BG, MenuStyle.CARD_INNER, innerAlpha) & 0x00FFFFFF);
+        drawSurface(context, menu[0], menu[1], menu[2], menu[3], solid, MenuStyle.BORDER_LIGHT);
         String[] labels = attachLabels();
         boolean[] enabled = attachEnabled();
         Identifier[] icons = {POINT_ICON, DEATH_ICON, CONFIG_ICON};
@@ -1866,11 +1870,13 @@ public final class MessengerViewComponent extends AbstractComponent {
             renderAvatar(context, panelX + 1.5F, rowY + 1.5F, 15.0F, member.id(), member.username());
             drawMarqueeLabel(context, "member:" + member.id(), member.username(), 5.0F,
                     panelX + 20.0F, rowY + COMPACT_FRIEND_NAME_OFFSET, panelX + panelW, rowY, 12.0F,
-                    isMe(member.id()) ? MenuStyle.CHIP_ACTIVE : MenuStyle.TEXT_PRIMARY, false, hovered);
+                    MessengerService.isAdmin(member.id()) ? ADMIN_NAME_COLOR
+                            : isMe(member.id()) ? MenuStyle.CHIP_ACTIVE : MenuStyle.TEXT_PRIMARY, false, hovered);
             String role = member.isOwner() ? Lang.t("messenger.role_owner") : member.isAdmin() ? Lang.t("messenger.role_admin") : null;
             boolean online = service.isUserOnline(member.id());
             String status = Lang.t(online ? "messenger.online" : "messenger.offline");
-            String line = role == null ? status : role + " · " + status;
+            String line = MessengerService.isAdmin(member.id()) ? role
+                    : role == null ? status : role + " · " + status;
             drawText(context, fitSingleLine(line, panelW - 21.0F, 4.8F, "..."), panelX + 20.0F,
                     rowY + COMPACT_FRIEND_STATUS_OFFSET, 4.8F,
                     role != null ? MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.CHIP_ACTIVE, 0.6F)
@@ -1969,6 +1975,7 @@ public final class MessengerViewComponent extends AbstractComponent {
     }
 
     private void selectProfile(String id, String username) {
+        if (MessengerService.isAdmin(id)) return;
         finishNoteEdit();
         selectedProfileId = id;
         selectedProfileUsername = username;

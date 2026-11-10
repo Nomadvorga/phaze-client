@@ -63,6 +63,13 @@ public final class MessengerService {
         return Holder.INSTANCE;
     }
 
+    /** The admin panel's sender; it has no profile, friends or presence. */
+    public static final String ADMIN_USER_ID = "000000000000000000000000000000ad";
+
+    public static boolean isAdmin(String userId) {
+        return ADMIN_USER_ID.equals(userId);
+    }
+
     public record Conversation(String id, String participantId, String username,
                                String lastText, long lastCreatedAt, int unreadCount) {}
 
