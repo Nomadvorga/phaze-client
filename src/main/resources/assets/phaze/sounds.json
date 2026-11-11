@@ -40,5 +40,17 @@
     "sounds": [
       "phaze:kill_pop"
     ]
+  },
+  "ping": {
+    "subtitle": "subtitles.phaze.ping",
+    "sounds": [
+      "phaze:ping"
+    ]
+  },
+  "waypoint": {
+    "subtitle": "subtitles.phaze.waypoint",
+    "sounds": [
+      "phaze:waypoint"
+    ]
   }
 }

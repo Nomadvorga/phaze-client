@@ -85,7 +85,13 @@ public final class MessengerService {
     public record ServerInfo(String name, String address) {}
 
     /** A world point or a shared config; {@code configId} is set only for configs. */
-    public record Attachment(String type, String serverKey, String dimension, int x, int y, int z, String configId) {
+    /**
+     * {@code server} is the host the sender named, already checked to hash to {@code serverKey}, or null.
+     * {@code color} (RGB) and {@code display} (bits: 1 name, 2 highlight, 4 beam, 8 distance) are -1 when absent.
+     * {@code realm} is the anarchy the sender was on ("Анархия-103"), or null.
+     */
+    public record Attachment(String type, String serverKey, String dimension, int x, int y, int z, String configId,
+                             String server, int color, int display, String realm) {
         public boolean isPoint() {
             return "waypoint".equals(type) || "death".equals(type);
         }
@@ -118,7 +124,7 @@ public final class MessengerService {
     public record Ping(String userId, String username, String label, String serverKey, String dimension,
                        int x, int y, int z, long expiresAt) {}
 
-    public enum NoticeKind { MESSAGE, FRIEND_ONLINE, FRIEND_REQUEST, GROUP_INVITE, PING }
+    public enum NoticeKind { MESSAGE, FRIEND_ONLINE, FRIEND_REQUEST, GROUP_INVITE, PING, MENTION, POINT }
 
     /** Something worth an in-game toast; the toast layer decides whether to show it. {@code ping} is set for PING. */
     public record Notice(NoticeKind kind, String username, String text, String conversationId, Ping ping) {}
@@ -151,6 +157,10 @@ public final class MessengerService {
     private volatile List<GroupInvite> groupInvites = List.of();
     private volatile Set<String> teammates = Set.of();
     private final Map<String, CopyOnWriteArrayList<Message>> messages = new ConcurrentHashMap<>();
+    private static final int MAX_SHARED_POINTS = 300;
+    private volatile int messagesVersion;
+    private volatile List<SharedPoint> sharedPointsCache;
+    private volatile int sharedPointsVersion = -1;
     private final Map<String, Boolean> presence = new ConcurrentHashMap<>();
     private final Map<String, ServerInfo> servers = new ConcurrentHashMap<>();
     /** Highest sequence each conversation was reported read up to, so a read is sent once. */
@@ -465,6 +475,119 @@ public final class MessengerService {
                 if (completion != null) completion.accept(false);
             }
         });
+    }
+
+    /** Rewrites one of our own point cards; everyone who sees the card gets the new point. */
+    public void editPoint(String conversationId, long messageId, String text, JsonObject attachment, Consumer<Boolean> completion) {
+        if (conversationId == null || messageId <= 0L || attachment == null || text == null || text.isBlank()) return;
+        String trimmed = text.trim();
+        io.execute(() -> {
+            if (!ensureSessionSync()) {
+                if (completion != null) completion.accept(false);
+                return;
+            }
+            JsonObject body = new JsonObject();
+            body.addProperty("text", trimmed);
+            body.add("attachment", attachment);
+            HttpResult result = request("POST", "/api/chat/conversations/" + conversationId + "/messages/"
+                    + messageId + "/point", body.toString(), true);
+            boolean ok = result.status == 200;
+            if (ok) {
+                replaceMessage(conversationId, JsonParser.parseString(result.body).getAsJsonObject().getAsJsonObject("message"));
+            } else {
+                if (result.status == 401) token = null;
+                setStatus(parseError(result.body, "Edit failed"));
+            }
+            if (completion != null) completion.accept(ok);
+        });
+    }
+
+    /** Deletes one of our own point cards for everyone. */
+    public void deletePoint(String conversationId, long messageId, Consumer<Boolean> completion) {
+        if (conversationId == null || messageId <= 0L) return;
+        io.execute(() -> {
+            if (!ensureSessionSync()) {
+                if (completion != null) completion.accept(false);
+                return;
+            }
+            HttpResult result = request("POST", "/api/chat/conversations/" + conversationId + "/messages/"
+                    + messageId + "/delete", "{}", true);
+            boolean ok = result.status == 200;
+            if (ok) removeMessage(conversationId, messageId);
+            else {
+                if (result.status == 401) token = null;
+                setStatus(parseError(result.body, "Delete failed"));
+            }
+            if (completion != null) completion.accept(ok);
+        });
+    }
+
+    /** A point card shared in one of our conversations; the world shows it to every member. */
+    public record SharedPoint(String conversationId, Message message) {}
+
+    /** Bumped on every change to any conversation's messages, so callers can cache what they derive. */
+    public int messagesVersion() {
+        return messagesVersion;
+    }
+
+    /** The newest shared point cards across direct chats and groups, newest first. */
+    public List<SharedPoint> sharedPoints() {
+        int version = messagesVersion;
+        List<SharedPoint> cached = sharedPointsCache;
+        if (cached != null && sharedPointsVersion == version) return cached;
+        List<SharedPoint> points = new ArrayList<>();
+        for (Map.Entry<String, CopyOnWriteArrayList<Message>> entry : messages.entrySet()) {
+            for (Message message : entry.getValue()) {
+                if (message.attachment() != null && message.attachment().isPoint()) {
+                    points.add(new SharedPoint(entry.getKey(), message));
+                }
+            }
+        }
+        points.sort((left, right) -> Long.compare(right.message().id(), left.message().id()));
+        List<SharedPoint> result = List.copyOf(points.size() > MAX_SHARED_POINTS ? points.subList(0, MAX_SHARED_POINTS) : points);
+        sharedPointsCache = result;
+        sharedPointsVersion = version;
+        return result;
+    }
+
+    /** "@Nick" anywhere in the text, not inside a longer name; case-insensitive like Minecraft names. */
+    public boolean mentionsMe(String text) {
+        ChatUser me = currentUser;
+        if (text == null || me == null || me.username() == null || me.username().isEmpty()) return false;
+        String name = me.username();
+        int from = 0;
+        while (true) {
+            int at = text.indexOf('@', from);
+            if (at < 0) return false;
+            int end = at + 1 + name.length();
+            boolean before = at == 0 || !isNameChar(text.charAt(at - 1));
+            boolean after = end >= text.length() || !isNameChar(text.charAt(end));
+            if (before && end <= text.length() && after && text.regionMatches(true, at + 1, name, 0, name.length())) return true;
+            from = at + 1;
+        }
+    }
+
+    private static boolean isNameChar(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    }
+
+    private void replaceMessage(String conversationId, JsonObject message) {
+        if (message == null || !message.has("id")) return;
+        CopyOnWriteArrayList<Message> target = messages.get(conversationId);
+        if (target == null) return;
+        Message parsed = messageOf(message);
+        for (int index = 0; index < target.size(); index++) {
+            if (target.get(index).id() == parsed.id()) {
+                target.set(index, parsed);
+                messagesVersion++;
+                return;
+            }
+        }
+    }
+
+    private void removeMessage(String conversationId, long messageId) {
+        CopyOnWriteArrayList<Message> target = messages.get(conversationId);
+        if (target != null && target.removeIf(message -> message.id() == messageId)) messagesVersion++;
     }
 
     public void addFriendByUsername(String username) {
@@ -962,6 +1085,7 @@ public final class MessengerService {
             for (Map.Entry<String, JsonElement> entry : history.entrySet()) {
                 messages.put(entry.getKey(), messageList(entry.getValue().getAsJsonArray()));
             }
+            messagesVersion++;
             JsonObject global = root.getAsJsonObject("global");
             globalMessages = messageList(global.getAsJsonArray("messages"));
 
@@ -1180,6 +1304,7 @@ public final class MessengerService {
         HttpResult result = request("GET", "/api/chat/conversations/" + conversationId + "/messages?limit=100", null, true);
         if (result.status != 200) return;
         messages.put(conversationId, messageList(JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("messages")));
+        messagesVersion++;
     }
 
     private void startStream() {
@@ -1268,6 +1393,10 @@ public final class MessengerService {
                         acceptMessage(conversationId, root.getAsJsonObject("message"));
                     }
                 }
+                case "message_update" -> replaceMessage(root.get("conversationId").getAsString(),
+                        root.getAsJsonObject("message"));
+                case "message_delete" -> removeMessage(root.get("conversationId").getAsString(),
+                        root.get("messageId").getAsLong());
                 case "presence" -> {
                     String userId = root.get("userId").getAsString();
                     boolean online = root.get("online").getAsBoolean();
@@ -1366,7 +1495,10 @@ public final class MessengerService {
                     long lifetime = admin && root.has("durationSec")
                             ? Math.max(5, Math.min(600, root.get("durationSec").getAsInt())) * 1_000L : PING_LIFETIME_MS;
                     String label = admin && root.has("label") && !root.get("label").isJsonNull()
-                            ? root.get("label").getAsString() : null;
+                            ? root.get("label").getAsString().replaceAll("[\\p{Cntrl}\u00A7]", "").strip() : null;
+                    if (label != null && label.codePointCount(0, label.length()) > 48) {
+                        label = label.substring(0, label.offsetByCodePoints(0, 48));
+                    }
                     Ping ping = new Ping(userId, usernameOf(root), label,
                             root.get("serverKey").getAsString(), root.get("dimension").getAsString(),
                             root.get("x").getAsInt(), root.get("y").getAsInt(), root.get("z").getAsInt(),
@@ -1448,7 +1580,7 @@ public final class MessengerService {
     }
 
     private void removeGroupLocally(String groupId) {
-        messages.remove(groupId);
+        if (messages.remove(groupId) != null) messagesVersion++;
         readSent.remove(groupId);
         synchronized (listLock) {
             groups = without(groups, group -> group.id().equals(groupId));
@@ -1463,6 +1595,7 @@ public final class MessengerService {
         target.removeIf(existing -> existing.id() == parsed.id());
         target.add(parsed);
         while (target.size() > MAX_LOCAL_MESSAGES) target.remove(0);
+        messagesVersion++;
 
         boolean own = isSelf(parsed.senderId());
         boolean onScreen = conversationId.equals(selectedConversation);
@@ -1485,7 +1618,11 @@ public final class MessengerService {
             });
         }
         if (onScreen && !own) markRead(conversationId);
-        if (fresh && !own && !onScreen) {
+        if (fresh && !own && mentionsMe(parsed.text())) {
+            notice(NoticeKind.MENTION, parsed.senderUsername(), parsed.text(), conversationId);
+        } else if (fresh && !own && parsed.attachment() != null && parsed.attachment().isPoint()) {
+            notice(NoticeKind.POINT, parsed.senderUsername(), parsed.text(), conversationId);
+        } else if (fresh && !own && !onScreen) {
             notice(NoticeKind.MESSAGE, parsed.senderUsername(), parsed.text(), conversationId);
         }
     }
@@ -1564,9 +1701,12 @@ public final class MessengerService {
         if (message == null || !message.has("id")) return;
         Message parsed = messageOf(message);
         CopyOnWriteArrayList<Message> target = globalMessages;
-        target.removeIf(existing -> existing.id() == parsed.id());
+        boolean fresh = !target.removeIf(existing -> existing.id() == parsed.id());
         target.add(parsed);
         while (target.size() > MAX_LOCAL_MESSAGES) target.remove(0);
+        if (fresh && !isSelf(parsed.senderId()) && mentionsMe(parsed.text())) {
+            notice(NoticeKind.MENTION, parsed.senderUsername(), parsed.text(), GLOBAL_CONVERSATION_ID);
+        }
     }
 
     private static <T> List<T> without(List<T> source, java.util.function.Predicate<T> remove) {
@@ -1600,16 +1740,48 @@ public final class MessengerService {
     /** Unknown card types are dropped, not guessed at: an old client simply shows the caption. */
     private static Attachment attachmentOf(JsonElement element) {
         if (element == null || !element.isJsonObject()) return null;
-        JsonObject object = element.getAsJsonObject();
-        String type = object.has("type") ? object.get("type").getAsString() : "";
-        return switch (type) {
-            case "waypoint", "death" -> new Attachment(type, object.get("serverKey").getAsString(),
-                    object.get("dimension").getAsString(), object.get("x").getAsInt(),
-                    object.get("y").getAsInt(), object.get("z").getAsInt(), null);
-            case "config" -> new Attachment(type, null, null, 0, 0, 0, object.get("configId").getAsString());
-            default -> null;
-        };
+        try {
+            JsonObject object = element.getAsJsonObject();
+            String type = object.has("type") ? object.get("type").getAsString() : "";
+            return switch (type) {
+                case "waypoint", "death" -> {
+                    String serverKey = object.get("serverKey").getAsString();
+                    String dimension = object.get("dimension").getAsString();
+                    int x = object.get("x").getAsInt(), y = object.get("y").getAsInt(), z = object.get("z").getAsInt();
+                    boolean valid = SERVER_KEY.matcher(serverKey).matches() && DIMENSION.matcher(dimension).matches()
+                            && Math.abs(x) <= 30_000_000 && Math.abs(z) <= 30_000_000 && Math.abs(y) <= 4_096;
+                    if (!valid) yield null;
+                    String server = object.has("server") && object.get("server").isJsonPrimitive()
+                            ? object.get("server").getAsString() : null;
+                    // Shown only when it really is that server: the name is never trusted on its own.
+                    if (server != null && (server.length() > 253 || !HOST.matcher(server).matches()
+                            || !serverKey.equals(vorga.phazeclient.implement.messenger.ChatWorld.keyOf(server)))) {
+                        server = null;
+                    }
+                    int color = object.has("color") ? object.get("color").getAsInt() : -1;
+                    int display = object.has("display") ? object.get("display").getAsInt() : -1;
+                    String realm = object.has("realm") && object.get("realm").isJsonPrimitive()
+                            ? object.get("realm").getAsString() : null;
+                    if (!vorga.phazeclient.implement.messenger.AnarchyDetector.isValidLabel(realm)) realm = null;
+                    yield new Attachment(type, serverKey, dimension, x, y, z, null, server,
+                            color >= 0 && color <= 0xFFFFFF ? color : -1, display >= 0 && display <= 15 ? display : -1, realm);
+                }
+                case "config" -> {
+                    String configId = object.get("configId").getAsString();
+                    yield configId.length() <= 32 ? new Attachment(type, null, null, 0, 0, 0, configId, null, -1, -1, null) : null;
+                }
+                default -> null;
+            };
+        } catch (RuntimeException malformed) {
+            return null;
+        }
     }
+
+    private static final java.util.regex.Pattern SERVER_KEY = java.util.regex.Pattern.compile("[0-9a-f]{64}");
+    public static final java.util.regex.Pattern HOST =
+            java.util.regex.Pattern.compile("[a-z0-9][a-z0-9-]{0,62}(?:\\.[a-z0-9][a-z0-9-]{0,62})*");
+    private static final java.util.regex.Pattern DIMENSION =
+            java.util.regex.Pattern.compile("[a-z0-9_.-]{1,32}:[a-z0-9_./-]{1,48}");
 
     private static Friend friendOf(JsonObject row) {
         return new Friend(row.get("id").getAsString(), usernameOf(row),

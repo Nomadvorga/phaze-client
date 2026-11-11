@@ -177,6 +177,19 @@ tasks.register('verifyMessenger', JavaExec) {
 }
 tasks.named('check') { dependsOn 'verifyMessenger' }
 
+tasks.register('verifyWaypoints', JavaExec) {
+    group = 'verification'
+    description = 'Waypoint store sanitizing, limits and file round trip'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'vorga.phazeclient.implement.waypoints.WaypointChecks'
+    // The store writes Phaze/files/waypoints.json relative to the working directory here.
+    def sandbox = layout.buildDirectory.dir('waypoint-check').get().asFile
+    workingDir = sandbox
+    doFirst { sandbox.mkdirs() }
+}
+tasks.named('check') { dependsOn 'verifyWaypoints' }
+
 [
     verifyGlintSettings: 'vorga.phazeclient.implement.features.modules.other.GlintSettingsChecks',
     verifyHandAnimationTransforms: 'vorga.phazeclient.implement.features.modules.other.HandAnimationTransformChecks',

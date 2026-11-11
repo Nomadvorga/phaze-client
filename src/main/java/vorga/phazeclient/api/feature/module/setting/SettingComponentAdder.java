@@ -57,6 +57,10 @@ public class SettingComponentAdder {
             if (setting instanceof SectionSetting sectionSetting) {
                 components.add(new SectionComponent(sectionSetting));
             }
+
+            if (setting instanceof WaypointListSetting waypointListSetting) {
+                components.add(new WaypointListComponent(waypointListSetting));
+            }
         });
     }
 }

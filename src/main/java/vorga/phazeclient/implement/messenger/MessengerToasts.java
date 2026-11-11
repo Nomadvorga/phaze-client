@@ -1,25 +1,18 @@
 package vorga.phazeclient.implement.messenger;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.sound.PositionedSoundInstance;
 import org.joml.Matrix4f;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
-import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.QuickImports;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.MessengerPrefs;
 import vorga.phazeclient.base.util.MessengerService;
 import vorga.phazeclient.base.util.SkinAvatarService;
+import vorga.phazeclient.implement.features.modules.other.PhazeSounds;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
 
@@ -50,6 +43,8 @@ public final class MessengerToasts implements QuickImports {
 
     private record Toast(String username, String title, String body, long shownAt) {}
 
+    private static final long PING_SOUND_GAP_MS = 1_500L;
+    private volatile long lastPingAt;
     private final Deque<Toast> queue = new ArrayDeque<>();
     private final List<Toast> visible = new ArrayList<>(MAX_VISIBLE);
 
@@ -66,23 +61,37 @@ public final class MessengerToasts implements QuickImports {
 
     private void offer(MessengerService.Notice notice) {
         MessengerPrefs prefs = MessengerPrefs.get();
-        if (!prefs.toasts() || prefs.doNotDisturb()) return;
+        if (prefs.doNotDisturb()) return;
+        if (notice.kind() == MessengerService.NoticeKind.POINT) {
+            playSound(PhazeSounds.WAYPOINT, 1.0F);
+            if (notice.conversationId() != null && notice.conversationId().equals(openConversation())) return;
+        }
+        if (!prefs.toasts()) return;
         if (notice.kind() == MessengerService.NoticeKind.FRIEND_ONLINE && !prefs.friendOnlineToasts()) return;
         MessengerService.Ping ping = notice.ping();
         // A marker the player can not see here is not worth interrupting them for.
         if (notice.kind() == MessengerService.NoticeKind.PING
                 && (ping == null || !ChatWorld.isHere(ping.serverKey(), ping.dimension()))) return;
+        if (notice.kind() == MessengerService.NoticeKind.MENTION) {
+            playSound(PhazeSounds.PING, 0.9F);
+            // Already reading that chat: the sound is enough.
+            if (notice.conversationId() != null && notice.conversationId().equals(openConversation())) return;
+        }
         String name = notice.username() == null ? "Unknown" : notice.username();
         String body = switch (notice.kind()) {
             case MESSAGE -> notice.text();
+            case MENTION -> Lang.t("messenger.toast_mention") + ": " + notice.text();
+            case POINT -> Lang.t("messenger.toast_point") + ": " + notice.text();
             case FRIEND_ONLINE -> Lang.t("messenger.toast_online");
             case FRIEND_REQUEST -> Lang.t("messenger.toast_request");
             case GROUP_INVITE -> Lang.t("messenger.toast_invite") + " «" + notice.text() + "»";
             case PING -> (notice.text() == null || notice.text().isBlank() ? Lang.t("messenger.toast_ping") : notice.text())
                     + " · " + ping.x() + " " + ping.y() + " " + ping.z();
         };
-        String title = notice.kind() == MessengerService.NoticeKind.MESSAGE && notice.conversationId() != null
-                ? titleFor(notice.conversationId(), name) : name;
+        boolean chat = notice.kind() == MessengerService.NoticeKind.MESSAGE
+                || notice.kind() == MessengerService.NoticeKind.MENTION
+                || notice.kind() == MessengerService.NoticeKind.POINT;
+        String title = chat && notice.conversationId() != null ? titleFor(notice.conversationId(), name) : name;
         synchronized (queue) {
             if (queue.size() >= MAX_QUEUED) queue.pollFirst();
             queue.addLast(new Toast(name, title, body == null ? "" : body, 0L));
@@ -90,8 +99,25 @@ public final class MessengerToasts implements QuickImports {
     }
 
     private static String titleFor(String conversationId, String sender) {
-        MessengerService.Group group = MessengerService.getInstance().getGroup(conversationId);
+        MessengerService.Group group = conversationId == null ? null : MessengerService.getInstance().getGroup(conversationId);
         return group == null ? sender : sender + " · " + group.name();
+    }
+
+    /** One sound per burst: a flood of mentions or points must not turn into a flood of sounds. */
+    private void playSound(net.minecraft.sound.SoundEvent sound, float volume) {
+        long now = System.currentTimeMillis();
+        if (now - lastPingAt < PING_SOUND_GAP_MS) return;
+        lastPingAt = now;
+        MinecraftClient client = MinecraftClient.getInstance();
+        client.execute(() -> client.getSoundManager().play(
+                PositionedSoundInstance.master(sound, 1.0F, volume)));
+    }
+
+    /** The conversation on screen in the open messenger, or null. */
+    private static String openConversation() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (!(client.currentScreen instanceof MenuScreen menu) || !menu.isMessengerViewOpen()) return null;
+        return MessengerService.getInstance().getSelectedConversation();
     }
 
     private void draw(DrawContext context) {
@@ -121,9 +147,8 @@ public final class MessengerToasts implements QuickImports {
                     .round(5.0F).softness(1.0F).thickness(1.2F)
                     .outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER, alpha))
                     .color(MenuStyle.withAlpha(MenuStyle.PANEL_BG, alpha * 0.94F)).build());
-            BatchedRectangle.flushIfBatching();
-            Identifier head = SkinAvatarService.getInstance().head(toast.username());
-            drawHead(matrix, head, x + PAD, y + PAD, AVATAR, MenuStyle.withAlpha(0xFFFFFFFF, alpha));
+            SkinAvatarService skins = SkinAvatarService.getInstance();
+            skins.draw(matrix, skins.head(toast.username()), x + PAD, y + PAD, AVATAR, MenuStyle.withAlpha(0xFFFFFFFF, alpha));
 
             float textX = x + PAD + AVATAR + 6.0F;
             float textW = x + WIDTH - PAD - textX;
@@ -143,19 +168,5 @@ public final class MessengerToasts implements QuickImports {
             value = value.substring(0, value.length() - 1);
         }
         return value + "...";
-    }
-
-    private static void drawHead(Matrix4f matrix, Identifier texture, float x, float y, float size, int color) {
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, texture);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-        buffer.vertex(matrix, x, y, 0.0F).texture(0.0F, 0.0F).color(color);
-        buffer.vertex(matrix, x, y + size, 0.0F).texture(0.0F, 1.0F).color(color);
-        buffer.vertex(matrix, x + size, y + size, 0.0F).texture(1.0F, 1.0F).color(color);
-        buffer.vertex(matrix, x + size, y, 0.0F).texture(1.0F, 0.0F).color(color);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        RenderSystem.disableBlend();
     }
 }

@@ -151,8 +151,7 @@ public final class WorldOverlayRenderer {
             FTHelperRenderer.renderSnowballs(matrices, camera, tickCounter);
             HolyWorldHelperRenderer.render(matrices, camera, tickCounter);
             PredictionsRenderer.render(matrices, camera, tickCounter);
-            Waypoints.getInstance().renderOverlay(matrices, camera);
-            vorga.phazeclient.implement.messenger.ChatWorld.render(matrices, camera);
+            vorga.phazeclient.implement.waypoints.WaypointRenderer.render(matrices, camera);
             flush();
         } finally {
             recording = false;
@@ -210,7 +209,10 @@ public final class WorldOverlayRenderer {
                 }
                 if (key.texture != null) {
                     RenderSystem.setShaderTexture(0, key.texture);
-                    RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+                    // Shaders bind attributes by their own layout: font glyphs are Position, Color, UV0,
+                    // and the POSITION_TEX_COLOR program would read their texture coordinates as colour.
+                    RenderSystem.setShader(key.format == VertexFormats.POSITION_COLOR_TEXTURE_LIGHT
+                            ? ShaderProgramKeys.RENDERTYPE_TEXT_SEE_THROUGH : ShaderProgramKeys.POSITION_TEX_COLOR);
                 } else {
                     RenderSystem.setShader(key.format == VertexFormats.LINES
                             ? ShaderProgramKeys.RENDERTYPE_LINES : ShaderProgramKeys.POSITION_COLOR);

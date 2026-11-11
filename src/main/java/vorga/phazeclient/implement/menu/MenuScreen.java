@@ -77,6 +77,8 @@ public class MenuScreen extends Screen implements QuickImports {
             new vorga.phazeclient.implement.menu.components.implement.other.ConfigShareModalComponent();
     private final CosmeticsViewComponent cosmeticsView = new CosmeticsViewComponent();
     private final MessengerViewComponent messengerView = new MessengerViewComponent();
+    private final vorga.phazeclient.implement.menu.components.implement.other.WaypointEditorModal waypointEditor =
+            new vorga.phazeclient.implement.menu.components.implement.other.WaypointEditorModal();
     public final Animation animation = new LinearAnimation().setMs(200).setValue(1);
     private final Animation topTabTransitionAnimation =
             new DecelerateAnimation().setMs(TOP_TAB_TRANSITION_MS).setValue(1);
@@ -201,8 +203,9 @@ public class MenuScreen extends Screen implements QuickImports {
                 boolean cosmeticsViewOpen = cosmeticsView.isOpen();
                 boolean messengerViewOpen = messengerView.isOpen();
                 boolean mouseOverWindow = windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
-                int routedMouseX = mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseX;
-                int routedMouseY = mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseY;
+                boolean editorOpen = waypointEditor.isOpen();
+                int routedMouseX = mouseOverWindow || editorOpen ? Integer.MIN_VALUE / 4 : overlayMouseX;
+                int routedMouseY = mouseOverWindow || editorOpen ? Integer.MIN_VALUE / 4 : overlayMouseY;
                 for (AbstractComponent component : components) {
                     if ((moduleDetailOpen || configsViewOpen || cosmeticsViewOpen || messengerViewOpen)
                             && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
@@ -226,6 +229,11 @@ public class MenuScreen extends Screen implements QuickImports {
                     messengerView.globalAlpha = alphaAnimation;
                     messengerView.render(context, routedMouseX, routedMouseY, delta);
                 }
+                // Below the window layer: its colour picker opens on top of it.
+                waypointEditor.position(x, y).size(width, height);
+                waypointEditor.globalAlpha = alphaAnimation;
+                waypointEditor.render(context, mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseX,
+                        mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseY, delta);
                 windowManager.render(context, overlayMouseX, overlayMouseY, delta);
                 // ConfigShare modal renders LAST so it floats above
                 // the windowManager output (window dialogs, etc.) and
@@ -324,6 +332,7 @@ public class MenuScreen extends Screen implements QuickImports {
         closeConfigsView();
         closeCosmeticsView();
         closeMessengerView();
+        waypointEditor.close();
         activeTopTab = TopTab.MODS;
         pendingTopTab = null;
         topTabTransitionAnimation.setDirectionAndFinish(FORWARDS);
@@ -419,6 +428,38 @@ public class MenuScreen extends Screen implements QuickImports {
 
     public boolean isConfigShareModalOpen() {
         return configShareModal.isOpen();
+    }
+
+    /** Opens the waypoint dialog; {@code existing} edits a stored point, otherwise {@code waypoint} is a draft. */
+    public void openWaypointEditor(String worldKey, vorga.phazeclient.implement.waypoints.Waypoint waypoint, boolean existing,
+                                   String serverLabel) {
+        prepareWaypointEditor();
+        waypointEditor.open(worldKey, waypoint, existing, serverLabel);
+    }
+
+    /** The same dialog in share mode: its primary button hands the configured point to {@code onSend}. */
+    public void openWaypointSender(vorga.phazeclient.implement.waypoints.Waypoint draft,
+                                   vorga.phazeclient.implement.menu.components.implement.other.WaypointEditorModal.CardSubmit onSend) {
+        prepareWaypointEditor();
+        waypointEditor.openForSend(draft, onSend);
+    }
+
+    /** Our own chat point card: saving or deleting it changes it for everyone in the chat. */
+    public void openWaypointCardEditor(String serverKey, String realm, vorga.phazeclient.implement.waypoints.Waypoint card,
+                                       String serverLabel, vorga.phazeclient.implement.menu.components.implement.other.WaypointEditorModal.CardSubmit onSave, Runnable onDelete) {
+        prepareWaypointEditor();
+        waypointEditor.openForCardEdit(serverKey, realm, card, serverLabel, onSave, onDelete);
+    }
+
+    private void prepareWaypointEditor() {
+        windowManager.closeAll();
+        SelectComponent.closeAllDropdowns();
+        MultiSelectComponent.closeAllDropdowns();
+        waypointEditor.position(x, y).size(width, height);
+    }
+
+    public boolean isWaypointEditorOpen() {
+        return waypointEditor.isOpen();
     }
 
     public void openConfigsView() {
@@ -562,6 +603,12 @@ public class MenuScreen extends Screen implements QuickImports {
             windowManager.closeAll();
         }
 
+        if (waypointEditor.isOpen()) {
+            if (clickInsideWindow) windowManager.mouseClicked(overlayMouseX, overlayMouseY, button);
+            else waypointEditor.mouseClicked(overlayMouseX, overlayMouseY, button);
+            return true;
+        }
+
         // Top tabs are menu-global navigation. Route them before the open
         // module detail or full-page views: those views intentionally claim
         // most of the menu rectangle and could otherwise swallow a click on
@@ -670,6 +717,11 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
+        if (waypointEditor.isOpen()) {
+            windowManager.mouseReleased(overlayMouseX, overlayMouseY, button);
+            return true;
+        }
+
         if (cosmeticsView.isOpen()) {
             cosmeticsView.mouseReleased(overlayMouseX, overlayMouseY, button);
             return true;
@@ -720,6 +772,11 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
+        if (waypointEditor.isOpen()) {
+            windowManager.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY);
+            return true;
+        }
+
         if (cosmeticsView.isOpen()) {
             cosmeticsView.mouseDragged(overlayMouseX, overlayMouseY, button, overlayDeltaX, overlayDeltaY);
             return true;
@@ -759,6 +816,10 @@ public class MenuScreen extends Screen implements QuickImports {
         updateOverlayMetrics();
         double overlayMouseX = toMenuCoordinateX(mouseX);
         double overlayMouseY = toMenuCoordinateY(mouseY);
+        if (waypointEditor.isOpen()) {
+            windowManager.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
+            return true;
+        }
         if (moduleDetailComponent.isOpen()) {
             if (windowManager.mouseScrolled(overlayMouseX, overlayMouseY, vertical)) {
                 return true;
@@ -798,6 +859,9 @@ public class MenuScreen extends Screen implements QuickImports {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         // Modal owns key input while open so Esc closes it and the
         // text field gets every keystroke before menu hotkeys.
+        if (waypointEditor.isOpen() && waypointEditor.keyPressed(keyCode, scanCode, modifiers)) {
+            return true;
+        }
         if (configShareModal.isOpen() && configShareModal.keyPressed(keyCode, scanCode, modifiers)) {
             return true;
         }
@@ -860,6 +924,9 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
+        if (waypointEditor.isOpen() && waypointEditor.charTyped(chr, modifiers)) {
+            return true;
+        }
         if (configShareModal.isOpen() && configShareModal.charTyped(chr, modifiers)) {
             return true;
         }

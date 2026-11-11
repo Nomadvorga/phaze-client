@@ -24,6 +24,7 @@ final class MessengerTextField implements QuickImports {
     private static final float TEXT_SIZE = 6.6F;
     private static final float PAD = 7.0F;
     private static final float RADIUS = 4.0F;
+    private static final int INVALID_COLOR = 0xFFE05050;
 
     private final int maxCodePoints;
     private final Predicate<Integer> accepts;
@@ -32,6 +33,7 @@ final class MessengerTextField implements QuickImports {
     private int cursor;
     private boolean allSelected;
     private boolean focused;
+    private boolean invalid;
     private float boxX, boxY, boxW;
 
     MessengerTextField(int maxCodePoints, Predicate<Integer> accepts) {
@@ -59,41 +61,59 @@ final class MessengerTextField implements QuickImports {
         if (!next) allSelected = false;
     }
 
+    /** Red outline until the value is edited again. */
+    void setInvalid(boolean next) {
+        invalid = next;
+    }
+
     void render(MatrixStack matrices, float x, float y, float w, String placeholder, float alpha) {
+        render(matrices, x, y, w, placeholder, null, alpha);
+    }
+
+    /** {@code prefix} is a muted label inside the box, before the value (the "X:" of a coordinate). */
+    void render(MatrixStack matrices, float x, float y, float w, String placeholder, String prefix, float alpha) {
         boxX = x;
         boxY = y;
         boxW = w;
         focusAnimation.setDirection(focused ? Direction.FORWARDS : Direction.BACKWARDS);
         float focus = focusAnimation.getOutputFloat();
-        int border = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, focus * 0.65F);
+        int border = invalid ? MenuStyle.mix(MenuStyle.BORDER, INVALID_COLOR, 0.8F)
+                : MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, focus * 0.65F);
         rectangle.render(ShapeProperties.create(matrices, x, y, w, HEIGHT)
                 .round(RADIUS).thickness(1.5F)
                 .outlineColor(MenuStyle.withAlpha(border, alpha))
                 .color(MenuStyle.withAlpha(MenuStyle.CARD_INNER, alpha)).build());
 
         float textY = MenuStyle.centerMsdfTextY(TEXT_SIZE, y, HEIGHT);
-        float available = w - PAD * 2.0F;
+        float textX = x + PAD;
+        if (prefix != null && !prefix.isEmpty()) {
+            MsdfRenderer.renderText(MsdfFonts.medium(), prefix, TEXT_SIZE,
+                    MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, alpha), matrices.peek().getPositionMatrix(),
+                    textX, textY, 0.0F);
+            textX += width(prefix) + 3.0F;
+        }
+        float available = x + w - PAD - textX;
         if (value.isEmpty()) {
-            if (!focused) {
+            if (!focused && placeholder != null) {
                 MsdfRenderer.renderText(MsdfFonts.medium(), placeholder, TEXT_SIZE,
                         MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, alpha), matrices.peek().getPositionMatrix(),
-                        x + PAD, textY, 0.0F);
+                        textX, textY, 0.0F);
             }
         } else {
             int start = visibleStart(available);
             String visible = value.substring(start);
             while (!visible.isEmpty() && width(visible) > available) visible = visible.substring(0, visible.length() - 1);
             if (allSelected && focused) {
-                rectangle.render(ShapeProperties.create(matrices, x + PAD, textY - 1.0F, width(visible), TEXT_SIZE + 2.0F)
+                rectangle.render(ShapeProperties.create(matrices, textX, textY - 1.0F, width(visible), TEXT_SIZE + 2.0F)
                         .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.CHIP_ACTIVE, MenuStyle.TEXT_PRIMARY, 0.35F), alpha)).build());
             }
             MsdfRenderer.renderText(MsdfFonts.medium(), visible, TEXT_SIZE,
                     MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, alpha), matrices.peek().getPositionMatrix(),
-                    x + PAD, textY, 0.0F);
+                    textX, textY, 0.0F);
         }
         if (focused && (System.currentTimeMillis() / 500L) % 2L == 0L) {
             int start = value.isEmpty() ? 0 : visibleStart(available);
-            float caretX = x + PAD + width(value.substring(start, Math.max(start, cursor)));
+            float caretX = textX + width(value.substring(start, Math.max(start, cursor)));
             rectangle.render(ShapeProperties.create(matrices, caretX, textY - 1.0F, 0.7F, TEXT_SIZE + 2.0F)
                     .color(MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, alpha)).build());
         }
@@ -139,6 +159,7 @@ final class MessengerTextField implements QuickImports {
         }
         switch (keyCode) {
             case GLFW.GLFW_KEY_BACKSPACE -> {
+                invalid = false;
                 if (allSelected) clear();
                 else if (cursor > 0) {
                     int start = value.offsetByCodePoints(cursor, -1);
@@ -148,6 +169,7 @@ final class MessengerTextField implements QuickImports {
                 return true;
             }
             case GLFW.GLFW_KEY_DELETE -> {
+                invalid = false;
                 if (allSelected) clear();
                 else if (cursor < value.length()) {
                     value = value.substring(0, cursor) + value.substring(value.offsetByCodePoints(cursor, 1));
@@ -193,6 +215,7 @@ final class MessengerTextField implements QuickImports {
     }
 
     private void insert(String text) {
+        invalid = false;
         if (allSelected) clear();
         StringBuilder filtered = new StringBuilder();
         text.codePoints().filter(accepts::test).forEach(filtered::appendCodePoint);

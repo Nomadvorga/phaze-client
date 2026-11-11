@@ -25,6 +25,10 @@ public final class MessengerPrefs {
     private static final MessengerPrefs INSTANCE = new MessengerPrefs();
 
     private final Map<String, String> notes = new ConcurrentHashMap<>();
+    private static final int MAX_HIDDEN_POINTS = 2_000;
+    /** Shared point cards (by message id) this player chose not to see in the world. */
+    private final java.util.Set<Long> hiddenPoints = ConcurrentHashMap.newKeySet();
+    private volatile int hiddenVersion;
     private volatile boolean toasts = true;
     private volatile boolean friendOnlineToasts = true;
     private volatile boolean doNotDisturb;
@@ -76,6 +80,27 @@ public final class MessengerPrefs {
         save();
     }
 
+    public boolean isPointHidden(long messageId) {
+        return hiddenPoints.contains(messageId);
+    }
+
+    /** Bumped whenever a point is hidden or shown again, so renderers can cache. */
+    public int hiddenVersion() {
+        return hiddenVersion;
+    }
+
+    public void setPointHidden(long messageId, boolean hidden) {
+        if (messageId <= 0L) return;
+        boolean changed = hidden ? hiddenPoints.add(messageId) : hiddenPoints.remove(messageId);
+        if (!changed) return;
+        // Message ids only grow: the smallest belongs to the oldest card, likely long gone from the chat.
+        while (hiddenPoints.size() > MAX_HIDDEN_POINTS) {
+            hiddenPoints.stream().min(Long::compare).ifPresent(hiddenPoints::remove);
+        }
+        hiddenVersion++;
+        save();
+    }
+
     public String note(String userId) {
         return userId == null ? "" : notes.getOrDefault(userId, "");
     }
@@ -119,6 +144,15 @@ public final class MessengerPrefs {
                     }
                 }
             }
+            if (root.has("hiddenPoints") && root.get("hiddenPoints").isJsonArray()) {
+                for (com.google.gson.JsonElement entry : root.getAsJsonArray("hiddenPoints")) {
+                    if (hiddenPoints.size() >= MAX_HIDDEN_POINTS) break;
+                    if (entry.isJsonPrimitive() && entry.getAsJsonPrimitive().isNumber()) {
+                        long id = entry.getAsLong();
+                        if (id > 0L) hiddenPoints.add(id);
+                    }
+                }
+            }
         } catch (Exception corrupt) {
             LOG.debug("Messenger preferences could not be read, using defaults", corrupt);
         }
@@ -137,6 +171,9 @@ public final class MessengerPrefs {
         JsonObject noteObject = new JsonObject();
         notes.forEach(noteObject::addProperty);
         root.add("notes", noteObject);
+        com.google.gson.JsonArray hidden = new com.google.gson.JsonArray();
+        hiddenPoints.forEach(hidden::add);
+        root.add("hiddenPoints", hidden);
         try {
             Path file = file();
             Files.createDirectories(file.getParent());

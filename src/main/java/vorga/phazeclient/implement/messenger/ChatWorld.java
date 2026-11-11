@@ -9,59 +9,42 @@ import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
 import net.minecraft.client.network.ServerAddress;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.render.VertexRendering;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.text.Text;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-import vorga.phazeclient.api.system.render.WorldOverlayRenderer;
 import vorga.phazeclient.base.util.MessengerPrefs;
 import vorga.phazeclient.base.util.MessengerService;
 import vorga.phazeclient.base.util.ServerUtil;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
 /**
  * The messenger's link to the world: which server and dimension the player is
- * in, the last death point, the shared points a player chose to show, group
- * pings, the teammate list refresh and joining a friend's server.
- *
- * <p>Markers are deliberately plain: a block outline and a distance label,
- * drawn through the shared world overlay batch, nothing per-frame allocated
- * beyond the label text.</p>
+ * in, the last death point, group pings, the teammate list refresh and joining
+ * a friend's server. Pings are drawn by the waypoint renderer; shared points
+ * become waypoints once saved from their chat card.
  */
 public final class ChatWorld {
     private static final long TEAMMATE_REFRESH_TICKS = 30L * 20L;
-    private static final int MAX_MARKERS = 8;
     private static final double PING_RANGE = 160.0D;
-    private static final int MARKER_COLOR = 0xFF7FD3FF;
-    private static final int DEATH_COLOR = 0xFFFF6B6B;
-    private static final int PING_COLOR = 0xFFFFD166;
-    private static final int ADMIN_PING_COLOR = 0xFFFF4F4F;
+    public static final int PING_COLOR = 0xFFFFD166;
+    public static final int ADMIN_PING_COLOR = 0xFFFF4F4F;
 
-    public record Point(String serverKey, String dimension, int x, int y, int z) {}
+    /** {@code realm} is the anarchy the point is on (see {@link AnarchyDetector}), or null. */
+    public record Point(String serverKey, String realm, String dimension, int x, int y, int z) {}
 
-    private record Marker(String label, Point point, int color) {}
-
-    private static final Map<Long, Marker> MARKERS = new LinkedHashMap<>();
     private static volatile Point lastDeath;
     private static boolean wasDead;
     private static long ticks;
     private static String cachedHost;
     private static String cachedKey;
+    private static String cachedRealmHost;
+    private static String cachedRealm;
+    private static String cachedRealmKey;
 
     private ChatWorld() {
     }
@@ -71,14 +54,60 @@ public final class ChatWorld {
         String host = ServerUtil.getCurrentServerHost();
         if (host == null || host.isBlank()) return null;
         if (host.equals(cachedHost)) return cachedKey;
+        String key = keyOf(host);
+        if (key == null) return null;
+        cachedKey = key;
+        cachedHost = host;
+        return key;
+    }
+
+    /** The server key of any host, for checking a name a chat card claims. */
+    public static String keyOf(String host) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            cachedKey = HexFormat.of().formatHex(digest.digest(("phaze-server-v1:" + host).getBytes(StandardCharsets.UTF_8)));
-            cachedHost = host;
-            return cachedKey;
+            return HexFormat.of().formatHex(digest.digest(("phaze-server-v1:" + host).getBytes(StandardCharsets.UTF_8)));
         } catch (Exception unavailable) {
             return null;
         }
+    }
+
+    /** The current host when it can be named on a card (lowercase DNS name or IPv4), else null. */
+    public static String nameableHost() {
+        String host = ServerUtil.getCurrentServerHost();
+        return host != null && host.length() <= 253 && MessengerService.HOST.matcher(host).matches() ? host : null;
+    }
+
+    /** The anarchy the player is on, when the network has several behind one address. */
+    public static String realm() {
+        return AnarchyDetector.current();
+    }
+
+    /**
+     * Where local waypoints of this server live: the server key, or a key of
+     * server and anarchy together, since anarchies sharing an address are different worlds.
+     */
+    public static String worldKey() {
+        String server = serverKey();
+        String realm = realm();
+        if (server == null || realm == null) return server;
+        String host = cachedHost;
+        if (realm.equals(cachedRealm) && host.equals(cachedRealmHost)) return cachedRealmKey;
+        String key = keyOf(host + "#" + realm);
+        if (key == null) return server;
+        cachedRealmKey = key;
+        cachedRealm = realm;
+        cachedRealmHost = host;
+        return key;
+    }
+
+    /** "mc.funtime.su · Анархия-103" for the current server, or whichever part is known. */
+    public static String serverLabel() {
+        return label(nameableHost(), realm());
+    }
+
+    public static String label(String host, String realm) {
+        if (host == null) return realm;
+        return realm == null ? host : host + " · " + realm;
     }
 
     public static String dimension() {
@@ -93,7 +122,7 @@ public final class ChatWorld {
         String dimension = dimension();
         if (client.player == null || key == null || dimension == null) return null;
         BlockPos pos = client.player.getBlockPos();
-        return new Point(key, dimension, pos.getX(), pos.getY(), pos.getZ());
+        return new Point(key, realm(), dimension, pos.getX(), pos.getY(), pos.getZ());
     }
 
     /** Text colour for a group mate's name; nametags and the tab list share it. */
@@ -116,6 +145,16 @@ public final class ChatWorld {
     }
 
     public static JsonObject attachment(String type, Point point) {
+        return attachment(type, point, -1, -1);
+    }
+
+    /** A point card naming the current server; {@code color} and {@code display} are left out when negative. */
+    public static JsonObject attachment(String type, Point point, int color, int display) {
+        return attachment(type, point, color, display, nameableHost());
+    }
+
+    /** {@code server} is named only when it hashes to the point's key; the backend refuses anything else. */
+    public static JsonObject attachment(String type, Point point, int color, int display, String server) {
         JsonObject object = new JsonObject();
         object.addProperty("type", type);
         object.addProperty("serverKey", point.serverKey());
@@ -123,28 +162,18 @@ public final class ChatWorld {
         object.addProperty("x", point.x());
         object.addProperty("y", point.y());
         object.addProperty("z", point.z());
+        if (server != null && MessengerService.HOST.matcher(server).matches() && point.serverKey().equals(keyOf(server))) {
+            object.addProperty("server", server);
+        }
+        if (AnarchyDetector.isValidLabel(point.realm())) object.addProperty("realm", point.realm());
+        if (color >= 0) object.addProperty("color", color & 0xFFFFFF);
+        if (display >= 0) object.addProperty("display", display & 15);
         return object;
-    }
-
-    public static boolean isMarked(long messageId) {
-        synchronized (MARKERS) {
-            return MARKERS.containsKey(messageId);
-        }
-    }
-
-    /** Shows or hides a shared point; the oldest one goes when the limit is reached. */
-    public static void toggleMarker(long messageId, String label, MessengerService.Attachment attachment) {
-        if (attachment == null || !attachment.isPoint()) return;
-        synchronized (MARKERS) {
-            if (MARKERS.remove(messageId) != null) return;
-            if (MARKERS.size() >= MAX_MARKERS) MARKERS.remove(MARKERS.keySet().iterator().next());
-            MARKERS.put(messageId, new Marker(label, new Point(attachment.serverKey(), attachment.dimension(),
-                    attachment.x(), attachment.y(), attachment.z()), "death".equals(attachment.type()) ? DEATH_COLOR : MARKER_COLOR));
-        }
     }
 
     public static void tick(MinecraftClient client, KeyBinding pingKey) {
         ticks++;
+        AnarchyDetector.tick(client);
         if (client.player != null) {
             boolean dead = client.player.isDead() || client.player.getHealth() <= 0.0F;
             if (dead && !wasDead) lastDeath = here();
@@ -194,60 +223,5 @@ public final class ChatWorld {
             ServerInfo info = new ServerInfo(name == null ? address : name, address, ServerInfo.ServerType.OTHER);
             ConnectScreen.connect(new TitleScreen(), client, ServerAddress.parse(address), info, false, null);
         });
-    }
-
-    public static void render(MatrixStack matrices, Vec3d camera) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
-        String key = serverKey();
-        String dimension = dimension();
-        if (key == null || dimension == null) return;
-
-        List<Marker> visible = new ArrayList<>();
-        synchronized (MARKERS) {
-            for (Marker marker : MARKERS.values()) {
-                if (marker.point().serverKey().equals(key) && marker.point().dimension().equals(dimension)) visible.add(marker);
-            }
-        }
-        for (MessengerService.Ping ping : MessengerService.getInstance().getActivePings()) {
-            if (ping.serverKey().equals(key) && ping.dimension().equals(dimension)) {
-                boolean admin = MessengerService.isAdmin(ping.userId());
-                String label = ping.label() == null || ping.label().isBlank()
-                        ? ping.username() : ping.username() + " · " + ping.label();
-                visible.add(new Marker(label, new Point(key, dimension, ping.x(), ping.y(), ping.z()),
-                        admin ? ADMIN_PING_COLOR : PING_COLOR));
-            }
-        }
-        for (Marker marker : visible) drawMarker(client, matrices, camera, marker);
-    }
-
-    private static void drawMarker(MinecraftClient client, MatrixStack matrices, Vec3d camera, Marker marker) {
-        Point point = marker.point();
-        double rx = point.x() - camera.x;
-        double ry = point.y() - camera.y;
-        double rz = point.z() - camera.z;
-        double distance = Math.sqrt((point.x() + 0.5D - client.player.getX()) * (point.x() + 0.5D - client.player.getX())
-                + (point.y() + 0.5D - client.player.getY()) * (point.y() + 0.5D - client.player.getY())
-                + (point.z() + 0.5D - client.player.getZ()) * (point.z() + 0.5D - client.player.getZ()));
-        int color = marker.color();
-        float r = ((color >> 16) & 0xFF) / 255.0F;
-        float g = ((color >> 8) & 0xFF) / 255.0F;
-        float b = (color & 0xFF) / 255.0F;
-
-        var lines = WorldOverlayRenderer.buffer(VertexFormat.DrawMode.LINES, VertexFormats.LINES, 2, false);
-        VertexRendering.drawBox(matrices, lines, new Box(rx, ry, rz, rx + 1.0D, ry + 1.0D, rz + 1.0D), r, g, b, 0.9F);
-
-        VertexConsumerProvider consumers = WorldOverlayRenderer.CONSUMERS;
-        TextRenderer textRenderer = client.textRenderer;
-        Text text = Text.literal(marker.label() + " · " + (int) distance + "m");
-        float width = textRenderer.getWidth(text);
-        matrices.push();
-        matrices.translate(rx + 0.5D, ry + 1.6D, rz + 0.5D);
-        matrices.multiply(client.getEntityRenderDispatcher().getRotation());
-        float scale = 0.025F * Math.max(1.0F, (float) (distance / 10.0D));
-        matrices.scale(scale, -scale, scale);
-        textRenderer.draw(text, -width / 2.0F, 0.0F, color, false, matrices.peek().getPositionMatrix(),
-                consumers, TextRenderer.TextLayerType.SEE_THROUGH, 0x80000000, 0xF000F0);
-        matrices.pop();
     }
 }

@@ -119,6 +119,68 @@ public final class MessengerChecks {
     private static final String GROUP_ID = "abcdef0123456789abcdef0123456789";
     private static final String JOINED_ID = "fedcba9876543210fedcba9876543210";
 
+    /** @nick mentions, and point cards becoming, changing and leaving the shared world list. */
+    private static void mentionsAndSharedPoints(MessengerService service, MessengerService.Message card) throws Exception {
+        check(service.mentionsMe("@Tester глянь") && service.mentionsMe("эй, @tester!") && service.mentionsMe("(@TESTER)"),
+                "a mention matches the nick case-insensitively at word bounds");
+        check(!service.mentionsMe("@Tester2 нет") && !service.mentionsMe("mail@Tester") && !service.mentionsMe("Tester")
+                && !service.mentionsMe("@") && !service.mentionsMe(null), "longer names, e-mail-like text and plain names are not mentions");
+
+        check(service.sharedPoints().stream().anyMatch(point -> point.message().id() == card.id()),
+                "a point card from a group is a shared point");
+        java.lang.reflect.Method handle = MessengerService.class.getDeclaredMethod("handleEvent", String.class, String.class);
+        handle.setAccessible(true);
+        long id = 777L;
+        String point = "\"attachment\":{\"type\":\"waypoint\",\"serverKey\":\"" + "a".repeat(64) + "\","
+                + "\"dimension\":\"minecraft:overworld\",\"x\":10,\"y\":64,\"z\":-5}";
+        handle.invoke(service, "message", "{\"conversationId\":\"" + JOINED_ID + "\",\"message\":{\"id\":" + id
+                + ",\"sequence\":2,\"senderId\":\"carol\",\"senderUsername\":\"Carol\",\"text\":\"База\",\"createdAt\":1," + point + "}}");
+        check(service.sharedPoints().stream().anyMatch(shared -> shared.message().id() == id),
+                "a new point card is shared at once");
+        int version = service.messagesVersion();
+        String moved = "{\"conversationId\":\"" + JOINED_ID + "\",\"message\":{\"id\":" + id + ",\"sequence\":2,"
+                + "\"senderId\":\"carol\",\"senderUsername\":\"Carol\",\"text\":\"Шахта\",\"createdAt\":1,"
+                + "\"attachment\":{\"type\":\"waypoint\",\"serverKey\":\"" + "a".repeat(64) + "\","
+                + "\"dimension\":\"minecraft:overworld\",\"x\":99,\"y\":64,\"z\":-5,\"color\":1193046,\"display\":5}}}";
+        handle.invoke(service, "message_update", moved);
+        MessengerService.Message updated = service.getMessages(JOINED_ID).stream()
+                .filter(message -> message.id() == id).findFirst().orElseThrow();
+        check(updated.text().equals("Шахта") && updated.attachment().x() == 99 && updated.attachment().color() == 1193046
+                && service.messagesVersion() > version, "an edit from its author replaces the card in place");
+        check(service.sharedPoints().stream().anyMatch(shared -> shared.message().attachment().x() == 99),
+                "the shared world list follows the edit");
+        handle.invoke(service, "message_update", moved.replace("\"id\":" + id, "\"id\":987654"));
+        check(service.getMessages(JOINED_ID).stream().noneMatch(message -> message.id() == 987654L),
+                "an edit of a message we never had is ignored");
+        handle.invoke(service, "message_delete", "{\"conversationId\":\"" + JOINED_ID + "\",\"messageId\":" + id + "}");
+        check(service.getMessages(JOINED_ID).stream().noneMatch(message -> message.id() == id)
+                && service.sharedPoints().stream().noneMatch(shared -> shared.message().id() == id),
+                "a deleted card leaves the chat and the world");
+    }
+
+    /** A card's server name is shown only when it hashes to the card's server key. */
+    private static void pointCardServerNames() throws Exception {
+        java.lang.reflect.Method parse = MessengerService.class.getDeclaredMethod("attachmentOf", com.google.gson.JsonElement.class);
+        parse.setAccessible(true);
+        String host = "mc.example.net";
+        String key = vorga.phazeclient.implement.messenger.ChatWorld.keyOf(host);
+        String base = "{\"type\":\"waypoint\",\"dimension\":\"minecraft:overworld\",\"x\":1,\"y\":2,\"z\":3,";
+        MessengerService.Attachment named = (MessengerService.Attachment) parse.invoke(null, com.google.gson.JsonParser.parseString(
+                base + "\"serverKey\":\"" + key + "\",\"server\":\"" + host + "\",\"color\":9366475,\"display\":5}"));
+        check(named != null && host.equals(named.server()) && named.color() == 9366475 && named.display() == 5,
+                "a named, styled card keeps its server, colour and switches");
+        MessengerService.Attachment spoofed = (MessengerService.Attachment) parse.invoke(null, com.google.gson.JsonParser.parseString(
+                base + "\"serverKey\":\"" + "a".repeat(64) + "\",\"server\":\"" + host + "\",\"color\":99999999,\"display\":40}"));
+        check(spoofed != null && spoofed.server() == null && spoofed.color() == -1 && spoofed.display() == -1,
+                "a server name that is not the card's server, and out-of-range styles, are dropped");
+        MessengerService.Attachment malformed = (MessengerService.Attachment) parse.invoke(null, com.google.gson.JsonParser.parseString(
+                base + "\"serverKey\":\"" + key + "\",\"server\":{\"x\":1}}"));
+        check(malformed != null && malformed.server() == null, "a non-text server name is ignored");
+        MessengerService.Attachment missing = (MessengerService.Attachment) parse.invoke(null, com.google.gson.JsonParser.parseString(
+                "{\"type\":\"waypoint\",\"serverKey\":\"" + key + "\"}"));
+        check(missing == null, "a card without coordinates is dropped instead of throwing");
+    }
+
     private static void socialFeatures() throws Exception {
         MessengerService service = MessengerService.getInstance();
         waitFor(() -> service.getOutgoingRequests().stream().anyMatch(request -> request.targetId().equals("erin")),
@@ -145,6 +207,10 @@ public final class MessengerChecks {
         MessengerService.Message card = service.getMessages(JOINED_ID).get(0);
         check(card.attachment() != null && card.attachment().isPoint() && card.attachment().x() == 10,
                 "a waypoint card is parsed");
+        check(card.attachment().server() == null && card.attachment().color() == -1 && card.attachment().display() == -1,
+                "a plain card has no server name or style");
+        pointCardServerNames();
+        mentionsAndSharedPoints(service, card);
         check(card.sequence() == 3L, "messages keep their sequence for read markers");
         check(service.getMessages(JOINED_ID).get(1).attachment() == null, "an unknown card type is dropped, not guessed");
 

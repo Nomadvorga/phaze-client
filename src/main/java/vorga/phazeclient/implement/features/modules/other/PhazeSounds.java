@@ -11,6 +11,10 @@ public final class PhazeSounds {
     public static final SoundEvent KILL_HIT = SoundEvent.of(Identifier.of("phaze", "kill_hit"));
     public static final SoundEvent KILL_CRUNCH = SoundEvent.of(Identifier.of("phaze", "kill_crunch"));
     public static final SoundEvent KILL_POP = SoundEvent.of(Identifier.of("phaze", "kill_pop"));
+    /** Someone wrote @nick in a chat. */
+    public static final SoundEvent PING = SoundEvent.of(Identifier.of("phaze", "ping"));
+    /** Someone shared a point in a chat. */
+    public static final SoundEvent WAYPOINT = SoundEvent.of(Identifier.of("phaze", "waypoint"));
 
     private PhazeSounds() {}
 }

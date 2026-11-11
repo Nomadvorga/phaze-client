@@ -1,17 +1,9 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
 import com.google.gson.JsonObject;
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
-import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.system.animation.Animation;
 import vorga.phazeclient.api.system.animation.Direction;
@@ -21,7 +13,6 @@ import vorga.phazeclient.api.system.font.msdf.MsdfFont;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
-import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.MessengerPrefs;
 import vorga.phazeclient.base.util.MessengerService;
@@ -36,6 +27,8 @@ import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabel;
 import vorga.phazeclient.implement.messenger.ChatWorld;
+import vorga.phazeclient.implement.waypoints.Waypoint;
+import vorga.phazeclient.implement.waypoints.WaypointStore;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -176,6 +169,14 @@ public final class MessengerViewComponent extends AbstractComponent {
             return size() > WRAP_CACHE_LIMIT;
         }
     };
+    /** "member:<id>" hover and label keys, built once per member instead of every frame. */
+    private final Map<String, String> memberKeys = new HashMap<>();
+    private final Map<Long, MessageView> viewCache = new LinkedHashMap<>(64, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Long, MessageView> eldest) {
+            return size() > WRAP_CACHE_LIMIT;
+        }
+    };
     private volatile String selectedFriendId;
     private volatile String selectedProfileId;
     private volatile String selectedProfileUsername;
@@ -190,7 +191,25 @@ public final class MessengerViewComponent extends AbstractComponent {
     private boolean sendPending;
     private String pendingText;
     private volatile ActionMessage actionMessage;
+    private volatile ActionMessage inputNotice;
     private boolean attachOpen;
+
+    /** Someone the input can mention: a group mate, the direct-chat partner, a friend or a recent global sender. */
+    private record MentionCandidate(String id, String username) {}
+    private static final int MENTION_COLOR = 0xFF5AA9FF;
+    private static final int MENTION_MAX = 5;
+    private static final int MENTION_NAME_MAX = 16;
+    private static final float MENTION_ROW = 14.0F;
+    private static final float MENTION_MENU_WIDTH = 120.0F;
+    private List<MentionCandidate> mentionList = List.of();
+    private int mentionIndex;
+    /** Index of the '@' being completed, or -1; the list is rebuilt only when the token under the caret changes. */
+    private int mentionAt = -1;
+    private int mentionDismissedAt = -1;
+    private String mentionInput;
+    private int mentionCursor = -1;
+    private String mentionConversation;
+    private Section mentionSection;
     private boolean editingNote;
     private String armedKey;
     private long armedAt;
@@ -210,9 +229,24 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final int ERROR_COLOR = 0xFFE76868;
     private static final int NOTICE_COLOR = 0xFFE8C468;
     private static final int ADMIN_NAME_COLOR = 0xFFFF4F4F;
+    private static final int DEATH_POINT_COLOR = 0xFFFF6B6B;
 
     record ActionMessage(String text, int color, long shownAt) {}
     private record WrappedText(String text, float width, List<String> lines) {}
+
+    /**
+     * What a message row shows besides its wrapped text, built once per message: an edited message
+     * is a new record and gets a new view. Card lines are refitted only when their width,
+     * the language or the action label change.
+     */
+    private static final class MessageView {
+        MessengerService.Message message;
+        String avatarKey, senderKey, attachmentKey, time;
+        float cardTextWidth = -1.0F;
+        String cardLanguage, cardTitle, cardDetail;
+        String actionLabel;
+        float actionWidth;
+    }
     /** A labelled action in the right-hand panel; render and click walk the same list. */
     private record DetailButton(String key, String label, int style, Runnable action) {}
     private record AttachAction(String label, boolean enabled) {}
@@ -352,6 +386,8 @@ public final class MessengerViewComponent extends AbstractComponent {
                 RIGHT_WIDTH - PANEL_PAD * 2.0F, pageH - PANEL_PAD * 2.0F, mouseX, mouseY);
         if (attachOpen && conversationOpen()) {
             renderAttachMenu(context, contentX, contentY + contentH - INPUT_HEIGHT, mouseX, mouseY);
+        } else if (mentionMenuVisible()) {
+            renderMentionMenu(context, contentX, contentY + contentH - INPUT_HEIGHT, mouseX, mouseY);
         }
         } finally {
             hoverAnimations.keySet().retainAll(renderedHoverKeys);
@@ -489,7 +525,6 @@ public final class MessengerViewComponent extends AbstractComponent {
         float listBottom = listBottom(contentY, contentH, hasInput) - (hasInput ? inputErrorReserve() : 0.0F);
         listClipTop = listTop;
         listClipBottom = listBottom;
-        BatchedRectangle.flushIfBatching();
         context.enableScissor((int) contentX, (int) listTop, (int) (contentX + contentW), (int) listBottom);
         if (section == Section.GLOBAL) {
             renderGlobalMessages(context, contentX, listTop, contentW, listBottom, mouseX, mouseY);
@@ -499,7 +534,6 @@ public final class MessengerViewComponent extends AbstractComponent {
         } else {
             renderSectionRows(context, contentX, listTop, contentW, listBottom, mouseX, mouseY);
         }
-        BatchedRectangle.flushIfBatching();
         context.disableScissor();
 
         if (hasInput) {
@@ -795,7 +829,6 @@ public final class MessengerViewComponent extends AbstractComponent {
             renderAddFriendRow(context, contentX, listTop, contentW, mouseX, mouseY);
             float rowsTop = listTop + ADD_ROW_RESERVE;
             listClipTop = rowsTop;
-            BatchedRectangle.flushIfBatching();
             context.enableScissor((int) contentX, (int) rowsTop, (int) (contentX + contentW), (int) listBottom);
             List<MessengerService.FriendRequest> rows = requestTab == RequestTab.INCOMING
                     ? service.getRequests() : service.getOutgoingRequests();
@@ -813,7 +846,6 @@ public final class MessengerViewComponent extends AbstractComponent {
                 drawEmptyState(context, Lang.t(requestTab == RequestTab.INCOMING
                         ? "messenger.no_requests" : "messenger.no_outgoing"), contentX, rowsTop, contentW, listBottom);
             }
-            BatchedRectangle.flushIfBatching();
             context.disableScissor();
         } else {
             List<MessengerService.Friend> blocked = service.getBlocked();
@@ -1053,10 +1085,11 @@ public final class MessengerViewComponent extends AbstractComponent {
     private void renderMessage(DrawContext context, MessengerService.Message message, float rowX,
                                float rowY, float rowW, int mouseX, int mouseY) {
         boolean hidden = isHiddenMessage(message);
-        float avatarHover = animatedHover("message-avatar:" + message.id(),
+        MessageView view = view(message);
+        float avatarHover = animatedHover(view.avatarKey,
                 insideList(mouseX, mouseY, rowX, rowY + 1.0F, MESSAGE_AVATAR_SIZE, MESSAGE_AVATAR_SIZE));
         if (hidden) {
-            drawTexture(context, skins.anonymousHead(), rowX, rowY + 1.0F, MESSAGE_AVATAR_SIZE, applyGlobalAlpha(0xFFFFFFFF));
+            drawHead(context, skins.anonymousHead(), rowX, rowY + 1.0F, MESSAGE_AVATAR_SIZE);
         } else {
             renderAvatar(context, rowX, rowY + 1.0F, MESSAGE_AVATAR_SIZE, message.senderId(), message.senderUsername());
         }
@@ -1068,27 +1101,42 @@ public final class MessengerViewComponent extends AbstractComponent {
         }
         int senderColor = MessengerService.isAdmin(message.senderId()) ? ADMIN_NAME_COLOR
                 : isMe(message.senderId()) ? MenuStyle.CHIP_ACTIVE : MenuStyle.TEXT_PRIMARY;
-        drawMarqueeLabel(context, "sender:" + message.senderId(), message.senderUsername(), 6.2F,
+        drawMarqueeLabel(context, view.senderKey, message.senderUsername(), 6.2F,
                 rowX + MESSAGE_TEXT_X, rowY + 1.0F, rowX + rowW - 30.0F,
                 rowY, 10.0F, senderColor, true,
                 insideList(mouseX, mouseY, rowX + MESSAGE_TEXT_X, rowY, Math.max(1.0F, rowW - 52.0F), 10.0F));
-        drawText(context, formatTime(message.createdAt()), rowX + rowW - 23.0F, rowY + 2.0F,
+        drawText(context, view.time, rowX + rowW - 23.0F, rowY + 2.0F,
                 5.0F, MenuStyle.TEXT_MUTED, false);
         if (hasCard(message)) {
-            renderAttachment(context, message, rowX + MESSAGE_TEXT_X, rowY + MESSAGE_TEXT_TOP,
+            renderAttachment(context, view, rowX + MESSAGE_TEXT_X, rowY + MESSAGE_TEXT_TOP,
                     rowW - MESSAGE_TEXT_X - MESSAGE_TEXT_RIGHT_INSET, mouseX, mouseY);
             return;
         }
         float lineY = rowY + MESSAGE_TEXT_TOP;
         int textColor = hidden ? MenuStyle.TEXT_MUTED : MenuStyle.TEXT_PRIMARY;
         for (String line : wrappedLines(message, rowW)) {
-            drawText(context, line, rowX + MESSAGE_TEXT_X, lineY, MESSAGE_TEXT_SIZE, textColor, false);
+            if (hidden) drawText(context, line, rowX + MESSAGE_TEXT_X, lineY, MESSAGE_TEXT_SIZE, textColor, false);
+            else drawMentionText(context, line, rowX + MESSAGE_TEXT_X, lineY, MESSAGE_TEXT_SIZE, textColor);
             lineY += MESSAGE_LINE_STEP;
         }
     }
 
-    private void renderAttachment(DrawContext context, MessengerService.Message message, float cardX, float cardY,
+    private MessageView view(MessengerService.Message message) {
+        MessageView view = viewCache.get(message.id());
+        if (view != null && view.message == message) return view;
+        view = new MessageView();
+        view.message = message;
+        view.avatarKey = "message-avatar:" + message.id();
+        view.senderKey = "sender:" + message.senderId();
+        view.attachmentKey = "attachment:" + message.id();
+        view.time = formatTime(message.createdAt());
+        viewCache.put(message.id(), view);
+        return view;
+    }
+
+    private void renderAttachment(DrawContext context, MessageView view, float cardX, float cardY,
                                   float cardW, int mouseX, int mouseY) {
+        MessengerService.Message message = view.message;
         MessengerService.Attachment attachment = message.attachment();
         drawChatCard(context, cardX, cardY, cardW, ATTACH_HEIGHT, 0.0F);
         Identifier icon = "config".equals(attachment.type()) ? CONFIG_ICON
@@ -1096,16 +1144,21 @@ public final class MessengerViewComponent extends AbstractComponent {
         float iconCenterX = cardX + 6.0F + ATTACH_ICON_SIZE / 2.0F + 1.0F;
         UiMsdfIconAtlas.renderIconInkFitted(context, icon, iconCenterX, cardY + ATTACH_HEIGHT / 2.0F,
                 ATTACH_ICON_SIZE, ATTACH_ICON_SIZE, applyGlobalAlpha(MenuStyle.TEXT_PRIMARY));
-        float[] button = attachmentButton(message, cardX, cardY, cardW);
         AttachAction action = attachmentAction(message);
+        float[] button = attachmentButton(view, action.label(), cardX, cardY, cardW);
         float textX = cardX + 6.0F + ATTACH_ICON_SIZE + 7.0F;
         float textW = Math.max(20.0F, button[0] - 6.0F - textX);
-        drawText(context, fitSingleLine(message.text(), textW, 5.6F, "..."), textX, cardY + 5.0F, 5.6F,
-                MenuStyle.TEXT_PRIMARY, true);
-        drawText(context, fitSingleLine(attachmentDetail(attachment), textW, 4.8F, "..."), textX, cardY + 15.0F, 4.8F,
-                MenuStyle.TEXT_MUTED, false);
+        String language = Lang.getActive();
+        if (view.cardTextWidth != textW || !java.util.Objects.equals(view.cardLanguage, language)) {
+            view.cardTitle = fitSingleLine(message.text(), textW, 5.6F, "...");
+            view.cardDetail = fitSingleLine(attachmentDetail(attachment), textW, 4.8F, "...");
+            view.cardTextWidth = textW;
+            view.cardLanguage = language;
+        }
+        drawText(context, view.cardTitle, textX, cardY + 5.0F, 5.6F, MenuStyle.TEXT_PRIMARY, true);
+        drawText(context, view.cardDetail, textX, cardY + 15.0F, 4.8F, MenuStyle.TEXT_MUTED, false);
         boolean hovered = action.enabled() && insideList(mouseX, mouseY, button[0], button[1], button[2], button[3]);
-        float hover = animatedHover("attachment:" + message.id(), hovered);
+        float hover = animatedHover(view.attachmentKey, hovered);
         int fill = action.enabled() ? MenuStyle.mix(MenuStyle.CARD_INNER, MenuStyle.CHIP_ACTIVE, 0.35F)
                 : MenuStyle.mix(MenuStyle.PANEL_ROW, MenuStyle.CARD_INNER, 0.12F);
         drawButtonSurface(context, button[0], button[1], button[2], button[3], fill, MenuStyle.BORDER, hover);
@@ -1115,7 +1168,9 @@ public final class MessengerViewComponent extends AbstractComponent {
 
     private String attachmentDetail(MessengerService.Attachment attachment) {
         if ("config".equals(attachment.type())) return Lang.t("messenger.config_card") + " · " + attachment.configId();
-        return attachment.x() + " " + attachment.y() + " " + attachment.z() + " · " + dimensionLabel(attachment.dimension());
+        String detail = attachment.x() + " " + attachment.y() + " " + attachment.z() + " · " + dimensionLabel(attachment.dimension());
+        String where = ChatWorld.label(attachment.server(), attachment.realm());
+        return where == null ? detail : detail + " · " + where;
     }
 
     private static String dimensionLabel(String dimension) {
@@ -1130,14 +1185,26 @@ public final class MessengerViewComponent extends AbstractComponent {
     private AttachAction attachmentAction(MessengerService.Message message) {
         MessengerService.Attachment attachment = message.attachment();
         if ("config".equals(attachment.type())) return new AttachAction(Lang.t("messenger.config_apply"), true);
-        if (!attachment.serverKey().equals(ChatWorld.serverKey())) {
+        // Parsing already refused malformed keys and dimensions; this only guards a missing one.
+        if (attachment.serverKey() == null || attachment.dimension() == null) {
             return new AttachAction(Lang.t("messenger.point_elsewhere"), false);
         }
-        return new AttachAction(Lang.t(ChatWorld.isMarked(message.id()) ? "messenger.point_hide" : "messenger.point_show"), true);
+        // Every member sees the point in the world: its author edits it, everyone else may hide it.
+        if (isMe(message.senderId())) return new AttachAction(Lang.t("messenger.point_edit"), true);
+        boolean hidden = MessengerPrefs.get().isPointHidden(message.id());
+        return new AttachAction(Lang.t(hidden ? "messenger.point_show" : "messenger.point_hide"), true);
     }
 
     private float[] attachmentButton(MessengerService.Message message, float cardX, float cardY, float cardW) {
-        float w = Math.max(44.0F, MsdfFonts.bold().getWidth(attachmentAction(message).label(), 4.8F) + 14.0F);
+        return attachmentButton(view(message), attachmentAction(message).label(), cardX, cardY, cardW);
+    }
+
+    private float[] attachmentButton(MessageView view, String label, float cardX, float cardY, float cardW) {
+        if (!label.equals(view.actionLabel)) {
+            view.actionLabel = label;
+            view.actionWidth = Math.max(44.0F, MsdfFonts.bold().getWidth(label, 4.8F) + 14.0F);
+        }
+        float w = view.actionWidth;
         float inset = (ATTACH_HEIGHT - ATTACH_BUTTON_HEIGHT) / 2.0F;
         return new float[]{cardX + cardW - inset - w, cardY + inset, w, ATTACH_BUTTON_HEIGHT};
     }
@@ -1146,9 +1213,41 @@ public final class MessengerViewComponent extends AbstractComponent {
         MessengerService.Attachment attachment = message.attachment();
         if ("config".equals(attachment.type())) {
             MenuScreen.INSTANCE.openConfigImportModal(attachment.configId());
-        } else if (attachment.serverKey().equals(ChatWorld.serverKey())) {
-            ChatWorld.toggleMarker(message.id(), message.text(), attachment);
+            return;
         }
+        String world = attachment.serverKey();
+        if (!WaypointStore.isValidWorldKey(world) || !WaypointStore.isValidDimension(attachment.dimension())) return;
+        if (!isMe(message.senderId())) {
+            MessengerPrefs prefs = MessengerPrefs.get();
+            prefs.setPointHidden(message.id(), !prefs.isPointHidden(message.id()));
+            return;
+        }
+        String conversationId = openConversationId();
+        if (conversationId == null) return;
+        boolean death = "death".equals(attachment.type());
+        int color = attachment.color() >= 0 ? 0xFF000000 | attachment.color()
+                : death ? DEATH_POINT_COLOR : WaypointEditorModal.defaultColor();
+        Waypoint card = new Waypoint(0L, WaypointStore.cleanName(message.text()), attachment.dimension(),
+                attachment.x() + 0.5D, attachment.y(), attachment.z() + 0.5D, color, true, true, true, true,
+                message.createdAt(), message.id());
+        if (attachment.display() >= 0) card = card.withDisplayBits(attachment.display());
+        String originalServer = attachment.server();
+        MenuScreen.INSTANCE.openWaypointCardEditor(world, attachment.realm(), card,
+                ChatWorld.label(originalServer, attachment.realm()),
+                (serverKey, realm, edited) -> {
+                    // The server name follows the point: the original one, or ours when it moved here.
+                    String name = serverKey.equals(world) ? originalServer : ChatWorld.nameableHost();
+                    ChatWorld.Point point = new ChatWorld.Point(serverKey, realm, edited.dimension(),
+                            edited.blockX(), edited.blockY(), edited.blockZ());
+                    service.editPoint(conversationId, message.id(), edited.name(),
+                            ChatWorld.attachment(attachment.type(), point, edited.color() & 0xFFFFFF, edited.displayBits(), name),
+                            ok -> {
+                                if (!ok) showInputNotice(pointErrorFor(service.getStatus()));
+                            });
+                },
+                () -> service.deletePoint(conversationId, message.id(), ok -> {
+                    if (!ok) showInputNotice(pointErrorFor(service.getStatus()));
+                }));
     }
 
     /* ---- input and attachments --------------------------------------- */
@@ -1162,6 +1261,7 @@ public final class MessengerViewComponent extends AbstractComponent {
     }
 
     private void renderInput(DrawContext context, float contentX, float inputY, float contentW, int mouseX, int mouseY) {
+        updateMentions();
         float inputX = inputBoxX(contentX);
         float boxW = inputBoxWidth(contentX, contentW);
         if (conversationOpen()) {
@@ -1207,7 +1307,7 @@ public final class MessengerViewComponent extends AbstractComponent {
                             .color(applyGlobalAlpha(MenuStyle.mix(MenuStyle.CHIP_ACTIVE, MenuStyle.TEXT_PRIMARY, 0.35F))).build());
                 }
             }
-            drawText(context, visible, textOrigin, textY, INPUT_TEXT_SIZE, MenuStyle.TEXT_PRIMARY, false);
+            drawMentionText(context, visible, textOrigin, textY, INPUT_TEXT_SIZE, MenuStyle.TEXT_PRIMARY);
             if (inputFocused && (System.currentTimeMillis() / 500L) % 2L == 0L) {
                 int caret = Math.max(visibleStart, Math.min(cursor, visibleEnd));
                 float caretX = startX + renderedTextWidth(input.substring(visibleStart, caret), INPUT_TEXT_SIZE);
@@ -1215,10 +1315,14 @@ public final class MessengerViewComponent extends AbstractComponent {
                         .color(applyGlobalAlpha(MenuStyle.TEXT_PRIMARY)).build());
             }
         }
-        String error = inputError();
+        ActionMessage notice = activeInputNotice();
+        String error = notice != null ? notice.text() : inputError();
         if (error != null) {
-            int color = isModerationStatus(service.getStatus()) ? NOTICE_COLOR : ERROR_COLOR;
-            drawText(context, error, contentX + 2.0F, inputY - 8.0F, 4.8F, color, false);
+            int color = notice != null ? notice.color()
+                    : isModerationStatus(service.getStatus()) ? NOTICE_COLOR : ERROR_COLOR;
+            String line = fitSingleLine(error, contentW - 4.0F, 4.8F, "...");
+            float lineW = MsdfFonts.medium().getWidth(line, 4.8F);
+            drawText(context, line, contentX + (contentW - lineW) / 2.0F, inputY - 8.0F, 4.8F, color, false);
         }
         float sendX = contentX + contentW - SEND_WIDTH;
         long remaining = Math.max(0L, nextSendAt - System.currentTimeMillis());
@@ -1237,6 +1341,169 @@ public final class MessengerViewComponent extends AbstractComponent {
     private boolean[] attachEnabled() {
         boolean idle = !sendPending && nextSendAt <= System.currentTimeMillis();
         return new boolean[]{idle && ChatWorld.here() != null, idle && ChatWorld.lastDeath() != null, idle};
+    }
+
+    /* ---- @mentions ---------------------------------------------------- */
+
+    private static boolean isNameChar(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    }
+
+    /** Finds an "@prefix" right before the caret and the people it can complete to. */
+    private void updateMentions() {
+        String conversation = openConversationId();
+        if (input == mentionInput && cursor == mentionCursor && section == mentionSection
+                && java.util.Objects.equals(conversation, mentionConversation)) return;
+        boolean sameToken = mentionAt >= 0 && input.length() > mentionAt && input.charAt(mentionAt) == '@';
+        mentionInput = input;
+        mentionCursor = cursor;
+        mentionSection = section;
+        mentionConversation = conversation;
+        int previousAt = mentionAt;
+        mentionAt = -1;
+        mentionList = List.of();
+        if (!inputFocused || !canEditInput() || hasSelection() || cursor > input.length()) return;
+        int start = cursor;
+        while (start > 0 && cursor - start < MENTION_NAME_MAX && isNameChar(input.charAt(start - 1))) start--;
+        if (start == 0 || input.charAt(start - 1) != '@') return;
+        int at = start - 1;
+        if (at > 0 && isNameChar(input.charAt(at - 1))) return;
+        if (at == mentionDismissedAt) return;
+        mentionDismissedAt = -1;
+        String prefix = input.substring(start, cursor).toLowerCase(Locale.ROOT);
+        List<MentionCandidate> found = new ArrayList<>();
+        for (MentionCandidate candidate : mentionCandidates()) {
+            if (candidate.username().toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                found.add(candidate);
+                if (found.size() >= MENTION_MAX) break;
+            }
+        }
+        if (found.isEmpty()) return;
+        mentionAt = at;
+        mentionList = List.copyOf(found);
+        if (!sameToken || previousAt != at || mentionIndex >= found.size()) mentionIndex = 0;
+    }
+
+    /** People in this chat first, online ones before the rest; never the player themselves. */
+    private List<MentionCandidate> mentionCandidates() {
+        List<MentionCandidate> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        java.util.function.BiConsumer<String, String> add = (id, name) -> {
+            if (id == null || name == null || name.isEmpty() || isMe(id)) return;
+            if (seen.add(name.toLowerCase(Locale.ROOT))) out.add(new MentionCandidate(id, name));
+        };
+        MessengerService.Group group = section == Section.GROUPS ? selectedGroup() : null;
+        MessengerService.Conversation direct = section == Section.DIRECT ? selectedConversation() : null;
+        if (group != null) {
+            List<MessengerService.GroupMember> members = new ArrayList<>(group.members());
+            members.sort(java.util.Comparator.comparing((MessengerService.GroupMember member) -> !service.isUserOnline(member.id())));
+            for (MessengerService.GroupMember member : members) add.accept(member.id(), member.username());
+        } else if (direct != null) {
+            add.accept(direct.participantId(), direct.username());
+        } else if (section == Section.GLOBAL) {
+            List<MessengerService.Message> recent = service.getGlobalMessages();
+            for (int index = recent.size() - 1; index >= 0; index--) {
+                MessengerService.Message message = recent.get(index);
+                add.accept(message.senderId(), message.senderUsername());
+            }
+            for (MessengerService.Friend friend : service.getFriends()) add.accept(friend.id(), friend.username());
+        }
+        return out;
+    }
+
+    private boolean mentionMenuVisible() {
+        return mentionAt >= 0 && !mentionList.isEmpty() && inputFocused && canEditInput();
+    }
+
+    /** Replaces "@pre" (and the rest of that word) with "@Name " and puts the caret after the space. */
+    private void applyMention(MentionCandidate candidate) {
+        if (mentionAt < 0 || mentionAt >= input.length() || sendPending) return;
+        int end = cursor;
+        while (end < input.length() && isNameChar(input.charAt(end))) end++;
+        boolean spaceFollows = end < input.length() && input.charAt(end) == ' ';
+        String tag = "@" + candidate.username() + (spaceFollows ? "" : " ");
+        String next = input.substring(0, mentionAt) + tag + input.substring(end);
+        if (next.codePointCount(0, next.length()) > MAX_INPUT_CODEPOINTS) return;
+        input = next;
+        cursor = selectionAnchor = mentionAt + tag.length() + (spaceFollows ? 1 : 0);
+        mentionAt = -1;
+        mentionList = List.of();
+        mentionInput = null;
+    }
+
+    private float[] mentionMenuRect(float contentX, float inputY) {
+        float h = mentionList.size() * MENTION_ROW + 4.0F;
+        return new float[]{inputBoxX(contentX), inputY - 4.0F - h, MENTION_MENU_WIDTH, h};
+    }
+
+    private void renderMentionMenu(DrawContext context, float contentX, float inputY, int mouseX, int mouseY) {
+        float[] menu = mentionMenuRect(contentX, inputY);
+        float innerAlpha = ((MenuStyle.CARD_INNER >>> 24) & 0xFF) / 255.0F;
+        int solid = 0xFF000000 | (MenuStyle.mix(MenuStyle.PANEL_BG, MenuStyle.CARD_INNER, innerAlpha) & 0x00FFFFFF);
+        drawSurface(context, menu[0], menu[1], menu[2], menu[3], solid, MenuStyle.BORDER_LIGHT);
+        for (int index = 0; index < mentionList.size(); index++) {
+            MentionCandidate candidate = mentionList.get(index);
+            float rowX = menu[0] + 2.0F;
+            float rowY = menu[1] + 2.0F + index * MENTION_ROW;
+            float rowW = menu[2] - 4.0F;
+            boolean hovered = inside(mouseX, mouseY, rowX, rowY, rowW, MENTION_ROW);
+            if (hovered) mentionIndex = index;
+            float selected = animatedState("mention:" + index, index == mentionIndex);
+            animatedHover("mention-hover:" + index, hovered);
+            if (selected > 0.0F) drawChatCard(context, rowX, rowY, rowW, MENTION_ROW, selected, selected);
+            renderAvatar(context, rowX + 3.0F, rowY + (MENTION_ROW - 9.0F) / 2.0F, 9.0F, candidate.id(), candidate.username());
+            float textY = MenuStyle.centerMsdfTextY(5.6F, rowY, MENTION_ROW);
+            drawText(context, "@", rowX + 16.0F, textY, 5.6F, MENTION_COLOR, true);
+            String name = fitSingleLine(candidate.username(), rowW - 26.0F, 5.6F, "...");
+            drawText(context, name, rowX + 16.0F + mentionAdvance("@", 5.6F, true), textY, 5.6F,
+                    service.isUserOnline(candidate.id()) ? MenuStyle.TEXT_PRIMARY : MenuStyle.TEXT_MUTED, true);
+        }
+    }
+
+    private boolean clickMentionMenu(double mouseX, double mouseY, float contentX, float inputY) {
+        if (!mentionMenuVisible()) return false;
+        float[] menu = mentionMenuRect(contentX, inputY);
+        if (!inside(mouseX, mouseY, menu[0], menu[1], menu[2], menu[3])) return false;
+        int index = (int) ((mouseY - menu[1] - 2.0F) / MENTION_ROW);
+        if (index >= 0 && index < mentionList.size()) {
+            playButtonClickSound();
+            applyMention(mentionList.get(index));
+        }
+        return true;
+    }
+
+    /** Where the next glyph starts after {@code text}: the renderer's per-glyph spacing included. */
+    private static float mentionAdvance(String text, float size, boolean bold) {
+        return (bold ? MsdfFonts.bold() : MsdfFonts.medium()).getWidth(text, size) + text.length() * 0.025F * size;
+    }
+
+    /** Draws text with every "@name" in the mention colour; plain text costs one call as before. */
+    private void drawMentionText(DrawContext context, String text, float textX, float textY, float size, int color) {
+        int at = text.indexOf('@');
+        if (at < 0) {
+            drawText(context, text, textX, textY, size, color, false);
+            return;
+        }
+        float drawX = textX;
+        int segment = 0;
+        while (at >= 0) {
+            int end = at + 1;
+            while (end < text.length() && end - at <= MENTION_NAME_MAX && isNameChar(text.charAt(end))) end++;
+            boolean mention = end > at + 1 && (at == 0 || !isNameChar(text.charAt(at - 1)));
+            if (mention) {
+                if (at > segment) {
+                    String plain = text.substring(segment, at);
+                    drawText(context, plain, drawX, textY, size, color, false);
+                    drawX += mentionAdvance(plain, size, false);
+                }
+                String tag = text.substring(at, end);
+                drawText(context, tag, drawX, textY, size, MENTION_COLOR, false);
+                drawX += mentionAdvance(tag, size, false);
+                segment = end;
+            }
+            at = text.indexOf('@', Math.max(end, at + 1));
+        }
+        if (segment < text.length()) drawText(context, text.substring(segment), drawX, textY, size, color, false);
     }
 
     /** The menu sits on the attach button's left edge, just above the input row. */
@@ -1277,12 +1544,26 @@ public final class MessengerViewComponent extends AbstractComponent {
         String conversationId = openConversationId();
         if (conversationId == null) return true;
         String caption = input.isBlank() ? attachLabels()[index] : input.trim();
-        if (index == 0 || index == 1) {
-            ChatWorld.Point point = index == 0 ? ChatWorld.here() : ChatWorld.lastDeath();
+        if (index == 0) {
+            // The point is set up in the waypoint dialog first; its name becomes the card caption.
+            String serverKey = ChatWorld.serverKey();
+            if (serverKey == null || ChatWorld.here() == null) return true;
+            MenuScreen.INSTANCE.openWaypointSender(WaypointEditorModal.draftHere(input.isBlank() ? "" : caption), (key, realm, waypoint) -> {
+                if (sendPending || !serverKey.equals(key) || !serverKey.equals(ChatWorld.serverKey())) return;
+                ChatWorld.Point point = new ChatWorld.Point(serverKey, realm, waypoint.dimension(),
+                        waypoint.blockX(), waypoint.blockY(), waypoint.blockZ());
+                beginSend();
+                service.sendWithAttachment(conversationId, waypoint.name(),
+                        ChatWorld.attachment("waypoint", point, waypoint.color() & 0xFFFFFF, waypoint.displayBits()),
+                        this::finishSend);
+            });
+            return true;
+        }
+        if (index == 1) {
+            ChatWorld.Point point = ChatWorld.lastDeath();
             if (point == null) return true;
             beginSend();
-            service.sendWithAttachment(conversationId, caption, ChatWorld.attachment(index == 0 ? "waypoint" : "death", point),
-                    this::finishSend);
+            service.sendWithAttachment(conversationId, caption, ChatWorld.attachment("death", point), this::finishSend);
             return true;
         }
         // The current config goes up as a share key first, the card carries only that key.
@@ -1290,7 +1571,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         try {
             payload = ConfigManager.getInstance().exportCurrentToString();
         } catch (RuntimeException failed) {
-            showActionError(Lang.t("messenger.error_action"));
+            showInputNotice(Lang.t("messenger.error_action"));
             return true;
         }
         String configName = ConfigManager.getInstance().getCurrentConfigName();
@@ -1300,7 +1581,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         CompletableFuture.supplyAsync(() -> ConfigShareApi.upload(payload, author, null, configName))
                 .thenAccept(id -> {
                     if (id == null || !id.matches("^[a-z0-9_]{1,5}-[a-z0-9]{4}-[a-z0-9]{4}$")) {
-                        showActionError(Lang.t("messenger.error_action"));
+                        showInputNotice(Lang.t("messenger.error_action"));
                         finishSend(false);
                         return;
                     }
@@ -1430,7 +1711,6 @@ public final class MessengerViewComponent extends AbstractComponent {
         List<MessengerService.Friend> friends = pickableFriends();
         listClipTop = listTop;
         listClipBottom = listBottom;
-        BatchedRectangle.flushIfBatching();
         context.enableScissor((int) listX, (int) listTop, (int) (listX + listW), (int) listBottom);
         float offset = clampListScroll(friends.size(), DIRECT_ROW_STEP, DIRECT_CARD_HEIGHT, listBottom - listTop);
         for (int index = 0; index < friends.size(); index++) {
@@ -1441,7 +1721,6 @@ public final class MessengerViewComponent extends AbstractComponent {
         if (friends.isEmpty()) {
             drawEmptyState(context, Lang.t("messenger.no_friends_to_invite"), listX, listTop, listW, listBottom);
         }
-        BatchedRectangle.flushIfBatching();
         context.disableScissor();
     }
 
@@ -1857,7 +2136,6 @@ public final class MessengerViewComponent extends AbstractComponent {
         float listBottom = buttonsTop - 6.0F;
         float total = group.members().isEmpty() ? 0.0F : (group.members().size() - 1) * MEMBER_STEP + MEMBER_ROW;
         membersScroll = Math.max(0.0D, Math.min(Math.max(0.0D, total - (listBottom - listTop)), membersScroll));
-        BatchedRectangle.flushIfBatching();
         context.enableScissor((int) panelX, (int) listTop, (int) (panelX + panelW), (int) listBottom);
         for (int index = 0; index < group.members().size(); index++) {
             float rowY = listTop - (float) membersScroll + index * MEMBER_STEP;
@@ -1865,10 +2143,11 @@ public final class MessengerViewComponent extends AbstractComponent {
             MessengerService.GroupMember member = group.members().get(index);
             boolean hovered = mouseY >= listTop && mouseY <= listBottom
                     && inside(mouseX, mouseY, panelX, rowY, panelW, MEMBER_ROW);
-            float hover = animatedHover("member:" + member.id(), hovered);
+            String memberKey = memberKeys.computeIfAbsent(member.id(), id -> "member:" + id);
+            float hover = animatedHover(memberKey, hovered);
             if (hover > 0.0F) drawChatCard(context, panelX, rowY, panelW, MEMBER_ROW, hover, hover);
             renderAvatar(context, panelX + 1.5F, rowY + 1.5F, 15.0F, member.id(), member.username());
-            drawMarqueeLabel(context, "member:" + member.id(), member.username(), 5.0F,
+            drawMarqueeLabel(context, memberKey, member.username(), 5.0F,
                     panelX + 20.0F, rowY + COMPACT_FRIEND_NAME_OFFSET, panelX + panelW, rowY, 12.0F,
                     MessengerService.isAdmin(member.id()) ? ADMIN_NAME_COLOR
                             : isMe(member.id()) ? MenuStyle.CHIP_ACTIVE : MenuStyle.TEXT_PRIMARY, false, hovered);
@@ -1882,7 +2161,6 @@ public final class MessengerViewComponent extends AbstractComponent {
                     role != null ? MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.CHIP_ACTIVE, 0.6F)
                             : online ? MenuStyle.ACCENT_GREEN : MenuStyle.TEXT_MUTED, false);
         }
-        BatchedRectangle.flushIfBatching();
         context.disableScissor();
         for (int index = 0; index < buttons.size(); index++) {
             DetailButton button = buttons.get(index);
@@ -2061,6 +2339,7 @@ public final class MessengerViewComponent extends AbstractComponent {
         float contentH = pageH - PANEL_PAD * 2.0F;
         float inputY = contentY + contentH - INPUT_HEIGHT;
 
+        if (!attachOpen && clickMentionMenu(mouseX, mouseY, contentX, inputY)) return true;
         if (attachOpen) {
             if (conversationOpen() && clickAttachMenu(mouseX, mouseY, contentX, inputY)) return true;
             attachOpen = false;
@@ -2471,6 +2750,12 @@ public final class MessengerViewComponent extends AbstractComponent {
                 attachOpen = false;
                 return true;
             }
+            if (mentionMenuVisible()) {
+                mentionDismissedAt = mentionAt;
+                mentionAt = -1;
+                mentionList = List.of();
+                return true;
+            }
             if (editingNote) {
                 finishNoteEdit();
                 return true;
@@ -2499,6 +2784,21 @@ public final class MessengerViewComponent extends AbstractComponent {
             return true;
         }
         if (!inputFocused || !canEditInput()) return false;
+        if (mentionMenuVisible()) {
+            int count = mentionList.size();
+            if (keyCode == GLFW.GLFW_KEY_UP) {
+                mentionIndex = (mentionIndex - 1 + count) % count;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DOWN) {
+                mentionIndex = (mentionIndex + 1) % count;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_TAB || enter) {
+                applyMention(mentionList.get(Math.min(mentionIndex, count - 1)));
+                return true;
+            }
+        }
         boolean control = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
         if (control && keyCode == GLFW.GLFW_KEY_A) {
             selectionAnchor = 0;
@@ -2749,11 +3049,27 @@ public final class MessengerViewComponent extends AbstractComponent {
 
     /** The send error line sits above the input; the message list stops above it instead of under it. */
     private float inputErrorReserve() {
-        return inputError() != null ? INPUT_ERROR_RESERVE : 0.0F;
+        return activeInputNotice() != null || inputError() != null ? INPUT_ERROR_RESERVE : 0.0F;
     }
 
     private void showActionError(String text) {
         actionMessage = new ActionMessage(text, ERROR_COLOR, System.currentTimeMillis());
+    }
+
+    /** A failure of something done in the open chat: shown on the line above its input, not in the side panel. */
+    private void showInputNotice(String text) {
+        inputNotice = new ActionMessage(text, ERROR_COLOR, System.currentTimeMillis());
+    }
+
+    private ActionMessage activeInputNotice() {
+        ActionMessage notice = inputNotice;
+        return notice != null && System.currentTimeMillis() - notice.shownAt() < MESSAGE_VISIBLE_MS ? notice : null;
+    }
+
+    static String pointErrorFor(String status) {
+        if (status != null && status.contains("slow_down")) return Lang.t("messenger.error_slowdown");
+        if ("Chat server is outdated".equals(status)) return Lang.t("messenger.error_point_server");
+        return Lang.t("messenger.error_point");
     }
 
     static ActionMessage friendRequestNotice(String status, long now) {
@@ -2972,26 +3288,14 @@ public final class MessengerViewComponent extends AbstractComponent {
      */
     private void renderAvatar(DrawContext context, float avatarX, float avatarY, float size,
                               String userId, String name) {
-        Identifier head = service.isBlockedBy(userId) ? skins.anonymousHead() : skins.head(name);
-        drawTexture(context, head, avatarX, avatarY, size, applyGlobalAlpha(0xFFFFFFFF));
+        int head = service.isBlockedBy(userId) ? skins.anonymousHead() : skins.head(name);
+        drawHead(context, head, avatarX, avatarY, size);
     }
 
-    /** One square textured quad at float coordinates, drawn above the pending batched rectangles. */
-    private static void drawTexture(DrawContext context, Identifier texture, float drawX, float drawY,
-                                    float size, int color) {
-        BatchedRectangle.flushIfBatching();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, texture);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-        buffer.vertex(matrix, drawX, drawY, 0.0F).texture(0.0F, 0.0F).color(color);
-        buffer.vertex(matrix, drawX, drawY + size, 0.0F).texture(0.0F, 1.0F).color(color);
-        buffer.vertex(matrix, drawX + size, drawY + size, 0.0F).texture(1.0F, 1.0F).color(color);
-        buffer.vertex(matrix, drawX + size, drawY, 0.0F).texture(1.0F, 0.0F).color(color);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        RenderSystem.disableBlend();
+    /** One atlas quad at float coordinates; it joins the open GUI batch instead of breaking it. */
+    private void drawHead(DrawContext context, int head, float drawX, float drawY, float size) {
+        skins.draw(context.getMatrices().peek().getPositionMatrix(), head, drawX, drawY, size,
+                applyGlobalAlpha(0xFFFFFFFF));
     }
 
     private static float avatarRadius(float size) {
