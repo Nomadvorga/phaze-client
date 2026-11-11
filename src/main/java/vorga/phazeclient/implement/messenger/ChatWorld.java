@@ -50,6 +50,7 @@ public final class ChatWorld {
     private static final int MARKER_COLOR = 0xFF7FD3FF;
     private static final int DEATH_COLOR = 0xFFFF6B6B;
     private static final int PING_COLOR = 0xFFFFD166;
+    private static final int ADMIN_PING_COLOR = 0xFFFF4F4F;
 
     public record Point(String serverKey, String dimension, int x, int y, int z) {}
 
@@ -210,7 +211,11 @@ public final class ChatWorld {
         }
         for (MessengerService.Ping ping : MessengerService.getInstance().getActivePings()) {
             if (ping.serverKey().equals(key) && ping.dimension().equals(dimension)) {
-                visible.add(new Marker(ping.username(), new Point(key, dimension, ping.x(), ping.y(), ping.z()), PING_COLOR));
+                boolean admin = MessengerService.isAdmin(ping.userId());
+                String label = ping.label() == null || ping.label().isBlank()
+                        ? ping.username() : ping.username() + " · " + ping.label();
+                visible.add(new Marker(label, new Point(key, dimension, ping.x(), ping.y(), ping.z()),
+                        admin ? ADMIN_PING_COLOR : PING_COLOR));
             }
         }
         for (Marker marker : visible) drawMarker(client, matrices, camera, marker);

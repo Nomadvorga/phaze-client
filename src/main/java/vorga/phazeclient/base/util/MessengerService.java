@@ -114,14 +114,14 @@ public final class MessengerService {
 
     public record GroupInvite(long id, String groupId, String groupName, String inviterId, String inviterUsername) {}
 
-    /** A group mate's marker in the world; shown only on the same server and dimension. */
-    public record Ping(String userId, String username, String serverKey, String dimension,
-                       int x, int y, int z, long receivedAt) {}
+    /** A group mate's marker in the world; shown only on the same server and dimension. {@code label} is Admin's caption. */
+    public record Ping(String userId, String username, String label, String serverKey, String dimension,
+                       int x, int y, int z, long expiresAt) {}
 
-    public enum NoticeKind { MESSAGE, FRIEND_ONLINE, FRIEND_REQUEST, GROUP_INVITE }
+    public enum NoticeKind { MESSAGE, FRIEND_ONLINE, FRIEND_REQUEST, GROUP_INVITE, PING }
 
-    /** Something worth an in-game toast; the toast layer decides whether to show it. */
-    public record Notice(NoticeKind kind, String username, String text, String conversationId) {}
+    /** Something worth an in-game toast; the toast layer decides whether to show it. {@code ping} is set for PING. */
+    public record Notice(NoticeKind kind, String username, String text, String conversationId, Ping ping) {}
 
     private record HttpResult(int status, String body) {}
 
@@ -187,10 +187,14 @@ public final class MessengerService {
     }
 
     private void notice(NoticeKind kind, String username, String text, String conversationId) {
+        notice(kind, username, text, conversationId, null);
+    }
+
+    private void notice(NoticeKind kind, String username, String text, String conversationId, Ping ping) {
         Consumer<Notice> listener = noticeListener;
         if (listener == null) return;
         try {
-            listener.accept(new Notice(kind, username, text, conversationId));
+            listener.accept(new Notice(kind, username, text, conversationId, ping));
         } catch (RuntimeException failure) {
             LOG.debug("Messenger notice listener failed", failure);
         }
@@ -347,7 +351,7 @@ public final class MessengerService {
     /** Pings younger than their lifetime; older ones are dropped here. */
     public List<Ping> getActivePings() {
         long now = System.currentTimeMillis();
-        pings.removeIf(ping -> now - ping.receivedAt() > PING_LIFETIME_MS);
+        pings.removeIf(ping -> now > ping.expiresAt());
         return pings;
     }
 
@@ -1356,12 +1360,21 @@ public final class MessengerService {
                     }
                 }
                 case "ping" -> {
-                    pings.removeIf(ping -> ping.userId().equals(root.get("userId").getAsString()));
-                    pings.add(new Ping(root.get("userId").getAsString(), usernameOf(root),
+                    String userId = root.get("userId").getAsString();
+                    // Only Admin's pings carry a caption and their own lifetime.
+                    boolean admin = isAdmin(userId);
+                    long lifetime = admin && root.has("durationSec")
+                            ? Math.max(5, Math.min(600, root.get("durationSec").getAsInt())) * 1_000L : PING_LIFETIME_MS;
+                    String label = admin && root.has("label") && !root.get("label").isJsonNull()
+                            ? root.get("label").getAsString() : null;
+                    Ping ping = new Ping(userId, usernameOf(root), label,
                             root.get("serverKey").getAsString(), root.get("dimension").getAsString(),
                             root.get("x").getAsInt(), root.get("y").getAsInt(), root.get("z").getAsInt(),
-                            System.currentTimeMillis()));
+                            System.currentTimeMillis() + lifetime);
+                    pings.removeIf(existing -> existing.userId().equals(userId));
+                    pings.add(ping);
                     while (pings.size() > 16) pings.remove(0);
+                    if (admin) notice(NoticeKind.PING, ping.username(), label, null, ping);
                 }
                 default -> {
                 }

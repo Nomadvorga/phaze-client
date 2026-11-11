@@ -68,12 +68,18 @@ public final class MessengerToasts implements QuickImports {
         MessengerPrefs prefs = MessengerPrefs.get();
         if (!prefs.toasts() || prefs.doNotDisturb()) return;
         if (notice.kind() == MessengerService.NoticeKind.FRIEND_ONLINE && !prefs.friendOnlineToasts()) return;
+        MessengerService.Ping ping = notice.ping();
+        // A marker the player can not see here is not worth interrupting them for.
+        if (notice.kind() == MessengerService.NoticeKind.PING
+                && (ping == null || !ChatWorld.isHere(ping.serverKey(), ping.dimension()))) return;
         String name = notice.username() == null ? "Unknown" : notice.username();
         String body = switch (notice.kind()) {
             case MESSAGE -> notice.text();
             case FRIEND_ONLINE -> Lang.t("messenger.toast_online");
             case FRIEND_REQUEST -> Lang.t("messenger.toast_request");
             case GROUP_INVITE -> Lang.t("messenger.toast_invite") + " «" + notice.text() + "»";
+            case PING -> (notice.text() == null || notice.text().isBlank() ? Lang.t("messenger.toast_ping") : notice.text())
+                    + " · " + ping.x() + " " + ping.y() + " " + ping.z();
         };
         String title = notice.kind() == MessengerService.NoticeKind.MESSAGE && notice.conversationId() != null
                 ? titleFor(notice.conversationId(), name) : name;

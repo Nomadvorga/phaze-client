@@ -283,6 +283,7 @@ public final class Lang {
         en("messenger.toast_online", "is online");
         en("messenger.toast_request", "wants to be your friend");
         en("messenger.toast_invite", "invites you to");
+        en("messenger.toast_ping", "marked a point");
         en("messenger.dim_overworld", "Overworld");
         en("messenger.dim_nether", "Nether");
         en("messenger.dim_end", "End");
@@ -490,6 +491,7 @@ public final class Lang {
         ru("messenger.toast_online", "в сети");
         ru("messenger.toast_request", "хочет добавить тебя в друзья");
         ru("messenger.toast_invite", "приглашает в");
+        ru("messenger.toast_ping", "отметил точку");
         ru("messenger.dim_overworld", "Верхний мир");
         ru("messenger.dim_nether", "Незер");
         ru("messenger.dim_end", "Энд");
