@@ -32,12 +32,7 @@ import vorga.phazeclient.implement.features.modules.other.MentionHighlight;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
 import vorga.phazeclient.implement.features.modules.other.Translator;
 
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Consolidated mixin for {@link ChatHud}. Combines the previous seven
@@ -74,11 +69,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
     @Unique private float phaze$frameDx = 0.0F;
     @Unique private float phaze$frameDy = 0.0F;
     @Unique private boolean phaze$frameActive = false;
-    @Unique private boolean phaze$pendingBadgeForNextLine = false;
-    @Unique private boolean phaze$pendingCodeBadgeForNextLine = false;
-    @Unique private final Set<Integer> phaze$badgedChatTicks = new LinkedHashSet<>();
-    @Unique private final Map<Integer, Boolean> phaze$codeBadgeChatTicks = new LinkedHashMap<>();
-    @Unique private final Set<Integer> phaze$drawnBadgeTicksThisFrame = new HashSet<>();
 
     // ---------------------------------------------------------------
     // ChatHudNickHiderMixin + MentionHighlight (combined HEAD)
@@ -102,12 +92,7 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
             argsOnly = true
     )
     private Text phaze$mentionThenHide(Text original) {
-        phaze$pendingBadgeForNextLine = false;
-        phaze$pendingCodeBadgeForNextLine = false;
-        if (PhazeBadgeUtil.hasBadgePadding(original)) {
-            phaze$pendingBadgeForNextLine = true;
-            String paddedSender = PhazeBadgeUtil.extractChatSender(original.getString());
-            phaze$pendingCodeBadgeForNextLine = PhazeBadgeUtil.isCodeBadgeUser(paddedSender);
+        if (PhazeBadgeUtil.hasBadge(original)) {
             return original;
         }
 
@@ -121,9 +106,7 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         Text result = hider == null ? afterMention : hider.rewrite(afterMention);
 
         if (sender != null && PhazeBadgeUtil.isPhazeUser(sender)) {
-            phaze$pendingBadgeForNextLine = true;
-            phaze$pendingCodeBadgeForNextLine = PhazeBadgeUtil.isCodeBadgeUser(sender);
-            return PhazeBadgeUtil.withBadgePadding(result);
+            return PhazeBadgeUtil.withChatBadge(result, sender, PhazeBadgeUtil.isCodeBadgeUser(sender));
         }
         return result;
     }
@@ -228,11 +211,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
         if (!visibleMessages.isEmpty()) {
             phaze$latestAddedTick = visibleMessages.get(0).addedTime();
         }
-        if (phaze$pendingBadgeForNextLine && line != null) {
-            phaze$rememberBadgedChatTick(line.creationTick(), phaze$pendingCodeBadgeForNextLine);
-        }
-        phaze$pendingBadgeForNextLine = false;
-        phaze$pendingCodeBadgeForNextLine = false;
         // Do not wait for Exordium's component FPS cooldown: the next HUD
         // frame captures the new row once, then the animation uses that cache.
         ExordiumAnimationBridge.requestImmediateCapture(ExordiumAnimationBridge.CHAT);
@@ -241,7 +219,6 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$prepareFrame(DrawContext context, int currentTick, int mouseX, int mouseY,
                                     boolean focused, CallbackInfo ci) {
-        phaze$drawnBadgeTicksThisFrame.clear();
         phaze$tickAnimationFrame();
     }
 
@@ -353,10 +330,11 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
                     y + 10.0F,
                     visible != null && visible.addedTime() == phaze$latestAddedTick
             );
-            if (phaze$shouldDrawChatBadge(visible)) {
+            int badge = PhazeBadgeUtil.badgeAt(text);
+            if (badge != PhazeBadgeUtil.NO_BADGE) {
                 PhazeBadgeUtil.drawChatBadgeAsText(
                         ctx, renderer, x - 1.0F, y - 1.0F, PhazeBadgeUtil.alphaWhite(color),
-                        phaze$isCodeBadge(visible)
+                        badge == PhazeBadgeUtil.CODE_BADGE
                 );
             }
             return op.call(ctx, renderer, text, x, y, color);
@@ -369,36 +347,14 @@ public abstract class ChatHudMixin implements ChatAnimationFrameAccess {
             drawY += Math.round(phaze$frameDy);
         }
 
-        if (phaze$shouldDrawChatBadge(visible)) {
+        int badge = PhazeBadgeUtil.badgeAt(text);
+        if (badge != PhazeBadgeUtil.NO_BADGE) {
             PhazeBadgeUtil.drawChatBadgeAsText(
                     ctx, renderer, drawX - 1.0F, drawY - 1.0F, PhazeBadgeUtil.alphaWhite(color),
-                    phaze$isCodeBadge(visible)
+                    badge == PhazeBadgeUtil.CODE_BADGE
             );
         }
 
         return op.call(ctx, renderer, text, drawX, drawY, color);
-    }
-
-    @Unique
-    private void phaze$rememberBadgedChatTick(int tick, boolean codeBadge) {
-        phaze$badgedChatTicks.add(tick);
-        phaze$codeBadgeChatTicks.put(tick, codeBadge);
-        while (phaze$badgedChatTicks.size() > 512) {
-            Integer oldest = phaze$badgedChatTicks.iterator().next();
-            phaze$badgedChatTicks.remove(oldest);
-            phaze$codeBadgeChatTicks.remove(oldest);
-        }
-    }
-
-    @Unique
-    private boolean phaze$isCodeBadge(ChatHudLine.Visible visible) {
-        return visible != null && Boolean.TRUE.equals(phaze$codeBadgeChatTicks.get(visible.addedTime()));
-    }
-
-    @Unique
-    private boolean phaze$shouldDrawChatBadge(ChatHudLine.Visible visible) {
-        return visible != null
-                && phaze$badgedChatTicks.contains(visible.addedTime())
-                && phaze$drawnBadgeTicksThisFrame.add(visible.addedTime());
     }
 }

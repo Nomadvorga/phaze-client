@@ -315,7 +315,7 @@ public abstract class EntityRendererMixin {
         }
         phaze$drawBadgeThisLabel = true;
         phaze$drawCodeBadgeThisLabel = PhazeBadgeUtil.isCodeBadgeUser(identity);
-        return PhazeBadgeUtil.withBadgePadding(original);
+        return PhazeBadgeUtil.withBadge(original, phaze$drawCodeBadgeThisLabel);
     }
 
     private static int phaze$resolvedTextColor(int originalColor) {
@@ -364,11 +364,12 @@ public abstract class EntityRendererMixin {
             return;
         }
         // Eight units put the 16px badge on the font's half-pixel grid, with
-        // the letter as tall as the nametag's capitals.
+        // the letter as tall as the nametag's capitals. Its slot runs from the
+        // backdrop's edge (x - 1) to the name (x + 8); the letter, a unit
+        // narrower than the texture on each side, sits 1.5 from both.
         float badgeSize = 8.0F;
-        float inset = (10.0F - badgeSize) / 2.0F;
         PhazeBadgeUtil.drawWorldBadge(
-                matrix, vertexConsumers, layerType, x - 2.0F + inset, y - 1.0F + inset,
+                matrix, vertexConsumers, layerType, x - 0.5F, y,
                 badgeSize, light, color,
                 phaze$drawCodeBadgeThisLabel
         );

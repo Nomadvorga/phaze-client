@@ -280,8 +280,9 @@ public class PlayerListHudMixin {
 
         Text current = cir.getReturnValue();
         if (current != null) {
-            int paddingSpaces = phaze$needsExtraNickHiderPadding(entry) ? 3 : 2;
-            cir.setReturnValue(PhazeBadgeUtil.withBadgePadding(current, paddingSpaces));
+            boolean codeBadge = PhazeBadgeUtil.isCodeBadgeUser(entry.getProfile().getName());
+            int extraSpaces = phaze$needsExtraNickHiderPadding(entry) ? 1 : 0;
+            cir.setReturnValue(PhazeBadgeUtil.withBadge(current, codeBadge, extraSpaces));
         }
     }
 
