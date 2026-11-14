@@ -47,25 +47,17 @@ public final class BadgeChecks {
             }
             expect(BadgeRaster.downsample(square, size + 10).length == size * size, name + " is never enlarged by filtering");
 
-            int[][] mips = BadgeRaster.mipChain(square, 4);
-            int top = size * 4;
-            expect(mips.length == 32 - Integer.numberOfLeadingZeros(top), name + " mips run down to one pixel");
+            int[][] mips = BadgeRaster.mipChain(square);
+            expect(mips.length == 32 - Integer.numberOfLeadingZeros(size), name + " mips run down to one pixel");
             boolean sized = true;
-            for (int level = 0; level < mips.length; level++) sized &= mips[level].length == (top >> level) * (top >> level);
+            for (int level = 0; level < mips.length; level++) sized &= mips[level].length == (size >> level) * (size >> level);
             expect(sized, name + " every mip level halves like the GPU expects");
-            expect(alphaMatches(mips[2], square.argb()), name + " the art itself is one of the levels");
-            boolean blocks = true;
-            for (int y = 0; y < top; y++) {
-                for (int x = 0; x < top; x++) {
-                    blocks &= mips[0][y * top + x] >>> 24 == square.argb()[(y / 4) * size + x / 4] >>> 24;
-                }
-            }
-            expect(blocks, name + " levels above the art are whole-pixel blocks");
-            int[] soft = mips[3];
+            expect(alphaMatches(mips[0], square.argb()), name + " the art itself is the top level");
+            int[] soft = mips[1];
             boolean partial = false;
             for (int pixel : soft) partial |= (pixel >>> 24) > 0 && (pixel >>> 24) < 255;
             expect(partial, name + " levels below the art fade at the edge");
-            int levelSize = top >> 3;
+            int levelSize = size >> 1;
             expect(Math.abs(coverage(soft) / (levelSize * (double) levelSize) - fullCoverage) < 0.01,
                     name + " smaller levels keep the letter's area");
             expect(noDarkFringe(soft, levelSize), name + " clear pixels at the edge carry the letter's colour");

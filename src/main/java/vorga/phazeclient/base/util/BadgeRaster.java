@@ -5,6 +5,8 @@ package vorga.phazeclient.base.util;
  * Pixels are packed ARGB, row-major.
  */
 final class BadgeRaster {
+    private static final int NEAR_OPAQUE = 250;
+
     private BadgeRaster() {
     }
 
@@ -36,6 +38,10 @@ final class BadgeRaster {
         for (int y = 0; y < cropHeight; y++) {
             System.arraycopy(argb, (minY + y) * width + minX, out, (offsetY + y) * size + offsetX, cropWidth);
         }
+        // The exported art keeps 254 inside the letter; rounded up so nothing shows through it.
+        for (int i = 0; i < out.length; i++) {
+            if ((out[i] >>> 24) >= NEAR_OPAQUE) out[i] |= 0xFF000000;
+        }
         return new Square(size, out);
     }
 
@@ -50,37 +56,21 @@ final class BadgeRaster {
     }
 
     /**
-     * Mip levels for a badge drawn at any size, from {@code upscale} times the art down to one
-     * pixel, each half the previous one rounded down as the GPU expects. Levels larger than the
-     * art repeat its pixels as whole blocks, smaller ones are area-averaged with soft edges, so
-     * trilinear filtering can blend between neighbours without a visible step.
+     * Mip levels from the art itself down to one pixel, each half the previous one rounded down
+     * as the GPU expects. The smaller ones are area-averaged with soft edges, so trilinear
+     * filtering can blend between neighbours without a visible step.
      */
-    static int[][] mipChain(Square square, int upscale) {
-        int top = square.size() * upscale;
+    static int[][] mipChain(Square square) {
+        int top = square.size();
         int count = 32 - Integer.numberOfLeadingZeros(top);
         int[][] levels = new int[count][];
         for (int level = 0; level < count; level++) {
             int size = top >> level;
-            int[] pixels = size >= square.size()
-                    ? enlarge(square, size / square.size())
-                    : reduce(square, size, false);
+            int[] pixels = reduce(square, size, false);
             bleed(pixels, size);
             levels[level] = pixels;
         }
         return levels;
-    }
-
-    /** Each pixel repeated as a {@code factor}×{@code factor} block. */
-    static int[] enlarge(Square square, int factor) {
-        int size = square.size();
-        int out = size * factor;
-        int[] pixels = new int[out * out];
-        for (int y = 0; y < out; y++) {
-            for (int x = 0; x < out; x++) {
-                pixels[y * out + x] = square.argb()[(y / factor) * size + x / factor];
-            }
-        }
-        return pixels;
     }
 
     /**

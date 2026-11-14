@@ -10,6 +10,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.TriState;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL14;
 
 import java.io.InputStream;
 
@@ -28,8 +29,8 @@ final class PhazeBadgeTextures {
     private static final BadgeRaster.Square[] squares = new BadgeRaster.Square[SOURCES.length];
     private static final boolean[] unavailable = new boolean[SOURCES.length];
     private static final Identifier[][] built = new Identifier[SOURCES.length][MAX_PIXELS + 1];
-    /** Close up, levels above the art keep its pixels as crisp blocks instead of a blurry stretch. */
-    private static final int WORLD_UPSCALE = 4;
+    /** Leans towards the sharper of the two levels being blended, so mid distances stay crisp. */
+    private static final float WORLD_LOD_BIAS = -0.5F;
     private static final Identifier[] world = new Identifier[SOURCES.length];
 
     private PhazeBadgeTextures() {
@@ -69,8 +70,9 @@ final class PhazeBadgeTextures {
     }
 
     /**
-     * The nametag badge: one texture with every size from four times the art down to a pixel,
-     * blended by the GPU as the distance changes, so it never jumps between versions.
+     * The nametag badge. Closer than the art's own size its pixels are drawn as sharp blocks like
+     * the font's; further away it is one texture with every smaller size down to a pixel, blended
+     * by the GPU as the distance changes, so it never jumps between versions.
      */
     static Identifier worldTexture(boolean codeBadge) {
         int kind = codeBadge ? 1 : 0;
@@ -83,7 +85,7 @@ final class PhazeBadgeTextures {
         }
         Identifier id = Identifier.of("phaze", "dynamic/badge_" + NAMES[kind] + "_world");
         MinecraftClient.getInstance().getTextureManager()
-                .registerTexture(id, new MipTexture(BadgeRaster.mipChain(square, WORLD_UPSCALE), square.size() * WORLD_UPSCALE));
+                .registerTexture(id, new MipTexture(BadgeRaster.mipChain(square), square.size()));
         world[kind] = id;
         return id;
     }
@@ -116,8 +118,8 @@ final class PhazeBadgeTextures {
     }
 
     /**
-     * Trilinear mipmapped texture. Render layers reset a texture's filter on every draw, so this
-     * one keeps its own and ignores those calls.
+     * Nearest when enlarged, trilinear when reduced. Render layers reset a texture's filter on
+     * every draw, so this one keeps its own and ignores those calls.
      */
     private static final class MipTexture extends AbstractTexture {
         MipTexture(int[][] levels, int size) {
@@ -137,7 +139,8 @@ final class PhazeBadgeTextures {
             }
             bindTexture();
             GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
-            GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+            GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL14.GL_TEXTURE_LOD_BIAS, WORLD_LOD_BIAS);
             GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
             GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         }
