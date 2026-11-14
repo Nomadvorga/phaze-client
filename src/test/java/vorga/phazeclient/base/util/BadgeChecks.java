@@ -46,6 +46,29 @@ public final class BadgeChecks {
                 expect(hardEdge, name + " " + target + "px has a hard outline");
             }
             expect(BadgeRaster.downsample(square, size + 10).length == size * size, name + " is never enlarged by filtering");
+
+            int[][] mips = BadgeRaster.mipChain(square, 4);
+            int top = size * 4;
+            expect(mips.length == 32 - Integer.numberOfLeadingZeros(top), name + " mips run down to one pixel");
+            boolean sized = true;
+            for (int level = 0; level < mips.length; level++) sized &= mips[level].length == (top >> level) * (top >> level);
+            expect(sized, name + " every mip level halves like the GPU expects");
+            expect(alphaMatches(mips[2], square.argb()), name + " the art itself is one of the levels");
+            boolean blocks = true;
+            for (int y = 0; y < top; y++) {
+                for (int x = 0; x < top; x++) {
+                    blocks &= mips[0][y * top + x] >>> 24 == square.argb()[(y / 4) * size + x / 4] >>> 24;
+                }
+            }
+            expect(blocks, name + " levels above the art are whole-pixel blocks");
+            int[] soft = mips[3];
+            boolean partial = false;
+            for (int pixel : soft) partial |= (pixel >>> 24) > 0 && (pixel >>> 24) < 255;
+            expect(partial, name + " levels below the art fade at the edge");
+            int levelSize = top >> 3;
+            expect(Math.abs(coverage(soft) / (levelSize * (double) levelSize) - fullCoverage) < 0.01,
+                    name + " smaller levels keep the letter's area");
+            expect(noDarkFringe(soft, levelSize), name + " clear pixels at the edge carry the letter's colour");
         }
 
         int[] flat = new int[16 * 16];
@@ -89,6 +112,31 @@ public final class BadgeChecks {
             last |= (b >>> 24) != 0;
         }
         return first && last;
+    }
+
+    private static boolean alphaMatches(int[] a, int[] b) {
+        if (a.length != b.length) return false;
+        for (int i = 0; i < a.length; i++) if (a[i] >>> 24 != b[i] >>> 24) return false;
+        return true;
+    }
+
+    /** Every clear pixel touching the letter has been given a non-black colour. */
+    private static boolean noDarkFringe(int[] argb, int size) {
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                int pixel = argb[y * size + x];
+                if ((pixel >>> 24) != 0) continue;
+                boolean touches = false;
+                for (int dy = -1; dy <= 1 && !touches; dy++) {
+                    for (int dx = -1; dx <= 1 && !touches; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        touches = nx >= 0 && ny >= 0 && nx < size && ny < size && (argb[ny * size + nx] >>> 24) != 0;
+                    }
+                }
+                if (touches && (pixel & 0xFFFFFF) == 0) return false;
+            }
+        }
+        return true;
     }
 
     private static double coverage(int[] argb) {

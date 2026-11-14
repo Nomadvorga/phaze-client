@@ -1,9 +1,15 @@
 package vorga.phazeclient.base.util;
 
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.platform.TextureUtil;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.texture.AbstractTexture;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.TriState;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 
 import java.io.InputStream;
 
@@ -22,6 +28,9 @@ final class PhazeBadgeTextures {
     private static final BadgeRaster.Square[] squares = new BadgeRaster.Square[SOURCES.length];
     private static final boolean[] unavailable = new boolean[SOURCES.length];
     private static final Identifier[][] built = new Identifier[SOURCES.length][MAX_PIXELS + 1];
+    /** Close up, levels above the art keep its pixels as crisp blocks instead of a blurry stretch. */
+    private static final int WORLD_UPSCALE = 4;
+    private static final Identifier[] world = new Identifier[SOURCES.length];
 
     private PhazeBadgeTextures() {
     }
@@ -59,6 +68,26 @@ final class PhazeBadgeTextures {
         return id;
     }
 
+    /**
+     * The nametag badge: one texture with every size from four times the art down to a pixel,
+     * blended by the GPU as the distance changes, so it never jumps between versions.
+     */
+    static Identifier worldTexture(boolean codeBadge) {
+        int kind = codeBadge ? 1 : 0;
+        if (world[kind] != null) {
+            return world[kind];
+        }
+        BadgeRaster.Square square = square(kind);
+        if (square == null) {
+            return null;
+        }
+        Identifier id = Identifier.of("phaze", "dynamic/badge_" + NAMES[kind] + "_world");
+        MinecraftClient.getInstance().getTextureManager()
+                .registerTexture(id, new MipTexture(BadgeRaster.mipChain(square, WORLD_UPSCALE), square.size() * WORLD_UPSCALE));
+        world[kind] = id;
+        return id;
+    }
+
     private static BadgeRaster.Square square(int kind) {
         if (squares[kind] != null || unavailable[kind]) {
             return squares[kind];
@@ -83,6 +112,46 @@ final class PhazeBadgeTextures {
         } catch (Exception error) {
             unavailable[kind] = true;
             return null;
+        }
+    }
+
+    /**
+     * Trilinear mipmapped texture. Render layers reset a texture's filter on every draw, so this
+     * one keeps its own and ignores those calls.
+     */
+    private static final class MipTexture extends AbstractTexture {
+        MipTexture(int[][] levels, int size) {
+            int id = getGlId();
+            TextureUtil.prepareImage(NativeImage.InternalFormat.RGBA, id, levels.length - 1, size, size);
+            for (int level = 0; level < levels.length; level++) {
+                int levelSize = size >> level;
+                NativeImage image = new NativeImage(NativeImage.Format.RGBA, levelSize, levelSize, false);
+                int[] pixels = levels[level];
+                for (int y = 0; y < levelSize; y++) {
+                    for (int x = 0; x < levelSize; x++) {
+                        image.setColorArgb(x, y, pixels[y * levelSize + x]);
+                    }
+                }
+                bindTexture();
+                image.upload(level, 0, 0, true);
+            }
+            bindTexture();
+            GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
+            GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        }
+
+        @Override
+        public void setFilter(boolean bilinear, boolean mipmap) {
+        }
+
+        @Override
+        public void setFilter(TriState bilinear, boolean mipmap) {
+        }
+
+        @Override
+        public void setClamp(boolean clamp) {
         }
     }
 }

@@ -33,8 +33,8 @@ public final class PhazeBadgeUtil {
     public static final Identifier CODE_BADGE_ICON =
             Identifier.of("phaze", "textures/gui/phaze_code_badge.png");
     private static final int FALLBACK_ICON_PIXELS = 16;
-    /** Height of the badge's letter in GUI units next to 8-unit text rows. */
-    public static final float GUI_BADGE_SIZE = 7.0F;
+    /** Height of the badge letter in text units, as tall as the font's capitals. */
+    public static final float BADGE_SIZE = 7.0F;
     /**
      * Invisible glyphs of the {@code phaze:badge} font that reserve the badge's slot. A font of
      * our own keeps the slot's width fixed under server resource packs that resize spaces, and
@@ -272,7 +272,7 @@ public final class PhazeBadgeUtil {
     public static void drawChatBadgeAsText(
             DrawContext context, TextRenderer renderer, float x, float y, int color, boolean codeBadge
     ) {
-        drawGuiBadge(context, Math.round(x) + 0.5F, Math.round(y + 1.0F) + 0.5F, GUI_BADGE_SIZE, color, codeBadge);
+        drawGuiBadge(context, Math.round(x) + 0.5F, Math.round(y + 1.0F) + 0.5F, BADGE_SIZE, color, codeBadge);
     }
 
     public static void drawWorldBadge(
@@ -286,7 +286,9 @@ public final class PhazeBadgeUtil {
             int color,
             boolean codeBadge
     ) {
-        VertexConsumer vertexConsumer = vertexConsumers.getBuffer(resolveTextRenderLayer(layerType, codeBadge));
+        Identifier texture = PhazeBadgeTextures.worldTexture(codeBadge);
+        VertexConsumer vertexConsumer = vertexConsumers.getBuffer(
+                resolveTextRenderLayer(layerType, texture != null ? texture : badgeIcon(codeBadge)));
         int badgeColor = badgeColor(color);
         vertexConsumer.vertex(matrix, x, y, 0.0F).color(badgeColor).texture(0.0F, 0.0F).light(light);
         vertexConsumer.vertex(matrix, x, y + size, 0.0F).color(badgeColor).texture(0.0F, 1.0F).light(light);
@@ -366,8 +368,7 @@ public final class PhazeBadgeUtil {
         return alphaWhite(color);
     }
 
-    private static RenderLayer resolveTextRenderLayer(TextRenderer.TextLayerType layerType, boolean codeBadge) {
-        Identifier icon = badgeIcon(codeBadge);
+    private static RenderLayer resolveTextRenderLayer(TextRenderer.TextLayerType layerType, Identifier icon) {
         return switch (layerType) {
             case SEE_THROUGH -> RenderLayer.getTextSeeThrough(icon);
             case POLYGON_OFFSET -> RenderLayer.getTextPolygonOffset(icon);

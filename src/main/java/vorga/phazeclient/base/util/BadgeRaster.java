@@ -46,6 +46,88 @@ final class BadgeRaster {
      * by the letter are solid and the rest clear, which keeps a hard pixel-art outline.
      */
     static int[] downsample(Square square, int target) {
+        return reduce(square, target, true);
+    }
+
+    /**
+     * Mip levels for a badge drawn at any size, from {@code upscale} times the art down to one
+     * pixel, each half the previous one rounded down as the GPU expects. Levels larger than the
+     * art repeat its pixels as whole blocks, smaller ones are area-averaged with soft edges, so
+     * trilinear filtering can blend between neighbours without a visible step.
+     */
+    static int[][] mipChain(Square square, int upscale) {
+        int top = square.size() * upscale;
+        int count = 32 - Integer.numberOfLeadingZeros(top);
+        int[][] levels = new int[count][];
+        for (int level = 0; level < count; level++) {
+            int size = top >> level;
+            int[] pixels = size >= square.size()
+                    ? enlarge(square, size / square.size())
+                    : reduce(square, size, false);
+            bleed(pixels, size);
+            levels[level] = pixels;
+        }
+        return levels;
+    }
+
+    /** Each pixel repeated as a {@code factor}×{@code factor} block. */
+    static int[] enlarge(Square square, int factor) {
+        int size = square.size();
+        int out = size * factor;
+        int[] pixels = new int[out * out];
+        for (int y = 0; y < out; y++) {
+            for (int x = 0; x < out; x++) {
+                pixels[y * out + x] = square.argb()[(y / factor) * size + x / factor];
+            }
+        }
+        return pixels;
+    }
+
+    /**
+     * Gives clear pixels next to the letter its neighbours' colour while keeping them clear, so
+     * filtering that mixes them in fades the edge instead of darkening it.
+     */
+    static void bleed(int[] argb, int size) {
+        boolean[] known = new boolean[argb.length];
+        for (int i = 0; i < argb.length; i++) {
+            known[i] = (argb[i] >>> 24) != 0;
+            if (!known[i]) argb[i] = 0;
+        }
+        boolean[] filled = new boolean[argb.length];
+        for (int pass = 0; pass < 4; pass++) {
+            boolean changed = false;
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    int i = y * size + x;
+                    if (known[i]) continue;
+                    int r = 0, g = 0, b = 0, n = 0;
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            int nx = x + dx, ny = y + dy;
+                            if (nx < 0 || ny < 0 || nx >= size || ny >= size || !known[ny * size + nx]) continue;
+                            int p = argb[ny * size + nx];
+                            r += p >> 16 & 0xFF;
+                            g += p >> 8 & 0xFF;
+                            b += p & 0xFF;
+                            n++;
+                        }
+                    }
+                    if (n > 0) {
+                        argb[i] = (r / n) << 16 | (g / n) << 8 | (b / n);
+                        filled[i] = true;
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed) break;
+            for (int i = 0; i < known.length; i++) {
+                known[i] |= filled[i];
+                filled[i] = false;
+            }
+        }
+    }
+
+    private static int[] reduce(Square square, int target, boolean hardEdge) {
         int size = square.size();
         if (target >= size) {
             return square.argb().clone();
@@ -81,8 +163,9 @@ final class BadgeRaster {
         int[] out = new int[target * target];
         for (int i = 0; i < out.length; i++) {
             float a = alpha[i];
-            if (a < 0.5F) continue;
-            out[i] = 0xFF000000
+            int outAlpha = hardEdge ? (a < 0.5F ? 0 : 255) : Math.min(255, Math.round(a * 255.0F));
+            if (outAlpha == 0) continue;
+            out[i] = outAlpha << 24
                     | channel(red[i] / a) << 16
                     | channel(green[i] / a) << 8
                     | channel(blue[i] / a);
