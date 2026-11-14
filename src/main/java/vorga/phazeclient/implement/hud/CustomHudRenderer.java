@@ -1251,9 +1251,12 @@ public final class CustomHudRenderer {
     private static HudCachedTransform captureEditedHudTransform(MinecraftClient client) {
         int index = isolatedHudIndex;
         float scale = hudPixelScale(HUD_SNAP_OWNER[index], client);
-        float padding = Math.max(4, scale * (index == HUD_PAPER_DOLL ? 16 : 4));
+        int framebufferWidth = client.getWindow().getFramebufferWidth();
+        int framebufferHeight = client.getWindow().getFramebufferHeight();
+        // Cosmetics (wings, capes, held items) reach arbitrarily far past the doll's panel.
+        float padding = index == HUD_PAPER_DOLL ? Math.max(framebufferWidth, framebufferHeight) : Math.max(4, scale * 4);
         return HudCachedTransform.capture(HUD_SNAP_X[index], HUD_SNAP_Y[index], HUD_SNAP_WIDTH[index], HUD_SNAP_HEIGHT[index],
-                scale, padding, client.getWindow().getFramebufferWidth(), client.getWindow().getFramebufferHeight());
+                scale, padding, framebufferWidth, framebufferHeight);
     }
 
     private static void drawIsolatedHud(MinecraftClient client) {
