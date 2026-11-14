@@ -21,7 +21,7 @@ import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
 import vorga.phazeclient.implement.features.modules.hud.ServerAddressHud;
 import vorga.phazeclient.implement.features.modules.hud.SessionTimeHud;
 import vorga.phazeclient.implement.features.modules.hud.SprintHud;
-import vorga.phazeclient.implement.features.modules.hud.TabHud;
+import vorga.phazeclient.implement.features.modules.hud.TabEditor;
 import vorga.phazeclient.implement.features.modules.hud.TimeHud;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.hud.MemoryHud;
@@ -105,8 +105,8 @@ public class Main implements ModInitializer {
         if (moduleProvider.get(DayCounterHud.class) == null) {
             moduleProvider.getModules().add(DayCounterHud.getInstance());
         }
-        if (moduleProvider.get(TabHud.class) == null) {
-            moduleProvider.getModules().add(TabHud.getInstance());
+        if (moduleProvider.get(TabEditor.class) == null) {
+            moduleProvider.getModules().add(TabEditor.getInstance());
         }
         if (moduleProvider.get(NametagHud.class) == null) {
             moduleProvider.getModules().add(NametagHud.getInstance());

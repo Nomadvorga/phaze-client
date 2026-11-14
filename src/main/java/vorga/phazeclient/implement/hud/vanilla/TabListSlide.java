@@ -7,6 +7,7 @@ import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardDisplaySlot;
 import net.minecraft.scoreboard.ScoreboardObjective;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
+import vorga.phazeclient.implement.features.modules.hud.TabEditor;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 
 /** Drives the tab-list slide animation and renders the closing slide after the key is released. */
@@ -31,7 +32,7 @@ public final class TabListSlide {
             return;
         }
 
-        boolean keyPressed = client.options.playerListKey.isPressed();
+        boolean keyPressed = TabEditor.isListKeyDown(client);
         module.tickTabSlide(keyPressed);
 
         if (keyPressed && vanillaTabListWouldRender(client)) {
@@ -50,7 +51,7 @@ public final class TabListSlide {
             return;
         }
 
-        if (client.options.playerListKey.isPressed()) {
+        if (TabEditor.isListKeyDown(client)) {
             return;
         }
         if (!module.isTabSlideRendering(false)) {

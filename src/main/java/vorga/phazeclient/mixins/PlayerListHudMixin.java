@@ -1,5 +1,6 @@
 package vorga.phazeclient.mixins;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
@@ -13,98 +14,126 @@ import net.minecraft.text.MutableText;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.Formatting;
+import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 import vorga.phazeclient.base.util.PhazeBadgeUtil;
 import vorga.phazeclient.api.system.hud.ExordiumAnimationBridge;
-import vorga.phazeclient.implement.features.modules.hud.TabHud;
+import vorga.phazeclient.implement.features.modules.hud.TabEditor;
 import vorga.phazeclient.implement.features.modules.other.Animations;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
 
-import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collection;
 import java.util.List;
-import java.util.UUID;
 
 @Mixin(PlayerListHud.class)
 public class PlayerListHudMixin {
     @Unique
     private boolean phaze$tabTransformPushed = false;
+    @Unique
+    private List<PlayerListEntry> phaze$rowEntries;
+    @Unique
+    private int phaze$rowIndex;
 
-    @ModifyVariable(
-            method = "render",
-            at = @At("STORE"),
-            ordinal = 0
-    )
-    private List<PlayerListEntry> phaze$moveSelfToTop(List<PlayerListEntry> original) {
-        TabHud tabHud = TabHud.getInstance();
-        if (!tabHud.isEnabled() || !tabHud.showSelfOnTop.isValue()) {
-            return original;
-        }
-
+    @Inject(method = "collectPlayerEntries", at = @At("RETURN"), cancellable = true)
+    private void phaze$moveSelfToTop(CallbackInfoReturnable<List<PlayerListEntry>> cir) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || original == null || original.size() < 2) {
-            return original;
+        Collection<PlayerListEntry> listed = client.player == null ? null
+                : client.player.networkHandler.getListedPlayerListEntries();
+        List<PlayerListEntry> shown = TabEditor.getInstance().moveSelfFirst(cir.getReturnValue(), listed);
+        phaze$rowEntries = shown;
+        if (shown != cir.getReturnValue()) {
+            cir.setReturnValue(shown);
         }
-
-        UUID selfUuid = client.player.getUuid();
-        int selfIndex = -1;
-        for (int i = 0; i < original.size(); i++) {
-            if (original.get(i).getProfile().getId().equals(selfUuid)) {
-                selfIndex = i;
-                break;
-            }
-        }
-
-        if (selfIndex <= 0) {
-            return original;
-        }
-
-        List<PlayerListEntry> reordered = new ArrayList<>(original);
-        PlayerListEntry self = reordered.remove(selfIndex);
-        reordered.add(0, self);
-        return reordered;
     }
 
+    @ModifyExpressionValue(
+            method = "render",
+            at = @At(value = "FIELD", target = "Lnet/minecraft/client/gui/hud/PlayerListHud;header:Lnet/minecraft/text/Text;", opcode = Opcodes.GETFIELD)
+    )
+    private Text phaze$disableHeader(Text header) {
+        return TabEditor.getInstance().hidesHeader() ? null : header;
+    }
+
+    @ModifyExpressionValue(
+            method = "render",
+            at = @At(value = "FIELD", target = "Lnet/minecraft/client/gui/hud/PlayerListHud;footer:Lnet/minecraft/text/Text;", opcode = Opcodes.GETFIELD)
+    )
+    private Text phaze$disableFooter(Text footer) {
+        return TabEditor.getInstance().hidesFooter() ? null : footer;
+    }
+
+    @ModifyExpressionValue(
+            method = "render",
+            at = {
+                    @At(value = "INVOKE", target = "Lnet/minecraft/client/MinecraftClient;isInSingleplayer()Z"),
+                    @At(value = "INVOKE", target = "Lnet/minecraft/network/ClientConnection;isEncrypted()Z")
+            }
+    )
+    private boolean phaze$playerHeads(boolean original) {
+        return original && TabEditor.getInstance().showsPlayerHeads();
+    }
+
+    @ModifyExpressionValue(method = "render", at = @At(value = "CONSTANT", args = "intValue=13"))
+    private int phaze$pingSlotWidth(int original) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        return TabEditor.getInstance().pingSlotWidth(original, client.textRenderer);
+    }
+
+    // Vanilla fills the header, the list and the footer with this constant, in that order.
+    @ModifyExpressionValue(method = "render", at = @At(value = "CONSTANT", args = "intValue=-2147483648", ordinal = 0))
+    private int phaze$headerColor(int original) {
+        return TabEditor.getInstance().headerColor(original);
+    }
+
+    @ModifyExpressionValue(method = "render", at = @At(value = "CONSTANT", args = "intValue=-2147483648", ordinal = 1))
+    private int phaze$backgroundColor(int original) {
+        return TabEditor.getInstance().backgroundColor(original);
+    }
+
+    @ModifyExpressionValue(method = "render", at = @At(value = "CONSTANT", args = "intValue=-2147483648", ordinal = 2))
+    private int phaze$footerColor(int original) {
+        return TabEditor.getInstance().footerColor(original);
+    }
+
+    /** The third fill is the per-row strip; rows are drawn in list order, one fill each. */
+    @WrapOperation(
+            method = "render",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V", ordinal = 2)
+    )
+    private void phaze$rowColor(DrawContext context, int x1, int y1, int x2, int y2, int color, Operation<Void> operation) {
+        int row = phaze$rowIndex++;
+        List<PlayerListEntry> entries = phaze$rowEntries;
+        PlayerListEntry entry = entries != null && row < entries.size() ? entries.get(row) : null;
+        operation.call(context, x1, y1, x2, y2, TabEditor.getInstance().rowColor(color, entry));
+    }
 
     @Inject(method = "renderLatencyIcon", at = @At("HEAD"), cancellable = true)
     private void phaze$renderPingAsNumber(DrawContext context, int width, int x, int y, PlayerListEntry entry, CallbackInfo ci) {
-        TabHud tabHud = TabHud.getInstance();
-        if (!tabHud.isEnabled() || !tabHud.displayPingAsNumber.isValue()) {
+        TabEditor editor = TabEditor.getInstance();
+        if (!editor.isEnabled()) {
+            return;
+        }
+        ci.cancel();
+        int ping = entry.getLatency();
+        if (editor.hidesPing(ping)) {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.textRenderer == null) {
-            return;
-        }
-
-        int ping = Math.max(0, entry.getLatency());
-        int color = 0xFFFFFFFF;
-        if (tabHud.dynamicPingColor.isValue()) {
-            if (ping < 70) color = 0xFF55FF55;
-            else if (ping < 150) color = 0xFFFFFF55;
-            else if (ping < 300) color = 0xFFFFAA00;
-            else color = 0xFFFF5555;
-        }
-
+        TextRenderer renderer = MinecraftClient.getInstance().textRenderer;
         String text = String.valueOf(ping);
-        int textWidth = client.textRenderer.getWidth(text);
-        int textX = x + width - textWidth - 2;
+        int textWidth = renderer.getWidth(text);
+        int textX = x + width - textWidth - 1;
         ExordiumAnimationBridge.recordTabElement(
                 context, textX - 1.0F, y - 1.0F, textX + textWidth + 1.0F, y + 10.0F
         );
-        context.drawText(client.textRenderer, text, textX, y, phaze$applyTabAlpha(color), tabHud.pingNumberShadow.isValue());
-        ci.cancel();
+        context.drawText(renderer, text, textX, y, phaze$applyTabAlpha(editor.pingTextColor(ping)),
+                editor.pingNumberShadow.isValue());
     }
 
     /**
@@ -126,13 +155,17 @@ public class PlayerListHudMixin {
                                               net.minecraft.scoreboard.ScoreboardObjective objective,
                                               CallbackInfo ci) {
         phaze$tabTransformPushed = false;
+        phaze$rowIndex = 0;
     }
 
+    // Anchored on the header read, not the header fill: that fill is skipped
+    // when the server sends no header or Tab Editor hides it.
     @Inject(
             method = "render",
             at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V",
+                    value = "FIELD",
+                    target = "Lnet/minecraft/client/gui/hud/PlayerListHud;header:Lnet/minecraft/text/Text;",
+                    opcode = Opcodes.GETFIELD,
                     ordinal = 0
             ),
             locals = LocalCapture.CAPTURE_FAILHARD
@@ -212,26 +245,12 @@ public class PlayerListHudMixin {
     }
 
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
-    private void phaze$styleOwnName(PlayerListEntry entry, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Text> cir) {
-        TabHud tabHud = TabHud.getInstance();
-        if (!tabHud.isEnabled() || !tabHud.highlightOwn.isValue()) {
-            return;
-        }
-
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null) {
-            return;
-        }
-        if (!entry.getProfile().getId().equals(client.player.getUuid())) {
-            return;
-        }
-
+    private void phaze$styleOwnName(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
         Text original = cir.getReturnValue();
-        if (original == null) {
-            return;
+        Text styled = TabEditor.getInstance().styleOwnName(entry, original);
+        if (styled != original) {
+            cir.setReturnValue(styled);
         }
-        MutableText styled = original.copy().formatted(Formatting.AQUA, Formatting.BOLD);
-        cir.setReturnValue(styled);
     }
 
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
@@ -368,6 +387,9 @@ public class PlayerListHudMixin {
                     context, x - 2.5F, y - 2.5F, size,
                     PhazeBadgeUtil.alphaWhite(fadedColor), codeBadge
             );
+        }
+        if (!TabEditor.getInstance().drawsNameShadow()) {
+            return context.drawText(renderer, text, x, y, fadedColor, false);
         }
         return operation.call(context, renderer, text, x, y, fadedColor);
     }

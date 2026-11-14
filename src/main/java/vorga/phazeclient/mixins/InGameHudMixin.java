@@ -6,6 +6,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.InGameHud;
 import net.minecraft.client.gui.hud.PlayerListHud;
+import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.option.Perspective;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderTickCounter;
@@ -23,6 +24,7 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.features.modules.hud.PotionHud;
+import vorga.phazeclient.implement.features.modules.hud.TabEditor;
 import vorga.phazeclient.implement.features.modules.hud.ScoreboardHud;
 import vorga.phazeclient.implement.features.modules.other.Crosshair;
 import vorga.phazeclient.implement.features.modules.other.NickHider;
@@ -50,7 +52,16 @@ public class InGameHudMixin {
 
     @Inject(method = "render", at = @At("HEAD"))
     private void phaze$tabSlideTick(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        TabEditor.getInstance().pollToggle(this.client);
         TabListSlide.tick(this.client);
+    }
+
+    @WrapOperation(
+            method = "renderPlayerList",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/option/KeyBinding;isPressed()Z")
+    )
+    private boolean phaze$tabToggle(KeyBinding key, Operation<Boolean> operation) {
+        return TabEditor.isListKeyDown(this.client);
     }
 
     @Inject(method = "render", at = @At("TAIL"))

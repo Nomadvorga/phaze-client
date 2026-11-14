@@ -215,7 +215,8 @@ tasks.named('check') { dependsOn 'verifyWaypoints' }
     verifyHudEditorCache: 'vorga.phazeclient.api.system.hud.HudEditorCacheChecks',
     verifyHotbarPerformance: 'vorga.phazeclient.api.system.hud.HotbarPerformanceChecks',
     verifyHitRangeGeometry: 'vorga.phazeclient.implement.hitrange.HitRangeGeometryChecks',
-    verifyBadges: 'vorga.phazeclient.base.util.BadgeChecks'
+    verifyBadges: 'vorga.phazeclient.base.util.BadgeChecks',
+    verifyTabEditor: 'vorga.phazeclient.implement.features.modules.hud.TabEditorChecks'
 ].each { taskName, testMain ->
     tasks.register(taskName, JavaExec) {
         group = 'verification'

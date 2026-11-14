@@ -717,7 +717,7 @@ public final class CustomHudRenderer {
                         chatEditing, mouseX, mouseY, mouseDown, getHudDelta(DayCounterHud.getInstance(), chatEditing, deltaSeconds), inverseGuiScale, screenWidth, screenHeight, screenCenterX, screenCenterY,
                         getTextHudBaseWidth(client, dayTextWrapped), BASE_HEIGHT));
         // Direction HUD temporarily disabled by request.
-        // TabHud/NametagHud now affect vanilla TAB list and world nametags directly via dedicated mixins.
+        // TabEditor/NametagHud now affect vanilla TAB list and world nametags directly via dedicated mixins.
         String timeText = getTimeHudText(TimeHud.getInstance(), client);
         final String timeTextWrapped = wrapTextWithBrackets(timeText, TimeHud.getInstance());
         renderBufferedHud(context, TimeHud.getInstance(), chatEditing, () ->
@@ -983,7 +983,7 @@ public final class CustomHudRenderer {
      * <p>Filtering by {@code instanceof} restricts the walk to the two
      * HUD types that surface {@code hasActiveBackgroundBlur}
      * ({@link RectHudModule} + {@link ArmorHud}). Modules without a
-     * blur surface (e.g. {@code TabHud}, {@code NametagHud},
+     * blur surface (e.g. {@code TabEditor}, {@code NametagHud},
      * {@code Animations}) don't participate in the Pass split, so
      * skipping them costs nothing and keeps the per-frame walk cheap.
      */

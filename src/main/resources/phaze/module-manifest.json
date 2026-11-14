@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 14,
+  "manifestVersion": 15,
   "clientVersion": "1.2",
   "modules": [
     {
@@ -445,7 +445,7 @@
     },
     {
       "id": "tab_hud",
-      "name": "Tab",
+      "name": "Tab Editor",
       "category": "HUD"
     },
     {
