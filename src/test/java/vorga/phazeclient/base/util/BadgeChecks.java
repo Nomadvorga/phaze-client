@@ -5,6 +5,10 @@ import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -17,7 +21,80 @@ public final class BadgeChecks {
         senderLine();
         chatPlacement();
         detection();
+        raster();
         System.out.println("Badge checks passed: " + checks);
+    }
+
+    private static void raster() {
+        for (String name : new String[]{"user", "code"}) {
+            BufferedImage art = art(name);
+            int width = art.getWidth(), height = art.getHeight();
+            int[] argb = art.getRGB(0, 0, width, height, null, 0, width);
+            BadgeRaster.Square square = BadgeRaster.cropSquare(argb, width, height);
+            int size = square.size();
+            expect(size > 32 && size <= Math.max(width, height), name + " art is cropped to its letter");
+            expect(touches(square, true) || touches(square, false), name + " letter fills the square on its long side");
+
+            double fullCoverage = coverage(square.argb()) / (size * (double) size);
+            for (int target : new int[]{7, 8, 12, 14, 16, 21, 28, 35, 42}) {
+                int[] small = BadgeRaster.downsample(square, target);
+                expect(small.length == target * target, name + " " + target + "px has the asked size");
+                double smallCoverage = coverage(small) / (target * (double) target);
+                expect(Math.abs(smallCoverage - fullCoverage) < 1.5 / target, name + " " + target + "px keeps the letter's area");
+                boolean hardEdge = true;
+                for (int pixel : small) hardEdge &= (pixel >>> 24) == 0 || (pixel >>> 24) == 255;
+                expect(hardEdge, name + " " + target + "px has a hard outline");
+            }
+            expect(BadgeRaster.downsample(square, size + 10).length == size * size, name + " is never enlarged by filtering");
+        }
+
+        int[] flat = new int[16 * 16];
+        java.util.Arrays.fill(flat, 0xFF3A7BD5);
+        int[] reduced = BadgeRaster.downsample(new BadgeRaster.Square(16, flat), 5);
+        boolean exact = true;
+        for (int pixel : reduced) exact &= pixel == 0xFF3A7BD5;
+        expect(exact, "a flat colour stays exactly that colour");
+
+        int[] mostlyRed = {0xFFFF0000, 0xFFFF0000, 0xFFFF0000, 0};
+        expect(BadgeRaster.downsample(new BadgeRaster.Square(2, mostlyRed), 1)[0] == 0xFFFF0000,
+                "a mostly covered pixel is solid and clear pixels do not darken it");
+        int[] mostlyClear = {0xFFFF0000, 0, 0, 0};
+        expect(BadgeRaster.downsample(new BadgeRaster.Square(2, mostlyClear), 1)[0] == 0,
+                "a mostly clear pixel stays clear");
+
+        expect(java.util.Arrays.equals(BadgeRaster.plan(14, 46), new int[]{14, 1}), "small badges are drawn 1:1");
+        expect(java.util.Arrays.equals(BadgeRaster.plan(46, 46), new int[]{46, 1}), "full art is drawn 1:1");
+        int[] large = BadgeRaster.plan(100, 46);
+        expect(large[1] == 3 && large[0] <= 46 && Math.abs(large[0] * large[1] - 100) <= 2,
+                "larger than the art means whole-number blocks");
+    }
+
+    private static BufferedImage art(String name) {
+        try (InputStream stream = BadgeChecks.class.getResourceAsStream(
+                "/assets/phaze/textures/gui/phaze_" + name + "_badge_hd.png")) {
+            if (stream == null) throw new AssertionError("missing " + name + " badge art");
+            return ImageIO.read(stream);
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static boolean touches(BadgeRaster.Square square, boolean horizontal) {
+        int size = square.size();
+        boolean first = false, last = false;
+        for (int i = 0; i < size; i++) {
+            int a = horizontal ? square.argb()[i * size] : square.argb()[i];
+            int b = horizontal ? square.argb()[i * size + size - 1] : square.argb()[(size - 1) * size + i];
+            first |= (a >>> 24) != 0;
+            last |= (b >>> 24) != 0;
+        }
+        return first && last;
+    }
+
+    private static double coverage(int[] argb) {
+        double sum = 0;
+        for (int pixel : argb) sum += (pixel >>> 24) / 255.0;
+        return sum;
     }
 
     private static void senderLine() {

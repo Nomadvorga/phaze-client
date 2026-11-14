@@ -354,9 +354,8 @@ public class PlayerListHudMixin {
         if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
             context.draw();
             boolean codeBadge = PhazeBadgeUtil.isCodeBadgeUser(entry.getProfile().getName());
-            float size = PhazeBadgeUtil.guiBadgeSize(renderer);
             PhazeBadgeUtil.drawGuiBadge(
-                    context, x - 2.5F, y - 2.5F, size,
+                    context, x + 0.5F, y + 0.5F, PhazeBadgeUtil.GUI_BADGE_SIZE,
                     PhazeBadgeUtil.alphaWhite(fadedColor), codeBadge
             );
         }
