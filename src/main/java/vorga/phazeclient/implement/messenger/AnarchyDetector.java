@@ -17,8 +17,8 @@ import java.util.regex.Pattern;
 
 /**
  * Which anarchy of a multi-anarchy network the player is on, read from the
- * sidebar: FunTime shows "Анархия-103", HolyWorld ends the sidebar with the
- * mode and number ("ДуоЛайт #13", "Прайм #1"). Every anarchy of a network
+ * sidebar: FunTime shows "Анархия-103" (labelled "Анархия 103"), HolyWorld ends
+ * the sidebar with the mode and number ("ДуоЛайт #13", "Лайт(1.20) #1"). Every anarchy of a network
  * shares one address, so this label is what tells their worlds apart.
  *
  * <p>Scanned twice a second on the client thread. The label survives a sidebar
@@ -27,11 +27,15 @@ import java.util.regex.Pattern;
 public final class AnarchyDetector {
     private static final int SCAN_TICKS = 10;
     /** What a label may look like anywhere it travels: chat cards, the store key, the UI. */
-    public static final Pattern LABEL = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{N} #-]{0,23}");
+    public static final Pattern LABEL = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{N} #().-]{0,23}");
     private static final Pattern FUNTIME = Pattern.compile("Анархия\\s*[-–—#№:]?\\s*(\\d{1,4})",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
-    private static final Pattern HOLYWORLD = Pattern.compile("(\\p{L}{3,16})\\s*#\\s*(\\d{1,4})",
+    /** "ДуоЛайт #13", "Прайм #1", or a mode with its game version: "Лайт(1.20) #1". */
+    private static final Pattern HOLYWORLD = Pattern.compile(
+            "(\\p{L}{3,16})\\s*(\\(\\s*\\d{1,2}(?:\\.\\d{1,2}){0,2}\\s*\\))?\\s*#\\s*(\\d{1,4})",
             Pattern.UNICODE_CHARACTER_CLASS);
+    /** Cards from before the label lost its hyphen. */
+    private static final Pattern LEGACY_FUNTIME = Pattern.compile("Анархия-(\\d{1,4})");
 
     private enum Network { FUNTIME, HOLYWORLD }
 
@@ -42,7 +46,7 @@ public final class AnarchyDetector {
     private AnarchyDetector() {
     }
 
-    /** "Анархия-103", "КланЛайт #32", or null when unknown or not on such a network. */
+    /** "Анархия 103", "КланЛайт #32", or null when unknown or not on such a network. */
     public static String current() {
         return current;
     }
@@ -105,10 +109,19 @@ public final class AnarchyDetector {
         if (line == null || line.isEmpty()) return null;
         if (network == Network.FUNTIME) {
             Matcher matcher = FUNTIME.matcher(line);
-            return matcher.find() ? valid("Анархия-" + Integer.parseInt(matcher.group(1))) : null;
+            return matcher.find() ? valid("Анархия " + Integer.parseInt(matcher.group(1))) : null;
         }
         Matcher matcher = HOLYWORLD.matcher(line);
-        return matcher.find() ? valid(matcher.group(1) + " #" + Integer.parseInt(matcher.group(2))) : null;
+        if (!matcher.find()) return null;
+        String version = matcher.group(2) == null ? "" : matcher.group(2).replaceAll("\\s+", "");
+        return valid(matcher.group(1) + version + " #" + Integer.parseInt(matcher.group(3)));
+    }
+
+    /** A label as cards carry it, in today's spelling: "Анархия-103" reads as "Анархия 103". */
+    public static String normalize(String label) {
+        if (label == null) return null;
+        Matcher legacy = LEGACY_FUNTIME.matcher(label);
+        return legacy.matches() ? "Анархия " + legacy.group(1) : label;
     }
 
     /** The same parsing the sidebar scan uses, for one line. */

@@ -76,7 +76,10 @@ public final class MessengerViewComponent extends AbstractComponent {
     /** Wrapped text keeps this distance from the list's right (scissor) edge. */
     private static final float MESSAGE_TEXT_RIGHT_INSET = 2.0F;
     private static final int WRAP_CACHE_LIMIT = 512;
-    private static final float COMPACT_FRIEND_NAME_OFFSET = (18.0F - (7.0F + 4.8F)) / 2.0F;
+    private static final float COMPACT_FRIEND_ROW = 18.0F;
+    private static final float COMPACT_FRIEND_STEP = 20.0F;
+    private static final float COMPACT_FRIEND_HEADER = 14.0F;
+    private static final float COMPACT_FRIEND_NAME_OFFSET = (COMPACT_FRIEND_ROW - (7.0F + 4.8F)) / 2.0F;
     private static final float COMPACT_FRIEND_STATUS_OFFSET = COMPACT_FRIEND_NAME_OFFSET + 7.0F;
     private static final float FRIEND_CARD_HEIGHT = AbstractSettingComponent.ROW_HEIGHT;
     private static final float DIRECT_CARD_HEIGHT = FRIEND_CARD_HEIGHT;
@@ -121,6 +124,8 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final float GEAR_SIZE = 13.0F;
     private static final float GEAR_ICON_SIZE = 7.6F;
     private static final float UNREAD_HEIGHT = 9.0F;
+    /** Digits have no descenders, so the generic MSDF centring leaves them low by about this much. */
+    private static final float UNREAD_DIGIT_LIFT = -0.45F;
     private static final float ADD_BUTTON_WIDTH = 52.0F;
     /** The nickname field, then one line for its result, then the request cards. */
     private static final float ADD_ROW_RESERVE = MessengerTextField.HEIGHT + 11.0F;
@@ -163,6 +168,8 @@ public final class MessengerViewComponent extends AbstractComponent {
     /** Scroll of the card lists and forms; messages keep their own bottom-anchored scroll. */
     private double listScroll;
     private double membersScroll;
+    /** The sidebar friend list; it used to stop at five and left the next card clickable but undrawn. */
+    private double friendsScroll;
     private final Map<Long, WrappedText> wrapCache = new LinkedHashMap<>(64, 0.75F, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<Long, WrappedText> eldest) {
@@ -455,28 +462,57 @@ public final class MessengerViewComponent extends AbstractComponent {
                                      int mouseX, int mouseY) {
         drawText(context, Lang.t("messenger.friends"), listX + 2.0F, listY, 5.6F, MenuStyle.TEXT_PRIMARY, true);
         List<MessengerService.Friend> friends = service.getFriends();
-        float rowY = listY + 14.0F;
-        int shown = 0;
-        for (MessengerService.Friend friend : friends) {
-            if (rowY + 18.0F > bottom || shown++ >= 5) break;
-            renderCompactFriend(context, friend, listX, rowY, listW, mouseX, mouseY);
-            rowY += 20.0F;
-        }
+        float listTop = listY + COMPACT_FRIEND_HEADER;
         if (friends.isEmpty()) {
-            drawText(context, Lang.t("messenger.no_friends"), listX + 2.0F, rowY, 5.2F, MenuStyle.TEXT_MUTED, false);
+            drawText(context, Lang.t("messenger.no_friends"), listX + 2.0F, listTop, 5.2F, MenuStyle.TEXT_MUTED, false);
+            return;
         }
+        float offset = clampFriendsScroll(friends.size(), bottom - listTop);
+        listClipTop = listTop;
+        listClipBottom = bottom;
+        context.enableScissor((int) listX, (int) listTop, (int) (listX + listW), (int) bottom);
+        for (int index = 0; index < friends.size(); index++) {
+            float rowY = listTop - offset + index * COMPACT_FRIEND_STEP;
+            if (rowY + COMPACT_FRIEND_ROW < listTop || rowY > bottom) continue;
+            renderCompactFriend(context, friends.get(index), listX, rowY, listW, mouseX, mouseY);
+        }
+        context.disableScissor();
+    }
+
+    /** Keeps the sidebar list inside its viewport; shared by drawing, clicking and the wheel. */
+    private float clampFriendsScroll(int count, float viewport) {
+        float total = count == 0 ? 0.0F : (count - 1) * COMPACT_FRIEND_STEP + COMPACT_FRIEND_ROW;
+        friendsScroll = Math.max(0.0D, Math.min(Math.max(0.0D, total - viewport), friendsScroll));
+        return (float) friendsScroll;
+    }
+
+    /**
+     * The friend under the pointer, or -1. A card the viewport clips away has no hitbox:
+     * only the part that is actually on screen can be clicked.
+     */
+    private int friendPreviewIndex(double mouseX, double mouseY, float listX, float listTop,
+                                   float listW, float listBottom) {
+        float viewport = listBottom - listTop;
+        if (viewport <= 0.0F || !inside(mouseX, mouseY, listX, listTop, listW, viewport)) return -1;
+        List<MessengerService.Friend> friends = service.getFriends();
+        float offset = clampFriendsScroll(friends.size(), viewport);
+        int index = (int) ((mouseY - listTop + offset) / COMPACT_FRIEND_STEP);
+        if (index < 0 || index >= friends.size()) return -1;
+        float rowY = listTop - offset + index * COMPACT_FRIEND_STEP;
+        if (rowY >= listBottom || rowY + COMPACT_FRIEND_ROW <= listTop) return -1;
+        return inside(mouseX, mouseY, listX, rowY, listW, COMPACT_FRIEND_ROW) ? index : -1;
     }
 
     private void renderCompactFriend(DrawContext context, MessengerService.Friend friend,
                                       float rowX, float rowY, float rowW, int mouseX, int mouseY) {
-        boolean hovered = inside(mouseX, mouseY, rowX, rowY, rowW, 18.0F);
+        boolean hovered = insideList(mouseX, mouseY, rowX, rowY, rowW, COMPACT_FRIEND_ROW);
         float hover = animatedHover("compact:" + friend.id(), hovered);
-        if (hover > 0.0F) drawChatCard(context, rowX, rowY, rowW, 18.0F, hover, hover);
+        if (hover > 0.0F) drawChatCard(context, rowX, rowY, rowW, COMPACT_FRIEND_ROW, hover, hover);
         renderAvatar(context, rowX, rowY, 15.0F, friend.id(), friend.username());
         drawMarqueeLabel(context, "compact:" + friend.id(), friend.username(), 5.0F,
                 rowX + 20.0F, rowY + COMPACT_FRIEND_NAME_OFFSET, rowX + rowW, rowY, 12.0F,
                 MenuStyle.TEXT_PRIMARY, false,
-                inside(mouseX, mouseY, rowX + 18.0F, rowY, rowW - 18.0F, 18.0F));
+                insideList(mouseX, mouseY, rowX + 18.0F, rowY, rowW - 18.0F, COMPACT_FRIEND_ROW));
         drawStatus(context, rowX + 20.0F, rowY + COMPACT_FRIEND_STATUS_OFFSET, service.isUserOnline(friend.id()),
                 serverName(friend.id()), rowW - 21.0F);
     }
@@ -1054,7 +1090,11 @@ public final class MessengerViewComponent extends AbstractComponent {
         float pillY = centerY - UNREAD_HEIGHT / 2.0F;
         rectangle.render(ShapeProperties.create(context.getMatrices(), pillX, pillY, w, UNREAD_HEIGHT)
                 .round(UNREAD_HEIGHT / 2.0F).color(applyGlobalAlpha(MenuStyle.CHIP_ACTIVE)).build());
-        drawCentered(context, text, pillX, pillY, w, UNREAD_HEIGHT, 4.6F, 0xFFFFFFFF, true);
+        // Centred on the visible glyphs, not their advance: a lone "1" would otherwise sit off-centre.
+        MsdfFont font = MsdfFonts.bold();
+        float textX = pillX + w / 2.0F - (font.getInkLeft(text, 4.6F) + font.getInkRight(text, 4.6F)) / 2.0F;
+        float textY = MenuStyle.centerMsdfTextY(4.6F, pillY, UNREAD_HEIGHT, UNREAD_DIGIT_LIFT);
+        drawText(context, text, textX, textY, 4.6F, 0xFFFFFFFF, true);
         return w;
     }
 
@@ -1168,17 +1208,20 @@ public final class MessengerViewComponent extends AbstractComponent {
 
     private String attachmentDetail(MessengerService.Attachment attachment) {
         if ("config".equals(attachment.type())) return Lang.t("messenger.config_card") + " · " + attachment.configId();
-        String detail = attachment.x() + " " + attachment.y() + " " + attachment.z() + " · " + dimensionLabel(attachment.dimension());
+        String detail = attachment.x() + " " + attachment.y() + " " + attachment.z();
+        String dimension = dimensionLabel(attachment.dimension());
+        if (dimension != null) detail = detail + " · " + dimension;
         String where = ChatWorld.label(attachment.server(), attachment.realm());
         return where == null ? detail : detail + " · " + where;
     }
 
+    /** Only the three vanilla worlds are named; a server's own ("lobby", "spawn_world") says nothing useful. */
     private static String dimensionLabel(String dimension) {
         return switch (dimension) {
             case "minecraft:overworld" -> Lang.t("messenger.dim_overworld");
             case "minecraft:the_nether" -> Lang.t("messenger.dim_nether");
             case "minecraft:the_end" -> Lang.t("messenger.dim_end");
-            default -> dimension.substring(dimension.indexOf(':') + 1);
+            default -> null;
         };
     }
 
@@ -1701,7 +1744,9 @@ public final class MessengerViewComponent extends AbstractComponent {
         }
         ActionMessage message = actionMessage;
         if (form != Form.SETTINGS && message != null && System.currentTimeMillis() - message.shownAt() < MESSAGE_VISIBLE_MS) {
-            drawText(context, fitSingleLine(message.text(), contentW - 4.0F, 4.8F, "..."), contentX + 2.0F,
+            String line = fitSingleLine(message.text(), contentW - 4.0F, 4.8F, "...");
+            float lineW = MsdfFonts.medium().getWidth(line, 4.8F);
+            drawText(context, line, contentX + (contentW - lineW) / 2.0F,
                     bottom - FORM_BUTTON_HEIGHT - 4.0F - 4.8F, 4.8F, message.color(), false);
         }
     }
@@ -2104,7 +2149,7 @@ public final class MessengerViewComponent extends AbstractComponent {
             if (!confirm("group:leave")) return;
             service.leaveGroup(group.id(), success -> {
                 if (success) pendingCloseGroup = true;
-                else showActionError(actionErrorFor(service.getStatus()));
+                else showInputNotice(actionErrorFor(service.getStatus()));
             });
         }));
         if (mine != null && mine.isOwner()) {
@@ -2112,7 +2157,7 @@ public final class MessengerViewComponent extends AbstractComponent {
                 if (!confirm("group:delete")) return;
                 service.deleteGroup(group.id(), success -> {
                     if (success) pendingCloseGroup = true;
-                    else showActionError(actionErrorFor(service.getStatus()));
+                    else showInputNotice(actionErrorFor(service.getStatus()));
                 });
             }));
         }
@@ -2166,12 +2211,6 @@ public final class MessengerViewComponent extends AbstractComponent {
             DetailButton button = buttons.get(index);
             renderActionButton(context, button.key(), armedLabel(button), panelX, buttonsTop + index * DETAIL_BUTTON_STEP,
                     panelW, mouseX, mouseY, button.style() == STYLE_ACTIVE, button.style() == STYLE_DESTRUCTIVE);
-        }
-        ActionMessage message = actionMessage;
-        if (message != null && System.currentTimeMillis() - message.shownAt() < MESSAGE_VISIBLE_MS) {
-            drawCentered(context, fitSingleLine(message.text(), panelW, ACTION_MESSAGE_SIZE, "..."), panelX,
-                    buttonsTop - 6.0F - ACTION_MESSAGE_SIZE - 2.0F, panelW, ACTION_MESSAGE_SIZE + 2.0F,
-                    ACTION_MESSAGE_SIZE, message.color(), false);
         }
     }
 
@@ -2386,14 +2425,13 @@ public final class MessengerViewComponent extends AbstractComponent {
             }
         }
 
-        float previewY = pageY + FRIEND_PREVIEW_TOP_OFFSET + 14.0F;
-        List<MessengerService.Friend> previewFriends = service.getFriends();
-        for (int index = 0; index < Math.min(5, previewFriends.size()); index++) {
-            if (inside(mouseX, mouseY, leftX, previewY + index * 20.0F,
-                    LEFT_WIDTH - PANEL_PAD * 2.0F, 18.0F)) {
-                selectProfile(previewFriends.get(index).id(), previewFriends.get(index).username());
-                return true;
-            }
+        float previewTop = pageY + FRIEND_PREVIEW_TOP_OFFSET + COMPACT_FRIEND_HEADER;
+        int friendIndex = friendPreviewIndex(mouseX, mouseY, leftX, previewTop,
+                LEFT_WIDTH - PANEL_PAD * 2.0F, pageY + pageH - PANEL_PAD);
+        if (friendIndex >= 0) {
+            MessengerService.Friend friend = service.getFriends().get(friendIndex);
+            selectProfile(friend.id(), friend.username());
+            return true;
         }
 
         if (clickDetails(mouseX, mouseY, rightX + PANEL_PAD, pageY + PANEL_PAD,
@@ -2707,7 +2745,17 @@ public final class MessengerViewComponent extends AbstractComponent {
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         if (!open) return false;
         float pageX = x + SIDE;
+        float pageY = y + TOP;
         float pageW = width - SIDE * 2.0F;
+        float pageH = height - TOP - SIDE;
+        float previewTop = pageY + FRIEND_PREVIEW_TOP_OFFSET + COMPACT_FRIEND_HEADER;
+        float previewBottom = pageY + pageH - PANEL_PAD;
+        if (inside(mouseX, mouseY, pageX + PANEL_PAD, previewTop, LEFT_WIDTH - PANEL_PAD * 2.0F,
+                Math.max(0.0F, previewBottom - previewTop))) {
+            friendsScroll = Math.max(0.0D, friendsScroll - amount * COMPACT_FRIEND_STEP);
+            clampFriendsScroll(service.getFriends().size(), previewBottom - previewTop);
+            return true;
+        }
         float rightX = pageX + pageW - RIGHT_WIDTH;
         if (mouseX >= rightX) {
             if (!groupPanelVisible()) return false;

@@ -1762,7 +1762,8 @@ public final class MessengerService {
                     int display = object.has("display") ? object.get("display").getAsInt() : -1;
                     String realm = object.has("realm") && object.get("realm").isJsonPrimitive()
                             ? object.get("realm").getAsString() : null;
-                    if (!vorga.phazeclient.implement.messenger.AnarchyDetector.isValidLabel(realm)) realm = null;
+                    realm = vorga.phazeclient.implement.messenger.AnarchyDetector.isValidLabel(realm)
+                            ? vorga.phazeclient.implement.messenger.AnarchyDetector.normalize(realm) : null;
                     yield new Attachment(type, serverKey, dimension, x, y, z, null, server,
                             color >= 0 && color <= 0xFFFFFF ? color : -1, display >= 0 && display <= 15 ? display : -1, realm);
                 }

@@ -57,10 +57,14 @@ public class WaypointEditorModal extends AbstractComponent {
     private static final float BODY_SIZE = 6.2F;
     private static final float BUTTON_H = 16.0F;
     private static final float CHECK_SIZE = 9.0F;
-    private static final float OPTION_H = 15.0F;
     private static final int HOVER_MS = 160;
     private static final long CONFIRM_MS = 3000L;
     private static final int DANGER = 0xFFE05050;
+    private static final float ARROW_HIT = 14.0F;
+    private static final float ARROW_SIZE = 7.0F;
+    private static final float DIMENSION_TEXT = 6.1F;
+    private static final float DIMENSION_SLIDE = 6.0F;
+    private static final int DIMENSION_SLIDE_MS = 180;
 
     private static final Identifier CLOSE_ICON = Identifier.of("phaze", "textures/menu/cross.png");
     private static final Identifier CHECK_ICON = Identifier.of("phaze", "textures/menu/check.png");
@@ -82,7 +86,9 @@ public class WaypointEditorModal extends AbstractComponent {
     private final MessengerTextField xField = coordinateField();
     private final MessengerTextField yField = coordinateField();
     private final MessengerTextField zField = coordinateField();
-    private final List<String> dimensionOptions = new ArrayList<>();
+    private final Animation dimensionSlide = new DecelerateAnimation().setMs(DIMENSION_SLIDE_MS).setValue(1);
+    private String previousDimension;
+    private int slideDirection;
 
     private boolean open;
     private float alpha;
@@ -94,7 +100,6 @@ public class WaypointEditorModal extends AbstractComponent {
     private String dimension = DIMENSIONS[0];
     private int color;
     private boolean showText, highlight, showBeam, showDistance;
-    private boolean dimensionOpen;
     private long deleteArmedUntil;
     private String error;
     private ColorSetting colorSetting;
@@ -198,7 +203,7 @@ public class WaypointEditorModal extends AbstractComponent {
         xField.setFocused(false);
         yField.setFocused(false);
         zField.setFocused(false);
-        dimensionOpen = false;
+        previousDimension = null;
         deleteArmedUntil = 0L;
         error = null;
         colorSetting = null;
@@ -213,7 +218,6 @@ public class WaypointEditorModal extends AbstractComponent {
         open = false;
         onSubmit = null;
         onDelete = null;
-        dimensionOpen = false;
         openAnimation.setDirection(Direction.BACKWARDS);
         closeColorPicker();
     }
@@ -260,7 +264,6 @@ public class WaypointEditorModal extends AbstractComponent {
             renderCoordinates(context, mx, my, mouseX, mouseY);
             renderDisplay(context, mx, my, mouseX, mouseY);
             renderFooter(context, mx, my, mouseX, mouseY);
-            if (dimensionOpen) renderDimensionList(context, mx, my, mouseX, mouseY);
         } finally {
             matrices.pop();
         }
@@ -331,17 +334,76 @@ public class WaypointEditorModal extends AbstractComponent {
 
         float rightX = rightColumnX(mx);
         sectionLabel(context, DIMENSION_ICON, Lang.t("waypoints.dimension"), rightX, my + 76.0F);
-        float[] box = dimensionBox(mx, my);
-        float boxHover = hover("dimension", inside(mouseX, mouseY, box));
-        int border = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, dimensionOpen ? 0.65F : boxHover * 0.35F);
+        renderDimensionSelector(context, dimensionBox(mx, my), mouseX, mouseY);
+        divider(context, mx + PAD, my + 116.0F, W - PAD * 2.0F);
+    }
+
+    /** "<  Overworld  >" like the module mode settings: the arrows at the edges cycle, the name slides. */
+    private void renderDimensionSelector(DrawContext context, float[] box, int mouseX, int mouseY) {
+        MatrixStack matrices = context.getMatrices();
         rectangle.render(ShapeProperties.create(matrices, box[0], box[1], box[2], box[3])
                 .round(4.0F).thickness(1.5F)
-                .outlineColor(MenuStyle.withAlpha(border, alpha))
-                .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.CARD_INNER, 0xFFFFFFFF, boxHover * 0.04F), alpha)).build());
-        text(context, MsdfFonts.medium(), fit(dimensionLabel(dimension), box[2] - 22.0F, 6.4F), 6.4F, box[0] + 7.0F,
-                MenuStyle.centerMsdfTextY(6.4F, box[1], box[3]), MenuStyle.TEXT_PRIMARY);
-        chevron(context, box[0] + box[2] - 10.0F, box[1] + box[3] / 2.0F, dimensionOpen);
-        divider(context, mx + PAD, my + 116.0F, W - PAD * 2.0F);
+                .outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER, alpha))
+                .color(MenuStyle.withAlpha(MenuStyle.CARD_INNER, alpha)).build());
+        float arrowY = MenuStyle.centerMsdfTextY(ARROW_SIZE, box[1], box[3]);
+        float left = hover("dim:prev", inside(mouseX, mouseY, previousArrow(box)));
+        float right = hover("dim:next", inside(mouseX, mouseY, nextArrow(box)));
+        text(context, MsdfFonts.bold(), "<", ARROW_SIZE, box[0] + 5.0F, arrowY,
+                MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, 0.7F + 0.3F * left));
+        text(context, MsdfFonts.bold(), ">", ARROW_SIZE, box[0] + box[2] - 5.0F - MsdfFonts.bold().getWidth(">", ARROW_SIZE),
+                arrowY, MenuStyle.withAlpha(MenuStyle.CHIP_ACTIVE, 0.7F + 0.3F * right));
+
+        float areaX = box[0] + ARROW_HIT;
+        float areaW = box[2] - ARROW_HIT * 2.0F;
+        float textY = MenuStyle.centerMsdfTextY(DIMENSION_TEXT, box[1], box[3]);
+        float progress = dimensionSlide.getOutputFloat();
+        if (previousDimension != null && progress < 1.0F) {
+            dimensionLabelAt(context, previousDimension, areaX, areaW, textY,
+                    progress * DIMENSION_SLIDE * slideDirection, 1.0F - progress);
+            dimensionLabelAt(context, dimension, areaX, areaW, textY,
+                    (1.0F - progress) * DIMENSION_SLIDE * -slideDirection, progress);
+        } else {
+            previousDimension = null;
+            dimensionLabelAt(context, dimension, areaX, areaW, textY, 0.0F, 1.0F);
+        }
+    }
+
+    private void dimensionLabelAt(DrawContext context, String value, float areaX, float areaW, float textY,
+                                  float slide, float opacity) {
+        String label = fitBold(dimensionLabel(value), areaW, DIMENSION_TEXT);
+        float labelX = areaX + (areaW - MsdfFonts.bold().getWidth(label, DIMENSION_TEXT)) / 2.0F + slide;
+        text(context, MsdfFonts.bold(), label, DIMENSION_TEXT, labelX, textY,
+                MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, opacity));
+    }
+
+    private static float[] previousArrow(float[] box) {
+        return new float[]{box[0], box[1], ARROW_HIT, box[3]};
+    }
+
+    private static float[] nextArrow(float[] box) {
+        return new float[]{box[0] + box[2] - ARROW_HIT, box[1], ARROW_HIT, box[3]};
+    }
+
+    /** The vanilla worlds, plus the one the player or the point is in when it is a server's own. */
+    private List<String> dimensionChoices() {
+        List<String> choices = new ArrayList<>(List.of(DIMENSIONS));
+        String here = ChatWorld.dimension();
+        if (here != null && !choices.contains(here)) choices.add(here);
+        if (!choices.contains(dimension)) choices.add(dimension);
+        return choices;
+    }
+
+    private void cycleDimension(int direction) {
+        List<String> choices = dimensionChoices();
+        int index = choices.indexOf(dimension);
+        String next = choices.get(Math.floorMod(index + direction, choices.size()));
+        if (next.equals(dimension)) return;
+        previousDimension = dimension;
+        slideDirection = direction;
+        dimension = next;
+        dimensionSlide.reset();
+        dimensionSlide.setDirection(Direction.BACKWARDS);
+        dimensionSlide.setDirection(Direction.FORWARDS);
     }
 
     private void renderDisplay(DrawContext context, float mx, float my, int mouseX, int mouseY) {
@@ -389,33 +451,6 @@ public class WaypointEditorModal extends AbstractComponent {
             boolean armed = System.currentTimeMillis() < deleteArmedUntil;
             actionButton(context, "delete", delete, TRASH_ICON,
                     Lang.t(armed ? "waypoints.delete_confirm" : "waypoints.delete"), DANGER, mouseX, mouseY);
-        }
-    }
-
-    private void renderDimensionList(DrawContext context, float mx, float my, int mouseX, int mouseY) {
-        MatrixStack matrices = context.getMatrices();
-        float[] box = dimensionBox(mx, my);
-        float listY = box[1] + box[3] + 2.0F;
-        float listH = dimensionOptions.size() * OPTION_H + 4.0F;
-        float innerAlpha = ((MenuStyle.CARD_INNER >>> 24) & 0xFF) / 255.0F;
-        int solid = opaque(MenuStyle.mix(MenuStyle.PANEL_BG, MenuStyle.CARD_INNER, innerAlpha));
-        rectangle.render(ShapeProperties.create(matrices, box[0], listY, box[2], listH)
-                .round(4.0F).thickness(1.5F)
-                .outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER_LIGHT, alpha))
-                .color(MenuStyle.withAlpha(solid, alpha)).build());
-        for (int index = 0; index < dimensionOptions.size(); index++) {
-            String option = dimensionOptions.get(index);
-            float optionY = listY + 2.0F + index * OPTION_H;
-            float hover = hover("dim:" + option, MathUtil.isHovered(mouseX, mouseY, box[0], optionY, box[2], OPTION_H));
-            boolean selected = option.equals(dimension);
-            if (hover > 0.0F || selected) {
-                int fill = MenuStyle.mix(solid, MenuStyle.CHIP_ACTIVE, selected ? 0.35F : 0.18F * hover);
-                rectangle.render(ShapeProperties.create(matrices, box[0] + 2.0F, optionY, box[2] - 4.0F, OPTION_H)
-                        .round(3.0F).color(MenuStyle.withAlpha(fill, alpha)).build());
-            }
-            text(context, MsdfFonts.medium(), fit(dimensionLabel(option), box[2] - 14.0F, 6.2F), 6.2F, box[0] + 7.0F,
-                    MenuStyle.centerMsdfTextY(6.2F, optionY, OPTION_H),
-                    MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, selected ? 1.0F : 0.6F + hover * 0.4F));
         }
     }
 
@@ -475,17 +510,6 @@ public class WaypointEditorModal extends AbstractComponent {
                 .color(MenuStyle.withAlpha(MenuStyle.BORDER, alpha)).build());
     }
 
-    /** A small triangle made of three bars; flips while the list is open. */
-    private void chevron(DrawContext context, float centerX, float centerY, boolean up) {
-        int color = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, alpha);
-        for (int row = 0; row < 3; row++) {
-            float barW = 5.0F - row * 2.0F;
-            float barY = up ? centerY + 1.0F - row : centerY - 1.0F + row;
-            rectangle.render(ShapeProperties.create(context.getMatrices(), centerX - barW / 2.0F, barY, barW, 1.0F)
-                    .color(color).build());
-        }
-    }
-
     private void text(DrawContext context, MsdfFont font, String value, float size, float textX, float textY, int color) {
         MsdfRenderer.renderText(font, value, size, MenuStyle.withAlpha(color, alpha),
                 context.getMatrices().peek().getPositionMatrix(), textX, textY, 0.0F);
@@ -496,6 +520,14 @@ public class WaypointEditorModal extends AbstractComponent {
         if (MsdfFonts.medium().getWidth(value, size) <= maxWidth) return value;
         String cut = value;
         while (cut.length() > 1 && MsdfFonts.medium().getWidth(cut + "...", size) > maxWidth) cut = cut.substring(0, cut.length() - 1);
+        return cut + "...";
+    }
+
+    private static String fitBold(String value, float maxWidth, float size) {
+        if (value == null) return "";
+        if (MsdfFonts.bold().getWidth(value, size) <= maxWidth) return value;
+        String cut = value;
+        while (cut.length() > 1 && MsdfFonts.bold().getWidth(cut + "...", size) > maxWidth) cut = cut.substring(0, cut.length() - 1);
         return cut + "...";
     }
 
@@ -559,18 +591,6 @@ public class WaypointEditorModal extends AbstractComponent {
         if (button != 0) return true;
         float mx = modalX();
         float my = modalY();
-        if (dimensionOpen) {
-            float[] box = dimensionBox(mx, my);
-            float listY = box[1] + box[3] + 2.0F;
-            for (int index = 0; index < dimensionOptions.size(); index++) {
-                if (MathUtil.isHovered(mouseX, mouseY, box[0], listY + 2.0F + index * OPTION_H, box[2], OPTION_H)) {
-                    playButtonClickSound();
-                    dimension = dimensionOptions.get(index);
-                }
-            }
-            dimensionOpen = false;
-            return true;
-        }
         if (!MathUtil.isHovered(mouseX, mouseY, mx, my, W, H) || inside(mouseX, mouseY, closeButton(mx, my))) {
             playButtonClickSound();
             close();
@@ -583,8 +603,9 @@ public class WaypointEditorModal extends AbstractComponent {
         if (inside(mouseX, mouseY, currentButton(mx, my))) {
             setToCurrent();
         } else if (inside(mouseX, mouseY, dimensionBox(mx, my))) {
+            // Like the module selectors: the left arrow goes back, anywhere else forward.
             playButtonClickSound();
-            openDimensionList();
+            cycleDimension(inside(mouseX, mouseY, previousArrow(dimensionBox(mx, my))) ? -1 : 1);
         } else if (inside(mouseX, mouseY, swatch(mx, my)) || inside(mouseX, mouseY, changeButton(mx, my))) {
             playButtonClickSound();
             toggleColorPicker(swatch(mx, my));
@@ -614,8 +635,7 @@ public class WaypointEditorModal extends AbstractComponent {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (!open) return false;
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            if (dimensionOpen) dimensionOpen = false;
-            else close();
+            close();
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
@@ -690,15 +710,6 @@ public class WaypointEditorModal extends AbstractComponent {
         if (rounded == Math.rint(rounded)) return Long.toString((long) rounded);
         String text = String.format(Locale.ROOT, "%.2f", rounded);
         return text.endsWith("0") ? text.substring(0, text.length() - 1) : text;
-    }
-
-    private void openDimensionList() {
-        dimensionOptions.clear();
-        for (String option : DIMENSIONS) dimensionOptions.add(option);
-        String here = ChatWorld.dimension();
-        if (here != null && !dimensionOptions.contains(here)) dimensionOptions.add(here);
-        if (!dimensionOptions.contains(dimension)) dimensionOptions.add(dimension);
-        dimensionOpen = !dimensionOpen;
     }
 
     private void toggleColorPicker(float[] anchor) {

@@ -279,6 +279,8 @@ public final class MsdfFont {
                 }
             }
 
+            addMiddleDot(data, glyphs);
+
             Int2ObjectMap<Int2FloatMap> kernings = new Int2ObjectOpenHashMap<>();
             for (var kerning : data.kernings()) {
                 Int2FloatMap map = kernings.get(kerning.leftChar());
@@ -290,6 +292,23 @@ public final class MsdfFont {
             }
 
             return new MsdfFont(texture, data.atlas(), glyphs, kernings, planeTop, planeBottom);
+        }
+
+        /**
+         * The UI separates fields with " · ", which these atlases do not contain: without this it
+         * renders as a plain double space. The period is lifted to the middle of the x-height.
+         */
+        private static void addMiddleDot(FontData data, Int2ObjectMap<MsdfGlyph> glyphs) {
+            if (glyphs.containsKey(0xB7) || !glyphs.containsKey('.')) return;
+            FontData.BoundsData period = null;
+            FontData.BoundsData x = null;
+            for (var glyphData : data.glyphs()) {
+                if (glyphData.unicode() == '.') period = glyphData.planeBounds();
+                else if (glyphData.unicode() == 'x') x = glyphData.planeBounds();
+            }
+            if (period == null || x == null) return;
+            float raise = (x.top() + x.bottom()) / 2.0F - (period.top() + period.bottom()) / 2.0F;
+            glyphs.put(0xB7, glyphs.get('.').raised(raise));
         }
     }
 }

@@ -146,8 +146,9 @@ public class WaypointListComponent extends AbstractSettingComponent {
         float textW = rowW - 18.0F - rightW - iconSpace - 6.0F;
         text(matrices, MsdfFonts.bold(), fit(waypoint.name(), textW, 6.0F), 6.0F, textX, rowY + 3.0F,
                 sameDimension ? primaryText() : mutedText());
-        String detail = waypoint.blockX() + " " + waypoint.blockY() + " " + waypoint.blockZ() + " · "
-                + dimensionLabel(waypoint.dimension());
+        String dimensionName = dimensionLabel(waypoint.dimension());
+        String detail = waypoint.blockX() + " " + waypoint.blockY() + " " + waypoint.blockZ()
+                + (dimensionName == null ? "" : " · " + dimensionName);
         text(matrices, MsdfFonts.medium(), fit(detail, textW, 4.9F), 4.9F, textX, rowY + 11.5F, mutedText());
         if (!distance.isEmpty()) {
             text(matrices, MsdfFonts.medium(), distance, 5.4F, rowX + rowW - rightW - iconSpace - 2.0F,
@@ -211,7 +212,7 @@ public class WaypointListComponent extends AbstractSettingComponent {
             case "minecraft:overworld" -> Lang.t("messenger.dim_overworld");
             case "minecraft:the_nether" -> Lang.t("messenger.dim_nether");
             case "minecraft:the_end" -> Lang.t("messenger.dim_end");
-            default -> dimension.substring(dimension.indexOf(':') + 1);
+            default -> null;
         };
     }
 }

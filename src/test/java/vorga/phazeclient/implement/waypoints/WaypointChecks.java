@@ -28,14 +28,19 @@ public final class WaypointChecks {
     }
 
     private static void anarchies() {
-        expect("Анархия-103".equals(AnarchyDetector.parseFunTime("Анархия-103")), "FunTime anarchy line");
-        expect("Анархия-7".equals(AnarchyDetector.parseFunTime(" ⚔ АНАРХИЯ #007 ")), "FunTime case, '#' and zeros");
+        expect("Анархия 103".equals(AnarchyDetector.parseFunTime("Анархия-103")), "FunTime anarchy line, no hyphen");
+        expect("Анархия 7".equals(AnarchyDetector.parseFunTime(" ⚔ АНАРХИЯ #007 ")), "FunTime case, '#' and zeros");
+        expect("Анархия 103".equals(AnarchyDetector.normalize("Анархия-103"))
+                && "Прайм #1".equals(AnarchyDetector.normalize("Прайм #1")), "old hyphenated cards are normalized");
+        expect("Лайт(1.20) #1".equals(AnarchyDetector.parseHolyWorld("Лайт(1.20) #1")), "HolyWorld mode with version");
+        expect("Лайт(1.20) #14".equals(AnarchyDetector.parseHolyWorld("Лайт ( 1.20 )  # 14")), "HolyWorld version spacing");
         expect(AnarchyDetector.parseFunTime("Баланс: 103") == null, "FunTime ignores other numbers");
         expect("ДуоЛайм #13".equals(AnarchyDetector.parseHolyWorld("ДуоЛайм #13")), "HolyWorld duo");
         expect("КланЛайт #32".equals(AnarchyDetector.parseHolyWorld("  КланЛайт  #32")), "HolyWorld clan");
         expect("Прайм #1".equals(AnarchyDetector.parseHolyWorld("Прайм#1")), "HolyWorld prime without space");
         expect(AnarchyDetector.parseHolyWorld("Онлайн: 1200") == null, "HolyWorld ignores lines without '#'");
-        expect(AnarchyDetector.isValidLabel("СолоЛайт #1") && !AnarchyDetector.isValidLabel("bad\nlabel")
+        expect(AnarchyDetector.isValidLabel("СолоЛайт #1") && AnarchyDetector.isValidLabel("Лайт(1.20) #1")
+                && !AnarchyDetector.isValidLabel("bad\nlabel") && !AnarchyDetector.isValidLabel("<b>x</b>")
                 && !AnarchyDetector.isValidLabel("x".repeat(25)), "label format");
     }
 

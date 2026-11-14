@@ -37,6 +37,22 @@ public final class MsdfGlyph {
         }
     }
 
+    private MsdfGlyph(MsdfGlyph source, float raise) {
+        this.minU = source.minU;
+        this.maxU = source.maxU;
+        this.minV = source.minV;
+        this.maxV = source.maxV;
+        this.advance = source.advance;
+        this.width = source.width;
+        this.height = source.height;
+        this.topPosition = source.topPosition + raise;
+    }
+
+    /** The same glyph drawn {@code raise} em higher, for characters an atlas lacks. */
+    MsdfGlyph raised(float raise) {
+        return new MsdfGlyph(this, raise);
+    }
+
     public float apply(Matrix4f matrix, VertexConsumer consumer, float size, float x, float y, float z, int color) {
         y -= this.topPosition * size;
         float scaledWidth = this.width * size;
