@@ -363,10 +363,9 @@ public abstract class EntityRendererMixin {
         if (!phaze$drawBadgeThisLabel) {
             return;
         }
-        // The developer emblem has a visually heavier outline than the
-        // regular user badge. Keep its centre aligned with the reserved text
-        // padding, but use a slimmer footprint in world nametags only.
-        float badgeSize = phaze$drawCodeBadgeThisLabel ? 8.0F : 10.0F;
+        // Eight units put the 16px badge on the font's half-pixel grid, with
+        // the letter as tall as the nametag's capitals.
+        float badgeSize = 8.0F;
         float inset = (10.0F - badgeSize) / 2.0F;
         PhazeBadgeUtil.drawWorldBadge(
                 matrix, vertexConsumers, layerType, x - 2.0F + inset, y - 1.0F + inset,

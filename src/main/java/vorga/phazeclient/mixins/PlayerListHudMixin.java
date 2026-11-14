@@ -362,13 +362,9 @@ public class PlayerListHudMixin {
         if (entry != null && PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
             context.draw();
             boolean codeBadge = PhazeBadgeUtil.isCodeBadgeUser(entry.getProfile().getName());
-            float regularSize = PhazeBadgeUtil.guiBadgeSize(renderer);
-            // Keep the regular Phaze badge unchanged. The developer emblem is
-            // intentionally 1.3x smaller in TAB, centred in the same slot.
-            float size = codeBadge ? regularSize / 1.3F : regularSize;
-            float inset = (regularSize - size) / 2.0F;
+            float size = PhazeBadgeUtil.guiBadgeSize(renderer);
             PhazeBadgeUtil.drawGuiBadge(
-                    context, x - 2.5F + inset, y - 2.5F + inset, size,
+                    context, x - 2.5F, y - 2.5F, size,
                     PhazeBadgeUtil.alphaWhite(fadedColor), codeBadge
             );
         }

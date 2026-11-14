@@ -1,14 +1,17 @@
 package vorga.phazeclient.base.util;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -23,7 +26,18 @@ public final class PhazeBadgeUtil {
             Identifier.of("phaze", "textures/gui/phaze_user_badge.png");
     public static final Identifier CODE_BADGE_ICON =
             Identifier.of("phaze", "textures/gui/phaze_code_badge.png");
-    private static final int CODE_BADGE_RGB = 0xFF0000;
+    /**
+     * Pixel art stays sharp only when every texel covers a whole number of screen pixels,
+     * so each badge is drawn in two resolutions and the one that fits best is scaled up.
+     */
+    private static final BadgeTexture[] USER_TEXTURES = {
+            new BadgeTexture(BADGE_ICON, 16),
+            new BadgeTexture(Identifier.of("phaze", "textures/gui/phaze_user_badge_small.png"), 12)
+    };
+    private static final BadgeTexture[] CODE_TEXTURES = {
+            new BadgeTexture(CODE_BADGE_ICON, 16),
+            new BadgeTexture(Identifier.of("phaze", "textures/gui/phaze_code_badge_small.png"), 12)
+    };
     private static final String BADGE_PADDING = "  ";
     private static final Pattern LEADING_TAGS = Pattern.compile("^(?:\\[[^\\]]*]\\s*)+");
 
@@ -136,22 +150,50 @@ public final class PhazeBadgeUtil {
     }
 
     public static void drawGuiBadge(DrawContext context, float x, float y, float size, int color, boolean codeBadge) {
-        int drawSize = Math.max(1, Math.round(size));
+        MinecraftClient client = MinecraftClient.getInstance();
+        float guiScale = client == null ? 1.0F : (float) client.getWindow().getScaleFactor();
+        MatrixStack matrices = context.getMatrices();
+        Matrix4f pose = matrices.peek().getPositionMatrix();
+        float wantedPixels = size * pose.m00() * guiScale;
+
+        BadgeTexture texture = null;
+        int texelPixels = 1;
+        float bestError = Float.MAX_VALUE;
+        for (BadgeTexture candidate : codeBadge ? CODE_TEXTURES : USER_TEXTURES) {
+            int scale = Math.max(1, Math.round(wantedPixels / candidate.size()));
+            float error = Math.abs(scale * candidate.size() - wantedPixels);
+            if (error < bestError) {
+                bestError = error;
+                texture = candidate;
+                texelPixels = scale;
+            }
+        }
+
+        int drawPixels = texture.size() * texelPixels;
+        Vector3f center = pose.transformPosition(x + size / 2.0F, y + size / 2.0F, 0.0F, new Vector3f());
+        int left = Math.round(center.x * guiScale - drawPixels / 2.0F);
+        int top = Math.round(center.y * guiScale - drawPixels / 2.0F);
+
+        matrices.push();
+        matrices.peek().getPositionMatrix().identity()
+                .translate(0.0F, 0.0F, center.z)
+                .scale(1.0F / guiScale, 1.0F / guiScale, 1.0F);
         context.drawTexture(
                 RenderLayer::getGuiTextured,
-                badgeIcon(codeBadge),
-                Math.round(x),
-                Math.round(y),
+                texture.id(),
+                left,
+                top,
                 0.0F,
                 0.0F,
-                drawSize,
-                drawSize,
-                64,
-                64,
-                64,
-                64,
-                badgeColor(color, codeBadge)
+                drawPixels,
+                drawPixels,
+                texture.size(),
+                texture.size(),
+                texture.size(),
+                texture.size(),
+                badgeColor(color)
         );
+        matrices.pop();
     }
 
     public static void drawChatBadgeAsText(DrawContext context, TextRenderer renderer, float x, float y, int color) {
@@ -177,7 +219,7 @@ public final class PhazeBadgeUtil {
             boolean codeBadge
     ) {
         VertexConsumer vertexConsumer = vertexConsumers.getBuffer(resolveTextRenderLayer(layerType, codeBadge));
-        int badgeColor = badgeColor(color, codeBadge);
+        int badgeColor = badgeColor(color);
         vertexConsumer.vertex(matrix, x, y, 0.0F).color(badgeColor).texture(0.0F, 0.0F).light(light);
         vertexConsumer.vertex(matrix, x, y + size, 0.0F).color(badgeColor).texture(0.0F, 1.0F).light(light);
         vertexConsumer.vertex(matrix, x + size, y + size, 0.0F).color(badgeColor).texture(1.0F, 1.0F).light(light);
@@ -242,8 +284,9 @@ public final class PhazeBadgeUtil {
         return codeBadge ? CODE_BADGE_ICON : BADGE_ICON;
     }
 
-    private static int badgeColor(int color, boolean codeBadge) {
-        return codeBadge ? (color & 0xFF000000) | CODE_BADGE_RGB : color;
+    /** The badges carry their own colours: only the caller's alpha is applied. */
+    private static int badgeColor(int color) {
+        return alphaWhite(color);
     }
 
     private static RenderLayer resolveTextRenderLayer(TextRenderer.TextLayerType layerType, boolean codeBadge) {
@@ -253,5 +296,8 @@ public final class PhazeBadgeUtil {
             case POLYGON_OFFSET -> RenderLayer.getTextPolygonOffset(icon);
             case NORMAL -> RenderLayer.getText(icon);
         };
+    }
+
+    private record BadgeTexture(Identifier id, int size) {
     }
 }
