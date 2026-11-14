@@ -1,6 +1,7 @@
 package vorga.phazeclient.mixins;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
@@ -244,65 +245,36 @@ public class PlayerListHudMixin {
         phaze$tabTransformPushed = false;
     }
 
-    @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
-    private void phaze$styleOwnName(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
-        Text original = cir.getReturnValue();
-        Text styled = TabEditor.getInstance().styleOwnName(entry, original);
-        if (styled != original) {
-            cir.setReturnValue(styled);
-        }
-    }
-
-    @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
-    private void phaze$colorTeammate(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
-        if (entry == null || vorga.phazeclient.base.util.MessengerService.getInstance().getTeammates().isEmpty()) return;
-        if (!vorga.phazeclient.implement.messenger.ChatWorld.isTeammate(entry.getProfile().getName())) return;
-        Text current = cir.getReturnValue();
-        if (current == null) return;
-        MutableText styled = current.copy();
-        styled.setStyle(styled.getStyle().withColor(vorga.phazeclient.implement.messenger.ChatWorld.TEAMMATE_COLOR));
-        cir.setReturnValue(styled);
-    }
-
     /**
-     * Rewrite the tab list display name through {@link NickHider} so the
-     * configured replacement string surfaces in the vanilla TAB overlay.
-     * Chained at RETURN so it observes the value set by
-     * {@link #phaze$styleOwnName} - if highlightOwn is on we still want
-     * the AQUA/BOLD styling, just with the username swapped to the
-     * replacement. {@link NickHider#rewrite} preserves style per-fragment
-     * via {@link Text#visit}, so the highlight survives intact.
-     *
-     * <p>The hider short-circuits when the module is disabled or the
-     * decorated name doesn't contain the local username (e.g. a server
-     * that hides usernames in tab and only shows ranks), so the per-tick
-     * cost on a vanilla server is a single {@code String.contains}.
+     * Every tab-name edit in one chain: a cancellable RETURN inject that sets a value returns
+     * on the spot and skips the injects after it. The badge goes last so its slot opens the line.
      */
-    @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
-    private void phaze$nickHideTabName(PlayerListEntry entry, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Text> cir) {
+    @ModifyReturnValue(method = "getPlayerName", at = @At("RETURN"))
+    private Text phaze$editTabName(Text name, PlayerListEntry entry) {
+        if (name == null || entry == null) {
+            return name;
+        }
+        name = TabEditor.getInstance().styleOwnName(entry, name);
+        name = phaze$colorTeammate(entry, name);
         NickHider hider = NickHider.getInstance();
-        if (hider == null || !hider.isEnabled()) {
-            return;
+        if (hider != null && hider.isEnabled()) {
+            name = hider.rewrite(name);
         }
-        Text current = cir.getReturnValue();
-        Text rewritten = hider.rewrite(current);
-        if (rewritten != current) {
-            cir.setReturnValue(rewritten);
+        String username = entry.getProfile().getName();
+        if (name != null && PhazeBadgeUtil.isPhazeUser(username)) {
+            int extraSpaces = phaze$needsExtraNickHiderPadding(entry) ? 1 : 0;
+            name = PhazeBadgeUtil.withBadge(name, PhazeBadgeUtil.isCodeBadgeUser(username), extraSpaces);
         }
+        return name;
     }
 
-    @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
-    private void phaze$badgeTabName(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
-        if (entry == null || !PhazeBadgeUtil.isPhazeUser(entry.getProfile().getName())) {
-            return;
-        }
-
-        Text current = cir.getReturnValue();
-        if (current != null) {
-            boolean codeBadge = PhazeBadgeUtil.isCodeBadgeUser(entry.getProfile().getName());
-            int extraSpaces = phaze$needsExtraNickHiderPadding(entry) ? 1 : 0;
-            cir.setReturnValue(PhazeBadgeUtil.withBadge(current, codeBadge, extraSpaces));
-        }
+    @Unique
+    private static Text phaze$colorTeammate(PlayerListEntry entry, Text name) {
+        if (name == null || vorga.phazeclient.base.util.MessengerService.getInstance().getTeammates().isEmpty()) return name;
+        if (!vorga.phazeclient.implement.messenger.ChatWorld.isTeammate(entry.getProfile().getName())) return name;
+        MutableText styled = name.copy();
+        styled.setStyle(styled.getStyle().withColor(vorga.phazeclient.implement.messenger.ChatWorld.TEAMMATE_COLOR));
+        return styled;
     }
 
     @WrapOperation(
